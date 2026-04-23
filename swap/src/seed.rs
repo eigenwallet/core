@@ -43,6 +43,28 @@ impl Seed {
         Ok(Seed(*monero_seed.entropy()))
     }
 
+    /// Extract seed from a `wallet2`-format `.keys` file.
+    ///
+    /// This decrypts the `.keys` file directly (without going through the
+    /// monero-sys wallet) using the provided password. The 32-byte spend
+    /// secret key is the same value as `MoneroSeed::entropy()`, which is what
+    /// [`Seed::from_monero_wallet`] already returns — so both paths produce
+    /// the same `Seed` for the same wallet.
+    pub fn from_monero_keys_file(
+        keys_path: impl AsRef<Path>,
+        password: &str,
+    ) -> Result<Self, Error> {
+        let keys_path = keys_path.as_ref();
+        let path_str = keys_path
+            .to_str()
+            .context("wallet .keys path is not valid UTF-8")?;
+
+        let keys = monero_wallet2_adapter::load_wallet_keys(path_str, password, 1)
+            .with_context(|| format!("decrypt {}", keys_path.display()))?;
+
+        Ok(Seed(keys.spend_secret_key))
+    }
+
     pub fn derive_libp2p_identity(&self) -> identity::Keypair {
         let bytes = self.derive(b"NETWORK").derive(b"LIBP2P_IDENTITY").bytes();
 

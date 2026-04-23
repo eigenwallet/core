@@ -11,6 +11,7 @@ members = [
   "monero-tests",
   "monero-wallet",
   "monero-wallet-ng",
+  "monero-wallet2-adapter",
   "src-tauri",
   "swap",
   "swap-asb",

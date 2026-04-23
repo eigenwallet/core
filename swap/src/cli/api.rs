@@ -681,33 +681,219 @@ mod builder {
 
             let daemon = monero_sys::Daemon::try_from(monero_node_address)?;
 
-            // Open or create Monero wallet
-            let (wallet, seed) = wallet::open_monero_wallet(
-                self.tauri_handle.clone(),
-                eigenwallet_data_dir,
-                base_data_dir,
-                env_config,
-                &daemon,
-                seed_choice,
-                &wallet_database,
-            )
-            .await?;
+            // Pull these out up front so both the parallel and sequential
+            // branches can consume them without needing `Clone`.
+            let bitcoin_config = self.bitcoin;
+            let is_testnet_flag = self.is_testnet;
+            let tauri_handle_for_branches = self.tauri_handle.clone();
 
-            let primary_address = wallet.main_address().await?;
+            // Fast path for `FromWalletPath`: we can derive the app seed +
+            // primary address directly from the `.keys` file (via
+            // monero-wallet2-adapter) before opening anything with
+            // monero-sys. That lets us launch the Monero wallet open and
+            // the Bitcoin wallet init in parallel.
+            //
+            // Other seed choices still need the opened Monero wallet in
+            // hand to produce a seed, so they fall through to the
+            // sequential path below.
+            // Holder so we can move `bitcoin_config` into exactly one of the
+            // two paths at runtime without the borrow checker assuming
+            // either path always takes it.
+            let mut bitcoin_config = bitcoin_config;
 
-            // Derive wallet-specific data directory
-            let data_dir = base_data_dir
-                .join("identities")
-                .join(primary_address.to_string());
+            let (wallet, seed, data_dir, bitcoin_wallet) = {
+                // Loop so the user can re-select a wallet if they cancel
+                // the password prompt.
+                let mut current_seed_choice = seed_choice;
 
-            swap_fs::ensure_directory_exists(&data_dir)
-                .context("Failed to create identity directory")?;
+                let parallel = loop {
+                    match &current_seed_choice {
+                        Some(SeedChoice::FromWalletPath { wallet_path }) => {
+                            let prep = wallet::prepare_from_wallet_path(
+                                wallet_path.clone(),
+                                env_config.monero_network,
+                                tauri_handle_for_branches.clone(),
+                            )
+                            .await?;
 
-            tracing::info!(
-                primary_address = %primary_address,
-                data_dir = %data_dir.display(),
-                "Using wallet-specific data directory"
-            );
+                            let Some(prep) = prep else {
+                                // User cancelled → ask them to pick again.
+                                current_seed_choice = Some(
+                                    wallet::request_seed_choice(
+                                        tauri_handle_for_branches.clone().unwrap(),
+                                        &wallet_database,
+                                    )
+                                    .await?,
+                                );
+                                continue;
+                            };
+
+                            let data_dir = base_data_dir
+                                .join("identities")
+                                .join(prep.primary_address.to_string());
+
+                            swap_fs::ensure_directory_exists(&data_dir)
+                                .context("Failed to create identity directory")?;
+
+                            tracing::info!(
+                                primary_address = %prep.primary_address,
+                                data_dir = %data_dir.display(),
+                                "Using wallet-specific data directory"
+                            );
+
+                            // Monero open future.
+                            let monero_fut = {
+                                let tauri_handle = tauri_handle_for_branches.clone();
+                                let wallet_path = prep.wallet_path.clone();
+                                let password = prep.password.clone();
+                                let daemon = daemon.clone();
+                                let network = env_config.monero_network;
+                                async move {
+                                    let _monero_progress_handle = tauri_handle
+                                        .new_background_process_with_initial_progress(
+                                            TauriBackgroundProgress::OpeningMoneroWallet,
+                                            (),
+                                        );
+                                    monero::Wallet::open_or_create_with_password(
+                                        wallet_path,
+                                        password,
+                                        daemon,
+                                        network,
+                                        true,
+                                    )
+                                    .await
+                                    .context("Failed to open wallet from provided path")
+                                }
+                            };
+
+                            // Bitcoin init future. Take the config here so
+                            // it's consumed only on the path that runs.
+                            let bitcoin_fut = {
+                                let bitcoin = bitcoin_config.take();
+                                let is_testnet = is_testnet_flag;
+                                let seed = prep.seed.clone();
+                                let data_dir = data_dir.clone();
+                                let tauri_handle = tauri_handle_for_branches.clone();
+                                async move {
+                                    let wallet = match bitcoin {
+                                        Some(bitcoin) => {
+                                            let (urls, target_block) =
+                                                bitcoin.apply_defaults(is_testnet)?;
+
+                                            let bitcoin_progress_handle = tauri_handle
+                                                .new_background_process_with_initial_progress(
+                                                    TauriBackgroundProgress::OpeningBitcoinWallet,
+                                                    (),
+                                                );
+
+                                            let wallet = wallet::init_bitcoin_wallet(
+                                                urls,
+                                                &seed,
+                                                &data_dir,
+                                                env_config,
+                                                target_block,
+                                                tauri_handle.clone(),
+                                            )
+                                            .await?;
+
+                                            bitcoin_progress_handle.finish();
+                                            Some(Arc::new(wallet))
+                                        }
+                                        None => None,
+                                    };
+                                    Ok::<_, Error>(wallet)
+                                }
+                            };
+
+                            let (wallet, bitcoin_wallet) =
+                                tokio::try_join!(monero_fut, bitcoin_fut)?;
+
+                            // Sanity-check: the wallet monero-sys opened
+                            // must match the address we derived from its
+                            // `.keys` file. If it doesn't, something is
+                            // badly wrong (e.g., stale cache, wrong file)
+                            // and we refuse to continue.
+                            let opened_address = wallet.main_address().await?;
+                            anyhow::ensure!(
+                                opened_address == prep.primary_address,
+                                "monero-sys opened a wallet with address {}, but the \
+                                 keys file derives {}; refusing to continue",
+                                opened_address,
+                                prep.primary_address,
+                            );
+
+                            break Some((wallet, prep.seed, data_dir, bitcoin_wallet));
+                        }
+                        _ => break None,
+                    }
+                };
+
+                match parallel {
+                    Some(result) => result,
+                    None => {
+                        // Sequential path for other seed choices: open the
+                        // Monero wallet first (to get the seed), then
+                        // initialise Bitcoin afterwards.
+                        let (wallet, seed) = wallet::open_monero_wallet(
+                            tauri_handle_for_branches.clone(),
+                            eigenwallet_data_dir,
+                            base_data_dir,
+                            env_config,
+                            &daemon,
+                            current_seed_choice,
+                            &wallet_database,
+                        )
+                        .await?;
+
+                        let primary_address = wallet.main_address().await?;
+                        let data_dir = base_data_dir
+                            .join("identities")
+                            .join(primary_address.to_string());
+
+                        swap_fs::ensure_directory_exists(&data_dir)
+                            .context("Failed to create identity directory")?;
+
+                        tracing::info!(
+                            primary_address = %primary_address,
+                            data_dir = %data_dir.display(),
+                            "Using wallet-specific data directory"
+                        );
+
+                        let bitcoin_wallet = match bitcoin_config.take() {
+                            Some(bitcoin) => {
+                                let (urls, target_block) =
+                                    bitcoin.apply_defaults(is_testnet_flag)?;
+
+                                let bitcoin_progress_handle = tauri_handle_for_branches
+                                    .new_background_process_with_initial_progress(
+                                        TauriBackgroundProgress::OpeningBitcoinWallet,
+                                        (),
+                                    );
+
+                                let wallet = wallet::init_bitcoin_wallet(
+                                    urls,
+                                    &seed,
+                                    &data_dir,
+                                    env_config,
+                                    target_block,
+                                    tauri_handle_for_branches.clone(),
+                                )
+                                .await?;
+
+                                bitcoin_progress_handle.finish();
+                                Some(Arc::new(wallet))
+                            }
+                            None => None,
+                        };
+
+                        (wallet, seed, data_dir, bitcoin_wallet)
+                    }
+                }
+            };
+
+            // Publish the Bitcoin wallet into the shared context now that
+            // the parallel/sequential join is done.
+            *context.bitcoin_wallet.write().await = bitcoin_wallet.clone();
 
             let wallet_database = Some(Arc::new(wallet_database));
 
@@ -765,43 +951,6 @@ mod builder {
                 *context.db.write().await = Some(db.clone());
 
                 Ok::<_, Error>(db)
-            }
-            .await?;
-
-            let tauri_handle = &self.tauri_handle.clone();
-
-            // Initialize Bitcoin wallet
-            let bitcoin_wallet = async {
-                let wallet = match self.bitcoin {
-                    Some(bitcoin) => {
-                        let (urls, target_block) = bitcoin.apply_defaults(self.is_testnet)?;
-
-                        let bitcoin_progress_handle = tauri_handle
-                            .new_background_process_with_initial_progress(
-                                TauriBackgroundProgress::OpeningBitcoinWallet,
-                                (),
-                            );
-
-                        let wallet = wallet::init_bitcoin_wallet(
-                            urls,
-                            &seed,
-                            &data_dir,
-                            env_config,
-                            target_block,
-                            self.tauri_handle.clone(),
-                        )
-                        .await?;
-
-                        bitcoin_progress_handle.finish();
-
-                        Some(Arc::new(wallet))
-                    }
-                    None => None,
-                };
-
-                *context.bitcoin_wallet.write().await = wallet.clone();
-
-                Ok::<_, Error>(wallet)
             }
             .await?;
 
@@ -934,6 +1083,87 @@ mod wallet {
         Ok(wallet)
     }
 
+    /// Prep work required before opening a wallet selected via a file path:
+    /// run the interactive password prompt loop, then decrypt the `.keys`
+    /// file to derive the application seed and primary address. Lets the
+    /// caller kick off Monero open + Bitcoin init in parallel.
+    ///
+    /// Returns `Ok(None)` when the user cancels the password prompt; the
+    /// caller should re-ask them to pick a wallet.
+    pub(super) struct FromPathPrep {
+        pub wallet_path: String,
+        pub password: String,
+        pub seed: Seed,
+        pub primary_address: monero::Address,
+    }
+
+    pub(super) async fn prepare_from_wallet_path(
+        wallet_path: String,
+        network: monero::Network,
+        tauri_handle: Option<TauriHandle>,
+    ) -> Result<Option<FromPathPrep>> {
+        let keys_path = format!("{}.keys", wallet_path);
+
+        // Verify by decrypting the `.keys` file ourselves — no monero-sys
+        // required for the password check.
+        let verify_password = |password: &str| -> Result<
+            Option<monero_wallet2_adapter::WalletSecretKeys>,
+        > {
+            match monero_wallet2_adapter::load_wallet_keys(&keys_path, password, 1) {
+                Ok(k) => Ok(Some(k)),
+                // Any decryption error is treated as "wrong password" for
+                // the prompt loop. We don't distinguish malformed files
+                // from bad passwords here because wallet2's own load path
+                // doesn't either (it just fails to parse JSON).
+                Err(_) => Ok(None),
+            }
+        };
+
+        // Try the empty password first, then prompt until the user either
+        // provides a correct password or cancels.
+        let secrets = match verify_password("")? {
+            Some(secrets) => Some(("".to_string(), secrets)),
+            None => loop {
+                let password = match tauri_handle
+                    .request_password(wallet_path.clone())
+                    .await
+                    .inspect_err(|e| {
+                        tracing::error!("Failed to get password from user: {}", e);
+                    })
+                    .ok()
+                {
+                    Some(password) => password,
+                    None => break None,
+                };
+
+                if let Some(secrets) = verify_password(&password)? {
+                    break Some((password, secrets));
+                }
+                // Wrong password; loop and ask again.
+            },
+        };
+
+        let Some((password, secrets)) = secrets else {
+            return Ok(None);
+        };
+
+        let primary_address = monero::primary_address_from_secrets(
+            &secrets.spend_secret_key,
+            &secrets.view_secret_key,
+            network,
+        )
+        .context("derive primary address from wallet keys")?;
+
+        let seed = Seed::from(secrets.spend_secret_key);
+
+        Ok(Some(FromPathPrep {
+            wallet_path,
+            password,
+            seed,
+            primary_address,
+        }))
+    }
+
     /// Requests the user to select a seed choice from a list of recent wallets
     pub(super) async fn request_seed_choice(
         tauri_handle: TauriHandle,
@@ -1047,29 +1277,28 @@ mod wallet {
                         }
                         SeedChoice::FromWalletPath { ref wallet_path } => {
                             let wallet_path = wallet_path.clone();
+                            let keys_path = format!("{}.keys", wallet_path);
 
-                            // Helper function to verify password
-                            let verify_password = |password: String| -> Result<bool> {
-                                monero_sys::WalletHandle::verify_wallet_password(
-                                    wallet_path.clone(),
-                                    password,
+                            // Verify a password by decrypting the `.keys` file
+                            // directly (via monero-wallet2-adapter). This
+                            // avoids spinning up a monero-sys wallet just to
+                            // check the password, and it means we can derive
+                            // the application seed below even if monero-sys
+                            // later fails to open the wallet.
+                            let verify_password = |password: &str| -> bool {
+                                monero_wallet2_adapter::load_wallet_keys(
+                                    &keys_path, password, 1,
                                 )
-                                .map_err(|e| {
-                                    anyhow::anyhow!("Failed to verify wallet password: {}", e)
-                                })
+                                .is_ok()
                             };
 
-                            // Request and verify password before opening wallet
                             let wallet_password: Option<String> = {
                                 const WALLET_EMPTY_PASSWORD: &str = "";
 
-                                // First try empty password
-                                if verify_password(WALLET_EMPTY_PASSWORD.to_string())? {
+                                if verify_password(WALLET_EMPTY_PASSWORD) {
                                     Some(WALLET_EMPTY_PASSWORD.to_string())
                                 } else {
-                                    // If empty password fails, ask user for password
                                     loop {
-                                        // Request password from user
                                         let password = tauri_handle
                                             .request_password(wallet_path.clone())
                                             .await
@@ -1081,34 +1310,24 @@ mod wallet {
                                             })
                                             .ok();
 
-                                        // If the user rejects the password request (presses cancel)
-                                        // We prompt him to select a wallet again
+                                        // User cancelled → go back to wallet selection.
                                         let password = match password {
                                             Some(password) => password,
                                             None => break None,
                                         };
 
-                                        // Verify the password using the helper function
-                                        match verify_password(password.clone()) {
-                                            Ok(true) => {
-                                                break Some(password);
-                                            }
-                                            Ok(false) => {
-                                                // Continue loop to request password again
-                                                continue;
-                                            }
-                                            Err(e) => {
-                                                return Err(e);
-                                            }
+                                        if verify_password(&password) {
+                                            break Some(password);
                                         }
+                                        // Wrong password; loop and ask again.
                                     }
                                 }
                             };
 
                             let password = match wallet_password {
                                 Some(password) => password,
-                                // None means the user rejected the password request
-                                // We prompt him to select a wallet again
+                                // User rejected the password request — go
+                                // back to wallet selection.
                                 None => {
                                     seed_choice = request_seed_choice(
                                         tauri_handle.clone().unwrap(),
@@ -1119,8 +1338,18 @@ mod wallet {
                                 }
                             };
 
-                            // Open existing wallet with verified password
-                            monero::Wallet::open_or_create_with_password(
+                            // Derive the application seed from the `.keys`
+                            // file before touching monero-sys. This is the
+                            // same seed `Seed::from_monero_wallet` would
+                            // return, because the Monero mnemonic entropy is
+                            // the 32-byte spend secret key.
+                            let seed = Seed::from_monero_keys_file(&keys_path, &password)
+                                .context("Failed to derive seed from wallet .keys file")?;
+
+                            // Open the wallet with monero-sys. For now we
+                            // fail the whole flow if this fails; we can
+                            // decouple later to allow a seed-only path.
+                            let wallet = monero::Wallet::open_or_create_with_password(
                                 wallet_path.clone(),
                                 password,
                                 daemon.clone(),
@@ -1128,7 +1357,9 @@ mod wallet {
                                 true,
                             )
                             .await
-                            .context("Failed to open wallet from provided path")?
+                            .context("Failed to open wallet from provided path")?;
+
+                            break (wallet, seed);
                         }
 
                         SeedChoice::Legacy => {

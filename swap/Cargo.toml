@@ -57,6 +57,7 @@ monero-oxide-ext = { path = "../monero-oxide-ext" }
 monero-rpc-pool = { path = "../monero-rpc-pool" }
 monero-seed = { git = "https://github.com/monero-oxide/monero-wallet-util.git", package = "monero-seed" }
 monero-sys = { path = "../monero-sys" }
+monero-wallet2-adapter = { path = "../monero-wallet2-adapter" }
 pem = "3.0"
 proptest = "1"
 regex = "1.10"
@@ -108,6 +109,7 @@ sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 [dev-dependencies]
 bitcoin-harness = { git = "https://github.com/eigenwallet/bitcoin-harness-rs", branch = "master" }
 data-encoding = { workspace = true }
+hex = { workspace = true }
 mockito = "1.4"
 monero-harness = { path = "../monero-harness" }
 proptest = "1"
