@@ -8,8 +8,8 @@ use rand::rngs::OsRng;
 use zeroize::Zeroizing;
 
 use monero_interface::{
-    FeePriority, ProvidesBlockchainMeta, ProvidesDecoys, ProvidesFeeRates, ProvidesScannableBlocks,
-    PublishTransaction,
+    FeePriority, FeeRate, ProvidesBlockchainMeta, ProvidesDecoys, ProvidesFeeRates,
+    ProvidesScannableBlocks, PublishTransaction,
 };
 use monero_oxide::ed25519::{Point, Scalar};
 use monero_oxide::ringct::RctType;
@@ -17,23 +17,61 @@ use monero_oxide_wallet::address::MoneroAddress;
 use monero_oxide_wallet::send::{Change, SendError, SignableTransaction};
 use monero_oxide_wallet::{OutputWithDecoys, Scanner, ViewPair, ViewPairError};
 
+use crate::RING_LEN;
+use crate::rpc::{ProvidesTransactionStatus, TransactionStatus, TransactionStatusError};
+
 fn public_key(private_key: &Scalar) -> Point {
     Point::from(curve25519_dalek::constants::ED25519_BASEPOINT_POINT * (*private_key).into())
 }
 
-const RING_LEN: u8 = 16;
 const RATIO_SUM_TOLERANCE: f64 = 1e-6;
 
+/// The caller-supplied set of destinations is invalid.
+#[derive(Debug, thiserror::Error)]
+pub enum DestinationsError {
+    #[error("No destinations provided")]
+    Empty,
+    #[error("Ratios must sum to 1 (got {sum})")]
+    RatiosDontSumToOne { sum: f64 },
+    #[error("More destinations ({destinations}) than piconero to distribute ({total})")]
+    TooMany { total: u64, destinations: usize },
+    #[error("Overflow while computing distribution")]
+    Overflow,
+}
+
+/// An error while building an unsigned sweep transaction.
+///
+/// Everything [`build_sweep_transaction`] can fail with
+#[derive(Debug, thiserror::Error)]
+pub enum BuildSweepError {
+    #[error(transparent)]
+    Destinations(#[from] DestinationsError),
+    #[error("Necessary fee {fee} exceeds input amount {input}")]
+    FeeExceedsInput { fee: u64, input: u64 },
+    #[error("Failed to build transaction: {0}")]
+    Send(#[from] SendError),
+}
+
+/// An error while sweeping a known block.
+///
+/// Everything [`sweep_tx_given_block_to`] can fail with: build errors plus
+/// the I/O, scanning, and publishing errors that come from interacting with
+/// the daemon.
 #[derive(Debug, thiserror::Error)]
 pub enum SweepError {
+    #[error(transparent)]
+    Build(#[from] BuildSweepError),
     #[error("Failed to create view pair: {0}")]
     ViewPair(#[from] ViewPairError),
     #[error("Scan error: {0}")]
     Scan(#[from] monero_oxide_wallet::ScanError),
-    #[error("No outputs found to sweep")]
-    NoOutputs,
-    #[error("Transaction error: {0}")]
-    Transaction(#[from] SendError),
+    #[error("Block at height {block_height} does not exist")]
+    BlockNotFound { block_height: usize },
+    #[error(
+        "No outputs belonging to the provided view-pair were found in transaction {}",
+        hex::encode(.tx_id)
+    )]
+    NoOutputsInTransaction { tx_id: [u8; 32] },
     #[error("Fee error: {0}")]
     Fee(#[from] monero_interface::FeeError),
     #[error("Decoy selection error: {0}")]
@@ -42,59 +80,168 @@ pub enum SweepError {
     Publish(#[from] monero_interface::PublishTransactionError),
     #[error("Interface error: {0}")]
     Interface(#[from] monero_interface::InterfaceError),
-    #[error("Invalid destinations: {0}")]
-    InvalidDestinations(String),
 }
 
-/// Distribute `total` piconero across `ratios` (summing to ~1.0).
+/// An error while looking up a transaction and sweeping it.
 ///
-/// Mirrors `FfiWallet::distribute` from `monero-sys`: the first n-1 slots are
-/// `floor(total * ratio)` and the last slot absorbs the remainder so the sum
-/// is exactly `total`.
-fn distribute(total: u64, ratios: &[f64]) -> Result<Vec<u64>, SweepError> {
-    if ratios.is_empty() {
-        return Err(SweepError::InvalidDestinations(
-            "no destinations".to_string(),
-        ));
-    }
-    let sum: f64 = ratios.iter().sum();
-    if (sum - 1.0).abs() > RATIO_SUM_TOLERANCE {
-        return Err(SweepError::InvalidDestinations(format!(
-            "ratios must sum to 1 (got {})",
-            sum
-        )));
-    }
-    if total < ratios.len() as u64 {
-        return Err(SweepError::InvalidDestinations(format!(
-            "more destinations than piconero to distribute ({} < {})",
-            total,
-            ratios.len()
-        )));
-    }
-
-    let mut amounts = Vec::with_capacity(ratios.len());
-    let mut assigned: u64 = 0;
-    for &r in &ratios[..ratios.len() - 1] {
-        let amount = ((total as f64) * r).floor() as u64;
-        amounts.push(amount);
-        assigned = assigned
-            .checked_add(amount)
-            .ok_or_else(|| SweepError::InvalidDestinations("overflow".to_string()))?;
-    }
-    let remainder = total.checked_sub(assigned).ok_or_else(|| {
-        SweepError::InvalidDestinations(format!(
-            "underflow: total {} < assigned {}",
-            total, assigned
-        ))
-    })?;
-    amounts.push(remainder);
-    Ok(amounts)
+/// Everything [`sweep_tx_to`] can fail with: the lookup failure modes plus
+/// anything [`SweepError`] can represent.
+#[derive(Debug, thiserror::Error)]
+pub enum SweepTxError {
+    #[error(transparent)]
+    Sweep(#[from] SweepError),
+    #[error("Failed to look up transaction status: {0}")]
+    StatusLookup(#[from] TransactionStatusError),
+    #[error("Transaction {} is unknown to the daemon", hex::encode(.tx_id))]
+    TransactionNotFound { tx_id: [u8; 32] },
+    #[error(
+        "Transaction {} is still in the mempool; cannot sweep until it is mined",
+        hex::encode(.tx_id)
+    )]
+    TransactionInMempool { tx_id: [u8; 32] },
 }
 
-pub async fn sweep<P>(
+/// Build an unsigned sweep transaction that spends `input` across `destinations`.
+///
+/// Pure: same inputs (including `outgoing_view_key`) produce the same
+/// `SignableTransaction`. Performs no I/O, no randomness, no network access.
+///
+/// - n = 1: splits the input into two halves to satisfy Monero's consensus-level
+///   2-output minimum (<https://github.com/monero-project/monero/issues/5399>).
+///   One payment of `amount / 2` goes to the destination and the remainder
+///   (minus fee) is routed to the same destination via the change slot, using
+///   a fingerprintable change address since we do not hold the view key.
+/// - n >= 2: probe-builds an identically-shaped tx with zero-value payments to
+///   read `necessary_fee` (the fee depends only on the number of inputs/outputs
+///   and the fee rate, not on the amount values), distributes `amount - fee`
+///   across destinations by ratio (mirroring `monero-sys::FfiWallet::sweep_multi`),
+///   and encodes every destination as an explicit payment. There is no change
+///   slot: `Change::fingerprintable(None)` shunts the leftover (`input -
+///   sum(payments)`) to the fee, which by construction equals `necessary_fee`.
+fn build_sweep_transaction(
+    input: OutputWithDecoys,
+    destinations: &[(MoneroAddress, f64)],
+    fee_rate: FeeRate,
+    outgoing_view_key: Zeroizing<[u8; 32]>,
+) -> Result<SignableTransaction, BuildSweepError> {
+    let amount = input.commitment().amount;
+
+    let (payments, change) = if destinations.len() == 1 {
+        let (addr, _) = destinations[0];
+        (
+            vec![(addr, amount / 2)],
+            Change::fingerprintable(Some(addr)),
+        )
+    } else {
+        // Probe the fee by building an identically-shaped tx with zero-value
+        // payments. The fee depends only on input/output count and fee rate,
+        // not amount values, so zero-valued payments give the same fee as
+        // the real ones will. `Change::fingerprintable(None)` shunts any
+        // leftover to the fee; with all-zero payments the "leftover" is
+        // `input - 0 = input`, which `validate` accepts since `input >=
+        // necessary_fee` for any realistic sweep.
+        let probe_payments: Vec<(MoneroAddress, u64)> =
+            destinations.iter().map(|(addr, _)| (*addr, 0u64)).collect();
+        let probe = SignableTransaction::new(
+            RctType::ClsagBulletproofPlus,
+            outgoing_view_key.clone(),
+            vec![input.clone()],
+            probe_payments,
+            Change::fingerprintable(None),
+            vec![],
+            fee_rate,
+        )?;
+        let necessary_fee = probe.necessary_fee();
+
+        let distributable =
+            amount
+                .checked_sub(necessary_fee)
+                .ok_or(BuildSweepError::FeeExceedsInput {
+                    fee: necessary_fee,
+                    input: amount,
+                })?;
+
+        let ratios: Vec<f64> = destinations.iter().map(|(_, r)| *r).collect();
+        let amounts = distribute(distributable, &ratios)?;
+
+        // All destinations are explicit payments summing to `distributable
+        // = amount - necessary_fee`. With `Change::fingerprintable(None)`,
+        // monero-oxide shunts `input - sum(payments) = necessary_fee` into
+        // the fee, so the paid fee is exactly what the probe reported.
+        let payments: Vec<(MoneroAddress, u64)> = destinations
+            .iter()
+            .zip(amounts.iter())
+            .map(|((addr, _), amount)| (*addr, *amount))
+            .collect();
+        (payments, Change::fingerprintable(None))
+    };
+
+    Ok(SignableTransaction::new(
+        RctType::ClsagBulletproofPlus,
+        outgoing_view_key,
+        vec![input],
+        payments,
+        change,
+        vec![],
+        fee_rate,
+    )?)
+}
+
+/// Locate `tx_id` on-chain and sweep its output across `destinations`.
+///
+/// Looks up which block contains `tx_id` via the provider and then delegates
+/// to [`sweep_tx_given_block_to`]. Returns a [`SweepTxError`] if the daemon
+/// does not know about the transaction or if it is still in the mempool.
+pub async fn sweep_tx_to<P>(
     provider: P,
     private_spend_key: Zeroizing<Scalar>,
     private_view_key: Zeroizing<Scalar>,
+    tx_id: [u8; 32],
+    destinations: Vec<(MoneroAddress, f64)>,
+    max_fee_per_weight: u64,
+) -> Result<[u8; 32], SweepTxError>
+where
+    P: ProvidesScannableBlocks
+        + ProvidesBlockchainMeta
+        + ProvidesDecoys
+        + ProvidesFeeRates
+        + PublishTransaction
+        + ProvidesTransactionStatus
+        + Send
+        + Sync,
+{
+    let block_height = match provider.transaction_status(tx_id).await? {
+        TransactionStatus::InBlock { block_height } => block_height as usize,
+        TransactionStatus::InPool => return Err(SweepTxError::TransactionInMempool { tx_id }),
+        TransactionStatus::Unknown => return Err(SweepTxError::TransactionNotFound { tx_id }),
+    };
+
+    Ok(sweep_tx_given_block_to(
+        provider,
+        private_spend_key,
+        private_view_key,
+        tx_id,
+        block_height,
+        destinations,
+        max_fee_per_weight,
+    )
+    .await?)
+}
+
+/// Sweep the largest output belonging to the caller's view-pair from
+/// transaction `tx_id` at `block_height` across `destinations`, split by the
+/// associated ratios.
+///
+/// Only outputs from `tx_id` itself are considered — any other outputs in the
+/// same block that happen to also belong to the view-pair are ignored.
+///
+/// The caller is responsible for locating the block; see [`sweep_tx_to`] for
+/// a wrapper that does the lookup via the daemon RPC.
+pub async fn sweep_tx_given_block_to<P>(
+    provider: P,
+    private_spend_key: Zeroizing<Scalar>,
+    private_view_key: Zeroizing<Scalar>,
+    tx_id: [u8; 32],
     block_height: usize,
     destinations: Vec<(MoneroAddress, f64)>,
     max_fee_per_weight: u64,
@@ -109,25 +256,34 @@ where
         + Sync,
 {
     if destinations.is_empty() {
-        return Err(SweepError::InvalidDestinations(
-            "no destinations".to_string(),
-        ));
+        return Err(BuildSweepError::from(DestinationsError::Empty).into());
     }
 
-    let public_spend_key = public_key(&private_spend_key);
-    let view_pair = ViewPair::new(public_spend_key, private_view_key.clone())?;
-    let mut scanner = Scanner::new(view_pair);
+    // Scanner for finding sweepable outputs
+    let mut scanner = {
+        let public_spend_key = public_key(&private_spend_key);
+        let view_pair = ViewPair::new(public_spend_key, private_view_key.clone())?;
 
-    // Scan the given block and find the largest output
-    let blocks = provider
-        .contiguous_scannable_blocks(block_height..=block_height)
-        .await?;
-    let block = blocks.into_iter().next().ok_or(SweepError::NoOutputs)?;
-    let outputs = scanner.scan(block)?.not_additionally_locked();
-    let largest_output = outputs
-        .into_iter()
-        .max_by_key(|o| o.commitment().amount)
-        .ok_or(SweepError::NoOutputs)?;
+        Scanner::new(view_pair)
+    };
+
+    // Find the largest output belonging to `tx_id`.
+    let largest_output = {
+        let blocks = provider
+            .contiguous_scannable_blocks(block_height..=block_height)
+            .await?;
+        let block = blocks
+            .into_iter()
+            .next()
+            .ok_or(SweepError::BlockNotFound { block_height })?;
+        let outputs = scanner.scan(block)?.not_additionally_locked();
+
+        outputs
+            .into_iter()
+            .filter(|o| o.transaction() == tx_id)
+            .max_by_key(|o| o.commitment().amount)
+            .ok_or(SweepError::NoOutputsInTransaction { tx_id })?
+    };
 
     // Generate decoys for the input
     let block_number = provider.latest_block_number().await?;
@@ -139,7 +295,6 @@ where
         largest_output,
     )
     .await?;
-    let amount = input.commitment().amount;
 
     // Get the fee rate
     let fee_rate = provider
@@ -150,89 +305,57 @@ where
     let mut outgoing_view_key = Zeroizing::new([0u8; 32]);
     OsRng.fill_bytes(outgoing_view_key.as_mut());
 
-    let (payments, change) = if destinations.len() == 1 {
-        // Single destination, 100% — split into two halves, with change going
-        // back to the same destination. The Monero protocol enforces a
-        // minimum of 2 outputs per transaction at consensus level:
-        // https://github.com/monero-project/monero/issues/5399
-        //
-        // We create one payment output for the destination address with half
-        // the amount of the output we are spending. Additionally, we set the
-        // destination address as the change address such that `monero-oxide`
-        // will sweep anything that is left over after subtracting the fee.
-        //
-        // As we do not have the view key for the destination address, we
-        // must use a fingerprintable change address.
-        let (addr, _) = destinations[0];
-        (
-            vec![(addr, amount / 2)],
-            Change::fingerprintable(Some(addr)),
-        )
-    } else {
-        // Multi-destination: split `amount - fee` across n destinations by
-        // ratio. Mirrors `monero-sys::FfiWallet::sweep_multi`: the last
-        // destination absorbs the remainder (and the fee, via the Change
-        // slot).
-        //
-        // Probe the fee by building an identically-shaped tx with zero-value
-        // payments. The fee depends only on the number of inputs/outputs and
-        // the fee rate, not on the amount values — `weight_and_necessary_fee`
-        // uses shimmed `[0; 8]` encrypted amounts regardless of the real
-        // values. Validate() passes because `in_amount >= 0 + necessary_fee`
-        // for any realistic sweep.
-        let probe_payments: Vec<(MoneroAddress, u64)> = destinations
-            .iter()
-            .take(destinations.len() - 1)
-            .map(|(addr, _)| (*addr, 0u64))
-            .collect();
-        let last_addr = destinations[destinations.len() - 1].0;
-        let probe = SignableTransaction::new(
-            RctType::ClsagBulletproofPlus,
-            outgoing_view_key.clone(),
-            vec![input.clone()],
-            probe_payments,
-            Change::fingerprintable(Some(last_addr)),
-            vec![],
-            fee_rate,
-        )?;
-        let necessary_fee = probe.necessary_fee();
+    let tx = build_sweep_transaction(input, &destinations, fee_rate, outgoing_view_key)?;
 
-        let distributable = amount.checked_sub(necessary_fee).ok_or_else(|| {
-            SweepError::InvalidDestinations(format!(
-                "fee {} exceeds input {}",
-                necessary_fee, amount
-            ))
-        })?;
-
-        let ratios: Vec<f64> = destinations.iter().map(|(_, r)| *r).collect();
-        let amounts = distribute(distributable, &ratios)?;
-
-        // First n-1 destinations become explicit payments; the last
-        // destination becomes the change slot. `monero-oxide` will set the
-        // change amount to `input - sum(payments) - fee` which equals exactly
-        // `amounts[n-1]` (the remainder from `distribute`).
-        let payments: Vec<(MoneroAddress, u64)> = destinations
-            .iter()
-            .take(destinations.len() - 1)
-            .zip(amounts.iter())
-            .map(|((addr, _), amount)| (*addr, *amount))
-            .collect();
-        (payments, Change::fingerprintable(Some(last_addr)))
-    };
-
-    let tx = SignableTransaction::new(
-        RctType::ClsagBulletproofPlus,
-        outgoing_view_key,
-        vec![input],
-        payments,
-        change,
-        vec![],
-        fee_rate,
-    )?;
-
-    let signed = tx.sign(&mut OsRng, &private_spend_key)?;
+    let signed = tx
+        .sign(&mut OsRng, &private_spend_key)
+        .map_err(BuildSweepError::from)?;
     let tx_hash = signed.hash();
     provider.publish_transaction(&signed).await?;
 
     Ok(tx_hash)
+}
+
+/// Distribute `total` piconero across `ratios` (summing to ~1.0).
+///
+/// Mirrors `FfiWallet::distribute` from `monero-sys`: the first n-1 slots are
+/// `floor(total * ratio)` and the last slot absorbs the remainder so the sum
+/// is exactly `total`.
+fn distribute(total: u64, ratios: &[f64]) -> Result<Vec<u64>, DestinationsError> {
+    if ratios.is_empty() {
+        return Err(DestinationsError::Empty);
+    }
+
+    // Assert that the ratios sum to 1.0
+    let sum: f64 = ratios.iter().sum();
+    if (sum - 1.0).abs() > RATIO_SUM_TOLERANCE {
+        return Err(DestinationsError::RatiosDontSumToOne { sum });
+    }
+
+    // Check if the total is enough to cover at least one piconero per output
+    if total < ratios.len() as u64 {
+        return Err(DestinationsError::TooMany {
+            total,
+            destinations: ratios.len(),
+        });
+    }
+
+    // First n-1 destinations
+    let mut amounts = Vec::with_capacity(ratios.len());
+    let mut assigned: u64 = 0;
+    for &r in &ratios[..ratios.len() - 1] {
+        let amount = ((total as f64) * r).floor() as u64;
+        amounts.push(amount);
+        assigned = assigned
+            .checked_add(amount)
+            .ok_or(DestinationsError::Overflow)?;
+    }
+
+    // Last destination gets the remainder
+    let remainder = total
+        .checked_sub(assigned)
+        .ok_or(DestinationsError::Overflow)?;
+    amounts.push(remainder);
+
+    Ok(amounts)
 }

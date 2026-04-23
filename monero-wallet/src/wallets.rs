@@ -320,8 +320,6 @@ impl Wallets {
         view_key: PrivateViewKey,
         destinations: Vec<(monero_address::MoneroAddress, f64)>,
     ) -> Result<TxHash> {
-        use monero_wallet_ng::rpc::{ProvidesTransactionStatus, TransactionStatus};
-
         // ~1000x mainnet normal fee leaves plenty of headroom for fee spikes
         // while still preventing a malicious RPC from inflating the fee
         // to drain the output.
@@ -330,33 +328,19 @@ impl Wallets {
         let rpc_client = self.rpc_client().await;
         let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
 
-        let block_height = match rpc_client
-            .transaction_status(tx_id)
-            .await
-            .context("Failed to fetch status of lock transaction")?
-        {
-            TransactionStatus::InBlock { block_height } => block_height as usize,
-            TransactionStatus::InPool => {
-                anyhow::bail!("cannot sweep: lock transaction is still in mempool")
-            }
-            TransactionStatus::Unknown => {
-                anyhow::bail!("cannot sweep: daemon does not know about lock transaction")
-            }
-        };
-
         let spend_scalar = Zeroizing::new(spend_key.scalar);
         let view_scalar = Zeroizing::new(view_key.0.scalar);
 
-        let tx_hash = monero_wallet_ng::sweep::sweep(
+        let tx_hash = monero_wallet_ng::sweep::sweep_tx_to(
             rpc_client,
             spend_scalar,
             view_scalar,
-            block_height,
+            tx_id,
             destinations,
             MAX_FEE_PER_WEIGHT,
         )
         .await
-        .context("Failed to sweep to destination")?;
+        .context("Failed to sweep lock output to destinations")?;
 
         Ok(TxHash(hex::encode(tx_hash)))
     }
