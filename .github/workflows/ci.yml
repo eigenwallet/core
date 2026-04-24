@@ -204,6 +204,8 @@ jobs:
             test_name: transfers
           - package: monero-tests
             test_name: transfers_wrong_key
+          - package: monero-tests
+            test_name: sweep
 
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft

@@ -339,6 +339,33 @@ impl Wallets {
         Ok(TxHash(hex::encode(tx_hash)))
     }
 
+    /// Convenience wrapper around [`Self::sweep_to`] for the single-destination case.
+    pub async fn sweep_to_single(
+        &self,
+        lock_tx_hash: &TxHash,
+        spend_key: monero_oxide_ext::PrivateKey,
+        view_key: PrivateViewKey,
+        destination: monero_address::MoneroAddress,
+    ) -> Result<TxHash> {
+        let rpc_client = self.rpc_client().await;
+        let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
+
+        let spend_scalar = Zeroizing::new(spend_key.scalar);
+        let view_scalar = Zeroizing::new(view_key.0.scalar);
+
+        let tx_hash = monero_wallet_ng::sweep::sweep_tx_to_single(
+            rpc_client,
+            spend_scalar,
+            view_scalar,
+            tx_id,
+            destination,
+        )
+        .await
+        .context("Failed to sweep lock output to destination")?;
+
+        Ok(TxHash(hex::encode(tx_hash)))
+    }
+
     /// Verify a transfer using the new monero-wallet-ng implementation.
     ///
     /// This verifies that a transaction sends the expected amount to the given view pair

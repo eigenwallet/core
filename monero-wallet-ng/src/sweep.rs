@@ -11,18 +11,15 @@ use monero_interface::{
     FeePriority, FeeRate, ProvidesBlockchainMeta, ProvidesDecoys, ProvidesFeeRates,
     ProvidesScannableBlocks, PublishTransaction,
 };
-use monero_oxide::ed25519::{Point, Scalar};
+use monero_oxide::ed25519::Scalar;
 use monero_oxide::ringct::RctType;
 use monero_oxide_wallet::address::MoneroAddress;
 use monero_oxide_wallet::send::{Change, SendError, SignableTransaction};
 use monero_oxide_wallet::{OutputWithDecoys, Scanner, ViewPair, ViewPairError};
 
 use crate::rpc::{ProvidesTransactionStatus, TransactionStatus, TransactionStatusError};
+use crate::util::public_key;
 use crate::{MAX_FEE_PER_WEIGHT, RING_LEN};
-
-fn public_key(private_key: &Scalar) -> Point {
-    Point::from(curve25519_dalek::constants::ED25519_BASEPOINT_POINT * (*private_key).into())
-}
 
 /// The caller-supplied set of destinations is invalid.
 #[derive(Debug, thiserror::Error)]
@@ -46,6 +43,8 @@ pub enum BuildSweepError {
     Destinations(#[from] DestinationsError),
     #[error("Necessary fee {fee} exceeds input amount {input}")]
     FeeExceedsInput { fee: u64, input: u64 },
+    #[error("Final fee {actual} differs from probed fee {probed}")]
+    FeeMismatch { probed: u64, actual: u64 },
     #[error("Failed to build transaction: {0}")]
     Send(#[from] SendError),
 }
@@ -114,11 +113,12 @@ fn build_sweep_transaction(
 ) -> Result<SignableTransaction, BuildSweepError> {
     let amount = input.commitment().amount;
 
-    let (payments, change) = if destinations.len() == 1 {
+    let (payments, change, probed_fee) = if destinations.len() == 1 {
         let (addr, _) = destinations[0];
         (
             vec![(addr, amount / 2)],
             Change::fingerprintable(Some(addr)),
+            None,
         )
     } else {
         // Probe the fee by building an identically-shaped tx with zero-value
@@ -154,10 +154,10 @@ fn build_sweep_transaction(
         // monero-oxide shunts `input - sum(payments) = necessary_fee` into
         // the fee, so the paid fee is exactly what the probe reported.
         let payments = distribute(distributable, destinations)?;
-        (payments, Change::fingerprintable(None))
+        (payments, Change::fingerprintable(None), Some(necessary_fee))
     };
 
-    Ok(SignableTransaction::new(
+    let tx = SignableTransaction::new(
         RctType::ClsagBulletproofPlus,
         outgoing_view_key,
         vec![input],
@@ -165,7 +165,46 @@ fn build_sweep_transaction(
         change,
         vec![],
         fee_rate,
-    )?)
+    )?;
+
+    if let Some(probed) = probed_fee {
+        let actual = tx.necessary_fee();
+        if actual != probed {
+            return Err(BuildSweepError::FeeMismatch { probed, actual });
+        }
+    }
+
+    Ok(tx)
+}
+
+/// Convenience wrapper around [`sweep_tx_to`] for the single-destination case.
+///
+/// Equivalent to `sweep_tx_to(..., vec![(destination, 1.0)])`.
+pub async fn sweep_tx_to_single<P>(
+    provider: P,
+    private_spend_key: Zeroizing<Scalar>,
+    private_view_key: Zeroizing<Scalar>,
+    tx_id: [u8; 32],
+    destination: MoneroAddress,
+) -> Result<[u8; 32], SweepError>
+where
+    P: ProvidesScannableBlocks
+        + ProvidesBlockchainMeta
+        + ProvidesDecoys
+        + ProvidesFeeRates
+        + PublishTransaction
+        + ProvidesTransactionStatus
+        + Send
+        + Sync,
+{
+    sweep_tx_to(
+        provider,
+        private_spend_key,
+        private_view_key,
+        tx_id,
+        vec![(destination, 1.0)],
+    )
+    .await
 }
 
 /// Locate `tx_id` on-chain and sweep its output across `destinations`.
@@ -314,6 +353,7 @@ fn distribute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use monero_oxide::ed25519::Point;
     use monero_oxide_wallet::address::{AddressType, Network};
 
     /// A distinct dummy mainnet legacy address derived from a `seed`.

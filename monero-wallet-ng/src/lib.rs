@@ -3,6 +3,7 @@ pub mod retry;
 pub mod rpc;
 pub mod scanner;
 pub mod sweep;
+pub mod util;
 pub mod verify;
 
 pub const HARDFORK_VERSION: u8 = 16;
