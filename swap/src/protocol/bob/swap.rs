@@ -751,18 +751,20 @@ async fn next_state(
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::RedeemingMonero);
 
-            let xmr_redeem_txid = state
+            let sweep = state
                 .infallible_redeem_xmr(&*monero_wallet, swap_id, monero_receive_pool.clone())
                 .await;
 
             BobState::XmrRedeemPublished {
                 state,
-                xmr_redeem_tx_hash: xmr_redeem_txid,
+                xmr_redeem_tx_hash: sweep.tx_hash,
+                xmr_redeem_tx: sweep.tx,
             }
         }
         BobState::XmrRedeemPublished {
             state,
             xmr_redeem_tx_hash,
+            xmr_redeem_tx: _,
         } => {
             event_emitter.emit_swap_progress_event(
                 swap_id,
@@ -1265,11 +1267,11 @@ async fn next_state(
                     .await
                     .context("Failed to redeem Monero")
                     {
-                        Ok(xmr_redeem_txid) => {
+                        Ok(sweep) => {
                             event_emitter.emit_swap_progress_event(
                                 swap_id,
                                 TauriSwapProgressEvent::XmrRedeemPublished {
-                                    xmr_redeem_txids: vec![xmr_redeem_txid],
+                                    xmr_redeem_txids: vec![sweep.tx_hash],
                                     xmr_receive_pool: monero_receive_pool.clone(),
                                 },
                             );

@@ -10822,6 +10822,7 @@ name = "swap-db"
 version = "4.0.0"
 dependencies = [
  "bitcoin 0.32.8",
+ "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
  "serde",
  "serde_json",
  "strum 0.26.3",
@@ -10895,6 +10896,7 @@ dependencies = [
  "libp2p",
  "monero-address",
  "monero-oxide-ext",
+ "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rust_decimal",

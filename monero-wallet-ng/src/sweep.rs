@@ -15,6 +15,7 @@ use monero_oxide::ed25519::Scalar;
 use monero_oxide::ringct::RctType;
 use monero_oxide_wallet::address::MoneroAddress;
 use monero_oxide_wallet::send::{Change, SendError, SignableTransaction};
+use monero_oxide_wallet::transaction::{NotPruned, Transaction};
 use monero_oxide_wallet::{OutputWithDecoys, Scanner, ViewPair, ViewPairError};
 
 use crate::rpc::{ProvidesTransactionStatus, TransactionStatus, TransactionStatusError};
@@ -86,6 +87,142 @@ pub enum SweepError {
     Publish(#[from] monero_interface::PublishTransactionError),
     #[error("Interface error: {0}")]
     Interface(#[from] monero_interface::InterfaceError),
+}
+
+/// The outcome of a successful sweep: the published transaction and its hash.
+#[derive(Debug, Clone)]
+pub struct SweepResult {
+    /// The 32-byte hash of the published transaction.
+    pub tx_hash: [u8; 32],
+    /// The signed transaction that was published.
+    pub tx: Transaction<NotPruned>,
+}
+
+/// Convenience wrapper around [`sweep_tx_to`] for the single-destination case.
+///
+/// Equivalent to `sweep_tx_to(..., vec![(destination, 1.0)])`.
+pub async fn sweep_tx_to_single<P>(
+    provider: P,
+    private_spend_key: Zeroizing<Scalar>,
+    private_view_key: Zeroizing<Scalar>,
+    tx_id: [u8; 32],
+    destination: MoneroAddress,
+) -> Result<SweepResult, SweepError>
+where
+    P: ProvidesScannableBlocks
+        + ProvidesBlockchainMeta
+        + ProvidesDecoys
+        + ProvidesFeeRates
+        + PublishTransaction
+        + ProvidesTransactionStatus
+        + Send
+        + Sync,
+{
+    sweep_tx_to(
+        provider,
+        private_spend_key,
+        private_view_key,
+        tx_id,
+        vec![(destination, 1.0)],
+    )
+    .await
+}
+
+/// Locate `tx_id` on-chain and sweep its output across `destinations`.
+///
+/// Looks up which block contains `tx_id` via the provider, scans that block
+/// for outputs belonging to `tx_id` (ignoring any sibling outputs in the same
+/// block that also happen to match the view-pair), selects the largest output,
+/// and sweeps it across `destinations` split by ratio.
+///
+/// Returns a [`SweepError`] if the daemon does not know about the transaction
+/// or if it is still in the mempool.
+pub async fn sweep_tx_to<P>(
+    provider: P,
+    private_spend_key: Zeroizing<Scalar>,
+    private_view_key: Zeroizing<Scalar>,
+    tx_id: [u8; 32],
+    destinations: Vec<(MoneroAddress, f64)>,
+) -> Result<SweepResult, SweepError>
+where
+    P: ProvidesScannableBlocks
+        + ProvidesBlockchainMeta
+        + ProvidesDecoys
+        + ProvidesFeeRates
+        + PublishTransaction
+        + ProvidesTransactionStatus
+        + Send
+        + Sync,
+{
+    if destinations.is_empty() {
+        return Err(BuildSweepError::from(DestinationsError::Empty).into());
+    }
+
+    // Locate the block that contains `tx_id`
+    let block_height = match provider.transaction_status(tx_id).await? {
+        TransactionStatus::InBlock { block_height } => block_height as usize,
+        TransactionStatus::InPool => return Err(SweepError::TransactionInMempool { tx_id }),
+        TransactionStatus::Unknown => return Err(SweepError::TransactionNotFound { tx_id }),
+    };
+
+    // Scanner for finding sweepable outputs
+    let mut scanner = {
+        let public_spend_key = public_key(&private_spend_key);
+        let view_pair = ViewPair::new(public_spend_key, private_view_key.clone())?;
+
+        Scanner::new(view_pair)
+    };
+
+    // Find the largest output belonging to `tx_id`.
+    let largest_output = {
+        let blocks = provider
+            .contiguous_scannable_blocks(block_height..=block_height)
+            .await?;
+        let block = blocks
+            .into_iter()
+            .next()
+            .ok_or(SweepError::BlockNotFound { block_height })?;
+        let outputs = scanner.scan(block)?.not_additionally_locked();
+
+        outputs
+            .into_iter()
+            .filter(|o| o.transaction() == tx_id)
+            .max_by_key(|o| o.commitment().amount)
+            .ok_or(SweepError::NoOutputsInTransaction { tx_id })?
+    };
+
+    // Generate decoys for the input
+    let block_number = provider.latest_block_number().await?;
+    let input = OutputWithDecoys::new(
+        &mut OsRng,
+        &provider,
+        RING_LEN,
+        block_number,
+        largest_output,
+    )
+    .await?;
+
+    // Get the fee rate
+    let fee_rate = provider
+        .fee_rate(FeePriority::Normal, MAX_FEE_PER_WEIGHT)
+        .await?;
+
+    // Generate a random outgoing view key
+    let mut outgoing_view_key = Zeroizing::new([0u8; 32]);
+    OsRng.fill_bytes(outgoing_view_key.as_mut());
+
+    let tx = build_sweep_transaction(input, &destinations, fee_rate, outgoing_view_key)?;
+
+    let signed = tx
+        .sign(&mut OsRng, &private_spend_key)
+        .map_err(BuildSweepError::from)?;
+    let tx_hash = signed.hash();
+    provider.publish_transaction(&signed).await?;
+
+    Ok(SweepResult {
+        tx_hash,
+        tx: signed,
+    })
 }
 
 /// Build an unsigned sweep transaction that spends `input` across `destinations`.
@@ -175,130 +312,6 @@ fn build_sweep_transaction(
     }
 
     Ok(tx)
-}
-
-/// Convenience wrapper around [`sweep_tx_to`] for the single-destination case.
-///
-/// Equivalent to `sweep_tx_to(..., vec![(destination, 1.0)])`.
-pub async fn sweep_tx_to_single<P>(
-    provider: P,
-    private_spend_key: Zeroizing<Scalar>,
-    private_view_key: Zeroizing<Scalar>,
-    tx_id: [u8; 32],
-    destination: MoneroAddress,
-) -> Result<[u8; 32], SweepError>
-where
-    P: ProvidesScannableBlocks
-        + ProvidesBlockchainMeta
-        + ProvidesDecoys
-        + ProvidesFeeRates
-        + PublishTransaction
-        + ProvidesTransactionStatus
-        + Send
-        + Sync,
-{
-    sweep_tx_to(
-        provider,
-        private_spend_key,
-        private_view_key,
-        tx_id,
-        vec![(destination, 1.0)],
-    )
-    .await
-}
-
-/// Locate `tx_id` on-chain and sweep its output across `destinations`.
-///
-/// Looks up which block contains `tx_id` via the provider, scans that block
-/// for outputs belonging to `tx_id` (ignoring any sibling outputs in the same
-/// block that also happen to match the view-pair), selects the largest output,
-/// and sweeps it across `destinations` split by ratio.
-///
-/// Returns a [`SweepError`] if the daemon does not know about the transaction
-/// or if it is still in the mempool.
-pub async fn sweep_tx_to<P>(
-    provider: P,
-    private_spend_key: Zeroizing<Scalar>,
-    private_view_key: Zeroizing<Scalar>,
-    tx_id: [u8; 32],
-    destinations: Vec<(MoneroAddress, f64)>,
-) -> Result<[u8; 32], SweepError>
-where
-    P: ProvidesScannableBlocks
-        + ProvidesBlockchainMeta
-        + ProvidesDecoys
-        + ProvidesFeeRates
-        + PublishTransaction
-        + ProvidesTransactionStatus
-        + Send
-        + Sync,
-{
-    if destinations.is_empty() {
-        return Err(BuildSweepError::from(DestinationsError::Empty).into());
-    }
-
-    // Locate the block that contains `tx_id`
-    let block_height = match provider.transaction_status(tx_id).await? {
-        TransactionStatus::InBlock { block_height } => block_height as usize,
-        TransactionStatus::InPool => return Err(SweepError::TransactionInMempool { tx_id }),
-        TransactionStatus::Unknown => return Err(SweepError::TransactionNotFound { tx_id }),
-    };
-
-    // Scanner for finding sweepable outputs
-    let mut scanner = {
-        let public_spend_key = public_key(&private_spend_key);
-        let view_pair = ViewPair::new(public_spend_key, private_view_key.clone())?;
-
-        Scanner::new(view_pair)
-    };
-
-    // Find the largest output belonging to `tx_id`.
-    let largest_output = {
-        let blocks = provider
-            .contiguous_scannable_blocks(block_height..=block_height)
-            .await?;
-        let block = blocks
-            .into_iter()
-            .next()
-            .ok_or(SweepError::BlockNotFound { block_height })?;
-        let outputs = scanner.scan(block)?.not_additionally_locked();
-
-        outputs
-            .into_iter()
-            .filter(|o| o.transaction() == tx_id)
-            .max_by_key(|o| o.commitment().amount)
-            .ok_or(SweepError::NoOutputsInTransaction { tx_id })?
-    };
-
-    // Generate decoys for the input
-    let block_number = provider.latest_block_number().await?;
-    let input = OutputWithDecoys::new(
-        &mut OsRng,
-        &provider,
-        RING_LEN,
-        block_number,
-        largest_output,
-    )
-    .await?;
-
-    // Get the fee rate
-    let fee_rate = provider
-        .fee_rate(FeePriority::Normal, MAX_FEE_PER_WEIGHT)
-        .await?;
-
-    // Generate a random outgoing view key
-    let mut outgoing_view_key = Zeroizing::new([0u8; 32]);
-    OsRng.fill_bytes(outgoing_view_key.as_mut());
-
-    let tx = build_sweep_transaction(input, &destinations, fee_rate, outgoing_view_key)?;
-
-    let signed = tx
-        .sign(&mut OsRng, &private_spend_key)
-        .map_err(BuildSweepError::from)?;
-    let tx_hash = signed.hash();
-    provider.publish_transaction(&signed).await?;
-
-    Ok(tx_hash)
 }
 
 /// Distribute `total` piconero across `destinations` by ratio (ratios summing to ~1.0).

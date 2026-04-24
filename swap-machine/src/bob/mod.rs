@@ -95,11 +95,13 @@ pub enum BobState {
     /// TxMercy has been confirmed. We received the burnt funds back.
     BtcMercyConfirmed(State6),
     /// We have published the Monero redeem transaction but it has not yet been
-    /// confirmed. Once it has at least one confirmation we transition into
-    /// [`BobState::XmrRedeemed`].
+    /// included in a block.
     XmrRedeemPublished {
         state: State5,
         xmr_redeem_tx_hash: monero::TxHash,
+        /// The signed transaction blob we published, serialized as wire-format hex.
+        #[serde(with = "swap_serde::monero::transaction")]
+        xmr_redeem_tx: monero_oxide_wallet::transaction::Transaction,
     },
     XmrRedeemed {
         tx_lock_id: bitcoin::Txid,

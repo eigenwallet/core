@@ -718,7 +718,7 @@ where
             spend_key,
             state3,
         } => {
-            let xmr_refund_tx_hash = retry(
+            let sweep = retry(
                 "Refund Monero",
                 || async {
                     state3
@@ -739,12 +739,14 @@ where
 
             AliceState::XmrRefundTxPublished {
                 state3,
-                xmr_refund_tx_hash,
+                xmr_refund_tx_hash: sweep.tx_hash,
+                xmr_refund_tx: sweep.tx,
             }
         }
         AliceState::XmrRefundTxPublished {
             state3,
             xmr_refund_tx_hash,
+            xmr_refund_tx: _,
         } => {
             monero_wallet
                 .wait_until_confirmed(
@@ -948,7 +950,7 @@ pub trait XmrRefundable {
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
         transfer_proof: TransferProof,
-    ) -> Result<monero::TxHash>;
+    ) -> Result<monero::SweepResult>;
 }
 
 impl XmrRefundable for State3 {
@@ -958,7 +960,7 @@ impl XmrRefundable for State3 {
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
         transfer_proof: TransferProof,
-    ) -> Result<monero::TxHash> {
+    ) -> Result<monero::SweepResult> {
         let view_key = self.v;
 
         // Ensure that the XMR to be refunded are spendable by awaiting 10 confirmations
@@ -987,14 +989,14 @@ impl XmrRefundable for State3 {
 
         tracing::debug!(%swap_id, %main_address, "Sweeping lock output to redeem address");
 
-        let tx_hash = monero_wallet
+        let result = monero_wallet
             .sweep_to_single(&transfer_proof.tx_hash(), spend_key, view_key, main_address)
             .await
             .context("Failed to sweep Monero to redeem address")?;
 
-        tracing::info!(%swap_id, tx_hash = %tx_hash.0, "Refunded Monero");
+        tracing::info!(%swap_id, tx_hash = %result.tx_hash.0, "Refunded Monero");
 
-        Ok(tx_hash)
+        Ok(result)
     }
 }
 
@@ -1005,7 +1007,7 @@ impl XmrRefundable for Box<State3> {
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
         transfer_proof: TransferProof,
-    ) -> Result<monero::TxHash> {
+    ) -> Result<monero::SweepResult> {
         (**self)
             .refund_xmr(monero_wallet, swap_id, spend_key, transfer_proof)
             .await

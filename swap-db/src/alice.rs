@@ -92,6 +92,8 @@ pub enum Alice {
     XmrRefundTxPublished {
         state3: alice::State3,
         xmr_refund_tx_hash: monero::TxHash,
+        #[serde(with = "swap_serde::monero::transaction")]
+        xmr_refund_tx: monero_oxide_wallet::transaction::Transaction,
     },
     BtcWithholdPublished {
         state3: alice::State3,
@@ -254,9 +256,11 @@ impl From<AliceState> for Alice {
             AliceState::XmrRefundTxPublished {
                 state3,
                 xmr_refund_tx_hash,
+                xmr_refund_tx,
             } => Alice::XmrRefundTxPublished {
                 state3: *state3,
                 xmr_refund_tx_hash,
+                xmr_refund_tx,
             },
             AliceState::BtcEarlyRefundable { state3 } => {
                 Alice::BtcEarlyRefundable { state3: *state3 }
@@ -451,9 +455,11 @@ impl From<Alice> for AliceState {
             Alice::XmrRefundTxPublished {
                 state3,
                 xmr_refund_tx_hash,
+                xmr_refund_tx,
             } => AliceState::XmrRefundTxPublished {
                 state3: Box::new(state3),
                 xmr_refund_tx_hash,
+                xmr_refund_tx,
             },
             Alice::BtcWithholdPublished { state3 } => AliceState::BtcWithholdPublished {
                 state3: Box::new(state3),

@@ -4,13 +4,12 @@ use anyhow::{Context, Result};
 use uuid::Uuid;
 
 use bitcoin_wallet;
-use swap_core::monero::TxHash;
 use swap_machine::bob::{State3, State4, State5};
 
 use crate::cli::SwapEventLoopHandle;
 use crate::common::retry;
 use crate::monero;
-use crate::monero::MoneroAddressPool;
+use crate::monero::{MoneroAddressPool, SweepResult};
 
 pub(super) trait XmrRedeemable {
     async fn redeem_xmr(
@@ -18,7 +17,7 @@ pub(super) trait XmrRedeemable {
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
         monero_receive_pool: MoneroAddressPool,
-    ) -> Result<TxHash>;
+    ) -> Result<SweepResult>;
 }
 
 pub(super) trait InfallibleXmrRedeemable {
@@ -27,7 +26,7 @@ pub(super) trait InfallibleXmrRedeemable {
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
         monero_receive_pool: MoneroAddressPool,
-    ) -> TxHash;
+    ) -> SweepResult;
 }
 
 impl XmrRedeemable for State5 {
@@ -36,7 +35,7 @@ impl XmrRedeemable for State5 {
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
         monero_receive_pool: MoneroAddressPool,
-    ) -> Result<TxHash> {
+    ) -> Result<SweepResult> {
         let (spend_key, view_key) = self.xmr_keys();
 
         tracing::info!(%swap_id, "Redeeming Monero");
@@ -52,7 +51,7 @@ impl XmrRedeemable for State5 {
             "Sweeping lock output across receive pool"
         );
 
-        let tx_hash = monero_wallet
+        let result = monero_wallet
             .sweep_to(
                 &self.lock_transfer_proof.tx_hash(),
                 spend_key,
@@ -62,9 +61,9 @@ impl XmrRedeemable for State5 {
             .await
             .context("Failed to redeem Monero")?;
 
-        tracing::info!(%swap_id, tx_hash = %tx_hash.0, "Redeemed Monero");
+        tracing::info!(%swap_id, tx_hash = %result.tx_hash.0, "Redeemed Monero");
 
-        Ok(tx_hash)
+        Ok(result)
     }
 }
 
@@ -74,7 +73,7 @@ impl InfallibleXmrRedeemable for State5 {
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
         monero_receive_pool: MoneroAddressPool,
-    ) -> TxHash {
+    ) -> SweepResult {
         let state_for_retry = self.clone();
         let monero_receive_pool_for_retry = monero_receive_pool;
 
