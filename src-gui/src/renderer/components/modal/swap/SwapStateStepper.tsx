@@ -98,8 +98,9 @@ function getActiveStep(state: SwapState | null): PathStep | null {
       return [PathType.HAPPY_PATH, 3, isReleased];
 
     // Step 4: Swap completed successfully
-    // XMR redemption transaction is in mempool, swap is essentially complete
-    case "XmrRedeemInMempool":
+    // XMR redemption transaction has been published / confirmed
+    case "XmrRedeemPublished":
+    case "XmrRedeemed":
       return [PathType.HAPPY_PATH, 4, false];
 
     // Recovery Path States - Generic (early states before we know outcome)

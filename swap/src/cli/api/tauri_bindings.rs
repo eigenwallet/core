@@ -1075,7 +1075,12 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         xmr_lock_tx_target_confirmations: u64,
     },
-    XmrRedeemInMempool {
+    XmrRedeemPublished {
+        #[typeshare(serialized_as = "Vec<string>")]
+        xmr_redeem_txids: Vec<monero::TxHash>,
+        xmr_receive_pool: MoneroAddressPool,
+    },
+    XmrRedeemed {
         #[typeshare(serialized_as = "Vec<string>")]
         xmr_redeem_txids: Vec<monero::TxHash>,
         xmr_receive_pool: MoneroAddressPool,

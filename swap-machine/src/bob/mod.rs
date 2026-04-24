@@ -94,6 +94,13 @@ pub enum BobState {
     BtcMercyPublished(State6),
     /// TxMercy has been confirmed. We received the burnt funds back.
     BtcMercyConfirmed(State6),
+    /// We have published the Monero redeem transaction but it has not yet been
+    /// confirmed. Once it has at least one confirmation we transition into
+    /// [`BobState::XmrRedeemed`].
+    XmrRedeemPublished {
+        state: State5,
+        xmr_redeem_tx_hash: monero::TxHash,
+    },
     XmrRedeemed {
         tx_lock_id: bitcoin::Txid,
     },
@@ -181,6 +188,7 @@ impl fmt::Display for BobState {
                 write!(f, "btc partial refund is published")
             }
             BobState::BtcRefunded(..) => write!(f, "btc is refunded"),
+            BobState::XmrRedeemPublished { .. } => write!(f, "xmr redeem tx is published"),
             BobState::XmrRedeemed { .. } => write!(f, "xmr is redeemed"),
             BobState::BtcPunished { .. } => write!(f, "btc is punished"),
             BobState::BtcEarlyRefunded { .. } => write!(f, "btc is early refunded"),
@@ -259,6 +267,7 @@ impl BobState {
             BobState::BtcRefunded(_)
             | BobState::BtcEarlyRefunded { .. }
             | BobState::BtcRedeemed(_)
+            | BobState::XmrRedeemPublished { .. }
             | BobState::XmrRedeemed { .. } => None,
         })
     }

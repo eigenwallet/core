@@ -17,8 +17,8 @@ use monero_oxide_wallet::address::MoneroAddress;
 use monero_oxide_wallet::send::{Change, SendError, SignableTransaction};
 use monero_oxide_wallet::{OutputWithDecoys, Scanner, ViewPair, ViewPairError};
 
-use crate::RING_LEN;
 use crate::rpc::{ProvidesTransactionStatus, TransactionStatus, TransactionStatusError};
+use crate::{MAX_FEE_PER_WEIGHT, RING_LEN};
 
 fn public_key(private_key: &Scalar) -> Point {
     Point::from(curve25519_dalek::constants::ED25519_BASEPOINT_POINT * (*private_key).into())
@@ -183,7 +183,6 @@ pub async fn sweep_tx_to<P>(
     private_view_key: Zeroizing<Scalar>,
     tx_id: [u8; 32],
     destinations: Vec<(MoneroAddress, f64)>,
-    max_fee_per_weight: u64,
 ) -> Result<[u8; 32], SweepError>
 where
     P: ProvidesScannableBlocks
@@ -245,7 +244,7 @@ where
 
     // Get the fee rate
     let fee_rate = provider
-        .fee_rate(FeePriority::Normal, max_fee_per_weight)
+        .fee_rate(FeePriority::Normal, MAX_FEE_PER_WEIGHT)
         .await?;
 
     // Generate a random outgoing view key

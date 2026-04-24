@@ -19,11 +19,12 @@ import {
   BitcoinMercyPublished,
   BitcoinMercyConfirmed,
 } from "./done/BitcoinPartialRefundPage";
-import XmrRedeemInMempoolPage from "./done/XmrRedeemInMempoolPage";
+import XmrRedeemedPage from "./done/XmrRedeemedPage";
 import ProcessExitedPage from "./exited/ProcessExitedPage";
 import BitcoinCancelledPage from "./in_progress/BitcoinCancelledPage";
 import BitcoinLockTxInMempoolPage from "./in_progress/BitcoinLockTxInMempoolPage";
 import RedeemingMoneroPage from "./in_progress/RedeemingMoneroPage";
+import XmrRedeemPublishedPage from "./in_progress/XmrRedeemPublishedPage";
 import CancelTimelockExpiredPage from "./in_progress/CancelTimelockExpiredPage";
 import EncryptedSignatureSentPage from "./in_progress/EncryptedSignatureSentPage";
 import ReceivedQuotePage from "./in_progress/ReceivedQuotePage";
@@ -92,6 +93,11 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       return <EncryptedSignatureSentPage />;
     case "RedeemingMonero":
       return <RedeemingMoneroPage />;
+    case "XmrRedeemPublished":
+      if (state.curr.type === "XmrRedeemPublished") {
+        return <XmrRedeemPublishedPage {...state.curr.content} />;
+      }
+      break;
     case "WaitingForXmrConfirmationsBeforeRedeem":
       if (state.curr.type === "WaitingForXmrConfirmationsBeforeRedeem") {
         return (
@@ -99,9 +105,9 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
         );
       }
       break;
-    case "XmrRedeemInMempool":
-      if (state.curr.type === "XmrRedeemInMempool") {
-        return <XmrRedeemInMempoolPage {...state.curr.content} />;
+    case "XmrRedeemed":
+      if (state.curr.type === "XmrRedeemed") {
+        return <XmrRedeemedPage {...state.curr.content} />;
       }
       break;
     case "WaitingForCancelTimelockExpiration":

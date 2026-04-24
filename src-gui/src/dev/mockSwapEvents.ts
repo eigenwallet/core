@@ -201,7 +201,14 @@ const happyPath: TauriSwapProgressEvent[] = [
   { type: "EncryptedSignatureSent" },
   { type: "RedeemingMonero" },
   {
-    type: "XmrRedeemInMempool",
+    type: "XmrRedeemPublished",
+    content: {
+      xmr_redeem_txids: [MOCK_XMR_REDEEM_TXID],
+      xmr_receive_pool: MOCK_RECEIVE_POOL,
+    },
+  },
+  {
+    type: "XmrRedeemed",
     content: {
       xmr_redeem_txids: [MOCK_XMR_REDEEM_TXID],
       xmr_receive_pool: MOCK_RECEIVE_POOL,
@@ -216,7 +223,14 @@ const cooperativeRedeem: TauriSwapProgressEvent[] = [
   { type: "CooperativeRedeemAccepted" },
   { type: "RedeemingMonero" },
   {
-    type: "XmrRedeemInMempool",
+    type: "XmrRedeemPublished",
+    content: {
+      xmr_redeem_txids: [MOCK_XMR_REDEEM_TXID],
+      xmr_receive_pool: MOCK_RECEIVE_POOL,
+    },
+  },
+  {
+    type: "XmrRedeemed",
     content: {
       xmr_redeem_txids: [MOCK_XMR_REDEEM_TXID],
       xmr_receive_pool: MOCK_RECEIVE_POOL,

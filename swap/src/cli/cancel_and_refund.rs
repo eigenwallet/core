@@ -84,6 +84,7 @@ pub async fn cancel(
 
         BobState::Started { .. }
         | BobState::BtcRedeemed(_)
+        | BobState::XmrRedeemPublished { .. }
         | BobState::XmrRedeemed { .. }
         | BobState::BtcPunished { .. }
         | BobState::BtcEarlyRefunded { .. }
@@ -225,6 +226,7 @@ pub async fn refund(
         | BobState::SwapSetupCompleted(_)
         | BobState::BtcRedeemed(_)
         | BobState::BtcEarlyRefunded { .. }
+        | BobState::XmrRedeemPublished { .. }
         | BobState::XmrRedeemed { .. }
         | BobState::BtcPunished { .. }
         | BobState::BtcWithheld { .. }

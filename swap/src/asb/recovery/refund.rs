@@ -60,6 +60,7 @@ pub async fn refund(
         // Alice already in final state
         AliceState::BtcRedeemTransactionPublished { .. }
         | AliceState::BtcRedeemed
+        | AliceState::XmrRefundTxPublished { .. }
         | AliceState::XmrRefunded { .. }
         | AliceState::BtcWithholdPublished { .. }
         | AliceState::BtcWithholdConfirmed { .. }

@@ -320,11 +320,6 @@ impl Wallets {
         view_key: PrivateViewKey,
         destinations: Vec<(monero_address::MoneroAddress, f64)>,
     ) -> Result<TxHash> {
-        // ~1000x mainnet normal fee leaves plenty of headroom for fee spikes
-        // while still preventing a malicious RPC from inflating the fee
-        // to drain the output.
-        const MAX_FEE_PER_WEIGHT: u64 = 10_000_000;
-
         let rpc_client = self.rpc_client().await;
         let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
 
@@ -337,7 +332,6 @@ impl Wallets {
             view_scalar,
             tx_id,
             destinations,
-            MAX_FEE_PER_WEIGHT,
         )
         .await
         .context("Failed to sweep lock output to destinations")?;

@@ -38,6 +38,7 @@ pub fn has_already_processed_transfer_proof(state: &BobState) -> bool {
         |BobState::XmrLockTransactionSeen { .. }| BobState::XmrLocked(..)
             | BobState::EncSigSent(..)
             | BobState::BtcRedeemed(..)
+            | BobState::XmrRedeemPublished { .. }
             | BobState::XmrRedeemed { .. }
     )
 }
@@ -754,10 +755,36 @@ async fn next_state(
                 .infallible_redeem_xmr(&*monero_wallet, swap_id, monero_receive_pool.clone())
                 .await;
 
+            BobState::XmrRedeemPublished {
+                state,
+                xmr_redeem_tx_hash: xmr_redeem_txid,
+            }
+        }
+        BobState::XmrRedeemPublished {
+            state,
+            xmr_redeem_tx_hash,
+        } => {
             event_emitter.emit_swap_progress_event(
                 swap_id,
-                TauriSwapProgressEvent::XmrRedeemInMempool {
-                    xmr_redeem_txids: vec![xmr_redeem_txid],
+                TauriSwapProgressEvent::XmrRedeemPublished {
+                    xmr_redeem_txids: vec![xmr_redeem_tx_hash.clone()],
+                    xmr_receive_pool: monero_receive_pool.clone(),
+                },
+            );
+
+            monero_wallet
+                .wait_until_confirmed(
+                    &xmr_redeem_tx_hash,
+                    1,
+                    None::<fn((monero::TxHash, u64, u64))>,
+                )
+                .await
+                .context("Failed to wait for Monero redeem transaction confirmation")?;
+
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::XmrRedeemed {
+                    xmr_redeem_txids: vec![xmr_redeem_tx_hash],
                     xmr_receive_pool: monero_receive_pool.clone(),
                 },
             );
@@ -1241,7 +1268,7 @@ async fn next_state(
                         Ok(xmr_redeem_txid) => {
                             event_emitter.emit_swap_progress_event(
                                 swap_id,
-                                TauriSwapProgressEvent::XmrRedeemInMempool {
+                                TauriSwapProgressEvent::XmrRedeemPublished {
                                     xmr_redeem_txids: vec![xmr_redeem_txid],
                                     xmr_receive_pool: monero_receive_pool.clone(),
                                 },
@@ -1543,7 +1570,7 @@ async fn next_state(
         BobState::XmrRedeemed { tx_lock_id } => {
             event_emitter.emit_swap_progress_event(
                 swap_id,
-                TauriSwapProgressEvent::XmrRedeemInMempool {
+                TauriSwapProgressEvent::XmrRedeemed {
                     // We don't have the txids of the redeem transaction here, so we can't emit them
                     // We return an empty array instead
                     xmr_redeem_txids: vec![],

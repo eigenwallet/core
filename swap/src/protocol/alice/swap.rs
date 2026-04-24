@@ -718,7 +718,7 @@ where
             spend_key,
             state3,
         } => {
-            retry(
+            let xmr_refund_tx_hash = retry(
                 "Refund Monero",
                 || async {
                     state3
@@ -736,6 +736,24 @@ where
             )
             .await
             .expect("We should never run out of retries while refunding Monero");
+
+            AliceState::XmrRefundTxPublished {
+                state3,
+                xmr_refund_tx_hash,
+            }
+        }
+        AliceState::XmrRefundTxPublished {
+            state3,
+            xmr_refund_tx_hash,
+        } => {
+            monero_wallet
+                .wait_until_confirmed(
+                    &xmr_refund_tx_hash,
+                    1,
+                    None::<fn((monero::TxHash, u64, u64))>,
+                )
+                .await
+                .context("Failed to wait for Monero refund transaction confirmation")?;
 
             AliceState::XmrRefunded {
                 state3: Some(state3),
@@ -930,7 +948,7 @@ pub trait XmrRefundable {
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
         transfer_proof: TransferProof,
-    ) -> Result<()>;
+    ) -> Result<monero::TxHash>;
 }
 
 impl XmrRefundable for State3 {
@@ -940,7 +958,7 @@ impl XmrRefundable for State3 {
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
         transfer_proof: TransferProof,
-    ) -> Result<()> {
+    ) -> Result<monero::TxHash> {
         let view_key = self.v;
 
         // Ensure that the XMR to be refunded are spendable by awaiting 10 confirmations
@@ -981,7 +999,7 @@ impl XmrRefundable for State3 {
 
         tracing::info!(%swap_id, tx_hash = %tx_hash.0, "Refunded Monero");
 
-        Ok(())
+        Ok(tx_hash)
     }
 }
 
@@ -992,7 +1010,7 @@ impl XmrRefundable for Box<State3> {
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
         transfer_proof: TransferProof,
-    ) -> Result<()> {
+    ) -> Result<monero::TxHash> {
         (**self)
             .refund_xmr(monero_wallet, swap_id, spend_key, transfer_proof)
             .await

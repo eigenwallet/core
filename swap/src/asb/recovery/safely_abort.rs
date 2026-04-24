@@ -33,6 +33,7 @@ pub async fn safely_abort(swap_id: Uuid, db: Arc<dyn Database>) -> Result<AliceS
         | AliceState::XmrRefundable { .. }
         | AliceState::BtcPunishable { .. }
         | AliceState::BtcRedeemed
+        | AliceState::XmrRefundTxPublished { .. }
         | AliceState::XmrRefunded { .. }
         | AliceState::BtcWithholdPublished { .. }
         | AliceState::BtcWithholdConfirmed { .. }

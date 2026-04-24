@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use swap_core::monero::{BlockHeight, TransferProofMaybeWithTxKey};
+use swap_core::monero::{self, BlockHeight, TransferProofMaybeWithTxKey};
 use swap_machine::bob;
 use swap_machine::bob::BobState;
 
@@ -45,6 +45,10 @@ pub enum Bob {
         tx_lock_id: bitcoin::Txid,
     },
     BtcRedeemed(bob::State5),
+    XmrRedeemPublished {
+        state: bob::State5,
+        xmr_redeem_tx_hash: monero::TxHash,
+    },
     WaitingForCancelTimelockExpiration {
         state: bob::State3,
         monero_wallet_restore_blockheight: BlockHeight,
@@ -125,6 +129,13 @@ impl From<BobState> for Bob {
             BobState::XmrLocked(state4) => Bob::XmrLocked { state4 },
             BobState::EncSigSent(state4) => Bob::EncSigSent { state4 },
             BobState::BtcRedeemed(state5) => Bob::BtcRedeemed(state5),
+            BobState::XmrRedeemPublished {
+                state,
+                xmr_redeem_tx_hash,
+            } => Bob::XmrRedeemPublished {
+                state,
+                xmr_redeem_tx_hash,
+            },
             BobState::WaitingForCancelTimelockExpiration {
                 state,
                 monero_wallet_restore_blockheight,
@@ -216,6 +227,13 @@ impl From<Bob> for BobState {
             Bob::XmrLocked { state4 } => BobState::XmrLocked(state4),
             Bob::EncSigSent { state4 } => BobState::EncSigSent(state4),
             Bob::BtcRedeemed(state5) => BobState::BtcRedeemed(state5),
+            Bob::XmrRedeemPublished {
+                state,
+                xmr_redeem_tx_hash,
+            } => BobState::XmrRedeemPublished {
+                state,
+                xmr_redeem_tx_hash,
+            },
             Bob::WaitingForCancelTimelockExpiration {
                 state,
                 monero_wallet_restore_blockheight,
@@ -275,6 +293,7 @@ impl fmt::Display for Bob {
                 f.write_str("Bitcoin partially refund published")
             }
             Bob::BtcRedeemed(_) => f.write_str("Monero redeemable"),
+            Bob::XmrRedeemPublished { .. } => f.write_str("Monero redeem transaction published"),
             Bob::Done(end_state) => write!(f, "Done: {}", end_state),
             Bob::EncSigSent { .. } => f.write_str("Encrypted signature sent"),
             Bob::BtcPunished { .. } => f.write_str("Bitcoin punished"),

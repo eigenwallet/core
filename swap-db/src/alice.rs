@@ -89,6 +89,10 @@ pub enum Alice {
         #[serde(with = "swap_serde::monero::private_key")]
         spend_key: monero::PrivateKey,
     },
+    XmrRefundTxPublished {
+        state3: alice::State3,
+        xmr_refund_tx_hash: monero::TxHash,
+    },
     BtcWithholdPublished {
         state3: alice::State3,
     },
@@ -246,6 +250,13 @@ impl From<AliceState> for Alice {
                 transfer_proof,
                 state3: *state3,
                 spend_key,
+            },
+            AliceState::XmrRefundTxPublished {
+                state3,
+                xmr_refund_tx_hash,
+            } => Alice::XmrRefundTxPublished {
+                state3: *state3,
+                xmr_refund_tx_hash,
             },
             AliceState::BtcEarlyRefundable { state3 } => {
                 Alice::BtcEarlyRefundable { state3: *state3 }
@@ -437,6 +448,13 @@ impl From<Alice> for AliceState {
                 spend_key,
                 state3: Box::new(state3),
             },
+            Alice::XmrRefundTxPublished {
+                state3,
+                xmr_refund_tx_hash,
+            } => AliceState::XmrRefundTxPublished {
+                state3: Box::new(state3),
+                xmr_refund_tx_hash,
+            },
             Alice::BtcWithholdPublished { state3 } => AliceState::BtcWithholdPublished {
                 state3: Box::new(state3),
             },
@@ -500,6 +518,9 @@ impl fmt::Display for Alice {
             Alice::BtcPartiallyRefunded { .. } => f.write_str("Monero refundable"),
             Alice::BtcEarlyRefundable { .. } => f.write_str("Bitcoin early refundable"),
             Alice::XmrRefundable { .. } => f.write_str("Bitcoin early refundable"),
+            Alice::XmrRefundTxPublished { .. } => {
+                f.write_str("Monero refund transaction published")
+            }
             Alice::BtcWithholdPublished { .. } => {
                 f.write_str("Bitcoin withhold transaction published")
             }
