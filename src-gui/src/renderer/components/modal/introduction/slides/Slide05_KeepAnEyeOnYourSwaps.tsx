@@ -17,7 +17,7 @@ export default function Slide05_KeepAnEyeOnYourSwaps(props: IntroSlideProps) {
         point during the refund period.
       </Typography>
       <Typography>
-        <ExternalLink href="https://docs.unstoppableswap.net/usage/first_swap">
+        <ExternalLink href="https://docs.eigenwallet.org/getting_started/first_swap">
           Learn more about atomic swaps
         </ExternalLink>
       </Typography>

@@ -79,6 +79,9 @@ pub struct Swap {
     /// Exchange rate: BTC per XMR (amount of BTC needed to buy 1 XMR)
     #[serde(with = "bitcoin::amount::serde::as_sat")]
     pub exchange_rate: bitcoin::Amount,
+    /// Fee paid by Alice for the Bitcoin redeem transaction, in satoshis.
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub btc_redeem_fee: bitcoin::Amount,
     pub peer_id: String,
     pub completed: bool,
 }

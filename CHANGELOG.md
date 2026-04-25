@@ -7,8 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [4.5.0] - 2026-04-23
-
+- ASB+CONTROLLER: `get-swaps` now includes the `btc_redeem_fee` per swap: the fee Alice paid (or will pay) for the Bitcoin redeem transaction.
 - GUI: Add a network proxy mode in the settings UI so the application can be routed through a user-configured system Tor SOCKS5 proxy.
 - GUI + SWAP + ASB: Route the relevant HTTP, wallet, updater, and transport paths through shared system Tor SOCKS5 plumbing instead of each subsystem carrying its own proxy logic.
 
