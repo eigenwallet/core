@@ -20,8 +20,8 @@ use std::time::Duration;
 use swap::asb::FixedRate;
 use swap::cli::api;
 use swap::database::{AccessMode, SqliteDatabase};
-use swap::monero::Wallets;
 use swap::monero::wallet::no_listener;
+use swap::monero::{MoneroAddressPool, Wallets};
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
 use swap::protocol::alice::{AliceState, Swap, TipConfig};
@@ -191,6 +191,26 @@ pub async fn setup_test<T, F, C>(
     )
     .await;
 
+    let bob_donation_seed = Seed::random().unwrap();
+    let bob_donation_starting_balances =
+        StartingBalances::new(bitcoin::Amount::ZERO, monero::Amount::ZERO, None);
+    let bob_donation_monero_dir = TempDir::new()
+        .unwrap()
+        .path()
+        .join("bob-donation-monero-wallets");
+    let (_, bob_donation_monero_wallet) = init_test_wallets(
+        "bob_donation",
+        containers.bitcoind_url.clone(),
+        &monero,
+        &containers._monerod_container,
+        bob_donation_monero_dir,
+        bob_donation_starting_balances,
+        electrs_rpc_port,
+        &bob_donation_seed,
+        env_config,
+    )
+    .await;
+
     let bob_params = BobParams {
         seed: Seed::random().unwrap(),
         db_path: NamedTempFile::new().unwrap().path().to_path_buf(),
@@ -222,6 +242,7 @@ pub async fn setup_test<T, F, C>(
         bob_starting_balances,
         bob_bitcoin_wallet,
         bob_monero_wallet,
+        bob_donation_monero_wallet,
         developer_tip_monero_wallet,
         developer_tip,
         refund_policy: refund_policy.unwrap_or_default(),
@@ -637,6 +658,22 @@ impl BobParams {
         &self,
         btc_amount: bitcoin::Amount,
     ) -> Result<(bob::Swap, cli::EventLoop)> {
+        let pool = self
+            .monero_wallet
+            .main_wallet()
+            .await
+            .main_address()
+            .await
+            .unwrap()
+            .into();
+        self.new_swap_with_pool(btc_amount, pool).await
+    }
+
+    pub async fn new_swap_with_pool(
+        &self,
+        btc_amount: bitcoin::Amount,
+        monero_receive_pool: MoneroAddressPool,
+    ) -> Result<(bob::Swap, cli::EventLoop)> {
         let swap_id = Uuid::new_v4();
 
         if let Some(parent_dir) = self.db_path.parent() {
@@ -660,13 +697,7 @@ impl BobParams {
             self.monero_wallet.clone(),
             self.env_config,
             swap_handle,
-            self.monero_wallet
-                .main_wallet()
-                .await
-                .main_address()
-                .await
-                .unwrap()
-                .into(),
+            monero_receive_pool,
             self.bitcoin_wallet.new_address().await?,
             btc_amount,
             bitcoin::Amount::from_sat(1000), // Fixed fee of 1000 satoshis for now
@@ -740,7 +771,8 @@ pub struct TestContext {
     pub bob_params: BobParams,
     bob_starting_balances: StartingBalances,
     bob_bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
-    bob_monero_wallet: Arc<monero::Wallets>,
+    pub bob_monero_wallet: Arc<monero::Wallets>,
+    pub bob_donation_monero_wallet: Arc<monero::Wallets>,
 
     developer_tip_monero_wallet: Arc<monero::Wallets>,
 
@@ -796,10 +828,31 @@ impl TestContext {
             .unwrap()
     }
 
+    pub fn xmr_amount(&self) -> monero::Amount {
+        self.xmr_amount
+    }
+
     pub async fn bob_swap(&mut self) -> (bob::Swap, BobApplicationHandle) {
         let (swap, event_loop) = self.bob_params.new_swap(self.btc_amount).await.unwrap();
 
         // ensure the wallet is up to date for concurrent swap tests
+        swap.bitcoin_wallet.sync().await.unwrap();
+
+        let join_handle = tokio::spawn(event_loop.run());
+
+        (swap, BobApplicationHandle(join_handle))
+    }
+
+    pub async fn bob_swap_with_pool(
+        &mut self,
+        monero_receive_pool: MoneroAddressPool,
+    ) -> (bob::Swap, BobApplicationHandle) {
+        let (swap, event_loop) = self
+            .bob_params
+            .new_swap_with_pool(self.btc_amount, monero_receive_pool)
+            .await
+            .unwrap();
+
         swap.bitcoin_wallet.sync().await.unwrap();
 
         let join_handle = tokio::spawn(event_loop.run());

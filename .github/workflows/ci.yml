@@ -145,6 +145,10 @@ jobs:
           - package: swap
             test_name: happy_path_alice_developer_tip_subaddress
           - package: swap
+            test_name: happy_path_bob_donates_to_developer
+          - package: swap
+            test_name: happy_path_bob_donates_to_developer_subaddress
+          - package: swap
             test_name: happy_path_restart_bob_after_xmr_locked
           - package: swap
             test_name: happy_path_restart_bob_before_xmr_locked

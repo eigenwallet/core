@@ -35,7 +35,7 @@ pub enum DestinationsError {
     Overflow,
 }
 
-/// An error while building an unsigned sweep transaction.
+/// An error while building and signing a sweep transaction.
 ///
 /// Everything [`build_sweep_transaction`] can fail with
 #[derive(Debug, thiserror::Error)]
@@ -128,15 +128,11 @@ where
     .await
 }
 
-/// Locate `tx_id` on-chain and sweep its output across `destinations`.
+/// Locate `tx_id` on-chain and sweep it largest by the private key spendable output across `destinations`.
 ///
 /// Looks up which block contains `tx_id` via the provider, scans that block
-/// for outputs belonging to `tx_id` (ignoring any sibling outputs in the same
-/// block that also happen to match the view-pair), selects the largest output,
+/// for outputs belonging to `tx_id`, selects the largest output,
 /// and sweeps it across `destinations` split by ratio.
-///
-/// Returns a [`SweepError`] if the daemon does not know about the transaction
-/// or if it is still in the mempool.
 pub async fn sweep_tx_to<P>(
     provider: P,
     private_spend_key: Zeroizing<Scalar>,
@@ -158,7 +154,7 @@ where
         return Err(BuildSweepError::from(DestinationsError::Empty).into());
     }
 
-    // Locate the block that contains `tx_id`
+    // Locate the block that contains the transaction
     let block_height = match provider.transaction_status(tx_id).await? {
         TransactionStatus::InBlock { block_height } => block_height as usize,
         TransactionStatus::InPool => return Err(SweepError::TransactionInMempool { tx_id }),
@@ -173,7 +169,7 @@ where
         Scanner::new(view_pair)
     };
 
-    // Find the largest output belonging to `tx_id`.
+    // Find the largest output belonging to the transaction
     let largest_output = {
         let blocks = provider
             .contiguous_scannable_blocks(block_height..=block_height)
@@ -211,11 +207,13 @@ where
     let mut outgoing_view_key = Zeroizing::new([0u8; 32]);
     OsRng.fill_bytes(outgoing_view_key.as_mut());
 
-    let tx = build_sweep_transaction(input, &destinations, fee_rate, outgoing_view_key)?;
-
-    let signed = tx
-        .sign(&mut OsRng, &private_spend_key)
-        .map_err(BuildSweepError::from)?;
+    let signed = build_sweep_transaction(
+        input,
+        &destinations,
+        fee_rate,
+        outgoing_view_key,
+        &private_spend_key,
+    )?;
     let tx_hash = signed.hash();
     provider.publish_transaction(&signed).await?;
 
@@ -225,50 +223,60 @@ where
     })
 }
 
-/// Build an unsigned sweep transaction that spends `input` across `destinations`.
+/// Build and sign a sweep transaction that spends `input` across `destinations`.
 ///
-/// Pure: same inputs (including `outgoing_view_key`) produce the same
-/// `SignableTransaction`. Performs no I/O, no randomness, no network access.
+/// Probe-builds an identically-shaped tx with zero-value payments to read
+/// `necessary_fee`. The fee depends only on the number of inputs/outputs and
+/// the fee rate, not on the amount values.
 ///
-/// - n = 1: splits the input into two halves to satisfy Monero's consensus-level
-///   2-output minimum (<https://github.com/monero-project/monero/issues/5399>).
-///   One payment of `amount / 2` goes to the destination and the remainder
-///   (minus fee) is routed to the same destination via the change slot, using
-///   a fingerprintable change address since we do not hold the view key.
-/// - n >= 2: probe-builds an identically-shaped tx with zero-value payments to
-///   read `necessary_fee` (the fee depends only on the number of inputs/outputs
-///   and the fee rate, not on the amount values), distributes `amount - fee`
-///   across destinations by ratio (mirroring `monero-sys::FfiWallet::sweep_multi`),
-///   and encodes every destination as an explicit payment. There is no change
-///   slot: `Change::fingerprintable(None)` shunts the leftover (`input -
-///   sum(payments)`) to the fee, which by construction equals `necessary_fee`.
+/// Then it distributes `amount - fee` across destinations by ratio.
+/// There is no change slot.
+///
+/// For len(destinations) = 1 an extra 0-amount payment to a freshly-derived burner address is
+/// appended to satisfy Monero's consensus-level 2-output minimum
+/// (<https://github.com/monero-project/monero/issues/5399>). This matches
+/// wallet2's approach (`wallet2.cpp::create_transactions_from`).
+///
+/// The burner's keys are derived from `outgoing_view_key`.
 fn build_sweep_transaction(
     input: OutputWithDecoys,
     destinations: &[(MoneroAddress, f64)],
     fee_rate: FeeRate,
     outgoing_view_key: Zeroizing<[u8; 32]>,
-) -> Result<SignableTransaction, BuildSweepError> {
+    private_spend_key: &Zeroizing<Scalar>,
+) -> Result<Transaction<NotPruned>, BuildSweepError> {
+    const TX_TYPE: RctType = RctType::ClsagBulletproofPlus;
+
     let amount = input.commitment().amount;
 
-    let (payments, change, probed_fee) = if destinations.len() == 1 {
-        let (addr, _) = destinations[0];
-        (
-            vec![(addr, amount / 2)],
-            Change::fingerprintable(Some(addr)),
-            None,
-        )
+    // If there is only one destination, add a single burner payment address
+    let burner = if destinations.len() == 1 {
+        Some(burner_address(
+            destinations[0].0.network(),
+            &outgoing_view_key,
+        ))
     } else {
-        // Probe the fee by building an identically-shaped tx with zero-value
-        // payments. The fee depends only on input/output count and fee rate,
-        // not amount values, so zero-valued payments give the same fee as
-        // the real ones will. `Change::fingerprintable(None)` shunts any
-        // leftover to the fee; with all-zero payments the "leftover" is
-        // `input - 0 = input`, which `validate` accepts since `input >=
-        // necessary_fee` for any realistic sweep.
-        let probe_payments: Vec<(MoneroAddress, u64)> =
-            destinations.iter().map(|(addr, _)| (*addr, 0u64)).collect();
+        None
+    };
+
+    // Probe the fee by building an identically-shaped tx with zero-value
+    // payments. The fee depends only on input/output count and fee rate, not
+    // on amount values, so zero-valued payments give the same fee as the real
+    // ones will.
+    let probed_necessary_fee = {
+        let mut probe_payments: Vec<(MoneroAddress, u64)> = destinations
+            .iter()
+            // Give each destination an amount of 0
+            .map(|(address, _)| (*address, 0))
+            .collect();
+
+        // Add the burner address
+        if let Some(burner) = burner {
+            probe_payments.push((burner, 0));
+        }
+
         let probe = SignableTransaction::new(
-            RctType::ClsagBulletproofPlus,
+            TX_TYPE,
             outgoing_view_key.clone(),
             vec![input.clone()],
             probe_payments,
@@ -276,42 +284,92 @@ fn build_sweep_transaction(
             vec![],
             fee_rate,
         )?;
-        let necessary_fee = probe.necessary_fee();
 
-        let distributable =
-            amount
-                .checked_sub(necessary_fee)
-                .ok_or(BuildSweepError::FeeExceedsInput {
-                    fee: necessary_fee,
-                    input: amount,
-                })?;
-
-        // All destinations are explicit payments summing to `distributable
-        // = amount - necessary_fee`. With `Change::fingerprintable(None)`,
-        // monero-oxide shunts `input - sum(payments) = necessary_fee` into
-        // the fee, so the paid fee is exactly what the probe reported.
-        let payments = distribute(distributable, destinations)?;
-        (payments, Change::fingerprintable(None), Some(necessary_fee))
+        probe.necessary_fee()
     };
 
-    let tx = SignableTransaction::new(
-        RctType::ClsagBulletproofPlus,
-        outgoing_view_key,
-        vec![input],
-        payments,
-        change,
-        vec![],
-        fee_rate,
-    )?;
+    // How much is left to distribute after paying the necessary fee?
+    let distributable =
+        amount
+            .checked_sub(probed_necessary_fee)
+            .ok_or(BuildSweepError::FeeExceedsInput {
+                fee: probed_necessary_fee,
+                input: amount,
+            })?;
 
-    if let Some(probed) = probed_fee {
-        let actual = tx.necessary_fee();
-        if actual != probed {
-            return Err(BuildSweepError::FeeMismatch { probed, actual });
+    let tx = {
+        // Distribute the distributable amount across the destinations
+        let mut payments = distribute(distributable, destinations)?;
+
+        // Add the burner address
+        if let Some(burner) = burner {
+            payments.push((burner, 0));
+        }
+
+        SignableTransaction::new(
+            TX_TYPE,
+            outgoing_view_key,
+            vec![input],
+            payments,
+            // We don't need a change because we spread the
+            // entire input amount across the destinations
+            Change::fingerprintable(None),
+            vec![],
+            fee_rate,
+        )
+    }?;
+
+    let signed = tx.sign(&mut OsRng, private_spend_key)?;
+
+    // Assert that we did not accidentally pay more than the necessary fee
+    // If the fee is higher than what is necessary, we made a mistake in the distribution.
+    {
+        let actual_fee = {
+            let Transaction::V2 {
+                proofs: Some(proofs),
+                ..
+            } = &signed
+            else {
+                unreachable!("sweep transactions are RingCT v2 transactions");
+            };
+            proofs.base.fee
+        };
+
+        if actual_fee != probed_necessary_fee {
+            return Err(BuildSweepError::FeeMismatch {
+                probed: probed_necessary_fee,
+                actual: actual_fee,
+            });
         }
     }
 
-    Ok(tx)
+    Ok(signed)
+}
+
+/// Deterministically derive a burner address from `outgoing_view_key`.
+///
+/// The keys are discarded after this call — nobody retains them, so the
+/// 0-amount output to this address is unspendable in practice.
+fn burner_address(
+    network: monero_oxide_wallet::address::Network,
+    outgoing_view_key: &[u8; 32],
+) -> MoneroAddress {
+    let mut spend_seed = [0u8; 32 + 18];
+    spend_seed[..32].copy_from_slice(outgoing_view_key);
+    spend_seed[32..].copy_from_slice(b"sweep-burner-spend");
+    let mut view_seed = [0u8; 32 + 17];
+    view_seed[..32].copy_from_slice(outgoing_view_key);
+    view_seed[32..].copy_from_slice(b"sweep-burner-view");
+
+    let spend = Scalar::hash(spend_seed);
+    let view = Scalar::hash(view_seed);
+
+    MoneroAddress::new(
+        network,
+        monero_oxide_wallet::address::AddressType::Legacy,
+        public_key(&spend),
+        public_key(&view),
+    )
 }
 
 /// Distribute `total` piconero across `destinations` by ratio (ratios summing to ~1.0).
