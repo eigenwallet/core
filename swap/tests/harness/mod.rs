@@ -967,6 +967,25 @@ impl TestContext {
         .unwrap();
     }
 
+    /// Wait until `wallet`'s balance reaches at least `expected - tolerance`.
+    /// Used by Bob's donation tests where the exact balance is fee-dependent
+    /// and we need a refresh-with-timeout loop to absorb sync timing.
+    pub async fn assert_eventual_balance_within(
+        &self,
+        wallet: &monero::Wallets,
+        expected_pico: u64,
+        tolerance_pico: u64,
+    ) {
+        let lower_bound = monero::Amount::from_pico(expected_pico.saturating_sub(tolerance_pico));
+        assert_eventual_balance(
+            &*wallet.main_wallet().await,
+            Ordering::Greater,
+            lower_bound,
+        )
+        .await
+        .unwrap();
+    }
+
     pub async fn assert_alice_punished(&self, state: AliceState) {
         let (cancel_fee, punish_fee) = match state {
             AliceState::BtcPunished { state3, .. } => (state3.tx_cancel_fee, state3.tx_punish_fee),

@@ -264,11 +264,7 @@ fn build_sweep_transaction(
     // on amount values, so zero-valued payments give the same fee as the real
     // ones will.
     let probed_necessary_fee = {
-        let mut probe_payments: Vec<(MoneroAddress, u64)> = destinations
-            .iter()
-            // Give each destination an amount of 0
-            .map(|(address, _)| (*address, 0))
-            .collect();
+        let mut probe_payments = distribute(0, destinations)?;
 
         // Add the burner address
         if let Some(burner) = burner {
@@ -392,14 +388,6 @@ fn distribute(
         return Err(DestinationsError::RatiosDontSumToOne { sum });
     }
 
-    // Check if the total is enough to cover at least one piconero per output
-    if total < destinations.len() as u64 {
-        return Err(DestinationsError::TooMany {
-            total,
-            destinations: destinations.len(),
-        });
-    }
-
     // First n-1 destinations
     let mut allocations = Vec::with_capacity(destinations.len());
     let mut assigned: u64 = 0;
@@ -468,15 +456,18 @@ mod tests {
     }
 
     #[test]
-    fn more_destinations_than_piconero_rejected() {
+    fn zero_total_assigns_zero_to_every_destination() {
         let dests = [
             (addr(0), 0.25),
             (addr(1), 0.25),
             (addr(2), 0.25),
             (addr(3), 0.25),
         ];
-        let err = distribute(2, &dests).unwrap_err();
-        assert!(matches!(err, DestinationsError::TooMany { .. }));
+        let out = distribute(0, &dests).unwrap();
+        assert_eq!(
+            out,
+            vec![(addr(0), 0), (addr(1), 0), (addr(2), 0), (addr(3), 0)]
+        );
     }
 
     #[test]
