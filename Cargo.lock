@@ -1127,6 +1127,7 @@ dependencies = [
  "swap-serde",
  "thiserror 1.0.69",
  "tokio",
+ "tor-socks5",
  "tracing",
 ]
 
@@ -3057,6 +3058,7 @@ dependencies = [
  "futures",
  "once_cell",
  "tokio",
+ "tor-socks5",
  "tracing",
 ]
 
@@ -6544,6 +6546,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "tor-rtcompat",
+ "tor-socks5",
  "tower-http",
  "tracing",
  "tracing-subscriber",
@@ -6600,6 +6603,7 @@ dependencies = [
  "thiserror 2.0.18",
  "throttle",
  "tokio",
+ "tor-socks5",
  "tracing",
  "tracing-subscriber",
  "typeshare",
@@ -10646,7 +10650,7 @@ checksum = "734676eb262c623cec13c3155096e08d1f8f29adce39ba17948b18dad1e54142"
 
 [[package]]
 name = "swap"
-version = "4.4.1"
+version = "4.5.0"
 dependencies = [
  "anyhow",
  "arti-client",
@@ -10707,11 +10711,13 @@ dependencies = [
  "thiserror 1.0.69",
  "time",
  "tokio",
+ "tokio-socks",
  "tokio-util",
  "tor-hscrypto",
  "tor-hsservice",
  "tor-llcrypto",
  "tor-rtcompat",
+ "tor-socks5",
  "tracing",
  "tracing-appender",
  "tracing-ext",
@@ -10726,7 +10732,7 @@ dependencies = [
 
 [[package]]
 name = "swap-asb"
-version = "4.4.1"
+version = "4.5.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.8",
@@ -10757,7 +10763,7 @@ dependencies = [
 
 [[package]]
 name = "swap-controller"
-version = "4.4.1"
+version = "4.5.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.8",
@@ -11858,6 +11864,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
  "rustls 0.23.37",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-socks"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d4770b8024672c1101b3f6733eab95b18007dbe0847a8afe341fcf79e06043f"
+dependencies = [
+ "either",
+ "futures-util",
+ "thiserror 1.0.69",
  "tokio",
 ]
 
@@ -13082,6 +13100,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tor-socks5"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.12.28",
+ "tokio",
+ "tokio-socks",
+ "tracing",
+]
+
+[[package]]
 name = "tor-socksproto"
 version = "0.41.0"
 source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_2_0#65933c076142bbe49f1384b823bc85b0a3ea34fc"
@@ -13565,9 +13593,12 @@ dependencies = [
 
 [[package]]
 name = "unstoppableswap-gui-rs"
-version = "4.4.1"
+version = "4.5.0"
 dependencies = [
+ "anyhow",
  "dfx-swiss-sdk",
+ "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "rustls 0.23.37",
  "serde",
  "serde_json",
@@ -13585,7 +13616,10 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "tokio-util",
+ "toml 0.9.12+spec-1.1.0",
+ "tor-socks5",
  "tracing",
+ "url",
  "zip",
 ]
 

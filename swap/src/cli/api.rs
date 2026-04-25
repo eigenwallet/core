@@ -16,6 +16,7 @@ use futures::future::try_join_all;
 use libp2p::{Multiaddr, PeerId};
 use std::fmt;
 use std::future::Future;
+use std::net::SocketAddrV4;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
@@ -436,6 +437,20 @@ mod builder {
     use super::*;
     use crate::cli::api::context::EventLoopState;
 
+    /// How the app should route its network traffic.
+    ///
+    /// Internal, parsed counterpart of [`tauri_bindings::NetworkProxy`]
+    /// — holds a pre-parsed `SocketAddrV4` instead of a string.
+    #[derive(Clone, Debug)]
+    pub enum NetworkProxyConfig {
+        /// Use the built-in arti-based Tor client.
+        InternalTor,
+        /// Route all traffic through an external SOCKS5 proxy at the given IPv4 address.
+        SystemTorSocks5(SocketAddrV4),
+        /// No proxy — traffic goes over clearnet.
+        None,
+    }
+
     /// A conveniant builder struct for [`Context`].
     #[must_use = "ContextBuilder must be built to be useful"]
     pub struct ContextBuilder {
@@ -444,7 +459,7 @@ mod builder {
         data: Option<PathBuf>,
         is_testnet: bool,
         json: bool,
-        tor: bool,
+        network_proxy: NetworkProxyConfig,
         enable_monero_tor: bool,
         tauri_handle: Option<TauriHandle>,
         rendezvous_points: Vec<(PeerId, Vec<Multiaddr>)>,
@@ -468,7 +483,7 @@ mod builder {
                 data: None,
                 is_testnet: false,
                 json: false,
-                tor: false,
+                network_proxy: NetworkProxyConfig::None,
                 enable_monero_tor: false,
                 tauri_handle: None,
                 rendezvous_points: Vec::new(),
@@ -512,9 +527,10 @@ mod builder {
             self
         }
 
-        /// Whether to initialize a Tor client (default false)
-        pub fn with_tor(mut self, tor: bool) -> Self {
-            self.tor = tor;
+        /// Configures how the app should route its network traffic
+        /// (default [`NetworkProxyConfig::None`]).
+        pub fn with_network_proxy(mut self, proxy: NetworkProxyConfig) -> Self {
+            self.network_proxy = proxy;
             self
         }
 
@@ -536,6 +552,18 @@ mod builder {
         ///
         /// Context fields are set as early as possible for availability to other parts of the system.
         pub async fn build(self, context: Arc<Context>) -> Result<()> {
+            // Enable/disable system Tor SOCKS5 routing before any network init.
+            match &self.network_proxy {
+                NetworkProxyConfig::SystemTorSocks5(addr) => {
+                    tor_socks5::enable_with_addr(*addr);
+                }
+                NetworkProxyConfig::InternalTor | NetworkProxyConfig::None => {
+                    tor_socks5::disable();
+                }
+            }
+
+            let use_internal_tor = matches!(self.network_proxy, NetworkProxyConfig::InternalTor);
+
             let eigenwallet_data_dir = &eigenwallet_data::new(self.is_testnet)?;
             let base_data_dir = &data::data_dir_from(self.data, self.is_testnet)?;
             let log_dir = base_data_dir.join("logs");
@@ -583,7 +611,7 @@ mod builder {
             let future_unbootstrapped_tor_client_rpc_pool = {
                 let tauri_handle = self.tauri_handle.clone();
                 async move {
-                    let unbootstrapped_tor_client = if self.tor {
+                    let unbootstrapped_tor_client = if use_internal_tor {
                         match create_tor_client(&base_data_dir).await.inspect_err(|err| {
                             tracing::warn!(%err, "Failed to create Tor client. We will continue without Tor");
                         }) {
@@ -878,7 +906,7 @@ mod builder {
     }
 }
 
-pub use builder::ContextBuilder;
+pub use builder::{ContextBuilder, NetworkProxyConfig};
 
 mod wallet {
     use super::*;

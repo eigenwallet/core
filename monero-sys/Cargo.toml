@@ -23,6 +23,7 @@ monero-address = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 swap-serde = { path = "../swap-serde" }
 throttle = { path = "../throttle" }
+tor-socks5 = { workspace = true }
 
 [build-dependencies]
 cmake = "0.1.54"

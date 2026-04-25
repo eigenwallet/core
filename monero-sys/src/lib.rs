@@ -39,6 +39,7 @@ use bridge::ffi::{self};
 use typeshare::typeshare;
 use uuid::Uuid;
 
+
 /// Approval callback for transactions
 /// The callback receives (txid, amount, fee) and returns whether to proceed with the transaction
 pub type ApprovalCallback = Arc<
@@ -162,6 +163,7 @@ pub struct Daemon {
     pub hostname: String,
     pub port: u16,
     pub ssl: bool,
+    pub proxy_address: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1071,6 +1073,7 @@ impl WalletHandle {
                         hostname: "localhost".to_string(),
                         port: 18081,
                         ssl: false,
+                        proxy_address: None,
                     },
                     &wallet_name,
                 )?;
@@ -1903,7 +1906,7 @@ impl FfiWallet {
         let_cxx_string!(daemon_address = daemon_address);
         let_cxx_string!(daemon_username = "");
         let_cxx_string!(daemon_password = "");
-        let_cxx_string!(proxy_address = "");
+        let_cxx_string!(proxy_address = daemon.proxy_address.as_deref().unwrap_or(""));
 
         let raw_wallet = &mut self.inner;
 
@@ -3245,11 +3248,21 @@ impl TryFrom<String> for Daemon {
             .ok_or_else(|| anyhow::anyhow!("No port found in URL"))?;
 
         let ssl = url.scheme() == "https";
+        // wallet2's C++ `init(..., proxy_address)` accepts only a host:port
+        // string — no SOCKS5 credentials — so we use `proxy_addr()` instead of
+        // `proxy_config(Subsystem::…)`. Consequence: Monero wallet traffic
+        // cannot be stream-isolated from other wallet connections on the Tor
+        // side (all share the same circuit). See `tor-socks5` module docs.
+        let proxy_address = (!tor_socks5::is_local_host(&hostname))
+            .then(|| tor_socks5::proxy_addr())
+            .flatten()
+            .map(|a| a.to_string());
 
         Ok(Daemon {
             hostname,
             port,
             ssl,
+            proxy_address,
         })
     }
 }
@@ -3644,5 +3657,54 @@ mod tests {
 
         let amounts = FfiWallet::distribute(balance, &percentages);
         assert!(amounts.is_err());
+    }
+
+    /// `tor_socks5` is a process-global singleton, so the Daemon proxy tests
+    /// serialize on this lock to stop `cargo test` parallelism from letting
+    /// one test's enable leak into another's disable.
+    static PROXY_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn test_daemon_local_host_never_gets_proxy() {
+        let _guard = PROXY_STATE_LOCK.lock().unwrap();
+
+        // Even with the SOCKS5 singleton enabled, a loopback daemon URL must
+        // stay direct — wallet2 talking to 127.0.0.1 through Tor would be
+        // a configuration smell and waste a circuit.
+        tor_socks5::enable_with_addr(std::net::SocketAddrV4::new(
+            std::net::Ipv4Addr::new(127, 0, 0, 1),
+            9050,
+        ));
+        let daemon = Daemon::try_from("http://127.0.0.1:18081".to_string()).unwrap();
+        assert_eq!(daemon.proxy_address, None);
+        tor_socks5::disable();
+    }
+
+    #[test]
+    fn test_daemon_remote_host_without_proxy() {
+        let _guard = PROXY_STATE_LOCK.lock().unwrap();
+
+        tor_socks5::disable();
+        let daemon = Daemon::try_from("http://xmr.example.com:18081".to_string()).unwrap();
+        assert_eq!(daemon.proxy_address, None);
+        assert_eq!(daemon.hostname, "xmr.example.com");
+        assert_eq!(daemon.port, 18081);
+        assert!(!daemon.ssl);
+    }
+
+    #[test]
+    fn test_daemon_remote_host_propagates_proxy_address() {
+        let _guard = PROXY_STATE_LOCK.lock().unwrap();
+
+        let proxy = std::net::SocketAddrV4::new(std::net::Ipv4Addr::new(10, 152, 152, 10), 9050);
+        tor_socks5::enable_with_addr(proxy);
+
+        let daemon = Daemon::try_from("https://xmr.example.com:18089".to_string()).unwrap();
+        // wallet2 needs a bare host:port string — no creds, since its C++
+        // `init(.., proxy_address)` doesn't accept a SOCKS5 auth pair.
+        assert_eq!(daemon.proxy_address, Some("10.152.152.10:9050".to_string()));
+        assert!(daemon.ssl);
+
+        tor_socks5::disable();
     }
 }

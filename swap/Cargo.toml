@@ -1,6 +1,6 @@
 [package]
 name = "swap"
-version = "4.4.1"
+version = "4.5.0"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2024"
 description = "XMR/BTC trustless atomic swaps."
@@ -23,6 +23,8 @@ monero-wallet = { path = "../monero-wallet" }
 
 # Tor
 arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service", "hs-pow-full", "ephemeral-keystore"] }
+tokio-socks = { workspace = true }
+tor-socks5 = { workspace = true, features = ["reqwest"] }
 tor-hscrypto = { workspace = true }
 tor-hsservice = { workspace = true }
 tor-llcrypto = { workspace = true }

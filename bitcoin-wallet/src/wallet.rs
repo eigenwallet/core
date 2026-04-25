@@ -2600,8 +2600,17 @@ mod mempool_client {
                 _ => bail!("mempool.space fee estimation unsupported for network"),
             };
 
-            let client = reqwest::Client::builder()
-                .timeout(HTTP_TIMEOUT)
+            let mut builder = reqwest::Client::builder().timeout(HTTP_TIMEOUT);
+
+            if let Some(proxy) = tor_socks5::proxy_config(tor_socks5::Subsystem::Bitcoin) {
+                builder = builder.proxy(
+                    proxy
+                        .reqwest_proxy()
+                        .context("Failed to configure system Tor SOCKS5 for mempool.space")?,
+                );
+            }
+
+            let client = builder
                 .build()
                 .context("Failed to build mempool.space HTTP client")?;
 

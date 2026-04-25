@@ -14,7 +14,7 @@ use structopt::{StructOpt, clap};
 use url::Url;
 use uuid::Uuid;
 
-use super::api::ContextBuilder;
+use super::api::{ContextBuilder, NetworkProxyConfig};
 use super::api::request::GetLogsArgs;
 
 // See: https://1209k.com/bitcoin-eye/ele.php?chain=btc
@@ -156,7 +156,11 @@ async fn apply_defaults(
             tor,
         } => {
             ContextBuilder::new(is_testnet)
-                .with_tor(tor.enable_tor)
+                .with_network_proxy(if tor.enable_tor {
+                    NetworkProxyConfig::InternalTor
+                } else {
+                    NetworkProxyConfig::None
+                })
                 .with_bitcoin(bitcoin)
                 .with_monero(monero)
                 .with_data_dir(data)

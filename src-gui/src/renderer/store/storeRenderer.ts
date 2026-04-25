@@ -3,9 +3,10 @@ import {
   configureStore,
   StoreEnhancer,
 } from "@reduxjs/toolkit";
-import { persistReducer, persistStore } from "redux-persist";
+import { createMigrate, persistReducer, persistStore } from "redux-persist";
 import sessionStorage from "redux-persist/lib/storage/session";
 import { reducers } from "store/combinedReducer";
+import { NetworkProxyMode } from "store/features/settingsSlice";
 import { createMainListeners } from "store/middleware/storeListener";
 import { LazyStore } from "@tauri-apps/plugin-store";
 
@@ -46,10 +47,26 @@ const createTauriStorage = () => ({
   },
 });
 
+// Migrate persisted settings across breaking shape changes.
+// v2: replace boolean `enableTor` with `networkProxyMode` + `torSocksAddress`.
+const settingsMigrations = {
+  2: (state: any) => {
+    if (state && typeof state.enableTor === "boolean") {
+      state.networkProxyMode = state.enableTor
+        ? NetworkProxyMode.InternalTor
+        : NetworkProxyMode.None;
+      delete state.enableTor;
+    }
+    return state;
+  },
+};
+
 // Configure how settings are stored and retrieved using Tauri's storage
 const settingsPersistConfig = {
   key: "settings",
   storage: createTauriStorage(),
+  version: 2,
+  migrate: createMigrate(settingsMigrations as any, { debug: false }),
 };
 
 // Persist conversations across application restarts
