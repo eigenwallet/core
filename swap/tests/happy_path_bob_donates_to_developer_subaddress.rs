@@ -19,7 +19,7 @@ async fn happy_path_bob_donates_to_developer_subaddress() {
             .await
             .main_address()
             .await?;
-        
+
         // Use a subaddress (account 0, index 2) to exercise the additional tx
         // key logic — mirrors the Alice tip subaddress variant.
         let bob_donation_address = ctx

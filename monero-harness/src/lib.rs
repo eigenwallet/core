@@ -572,10 +572,7 @@ impl MoneroWallet {
             .context("Failed to perform sweep")
     }
 
-    pub async fn transfer_multi(
-        &self,
-        destinations: &[(MoneroAddress, u64)],
-    ) -> Result<TxReceipt> {
+    pub async fn transfer_multi(&self, destinations: &[(MoneroAddress, u64)]) -> Result<TxReceipt> {
         tracing::info!(
             "`{}` transferring to {} destinations",
             self.name,

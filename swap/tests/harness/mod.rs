@@ -977,13 +977,9 @@ impl TestContext {
         tolerance_pico: u64,
     ) {
         let lower_bound = monero::Amount::from_pico(expected_pico.saturating_sub(tolerance_pico));
-        assert_eventual_balance(
-            &*wallet.main_wallet().await,
-            Ordering::Greater,
-            lower_bound,
-        )
-        .await
-        .unwrap();
+        assert_eventual_balance(&*wallet.main_wallet().await, Ordering::Greater, lower_bound)
+            .await
+            .unwrap();
     }
 
     pub async fn assert_alice_punished(&self, state: AliceState) {
