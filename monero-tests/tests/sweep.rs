@@ -10,8 +10,7 @@ use monero_wallet_ng::util::public_key;
 use rand::rngs::OsRng;
 use zeroize::Zeroizing;
 
-/// Sample a (private spend, private view, address) triple for a fresh legacy
-/// mainnet address. Regtest accepts mainnet prefixes — matching `monero-harness`.
+/// Random view pair for a legacy mainnet address
 fn random_view_pair() -> (Zeroizing<Scalar>, Zeroizing<Scalar>, MoneroAddress) {
     let spend = Zeroizing::new(Scalar::random(&mut OsRng));
     let view = Zeroizing::new(Scalar::random(&mut OsRng));
@@ -37,10 +36,10 @@ async fn sweep_moves_largest_output_to_destination() -> anyhow::Result<()> {
     let destination = monero.wallet("destination")?;
     let dest_address = destination.address().await?;
 
-    // Source wallet exists only as keys — we hand them directly to `sweep_tx_to`.
+    // Source wallet exists only as keys, we hand them directly to `sweep_tx_to`.
     let (source_spend, source_view, source_address) = random_view_pair();
 
-    // Fund the source address and mine past the 10-confirmation RingCT unlock.
+    // Fund the source address and mine past the 10-confirmation RingCT unlock
     let funding_amount: u64 = 1_000_000_000_000; // 1 XMR
     let receipt = miner.transfer(&source_address, funding_amount).await?;
     monero.monerod().generate_blocks(15, &miner_address).await?;

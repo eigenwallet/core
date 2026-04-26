@@ -89,15 +89,6 @@ pub enum SweepError {
     Interface(#[from] monero_interface::InterfaceError),
 }
 
-/// The outcome of a successful sweep: the published transaction and its hash.
-#[derive(Debug, Clone)]
-pub struct SweepResult {
-    /// The 32-byte hash of the published transaction.
-    pub tx_hash: [u8; 32],
-    /// The signed transaction that was published.
-    pub tx: Transaction<NotPruned>,
-}
-
 /// Convenience wrapper around [`sweep_tx_to`] for the single-destination case.
 ///
 /// Equivalent to `sweep_tx_to(..., vec![(destination, 1.0)])`.
@@ -107,7 +98,7 @@ pub async fn sweep_tx_to_single<P>(
     private_view_key: Zeroizing<Scalar>,
     tx_id: [u8; 32],
     destination: MoneroAddress,
-) -> Result<SweepResult, SweepError>
+) -> Result<Transaction<NotPruned>, SweepError>
 where
     P: ProvidesScannableBlocks
         + ProvidesBlockchainMeta
@@ -139,7 +130,7 @@ pub async fn sweep_tx_to<P>(
     private_view_key: Zeroizing<Scalar>,
     tx_id: [u8; 32],
     destinations: Vec<(MoneroAddress, f64)>,
-) -> Result<SweepResult, SweepError>
+) -> Result<Transaction<NotPruned>, SweepError>
 where
     P: ProvidesScannableBlocks
         + ProvidesBlockchainMeta
@@ -214,13 +205,9 @@ where
         outgoing_view_key,
         &private_spend_key,
     )?;
-    let tx_hash = signed.hash();
     provider.publish_transaction(&signed).await?;
 
-    Ok(SweepResult {
-        tx_hash,
-        tx: signed,
-    })
+    Ok(signed)
 }
 
 /// Build and sign a sweep transaction that spends `input` across `destinations`.

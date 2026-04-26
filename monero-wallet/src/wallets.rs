@@ -26,15 +26,6 @@ const POLL_INTERVAL: Duration = Duration::from_secs(10);
 
 pub type TauriHandle = Arc<dyn MoneroTauriHandle>;
 
-/// The outcome of a successful sweep: the published transaction and its hash.
-#[derive(Debug, Clone)]
-pub struct SweepResult {
-    /// The hash of the published transaction.
-    pub tx_hash: TxHash,
-    /// The signed transaction that was published.
-    pub tx: Transaction<NotPruned>,
-}
-
 /// Entrance point to the Monero blockchain.
 /// You can use this struct to open specific wallets and monitor the blockchain.
 pub struct Wallets {
@@ -329,14 +320,14 @@ impl Wallets {
         spend_key: monero_oxide_ext::PrivateKey,
         view_key: PrivateViewKey,
         destinations: Vec<(monero_address::MoneroAddress, f64)>,
-    ) -> Result<SweepResult> {
+    ) -> Result<Transaction<NotPruned>> {
         let rpc_client = self.rpc_client().await;
         let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
 
         let spend_scalar = Zeroizing::new(spend_key.scalar);
         let view_scalar = Zeroizing::new(view_key.0.scalar);
 
-        let result = monero_wallet_ng::sweep::sweep_tx_to(
+        monero_wallet_ng::sweep::sweep_tx_to(
             rpc_client,
             spend_scalar,
             view_scalar,
@@ -344,12 +335,7 @@ impl Wallets {
             destinations,
         )
         .await
-        .context("Failed to sweep lock output to destinations")?;
-
-        Ok(SweepResult {
-            tx_hash: TxHash(hex::encode(result.tx_hash)),
-            tx: result.tx,
-        })
+        .context("Failed to sweep lock output to destinations")
     }
 
     /// Convenience wrapper around [`Self::sweep_to`] for the single-destination case.
@@ -359,14 +345,14 @@ impl Wallets {
         spend_key: monero_oxide_ext::PrivateKey,
         view_key: PrivateViewKey,
         destination: monero_address::MoneroAddress,
-    ) -> Result<SweepResult> {
+    ) -> Result<Transaction<NotPruned>> {
         let rpc_client = self.rpc_client().await;
         let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
 
         let spend_scalar = Zeroizing::new(spend_key.scalar);
         let view_scalar = Zeroizing::new(view_key.0.scalar);
 
-        let result = monero_wallet_ng::sweep::sweep_tx_to_single(
+        monero_wallet_ng::sweep::sweep_tx_to_single(
             rpc_client,
             spend_scalar,
             view_scalar,
@@ -374,12 +360,7 @@ impl Wallets {
             destination,
         )
         .await
-        .context("Failed to sweep lock output to destination")?;
-
-        Ok(SweepResult {
-            tx_hash: TxHash(hex::encode(result.tx_hash)),
-            tx: result.tx,
-        })
+        .context("Failed to sweep lock output to destination")
     }
 
     /// Verify a transfer using the new monero-wallet-ng implementation.

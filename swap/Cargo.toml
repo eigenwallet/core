@@ -41,7 +41,6 @@ thiserror = { workspace = true }
 curve25519-dalek = { workspace = true, features = ["rand_core"] }
 data-encoding = { workspace = true }
 ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
-hex = { workspace = true }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 # Randomness
@@ -55,6 +54,7 @@ jsonrpsee = { workspace = true, features = ["server"] }
 moka = { version = "0.12", features = ["sync", "future"] }
 monero-address = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
+monero-oxide-wallet = { workspace = true }
 monero-rpc-pool = { path = "../monero-rpc-pool" }
 monero-seed = { git = "https://github.com/monero-oxide/monero-wallet-util.git", package = "monero-seed" }
 monero-sys = { path = "../monero-sys" }
