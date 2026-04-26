@@ -47,7 +47,6 @@ pub enum Bob {
     BtcRedeemed(bob::State5),
     XmrRedeemPublished {
         state: bob::State5,
-        xmr_redeem_tx_hash: monero::TxHash,
         #[serde(with = "swap_serde::monero::transaction")]
         xmr_redeem_tx: monero_oxide_wallet::transaction::Transaction,
     },
@@ -133,11 +132,9 @@ impl From<BobState> for Bob {
             BobState::BtcRedeemed(state5) => Bob::BtcRedeemed(state5),
             BobState::XmrRedeemPublished {
                 state,
-                xmr_redeem_tx_hash,
                 xmr_redeem_tx,
             } => Bob::XmrRedeemPublished {
                 state,
-                xmr_redeem_tx_hash,
                 xmr_redeem_tx,
             },
             BobState::WaitingForCancelTimelockExpiration {
@@ -233,11 +230,9 @@ impl From<Bob> for BobState {
             Bob::BtcRedeemed(state5) => BobState::BtcRedeemed(state5),
             Bob::XmrRedeemPublished {
                 state,
-                xmr_redeem_tx_hash,
                 xmr_redeem_tx,
             } => BobState::XmrRedeemPublished {
                 state,
-                xmr_redeem_tx_hash,
                 xmr_redeem_tx,
             },
             Bob::WaitingForCancelTimelockExpiration {

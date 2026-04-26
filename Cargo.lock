@@ -10606,6 +10606,7 @@ dependencies = [
  "ecdsa_fun",
  "electrum-pool",
  "futures",
+ "hex",
  "jsonrpsee",
  "libp2p",
  "libp2p-tor",

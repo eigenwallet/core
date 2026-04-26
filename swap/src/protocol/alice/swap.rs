@@ -739,15 +739,15 @@ where
 
             AliceState::XmrRefundTxPublished {
                 state3,
-                xmr_refund_tx_hash: sweep.tx_hash,
                 xmr_refund_tx: sweep.tx,
             }
         }
         AliceState::XmrRefundTxPublished {
             state3,
-            xmr_refund_tx_hash,
-            xmr_refund_tx: _,
+            xmr_refund_tx,
         } => {
+            let xmr_refund_tx_hash = monero::TxHash(hex::encode(xmr_refund_tx.hash()));
+
             monero_wallet
                 .wait_until_confirmed(
                     &xmr_refund_tx_hash,

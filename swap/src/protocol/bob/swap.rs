@@ -757,15 +757,15 @@ async fn next_state(
 
             BobState::XmrRedeemPublished {
                 state,
-                xmr_redeem_tx_hash: sweep.tx_hash,
                 xmr_redeem_tx: sweep.tx,
             }
         }
         BobState::XmrRedeemPublished {
             state,
-            xmr_redeem_tx_hash,
-            xmr_redeem_tx: _,
+            xmr_redeem_tx,
         } => {
+            let xmr_redeem_tx_hash = monero::TxHash(hex::encode(xmr_redeem_tx.hash()));
+
             event_emitter.emit_swap_progress_event(
                 swap_id,
                 TauriSwapProgressEvent::XmrRedeemPublished {

@@ -90,7 +90,6 @@ pub enum AliceState {
     /// been included in a block.
     XmrRefundTxPublished {
         state3: Box<State3>,
-        xmr_refund_tx_hash: monero::TxHash,
         /// The signed transaction blob we published.
         xmr_refund_tx: monero_oxide_wallet::transaction::Transaction,
     },

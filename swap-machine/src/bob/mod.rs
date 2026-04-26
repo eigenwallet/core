@@ -98,7 +98,6 @@ pub enum BobState {
     /// included in a block.
     XmrRedeemPublished {
         state: State5,
-        xmr_redeem_tx_hash: monero::TxHash,
         /// The signed transaction blob we published, serialized as wire-format hex.
         #[serde(with = "swap_serde::monero::transaction")]
         xmr_redeem_tx: monero_oxide_wallet::transaction::Transaction,
