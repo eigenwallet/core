@@ -370,9 +370,8 @@ fn burner_address(
 
 /// Distribute `total` piconero across `destinations` by ratio (ratios summing to ~1.0).
 ///
-/// Mirrors `FfiWallet::distribute` from `monero-sys`: the first n-1 destinations
-/// get `floor(total * ratio)` and the last destination absorbs the remainder so
-/// the sum of allocated amounts is exactly `total`.
+/// The first n-1 destinations get `floor(total * ratio)` and the last destination
+/// absorbs the remainder so the sum of allocated amounts is exactly `total`.
 fn distribute(
     total: u64,
     destinations: &[(MoneroAddress, f64)],

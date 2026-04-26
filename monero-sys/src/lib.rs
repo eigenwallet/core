@@ -27,7 +27,6 @@ use throttle::Throttle;
 use anyhow::{Context, Result, anyhow, bail};
 use backoff::{future::retry_notify, retry_notify as blocking_retry_notify};
 use cxx::{CxxString, CxxVector, UniquePtr, let_cxx_string};
-use monero_oxide_ext::Amount;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
@@ -582,47 +581,11 @@ impl WalletHandle {
         .map_err(|e| anyhow!("Failed to transfer funds after multiple attempts: {e:?}"))
     }
 
-    /// Sweep all funds to a set of addresses.
-    /// If the address is `None`, the address will be set to the primary address of the
-    /// wallet
-    pub async fn sweep_multi_destination(
-        &self,
-        // TOOD: Change this to &[(Address, f64)]
-        addresses: &[monero_address::MoneroAddress],
-        percentages: &[f64],
-    ) -> anyhow::Result<TxReceipt> {
-        tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping to multiple destinations");
-
-        let percentages = percentages.to_vec();
-        let addresses = addresses.to_vec();
-
-        retry_notify(backoff(None, None), || async {
-            let addresses = addresses.clone();
-            let percentages = percentages.clone();
-
-            self.call(move |wallet| wallet.sweep_multi(&addresses, &percentages))
-                .await
-                .map_err(backoff::Error::transient)
-        }, |error, duration: Duration| {
-            tracing::error!(error=?error, "Failed to sweep to multiple destinations, retrying in {} secs", duration.as_secs());
-        })
-        .await?
-        .map_err(|e| anyhow!("Failed to sweep to multiple destinations after multiple attempts: {e:?}"))
-    }
-
     /// Sweep all funds to an address.
     pub async fn sweep(
         &self,
         address: &monero_address::MoneroAddress,
     ) -> anyhow::Result<TxReceipt> {
-        // TODO: This could call sweep_multi_destination under the hood?
-        //  however this here calls a completely different function in wallet2 (create_transactions_all instead of create_transactions_2)
-        //  I think there is a case to be made that going full in with our custom implementation is better
-        //  because the code will behave the same regardless of sweep or sweep_multi
-        //
-        // Ideally sweep(address) should behave the same as sweep_multi_destination([address, 1.0])
-        // currently this cannot be guaranteed however because sweep_multi_destination uses our own logic
-        // while sweep(..) delegated to wallet2
         tracing::debug!(address=?address, "Sweeping to a single destination");
 
         let address = *address;
@@ -2389,63 +2352,6 @@ impl FfiWallet {
         result
     }
 
-    /// Sweep all funds to a set of addresses with a set of ratios.
-    fn sweep_multi(
-        &mut self,
-        // TOOD: Change this to &[(Address, f64)]
-        addresses: &[monero_address::MoneroAddress],
-        ratios: &[f64],
-    ) -> anyhow::Result<TxReceipt> {
-        self.ensure_synchronized_blocking()
-            .context("Cannot multi-sweep when wallet is not synchronized")?;
-
-        if addresses.is_empty() {
-            bail!("No addresses to sweep to");
-        }
-
-        if addresses.len() != ratios.len() {
-            bail!("Number of addresses and ratios must match");
-        }
-
-        tracing::info!(
-            "Sweeping funds to {} addresses, refreshing wallet first",
-            addresses.len()
-        );
-
-        let balance = self.unlocked_balance();
-
-        // Since we're using "subtract fee from outputs", we distribute the full balance
-        // The underlying transaction creation will subtract the fee proportionally from each output
-        let amounts = FfiWallet::distribute(balance, ratios)?;
-
-        tracing::debug!(%balance, num_outputs = addresses.len(), outputs=?amounts, "Distributing funds to outputs");
-
-        // Build destinations vector for create_pending_transaction_multi_dest
-        let destinations: Vec<(monero_address::MoneroAddress, monero_oxide_ext::Amount)> =
-            addresses
-                .iter()
-                .zip(amounts.iter())
-                .map(|(addr, &amount)| (addr.clone(), amount))
-                .collect();
-
-        // Create the multi-sweep pending transaction using the shared function
-        // Use subtract_fee_from_outputs=true since we're sweeping and want to distribute the full balance
-        let mut pending_tx = self
-            .create_pending_transaction_multi_dest(&destinations, true)
-            .context("Failed to create multi-sweep transaction")?;
-
-        // Publish the transaction
-        let result = self
-            .publish_pending_transaction(&mut pending_tx, &addresses)
-            .context("Failed to publish multi-sweep transaction");
-
-        // Dispose the pending transaction after we're done with it
-        // independent of whether the publish was successful or not
-        self.dispose_pending_transaction(pending_tx);
-
-        result
-    }
-
     /// Transfer specified amounts of monero to multiple addresses in a single transaction and return a receipt containing
     /// the transaction id, transaction key and current blockchain height. This can be used later
     /// to prove the transfer or to wait for confirmations.
@@ -2626,70 +2532,6 @@ impl FfiWallet {
 
         // We always return before reaching this
         unreachable!()
-    }
-
-    /// Distribute the funds in the wallet to a set of addresses with a set of percentages,
-    /// such that the complete balance is spent (takes fee into account).
-    ///
-    /// # Arguments
-    ///
-    /// * `balance` - The total balance to distribute
-    /// * `percentages` - A slice of percentages that must sum to 100.0
-    ///
-    /// # Returns
-    ///
-    /// A vector of Monero amounts proportional to the input percentages.
-    /// The last amount gets any remainder to ensure exact distribution.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Percentages don't sum to 1.0
-    /// - Balance is zero
-    /// - There are more outputs than piconeros in balance
-    fn distribute(
-        balance: monero_oxide_ext::Amount,
-        percentages: &[f64],
-    ) -> Result<Vec<monero_oxide_ext::Amount>> {
-        if percentages.is_empty() {
-            bail!("No ratios to distribute to");
-        }
-
-        const TOLERANCE: f64 = 1e-6;
-        let sum: f64 = percentages.iter().sum();
-        if (sum - 1.0).abs() > TOLERANCE {
-            bail!("Percentages must sum to 1 (actual sum: {})", sum);
-        }
-
-        // Handle the case where distributable amount is zero
-        if balance.as_pico() == 0 {
-            bail!("Zero balance to distribute");
-        }
-
-        // Check if the distributable amount is enough to cover at least one piconero per output
-        if balance.as_pico() < percentages.len() as u64 {
-            bail!("More outputs than piconeros in balance");
-        }
-
-        let mut amounts = Vec::new();
-        let mut total = Amount::ZERO;
-
-        // Distribute amounts according to ratios, except for the last one
-        for &percentage in &percentages[..percentages.len() - 1] {
-            let amount_pico = ((balance.as_pico() as f64) * percentage).floor() as u64;
-            let amount = Amount::from_pico(amount_pico);
-            amounts.push(amount);
-            total += amount;
-        }
-
-        // Give the remainder to the last recipient to ensure exact distribution
-        let remainder = balance.checked_sub(total).context(format!(
-            "Underflow when calculating rest (unexpected) - balance {}, distributed: {}",
-            balance, total,
-        ))?;
-        amounts.push(remainder);
-
-        Ok(amounts)
     }
 
     /// Get the transaction history.
@@ -3473,176 +3315,4 @@ fn backoff(
         .with_max_elapsed_time(Some(max_elapsed_time))
         .with_max_interval(max_interval)
         .build()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
-
-    #[quickcheck]
-    fn prop_distribute_sum_equals_balance(balance_pico: u64, percentages: Vec<f64>) -> TestResult {
-        // Filter out invalid inputs
-        if percentages.is_empty() || balance_pico == 0 {
-            return TestResult::discard();
-        }
-
-        // Ensure percentages are valid (non-negative and sum to approximately 1.0)
-        if percentages.iter().any(|&p| !(0.0..=1.0).contains(&p)) {
-            return TestResult::discard();
-        }
-
-        let percentage_sum: f64 = percentages.iter().sum();
-        if (percentage_sum - 1.0).abs() > 1e-6 {
-            return TestResult::discard();
-        }
-
-        let balance = monero_oxide_ext::Amount::from_pico(balance_pico);
-
-        let amounts = FfiWallet::distribute(balance, &percentages);
-
-        // Property: sum of distributed amounts should equal balance
-        let total_distributed: u64 = amounts.unwrap().iter().map(|a| a.as_pico()).sum();
-        let expected = balance.as_pico();
-
-        TestResult::from_bool(total_distributed == expected)
-    }
-
-    #[quickcheck]
-    fn prop_distribute_count_matches_percentages(
-        balance_pico: u64,
-        percentages: Vec<f64>,
-    ) -> TestResult {
-        if percentages.is_empty() || balance_pico == 0 {
-            return TestResult::discard();
-        }
-
-        if percentages.iter().any(|&p| !(0.0..=1.0).contains(&p)) {
-            return TestResult::discard();
-        }
-
-        let percentage_sum: f64 = percentages.iter().sum();
-        if (percentage_sum - 1.0).abs() > 1e-6 {
-            return TestResult::discard();
-        }
-
-        let balance = monero_oxide_ext::Amount::from_pico(balance_pico);
-
-        let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
-
-        // Property: number of amounts should equal number of percentages
-        TestResult::from_bool(amounts.len() == percentages.len())
-    }
-
-    #[quickcheck]
-    fn prop_distribute_respects_percentages(
-        balance_pico: u64,
-        percentages: Vec<f64>,
-    ) -> TestResult {
-        if percentages.len() < 2 || balance_pico == 0 {
-            return TestResult::discard();
-        }
-
-        if percentages.iter().any(|&p| !(0.0..=1.0).contains(&p)) {
-            return TestResult::discard();
-        }
-
-        let percentage_sum: f64 = percentages.iter().sum();
-        if (percentage_sum - 1.0).abs() > 1e-6 {
-            return TestResult::discard();
-        }
-
-        let balance = monero_oxide_ext::Amount::from_pico(balance_pico);
-
-        let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
-
-        // Property: percentages should be approximately respected (except for rounding)
-        // We check all but the last amount since the last one gets the remainder
-        let mut percentages_respected = true;
-        for i in 0..percentages.len() - 1 {
-            let expected_amount = ((balance.as_pico() as f64) * percentages[i]).floor() as u64;
-            if amounts[i].as_pico() != expected_amount {
-                percentages_respected = false;
-                break;
-            }
-        }
-
-        TestResult::from_bool(percentages_respected)
-    }
-
-    #[test]
-    fn test_distribute_empty_percentages() {
-        let balance = monero_oxide_ext::Amount::from_pico(1000);
-        let percentages: Vec<f64> = vec![];
-
-        let amounts = FfiWallet::distribute(balance, &percentages);
-        assert!(amounts.is_err());
-    }
-
-    #[test]
-    fn test_distribute_zero_balance() {
-        let balance = monero_oxide_ext::Amount::from_pico(0);
-        let percentages = vec![0.5, 0.5];
-
-        let amounts = FfiWallet::distribute(balance, &percentages);
-        assert!(amounts.is_err());
-    }
-
-    #[test]
-    fn test_distribute_insufficient_balance_for_outputs() {
-        let balance = monero_oxide_ext::Amount::from_pico(2);
-        let percentages = vec![0.3, 0.3, 0.4]; // 3 outputs but only 2 piconeros
-
-        let amounts = FfiWallet::distribute(balance, &percentages);
-        assert!(amounts.is_err());
-    }
-
-    #[test]
-    fn test_distribute_simple_case() {
-        let balance = monero_oxide_ext::Amount::from_pico(1000);
-        let percentages = vec![0.5, 0.3, 0.2];
-
-        let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
-
-        assert_eq!(amounts.len(), 3);
-
-        // Total should equal balance
-        let total: u64 = amounts.iter().map(|a| a.as_pico()).sum();
-        assert_eq!(total, 1000);
-
-        // First two amounts should respect percentages exactly
-        assert_eq!(amounts[0].as_pico(), 500); // 50% of 1000
-        assert_eq!(amounts[1].as_pico(), 300); // 30% of 1000
-        // Last amount gets remainder: 1000 - 500 - 300 = 200
-        assert_eq!(amounts[2].as_pico(), 200);
-    }
-
-    #[test]
-    fn test_distribute_small_donation() {
-        let balance = monero_oxide_ext::Amount::from_pico(1000);
-        let percentages = vec![0.999, 0.001];
-
-        let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
-
-        assert_eq!(amounts.len(), 2);
-
-        // Total should equal balance
-        let total: u64 = amounts.iter().map(|a| a.as_pico()).sum();
-        assert_eq!(total, 1000);
-
-        // First amount should respect percentage exactly
-        assert_eq!(amounts[0].as_pico(), 999); // 99.9% of 1000 (floored)
-        // Last amount gets remainder: 1000 - 999 = 1
-        assert_eq!(amounts[1].as_pico(), 1);
-    }
-
-    #[test]
-    fn test_distribute_percentages_not_sum_to_1() {
-        let balance = monero_oxide_ext::Amount::from_pico(1000);
-        let percentages = vec![0.5, 0.3]; // Only sums to 0.8
-
-        let amounts = FfiWallet::distribute(balance, &percentages);
-        assert!(amounts.is_err());
-    }
 }
