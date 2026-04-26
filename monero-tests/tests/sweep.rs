@@ -66,8 +66,8 @@ async fn sweep_moves_largest_output_to_destination() -> anyhow::Result<()> {
     destination.refresh().await?;
     let dest_balance = destination.balance().await?;
 
-    // Assert we receive the full amount within a loose fee envelope.
-    let max_fee: u64 = 100_000_000_000; // 0.1 XMR — generous upper bound on regtest fees
+    // Assert we receive the full amount within a fee envelope.
+    let max_fee: u64 = 10_000_000_000; // 0.01 XMR
     assert!(
         dest_balance > funding_amount - max_fee && dest_balance <= funding_amount,
         "destination balance {} outside expected range (funded {})",
@@ -132,8 +132,8 @@ async fn sweep_splits_output_across_multiple_destinations() -> anyhow::Result<()
     let balance_b = dest_b.balance().await?;
 
     // Each destination should receive approximately its ratio of `funding_amount`.
-    // We allow a loose tolerance to absorb regtest fees and distribute() rounding.
-    let tolerance: u64 = 100_000_000_000; // 0.1 XMR
+    // We allow tolerance to absorb regtest fees and distribute() rounding.
+    let tolerance: u64 = 10_000_000_000; // 0.01 XMR
     let expected_a = (funding_amount as f64 * ratio_a) as u64;
     let expected_b = (funding_amount as f64 * ratio_b) as u64;
 

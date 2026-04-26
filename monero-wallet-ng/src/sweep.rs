@@ -381,7 +381,7 @@ fn distribute(
     }
 
     // Assert that the ratios sum to 1.0
-    const RATIO_SUM_TOLERANCE: f64 = 1e-6;
+    const RATIO_SUM_TOLERANCE: f64 = 1e-12;
     let sum: f64 = destinations.iter().map(|(_, r)| *r).sum();
     if (sum - 1.0).abs() > RATIO_SUM_TOLERANCE {
         return Err(DestinationsError::RatiosDontSumToOne { sum });
@@ -449,6 +449,20 @@ mod tests {
     }
 
     #[test]
+    fn ratio_sum_tolerance_is_tight() {
+        let (a, b) = (addr(0), addr(1));
+        let err = distribute(1_000, &[(a, 0.5), (b, 0.5 - 1e-11)]).unwrap_err();
+        assert!(matches!(err, DestinationsError::RatiosDontSumToOne { .. }));
+    }
+
+    #[test]
+    fn ratio_sum_allows_floating_point_rounding_noise() {
+        let (a, b, c) = (addr(0), addr(1), addr(2));
+        let out = distribute(1_000, &[(a, 0.1), (b, 0.2), (c, 0.7)]).unwrap();
+        assert_eq!(out, vec![(a, 100), (b, 200), (c, 700)]);
+    }
+
+    #[test]
     fn empty_destinations_rejected() {
         let err = distribute(1_000, &[]).unwrap_err();
         assert!(matches!(err, DestinationsError::Empty));
@@ -477,5 +491,21 @@ mod tests {
         let (a, b, c) = (addr(0), addr(1), addr(2));
         let out = distribute(10, &[(a, third), (b, third), (c, third)]).unwrap();
         assert_eq!(out, vec![(a, 3), (b, 3), (c, 4)]);
+    }
+
+    #[test]
+    fn tiny_total_preserves_destination_count_and_total() {
+        let (a, b, c) = (addr(0), addr(1), addr(2));
+        let out = distribute(1, &[(a, 0.5), (b, 0.25), (c, 0.25)]).unwrap();
+        assert_eq!(out, vec![(a, 0), (b, 0), (c, 1)]);
+        assert_eq!(out.iter().map(|(_, amount)| amount).sum::<u64>(), 1);
+    }
+
+    #[test]
+    fn low_ratio_last_destination_can_receive_remainder() {
+        let (a, b, c) = (addr(0), addr(1), addr(2));
+        let out = distribute(101, &[(a, 0.5), (b, 0.49), (c, 0.01)]).unwrap();
+        assert_eq!(out, vec![(a, 50), (b, 49), (c, 2)]);
+        assert_eq!(out.iter().map(|(_, amount)| amount).sum::<u64>(), 101);
     }
 }
