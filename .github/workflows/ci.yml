@@ -200,6 +200,8 @@ jobs:
             test_name: alice_and_bob_refund_using_cancel_and_refund_command_partial_refund
           - package: swap
             test_name: alice_and_bob_refund_using_cancel_and_refund_command_partial_refund_withheld
+          - package: swap
+            test_name: bob_refunds_when_xmr_amount_is_not_exact
           - package: monero-tests
             test_name: reserve_proof
           - package: monero-tests
