@@ -580,6 +580,7 @@ namespace Monero
 #include "easylogging++.h"
 #include "bridge.h"
 #include "monero-sys/src/bridge.rs.h"
+#include <mutex>
     
 
 /**
@@ -590,7 +591,9 @@ namespace monero_rust_log
 {
     // static variable to make sure we don't install twice.
     bool installed = false;
+    std::size_t active_users = 0;
     std::string span_name;
+    std::mutex callback_mutex;
 
     /**
      * A dispatch callback that forwards all log messages to Rust.
@@ -600,8 +603,14 @@ namespace monero_rust_log
     protected:
         void handle(const el::LogDispatchData *data) noexcept override
         {
-            if (!installed)
-                return;
+            std::string current_span_name;
+            {
+                std::lock_guard<std::mutex> lock(callback_mutex);
+                if (!installed)
+                    return;
+
+                current_span_name = span_name;
+            }
 
             // Get the log message.
             auto *m = data->logMessage();
@@ -634,7 +643,7 @@ namespace monero_rust_log
 
             // Call the rust function to forward the log message.
             monero_rust_log::forward_cpp_log(
-                span_name.c_str(),
+                current_span_name.c_str(),
                 level,
                 m->file().length() > 0 ? m->file() : "",
                 m->line(),
@@ -649,10 +658,16 @@ namespace monero_rust_log
      */
     inline void install_log_callback(const std::string &name)
     {
-        if (installed)
-            return;
-        installed = true;
-        span_name = std::string(name);
+        {
+            std::lock_guard<std::mutex> lock(callback_mutex);
+
+            active_users++;
+
+            if (installed)
+                return;
+
+            span_name = std::string(name);
+        }
 
         // Pass all log messages to the RustDispatch callback above.
         el::Helpers::installLogDispatchCallback<RustDispatch>("rust-forward");
@@ -677,6 +692,11 @@ namespace monero_rust_log
         perfConf.set(el::Level::Global, el::ConfigurationType::Enabled, "false");
         el::Logger *perfLogger = el::Loggers::getLogger("PERF");
         perfLogger->configure(perfConf);
+
+        {
+            std::lock_guard<std::mutex> lock(callback_mutex);
+            installed = true;
+        }
     }
 
     /**
@@ -684,10 +704,21 @@ namespace monero_rust_log
      */
     inline void uninstall_log_callback()
     {
+        {
+            std::lock_guard<std::mutex> lock(callback_mutex);
+
+            if (active_users == 0)
+                return;
+
+            active_users--;
+            if (active_users > 0)
+                return;
+
+            installed = false;
+        }
+
         el::Helpers::uninstallLogDispatchCallback<RustDispatch>("rust-forward");
         el::Loggers::flushAll();
-
-        installed = false;
     }
 } // namespace
 
