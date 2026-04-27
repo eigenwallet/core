@@ -13,7 +13,7 @@ use crate::monero::MoneroAddressPool;
 use monero_oxide_wallet::transaction::{NotPruned, Transaction};
 
 pub(super) trait XmrRedeemable {
-    async fn redeem_xmr(
+    async fn construct_xmr_redeem_transaction(
         self,
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
@@ -22,7 +22,7 @@ pub(super) trait XmrRedeemable {
 }
 
 pub(super) trait InfallibleXmrRedeemable {
-    async fn infallible_redeem_xmr(
+    async fn infallible_construct_xmr_redeem_transaction(
         &self,
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
@@ -31,7 +31,7 @@ pub(super) trait InfallibleXmrRedeemable {
 }
 
 impl XmrRedeemable for State5 {
-    async fn redeem_xmr(
+    async fn construct_xmr_redeem_transaction(
         self: State5,
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
@@ -39,7 +39,7 @@ impl XmrRedeemable for State5 {
     ) -> Result<Transaction<NotPruned>> {
         let (spend_key, view_key) = self.xmr_keys();
 
-        tracing::info!(%swap_id, "Redeeming Monero");
+        tracing::info!(%swap_id, "Constructing Monero redeem transaction");
 
         let main_address = monero_wallet.main_wallet().await.main_address().await?;
         let addresses = monero_receive_pool.fill_empty_addresses(main_address);
@@ -53,23 +53,23 @@ impl XmrRedeemable for State5 {
         );
 
         let tx = monero_wallet
-            .sweep_to(
+            .construct_sweep_to(
                 &self.lock_transfer_proof.tx_hash(),
                 spend_key,
                 view_key,
                 destinations,
             )
             .await
-            .context("Failed to redeem Monero")?;
+            .context("Failed to construct Monero redeem transaction")?;
 
-        tracing::info!(%swap_id, tx_hash = %monero::TxHash::from_tx(&tx), "Redeemed Monero");
+        tracing::info!(%swap_id, tx_hash = %monero::TxHash::from_tx(&tx), "Constructed Monero redeem transaction");
 
         Ok(tx)
     }
 }
 
 impl InfallibleXmrRedeemable for State5 {
-    async fn infallible_redeem_xmr(
+    async fn infallible_construct_xmr_redeem_transaction(
         &self,
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
@@ -86,7 +86,11 @@ impl InfallibleXmrRedeemable for State5 {
 
                 async move {
                     state
-                        .redeem_xmr(monero_wallet, swap_id, monero_receive_pool)
+                        .construct_xmr_redeem_transaction(
+                            monero_wallet,
+                            swap_id,
+                            monero_receive_pool,
+                        )
                         .await
                         .map_err(backoff::Error::transient)
                 }

@@ -1,8 +1,9 @@
-//! End-to-end integration test for `monero_wallet_ng::sweep::sweep_tx_to`.
+//! End-to-end integration test for `monero_wallet_ng::sweep::construct_sweep_tx_to`.
 
 use std::time::Duration;
 
 use monero_harness::Cli;
+use monero_interface::PublishTransaction;
 use monero_oxide_wallet::address::{AddressType, MoneroAddress, Network};
 use monero_oxide_wallet::ed25519::Scalar;
 use monero_wallet_ng::sweep;
@@ -36,7 +37,7 @@ async fn sweep_moves_largest_output_to_destination() -> anyhow::Result<()> {
     let destination = monero.wallet("destination")?;
     let dest_address = destination.address().await?;
 
-    // Source wallet exists only as keys, we hand them directly to `sweep_tx_to`.
+    // Source wallet exists only as keys; we hand them directly to the sweep API.
     let (source_spend, source_view, source_address) = random_view_pair();
 
     // Fund the source address and mine past the 10-confirmation RingCT unlock
@@ -50,14 +51,15 @@ async fn sweep_moves_largest_output_to_destination() -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("txid must be 32 bytes"))?;
 
     let daemon = monero.monerod().client().clone();
-    sweep::sweep_tx_to(
-        daemon,
+    let signed = sweep::construct_sweep_tx_to(
+        daemon.clone(),
         source_spend,
         source_view,
         funding_txid,
         vec![(dest_address, 1.0)],
     )
     .await?;
+    daemon.publish_transaction(&signed).await?;
 
     monero.monerod().generate_blocks(15, &miner_address).await?;
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -113,14 +115,15 @@ async fn sweep_splits_output_across_multiple_destinations() -> anyhow::Result<()
     let ratio_b = 0.3;
 
     let daemon = monero.monerod().client().clone();
-    sweep::sweep_tx_to(
-        daemon,
+    let signed = sweep::construct_sweep_tx_to(
+        daemon.clone(),
         source_spend,
         source_view,
         funding_txid,
         vec![(dest_a_address, ratio_a), (dest_b_address, ratio_b)],
     )
     .await?;
+    daemon.publish_transaction(&signed).await?;
 
     monero.monerod().generate_blocks(15, &miner_address).await?;
     tokio::time::sleep(Duration::from_secs(1)).await;

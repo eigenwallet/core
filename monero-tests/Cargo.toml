@@ -7,6 +7,7 @@ edition = "2024"
 monero-address = { workspace = true }
 monero-daemon-rpc = { workspace = true }
 monero-harness = { path = "../monero-harness" }
+monero-interface = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 monero-oxide-wallet = { workspace = true }
 monero-simple-request-rpc = { workspace = true }

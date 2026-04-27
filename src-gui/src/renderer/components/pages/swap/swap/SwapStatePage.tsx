@@ -23,7 +23,8 @@ import XmrRedeemedPage from "./done/XmrRedeemedPage";
 import ProcessExitedPage from "./exited/ProcessExitedPage";
 import BitcoinCancelledPage from "./in_progress/BitcoinCancelledPage";
 import BitcoinLockTxInMempoolPage from "./in_progress/BitcoinLockTxInMempoolPage";
-import RedeemingMoneroPage from "./in_progress/RedeemingMoneroPage";
+import ConstructingMoneroRedeemPage from "./in_progress/ConstructingMoneroRedeemPage";
+import PublishingMoneroRedeemPage from "./in_progress/PublishingMoneroRedeemPage";
 import XmrRedeemPublishedPage from "./in_progress/XmrRedeemPublishedPage";
 import CancelTimelockExpiredPage from "./in_progress/CancelTimelockExpiredPage";
 import EncryptedSignatureSentPage from "./in_progress/EncryptedSignatureSentPage";
@@ -91,8 +92,10 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       return <InflightEncSigPage />;
     case "EncryptedSignatureSent":
       return <EncryptedSignatureSentPage />;
-    case "RedeemingMonero":
-      return <RedeemingMoneroPage />;
+    case "ConstructingMoneroRedeem":
+      return <ConstructingMoneroRedeemPage />;
+    case "PublishingMoneroRedeem":
+      return <PublishingMoneroRedeemPage />;
     case "XmrRedeemPublished":
       if (state.curr.type === "XmrRedeemPublished") {
         return <XmrRedeemPublishedPage {...state.curr.content} />;

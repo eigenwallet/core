@@ -86,6 +86,13 @@ pub enum AliceState {
         spend_key: monero::PrivateKey,
         state3: Box<State3>,
     },
+    /// We have constructed and signed the Monero refund transaction but have
+    /// not yet published it.
+    XmrRefundTxConstructed {
+        state3: Box<State3>,
+        /// The signed transaction blob to publish.
+        xmr_refund_tx: monero_oxide_wallet::transaction::Transaction,
+    },
     /// We have published the Monero refund transaction but it has not yet
     /// been included in a block.
     XmrRefundTxPublished {
@@ -192,6 +199,9 @@ impl fmt::Display for AliceState {
             AliceState::BtcPunished { .. } => write!(f, "btc is punished"),
             AliceState::SafelyAborted => write!(f, "safely aborted"),
             AliceState::BtcPunishable { .. } => write!(f, "btc is punishable"),
+            AliceState::XmrRefundTxConstructed { .. } => {
+                write!(f, "xmr refund tx is constructed")
+            }
             AliceState::XmrRefundTxPublished { .. } => {
                 write!(f, "xmr refund tx is published")
             }

@@ -6,6 +6,7 @@ use crate::protocol::alice::swap::XmrRefundable;
 use anyhow::{Context, Result, bail};
 use bitcoin_wallet::BitcoinWallet;
 use libp2p::PeerId;
+use monero_interface::PublishTransaction;
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Duration;
@@ -60,6 +61,7 @@ pub async fn refund(
         // Alice already in final state
         AliceState::BtcRedeemTransactionPublished { .. }
         | AliceState::BtcRedeemed
+        | AliceState::XmrRefundTxConstructed { .. }
         | AliceState::XmrRefundTxPublished { .. }
         | AliceState::XmrRefunded { .. }
         | AliceState::BtcWithholdPublished { .. }
@@ -86,14 +88,22 @@ pub async fn refund(
     retry(
         "Refund Monero",
         || async {
-            state3
-                .refund_xmr(
+            let xmr_refund_tx = state3
+                .construct_xmr_refund_transaction(
                     monero_wallet.clone(),
                     swap_id,
                     spend_key,
                     transfer_proof.clone(),
                 )
                 .await
+                .map_err(backoff::Error::transient)?;
+
+            monero_wallet
+                .rpc_client()
+                .await
+                .publish_transaction(&xmr_refund_tx)
+                .await
+                .context("Failed to publish Monero refund transaction")
                 .map_err(backoff::Error::transient)
         },
         None,

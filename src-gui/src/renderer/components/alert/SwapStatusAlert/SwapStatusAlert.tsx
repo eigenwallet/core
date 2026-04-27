@@ -253,9 +253,11 @@ export function StateAlert({
 
   switch (swap.state_name) {
     // These states are safe — the other party has redeemed the Bitcoin,
-    // so the swap cannot be punished anymore. `XmrRedeemPublished` is
-    // past that point (the Monero redeem tx is already in the mempool).
+    // so the swap cannot be punished anymore. `XmrRedeemConstructed` and
+    // `XmrRedeemPublished` are past that point (the Monero redeem tx is
+    // either built locally or already in the mempool).
     case BobStateName.BtcRedeemed:
+    case BobStateName.XmrRedeemConstructed:
     case BobStateName.XmrRedeemPublished:
       return <BitcoinRedeemedStateAlert swap={swap} />;
 

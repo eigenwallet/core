@@ -15,6 +15,7 @@ use crate::protocol::bob::*;
 use crate::protocol::{Database, bob};
 use anyhow::{Context as AnyContext, Result};
 use bitcoin_wallet::Watchable;
+use monero_interface::PublishTransaction;
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::{
@@ -38,6 +39,7 @@ pub fn has_already_processed_transfer_proof(state: &BobState) -> bool {
         |BobState::XmrLockTransactionSeen { .. }| BobState::XmrLocked(..)
             | BobState::EncSigSent(..)
             | BobState::BtcRedeemed(..)
+            | BobState::XmrRedeemConstructed { .. }
             | BobState::XmrRedeemPublished { .. }
             | BobState::XmrRedeemed { .. }
     )
@@ -748,12 +750,51 @@ async fn next_state(
                 .await
                 .context("Failed to wait for Monero lock transaction to be confirmed")?;
 
-            event_emitter
-                .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::RedeemingMonero);
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::ConstructingMoneroRedeem,
+            );
 
             let xmr_redeem_tx = state
-                .infallible_redeem_xmr(&*monero_wallet, swap_id, monero_receive_pool.clone())
+                .infallible_construct_xmr_redeem_transaction(
+                    &*monero_wallet,
+                    swap_id,
+                    monero_receive_pool.clone(),
+                )
                 .await;
+
+            BobState::XmrRedeemConstructed {
+                state,
+                xmr_redeem_tx,
+            }
+        }
+        BobState::XmrRedeemConstructed {
+            state,
+            xmr_redeem_tx,
+        } => {
+            let xmr_redeem_tx_hash = monero::TxHash::from_tx(&xmr_redeem_tx);
+
+            event_emitter
+                .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::PublishingMoneroRedeem);
+
+            retry(
+                "Publishing Monero redeem transaction",
+                || async {
+                    monero_wallet
+                        .rpc_client()
+                        .await
+                        .publish_transaction(&xmr_redeem_tx)
+                        .await
+                        .context("Failed to publish Monero redeem transaction")
+                        .map_err(backoff::Error::transient)
+                },
+                None,
+                None,
+            )
+            .await
+            .context("Failed to publish Monero redeem transaction")?;
+
+            tracing::info!(%swap_id, %xmr_redeem_tx_hash, "Published Monero redeem transaction");
 
             BobState::XmrRedeemPublished {
                 state,
@@ -1254,11 +1295,25 @@ async fn next_state(
                     match retry(
                         "Redeeming Monero",
                         || async {
-                            state5
+                            let xmr_redeem_tx = state5
                                 .clone()
-                                .redeem_xmr(&monero_wallet, swap_id, monero_receive_pool.clone())
+                                .construct_xmr_redeem_transaction(
+                                    &monero_wallet,
+                                    swap_id,
+                                    monero_receive_pool.clone(),
+                                )
                                 .await
-                                .map_err(backoff::Error::transient)
+                                .map_err(backoff::Error::transient)?;
+
+                            monero_wallet
+                                .rpc_client()
+                                .await
+                                .publish_transaction(&xmr_redeem_tx)
+                                .await
+                                .context("Failed to publish Monero redeem transaction")
+                                .map_err(backoff::Error::transient)?;
+
+                            Ok(xmr_redeem_tx)
                         },
                         // TODO: Once we validate the key, make this infallible
                         Some(Duration::from_secs(5 * 60)),

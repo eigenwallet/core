@@ -1066,7 +1066,8 @@ pub enum TauriSwapProgressEvent {
     PreflightEncSig,
     InflightEncSig,
     EncryptedSignatureSent,
-    RedeemingMonero,
+    ConstructingMoneroRedeem,
+    PublishingMoneroRedeem,
     WaitingForXmrConfirmationsBeforeRedeem {
         #[typeshare(serialized_as = "string")]
         xmr_lock_txid: monero::TxHash,

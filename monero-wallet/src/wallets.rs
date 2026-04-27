@@ -304,8 +304,9 @@ impl Wallets {
         Ok(height as u64)
     }
 
-    /// Sweep the largest output of `lock_tx_hash` (viewable by the given
-    /// view-pair) across a set of `destinations` split by ratio.
+    /// Construct and sign a sweep transaction for the largest output of
+    /// `lock_tx_hash` (viewable by the given view-pair) across a set of
+    /// `destinations` split by ratio.
     ///
     /// This is the monero-wallet-ng-based replacement for the old monero-sys
     /// `sweep_multi_destination` flow: the caller hands over the keys of a
@@ -314,7 +315,7 @@ impl Wallets {
     /// and sweeps its single output across the destinations.
     ///
     /// `destinations` must be non-empty and its ratios must sum to 1.
-    pub async fn sweep_to(
+    pub async fn construct_sweep_to(
         &self,
         lock_tx_hash: &TxHash,
         spend_key: monero_oxide_ext::PrivateKey,
@@ -327,7 +328,7 @@ impl Wallets {
         let spend_scalar = Zeroizing::new(spend_key.scalar);
         let view_scalar = Zeroizing::new(view_key.0.scalar);
 
-        monero_wallet_ng::sweep::sweep_tx_to(
+        monero_wallet_ng::sweep::construct_sweep_tx_to(
             rpc_client,
             spend_scalar,
             view_scalar,
@@ -335,11 +336,11 @@ impl Wallets {
             destinations,
         )
         .await
-        .context("Failed to sweep lock output to destinations")
+        .context("Failed to construct sweep transaction to destinations")
     }
 
-    /// Convenience wrapper around [`Self::sweep_to`] for the single-destination case.
-    pub async fn sweep_to_single(
+    /// Convenience wrapper around [`Self::construct_sweep_to`] for the single-destination case.
+    pub async fn construct_sweep_to_single(
         &self,
         lock_tx_hash: &TxHash,
         spend_key: monero_oxide_ext::PrivateKey,
@@ -352,7 +353,7 @@ impl Wallets {
         let spend_scalar = Zeroizing::new(spend_key.scalar);
         let view_scalar = Zeroizing::new(view_key.0.scalar);
 
-        monero_wallet_ng::sweep::sweep_tx_to_single(
+        monero_wallet_ng::sweep::construct_sweep_tx_to_single(
             rpc_client,
             spend_scalar,
             view_scalar,
@@ -360,7 +361,7 @@ impl Wallets {
             destination,
         )
         .await
-        .context("Failed to sweep lock output to destination")
+        .context("Failed to construct sweep transaction to destination")
     }
 
     /// Verify a transfer using the new monero-wallet-ng implementation.

@@ -199,7 +199,8 @@ const happyPath: TauriSwapProgressEvent[] = [
   { type: "PreflightEncSig" },
   { type: "InflightEncSig" },
   { type: "EncryptedSignatureSent" },
-  { type: "RedeemingMonero" },
+  { type: "ConstructingMoneroRedeem" },
+  { type: "PublishingMoneroRedeem" },
   {
     type: "XmrRedeemPublished",
     content: {
@@ -221,7 +222,8 @@ const cooperativeRedeem: TauriSwapProgressEvent[] = [
   ...baseScenario,
   { type: "AttemptingCooperativeRedeem" },
   { type: "CooperativeRedeemAccepted" },
-  { type: "RedeemingMonero" },
+  { type: "ConstructingMoneroRedeem" },
+  { type: "PublishingMoneroRedeem" },
   {
     type: "XmrRedeemPublished",
     content: {

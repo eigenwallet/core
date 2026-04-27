@@ -41,6 +41,7 @@ pub async fn cancel(
 
         // Alice already in final state
         | AliceState::BtcRedeemed
+        | AliceState::XmrRefundTxConstructed { .. }
         | AliceState::XmrRefundTxPublished { .. }
         | AliceState::XmrRefunded { .. }
         | AliceState::BtcWithholdPublished { .. }

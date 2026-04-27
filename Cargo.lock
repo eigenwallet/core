@@ -6594,6 +6594,7 @@ dependencies = [
  "monero-address",
  "monero-daemon-rpc",
  "monero-harness",
+ "monero-interface",
  "monero-oxide-ext",
  "monero-simple-request-rpc",
  "monero-sys",

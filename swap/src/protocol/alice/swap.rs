@@ -11,6 +11,7 @@ use crate::protocol::alice::{AliceState, Swap, TipConfig};
 use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{Context, Result, bail};
 use bitcoin_wallet::BitcoinWallet;
+use monero_interface::PublishTransaction;
 use monero_oxide_wallet::transaction::{NotPruned, Transaction};
 use rust_decimal::Decimal;
 use swap_core::bitcoin::ExpiredTimelocks;
@@ -723,7 +724,7 @@ where
                 "Refund Monero",
                 || async {
                     state3
-                        .refund_xmr(
+                        .construct_xmr_refund_transaction(
                             monero_wallet.clone(),
                             swap_id,
                             spend_key,
@@ -737,6 +738,36 @@ where
             )
             .await
             .expect("We should never run out of retries while refunding Monero");
+
+            AliceState::XmrRefundTxConstructed {
+                state3,
+                xmr_refund_tx,
+            }
+        }
+        AliceState::XmrRefundTxConstructed {
+            state3,
+            xmr_refund_tx,
+        } => {
+            let xmr_refund_tx_hash = monero::TxHash::from_tx(&xmr_refund_tx);
+
+            retry(
+                "Publishing Monero refund transaction",
+                || async {
+                    monero_wallet
+                        .rpc_client()
+                        .await
+                        .publish_transaction(&xmr_refund_tx)
+                        .await
+                        .context("Failed to publish Monero refund transaction")
+                        .map_err(backoff::Error::transient)
+                },
+                None,
+                None,
+            )
+            .await
+            .context("Failed to publish Monero refund transaction")?;
+
+            tracing::info!(%swap_id, %xmr_refund_tx_hash, "Published Monero refund transaction");
 
             AliceState::XmrRefundTxPublished {
                 state3,
@@ -945,7 +976,7 @@ where
 
 #[allow(async_fn_in_trait)]
 pub trait XmrRefundable {
-    async fn refund_xmr(
+    async fn construct_xmr_refund_transaction(
         &self,
         monero_wallet: Arc<monero::Wallets>,
         swap_id: Uuid,
@@ -955,7 +986,7 @@ pub trait XmrRefundable {
 }
 
 impl XmrRefundable for State3 {
-    async fn refund_xmr(
+    async fn construct_xmr_refund_transaction(
         &self,
         monero_wallet: Arc<monero::Wallets>,
         swap_id: Uuid,
@@ -991,18 +1022,18 @@ impl XmrRefundable for State3 {
         tracing::debug!(%swap_id, %main_address, "Sweeping lock output to redeem address");
 
         let tx = monero_wallet
-            .sweep_to_single(&transfer_proof.tx_hash(), spend_key, view_key, main_address)
+            .construct_sweep_to_single(&transfer_proof.tx_hash(), spend_key, view_key, main_address)
             .await
-            .context("Failed to sweep Monero to redeem address")?;
+            .context("Failed to construct Monero refund transaction")?;
 
-        tracing::info!(%swap_id, tx_hash = %monero::TxHash::from_tx(&tx), "Refunded Monero");
+        tracing::info!(%swap_id, tx_hash = %monero::TxHash::from_tx(&tx), "Constructed Monero refund transaction");
 
         Ok(tx)
     }
 }
 
 impl XmrRefundable for Box<State3> {
-    async fn refund_xmr(
+    async fn construct_xmr_refund_transaction(
         &self,
         monero_wallet: Arc<monero::Wallets>,
         swap_id: Uuid,
@@ -1010,7 +1041,7 @@ impl XmrRefundable for Box<State3> {
         transfer_proof: TransferProof,
     ) -> Result<Transaction<NotPruned>> {
         (**self)
-            .refund_xmr(monero_wallet, swap_id, spend_key, transfer_proof)
+            .construct_xmr_refund_transaction(monero_wallet, swap_id, spend_key, transfer_proof)
             .await
     }
 }

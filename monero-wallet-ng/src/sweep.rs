@@ -9,7 +9,7 @@ use zeroize::Zeroizing;
 
 use monero_interface::{
     FeePriority, FeeRate, ProvidesBlockchainMeta, ProvidesDecoys, ProvidesFeeRates,
-    ProvidesScannableBlocks, PublishTransaction,
+    ProvidesScannableBlocks,
 };
 use monero_oxide::ed25519::Scalar;
 use monero_oxide::ringct::RctType;
@@ -50,11 +50,11 @@ pub enum BuildSweepError {
     Send(#[from] SendError),
 }
 
-/// An error while sweeping a transaction.
+/// An error while constructing a sweep transaction.
 ///
-/// Everything [`sweep_tx_to`] can fail with: build errors, transaction-status
-/// lookup failures, and the I/O, scanning, and publishing errors that come
-/// from interacting with the daemon.
+/// Everything [`construct_sweep_tx_to`] can fail with: build errors,
+/// transaction-status lookup failures, and the I/O and scanning errors
+/// that come from interacting with the daemon.
 #[derive(Debug, thiserror::Error)]
 pub enum SweepError {
     #[error(transparent)]
@@ -83,16 +83,14 @@ pub enum SweepError {
     Fee(#[from] monero_interface::FeeError),
     #[error("Decoy selection error: {0}")]
     Decoys(#[from] monero_interface::TransactionsError),
-    #[error("Publish error: {0}")]
-    Publish(#[from] monero_interface::PublishTransactionError),
     #[error("Interface error: {0}")]
     Interface(#[from] monero_interface::InterfaceError),
 }
 
-/// Convenience wrapper around [`sweep_tx_to`] for the single-destination case.
+/// Convenience wrapper around [`construct_sweep_tx_to`] for the single-destination case.
 ///
-/// Equivalent to `sweep_tx_to(..., vec![(destination, 1.0)])`.
-pub async fn sweep_tx_to_single<P>(
+/// Equivalent to `construct_sweep_tx_to(..., vec![(destination, 1.0)])`.
+pub async fn construct_sweep_tx_to_single<P>(
     provider: P,
     private_spend_key: Zeroizing<Scalar>,
     private_view_key: Zeroizing<Scalar>,
@@ -104,12 +102,11 @@ where
         + ProvidesBlockchainMeta
         + ProvidesDecoys
         + ProvidesFeeRates
-        + PublishTransaction
         + ProvidesTransactionStatus
         + Send
         + Sync,
 {
-    sweep_tx_to(
+    construct_sweep_tx_to(
         provider,
         private_spend_key,
         private_view_key,
@@ -119,12 +116,12 @@ where
     .await
 }
 
-/// Locate `tx_id` on-chain and sweep it largest by the private key spendable output across `destinations`.
+/// Locate `tx_id` on-chain and construct a signed sweep transaction.
 ///
 /// Looks up which block contains `tx_id` via the provider, scans that block
 /// for outputs belonging to `tx_id`, selects the largest output,
-/// and sweeps it across `destinations` split by ratio.
-pub async fn sweep_tx_to<P>(
+/// and constructs a transaction that sweeps it across `destinations` split by ratio.
+pub async fn construct_sweep_tx_to<P>(
     provider: P,
     private_spend_key: Zeroizing<Scalar>,
     private_view_key: Zeroizing<Scalar>,
@@ -136,7 +133,6 @@ where
         + ProvidesBlockchainMeta
         + ProvidesDecoys
         + ProvidesFeeRates
-        + PublishTransaction
         + ProvidesTransactionStatus
         + Send
         + Sync,
@@ -198,16 +194,14 @@ where
     let mut outgoing_view_key = Zeroizing::new([0u8; 32]);
     OsRng.fill_bytes(outgoing_view_key.as_mut());
 
-    let signed = build_sweep_transaction(
+    build_sweep_transaction(
         input,
         &destinations,
         fee_rate,
         outgoing_view_key,
         &private_spend_key,
-    )?;
-    provider.publish_transaction(&signed).await?;
-
-    Ok(signed)
+    )
+    .map_err(Into::into)
 }
 
 /// Build and sign a sweep transaction that spends `input` across `destinations`.

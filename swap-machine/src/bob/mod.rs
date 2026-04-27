@@ -94,6 +94,14 @@ pub enum BobState {
     BtcMercyPublished(State6),
     /// TxMercy has been confirmed. We received the burnt funds back.
     BtcMercyConfirmed(State6),
+    /// We have constructed and signed the Monero redeem transaction but have
+    /// not yet published it.
+    XmrRedeemConstructed {
+        state: State5,
+        /// The signed transaction blob to publish, serialized as wire-format hex.
+        #[serde(with = "swap_serde::monero::transaction")]
+        xmr_redeem_tx: monero_oxide_wallet::transaction::Transaction,
+    },
     /// We have published the Monero redeem transaction but it has not yet been
     /// included in a block.
     XmrRedeemPublished {
@@ -189,6 +197,7 @@ impl fmt::Display for BobState {
                 write!(f, "btc partial refund is published")
             }
             BobState::BtcRefunded(..) => write!(f, "btc is refunded"),
+            BobState::XmrRedeemConstructed { .. } => write!(f, "xmr redeem tx is constructed"),
             BobState::XmrRedeemPublished { .. } => write!(f, "xmr redeem tx is published"),
             BobState::XmrRedeemed { .. } => write!(f, "xmr is redeemed"),
             BobState::BtcPunished { .. } => write!(f, "btc is punished"),
@@ -268,6 +277,7 @@ impl BobState {
             BobState::BtcRefunded(_)
             | BobState::BtcEarlyRefunded { .. }
             | BobState::BtcRedeemed(_)
+            | BobState::XmrRedeemConstructed { .. }
             | BobState::XmrRedeemPublished { .. }
             | BobState::XmrRedeemed { .. } => None,
         })
