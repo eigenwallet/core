@@ -53,6 +53,7 @@ electrum-pool = { path = "../electrum-pool" }
 jsonrpsee = { workspace = true, features = ["server"] }
 moka = { version = "0.12", features = ["sync", "future"] }
 monero-address = { workspace = true }
+monero-interface = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 monero-oxide-wallet = { workspace = true }
 monero-rpc-pool = { path = "../monero-rpc-pool" }

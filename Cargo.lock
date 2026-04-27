@@ -10614,6 +10614,7 @@ dependencies = [
  "moka",
  "monero-address",
  "monero-harness",
+ "monero-interface",
  "monero-oxide-ext",
  "monero-rpc-pool",
  "monero-seed",
