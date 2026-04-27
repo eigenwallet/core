@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-04-27
+
 - ASB+CONTROLLER: `get-swaps` now includes the `btc_redeem_fee` per swap: the fee Alice paid (or will pay) for the Bitcoin redeem transaction.
 - GUI+ASB: New intermediate states around Monero redeem/refund. The signed transaction is now built and published as separate steps: `XmrRedeemConstructed` and `XmrRedeemPublished` (Bob/GUI), and `XmrRefundTxConstructed` and `XmrRefundTxPublished` (Alice/ASB). The GUI surfaces both phases — "constructing", then "publishing", then waiting for the first confirmation with the redeem txid shown.
 
@@ -920,7 +922,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.4.1...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.5.0...HEAD
+[4.5.0]: https://github.com/eigenwallet/core/compare/4.4.1...4.5.0
 [4.4.1]: https://github.com/eigenwallet/core/compare/4.4.0...4.4.1
 [4.4.0]: https://github.com/eigenwallet/core/compare/4.3.1...4.4.0
 [4.3.1]: https://github.com/eigenwallet/core/compare/4.3.0...4.3.1
