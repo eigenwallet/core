@@ -86,6 +86,47 @@ type AnyBox = Box<dyn Any + Send>;
 struct WalletManager {
     /// A wrapper around the raw C++ wallet manager pointer.
     inner: RawWalletManager,
+    _log_guard: LogCallbackGuard,
+}
+
+/// Refcounted guard for the process-wide C++ log callback.
+///
+/// `WalletManagerFactory` and the easylogging++ callback registry are global,
+/// so the callback must stay installed while any [`WalletManager`] exists and
+/// be uninstalled once the last one drops. If a new [`WalletManager`] is later
+/// constructed, the callback is re-installed; install/uninstall stay balanced.
+struct LogCallbackGuard;
+
+static LOG_CALLBACK_USERS: Mutex<usize> = Mutex::new(0);
+
+impl LogCallbackGuard {
+    fn acquire(span_name: &str) -> anyhow::Result<Self> {
+        let mut count = LOG_CALLBACK_USERS
+            .lock()
+            .expect("log callback mutex not poisoned");
+        if *count == 0 {
+            let_cxx_string!(span_name = span_name);
+            bridge::log::install_log_callback(&span_name)
+                .context("Failed to install log callback: FFI call failed with exception")?;
+        }
+        *count += 1;
+
+        Ok(Self)
+    }
+}
+
+impl Drop for LogCallbackGuard {
+    fn drop(&mut self) {
+        let mut count = LOG_CALLBACK_USERS
+            .lock()
+            .expect("log callback mutex not poisoned");
+        *count -= 1;
+        if *count == 0 {
+            if let Err(e) = bridge::log::uninstall_log_callback() {
+                tracing::error!(error=%e, "Failed to uninstall C++ log callback");
+            }
+        }
+    }
 }
 
 /// This is our own wrapper around a raw C++ wallet manager pointer.
@@ -1197,16 +1238,6 @@ impl Wallet {
         }
         // TODO: dispose of the manager
 
-        // Uninstall the log callback.
-        // We need to do this because easylogging++ may send logs after we end this thread, leading
-        // to a tracing panic.
-
-        if let Err(e) =
-            bridge::log::uninstall_log_callback().context("Error uninstalling log callback")
-        {
-            tracing::error!(error=%e, "Failed to uninstall C++ tracing log callback, continuing anyway");
-        }
-
         Ok(())
     }
 }
@@ -1219,16 +1250,14 @@ impl WalletManager {
     /// You can optionally pass a daemon with which the wallet manager and
     /// all wallets opened by the manager will connect.
     pub fn new(daemon: Daemon, span_name: &str) -> anyhow::Result<Self> {
-        // Install the log callback to route c++ logs to tracing.
-        let_cxx_string!(span_name = span_name);
-        bridge::log::install_log_callback(&span_name)
-            .context("Failed to install log callback: FFI call failed with exception")?;
+        let log_guard = LogCallbackGuard::acquire(span_name)?;
 
         let manager = ffi::getWalletManager()
             .context("Couldn't get wallet manager: FFi call failed with exception")?;
 
         let mut manager = Self {
             inner: RawWalletManager::new(manager),
+            _log_guard: log_guard,
         };
 
         manager
