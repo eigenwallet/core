@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - ASB+CONTROLLER: `get-swaps` now includes the `btc_redeem_fee` per swap: the fee Alice paid (or will pay) for the Bitcoin redeem transaction.
-- GUI+ASB: New intermediate state after the Monero redeem/refund transaction is published, before it gets its first confirmation — `XmrRedeemPublished` (Bob/GUI) and `XmrRefundTxPublished` (Alice/ASB). The GUI shows the redeem txid with a spinner while waiting.
+- GUI+ASB: New intermediate states around Monero redeem/refund. The signed transaction is now built and published as separate steps: `XmrRedeemConstructed` and `XmrRedeemPublished` (Bob/GUI), and `XmrRefundTxConstructed` and `XmrRefundTxPublished` (Alice/ASB). The GUI surfaces both phases — "constructing", then "publishing", then waiting for the first confirmation with the redeem txid shown.
 
 ## [4.4.1] - 2026-04-15
 
