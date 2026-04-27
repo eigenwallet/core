@@ -29,8 +29,6 @@ pub enum DestinationsError {
     Empty,
     #[error("Ratios must sum to 1 (got {sum})")]
     RatiosDontSumToOne { sum: f64 },
-    #[error("More destinations ({destinations}) than piconero to distribute ({total})")]
-    TooMany { total: u64, destinations: usize },
     #[error("Overflow while computing distribution")]
     Overflow,
 }
