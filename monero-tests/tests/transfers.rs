@@ -32,8 +32,12 @@ async fn monero_transfers() -> anyhow::Result<()> {
 
     tracing::info!("Sending money");
 
+    let amount = 1_000_000_000;
     let tx_receipt = miner_wallet
-        .sweep_multi(&[alice.address().await?, bob.address().await?], &[0.5, 0.5])
+        .transfer_multi(&[
+            (alice.address().await?, amount),
+            (bob.address().await?, amount),
+        ])
         .await?;
 
     assert_eq!(

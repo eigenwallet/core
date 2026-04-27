@@ -273,7 +273,7 @@ pub mod ffi {
             dest_address: &CxxString,
         ) -> Result<*mut PendingTransaction>;
 
-        /// Create a multi-sweep transaction.
+        /// Create a multi-destination transaction.
         fn createTransactionMultiDest(
             wallet: Pin<&mut Wallet>,
             dest_addresses: &CxxVector<CxxString>,

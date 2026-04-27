@@ -7,6 +7,7 @@ edition = "2024"
 monero-address = { workspace = true }
 monero-daemon-rpc = { workspace = true }
 monero-harness = { path = "../monero-harness" }
+monero-interface = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 monero-oxide-wallet = { workspace = true }
 monero-simple-request-rpc = { workspace = true }
@@ -15,7 +16,9 @@ monero-wallet-ng = { path = "../monero-wallet-ng" }
 testcontainers = { workspace = true }
 
 anyhow = { workspace = true }
+curve25519-dalek = { workspace = true }
 hex = { workspace = true }
+rand = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

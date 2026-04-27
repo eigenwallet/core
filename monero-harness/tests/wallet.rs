@@ -15,25 +15,17 @@ async fn fund_transfer_and_check_tx_key() {
 
     let fund_alice: u64 = 1_000_000_000_000;
     let fund_bob = 0;
-    let fund_candice = 0;
     let send_to_bob = 5_000_000_000;
 
     let tc = Cli::default();
     let (monero, _monerod_container, _wallet_containers) =
-        Monero::new(&tc, vec!["alice", "bob", "candice"])
-            .await
-            .unwrap();
+        Monero::new(&tc, vec!["alice", "bob"]).await.unwrap();
     let alice_wallet = monero.wallet("alice").unwrap();
     let bob_wallet = monero.wallet("bob").unwrap();
-    let candice_wallet = monero.wallet("candice").unwrap();
 
     monero.init_miner().await.unwrap();
     monero.init_wallet("alice", vec![fund_alice]).await.unwrap();
     monero.init_wallet("bob", vec![fund_bob]).await.unwrap();
-    monero
-        .init_wallet("candice", vec![fund_candice])
-        .await
-        .unwrap();
     monero.start_miner().await.unwrap();
 
     tracing::info!("Waiting for Alice to catch up");
@@ -74,41 +66,6 @@ async fn fund_transfer_and_check_tx_key() {
     wait_for_wallet_to_catch_up(bob_wallet, 0).await;
 
     assert_eq!(0, bob_wallet.balance().await.unwrap(), "Bob not swept");
-
-    alice_wallet
-        .sweep_multi(
-            &[
-                bob_wallet.address().await.unwrap(),
-                candice_wallet.address().await.unwrap(),
-            ],
-            &[99.9, 0.1],
-        )
-        .await
-        .unwrap();
-
-    monero.generate_blocks().await.unwrap();
-
-    wait_for_wallet_to_catch_up(alice_wallet, 0).await;
-
-    assert_eq!(0, alice_wallet.balance().await.unwrap(), "Alice not swept");
-
-    bob_wallet.refresh().await.unwrap();
-    candice_wallet.refresh().await.unwrap();
-
-    let bob_balance = bob_wallet.balance().await.unwrap();
-    let candice_balance = candice_wallet.balance().await.unwrap();
-
-    tracing::info!(
-        bob_balance = bob_balance,
-        candice_balance = candice_balance,
-        "Bob and Candice balances"
-    );
-
-    assert!(0 < bob_balance, "Bob not funded");
-    assert!(0 < candice_balance, "Candice not funded");
-
-    assert!(0 < bob_balance, "Bob not funded");
-    assert!(0 < candice_balance, "Candice not funded");
 }
 
 async fn wait_for_wallet_to_catch_up(wallet: &MoneroWalletRpc, expected_balance: u64) {

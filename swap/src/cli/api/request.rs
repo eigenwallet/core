@@ -1454,31 +1454,34 @@ pub async fn monero_recovery(
 
     let swap_state: BobState = db.get_state(swap_id).await?.try_into()?;
 
-    if let BobState::BtcRedeemed(state5) = swap_state {
-        let (spend_key, view_key) = state5.xmr_keys();
-        let restore_height = state5.monero_wallet_restore_blockheight.height;
-
-        let address = monero_address::MoneroAddress::new(
-            config.env_config.monero_network,
-            monero_address::AddressType::Legacy,
-            monero_oxide_ext::PublicKey::from_private_key(&spend_key).decompress(),
-            view_key.public().0.decompress(),
-        );
-
-        tracing::info!(restore_height=%restore_height, address=%address, spend_key=%spend_key, view_key=%view_key, "Monero recovery information");
-
-        Ok(json!({
-            "address": address.to_string(),
-            "spend_key": spend_key.to_string(),
-            "view_key": view_key.to_string(),
-            "restore_height": state5.monero_wallet_restore_blockheight.height,
-        }))
-    } else {
-        bail!(
-            "Cannot print monero recovery information in state {}, only possible for BtcRedeemed",
+    let state5 = match &swap_state {
+        BobState::BtcRedeemed(state5)
+        | BobState::XmrRedeemConstructed { state: state5, .. }
+        | BobState::XmrRedeemPublished { state: state5, .. } => state5,
+        _ => bail!(
+            "Cannot print monero recovery information in state {}, only possible once Bitcoin has been redeemed",
             swap_state
-        )
-    }
+        ),
+    };
+
+    let (spend_key, view_key) = state5.xmr_keys();
+    let restore_height = state5.monero_wallet_restore_blockheight.height;
+
+    let address = monero_address::MoneroAddress::new(
+        config.env_config.monero_network,
+        monero_address::AddressType::Legacy,
+        monero_oxide_ext::PublicKey::from_private_key(&spend_key).decompress(),
+        view_key.public().0.decompress(),
+    );
+
+    tracing::info!(restore_height=%restore_height, address=%address, spend_key=%spend_key, view_key=%view_key, "Monero recovery information");
+
+    Ok(json!({
+        "address": address.to_string(),
+        "spend_key": spend_key.to_string(),
+        "view_key": view_key.to_string(),
+        "restore_height": restore_height,
+    }))
 }
 
 #[tracing::instrument(fields(method = "get_current_swap"), skip(context))]

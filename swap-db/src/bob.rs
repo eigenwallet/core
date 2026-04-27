@@ -45,6 +45,16 @@ pub enum Bob {
         tx_lock_id: bitcoin::Txid,
     },
     BtcRedeemed(bob::State5),
+    XmrRedeemConstructed {
+        state: bob::State5,
+        #[serde(with = "swap_serde::monero::transaction")]
+        xmr_redeem_tx: monero_oxide_wallet::transaction::Transaction,
+    },
+    XmrRedeemPublished {
+        state: bob::State5,
+        #[serde(with = "swap_serde::monero::transaction")]
+        xmr_redeem_tx: monero_oxide_wallet::transaction::Transaction,
+    },
     WaitingForCancelTimelockExpiration {
         state: bob::State3,
         monero_wallet_restore_blockheight: BlockHeight,
@@ -125,6 +135,20 @@ impl From<BobState> for Bob {
             BobState::XmrLocked(state4) => Bob::XmrLocked { state4 },
             BobState::EncSigSent(state4) => Bob::EncSigSent { state4 },
             BobState::BtcRedeemed(state5) => Bob::BtcRedeemed(state5),
+            BobState::XmrRedeemConstructed {
+                state,
+                xmr_redeem_tx,
+            } => Bob::XmrRedeemConstructed {
+                state,
+                xmr_redeem_tx,
+            },
+            BobState::XmrRedeemPublished {
+                state,
+                xmr_redeem_tx,
+            } => Bob::XmrRedeemPublished {
+                state,
+                xmr_redeem_tx,
+            },
             BobState::WaitingForCancelTimelockExpiration {
                 state,
                 monero_wallet_restore_blockheight,
@@ -216,6 +240,20 @@ impl From<Bob> for BobState {
             Bob::XmrLocked { state4 } => BobState::XmrLocked(state4),
             Bob::EncSigSent { state4 } => BobState::EncSigSent(state4),
             Bob::BtcRedeemed(state5) => BobState::BtcRedeemed(state5),
+            Bob::XmrRedeemConstructed {
+                state,
+                xmr_redeem_tx,
+            } => BobState::XmrRedeemConstructed {
+                state,
+                xmr_redeem_tx,
+            },
+            Bob::XmrRedeemPublished {
+                state,
+                xmr_redeem_tx,
+            } => BobState::XmrRedeemPublished {
+                state,
+                xmr_redeem_tx,
+            },
             Bob::WaitingForCancelTimelockExpiration {
                 state,
                 monero_wallet_restore_blockheight,
@@ -275,6 +313,10 @@ impl fmt::Display for Bob {
                 f.write_str("Bitcoin partially refund published")
             }
             Bob::BtcRedeemed(_) => f.write_str("Monero redeemable"),
+            Bob::XmrRedeemConstructed { .. } => {
+                f.write_str("Monero redeem transaction constructed")
+            }
+            Bob::XmrRedeemPublished { .. } => f.write_str("Monero redeem transaction published"),
             Bob::Done(end_state) => write!(f, "Done: {}", end_state),
             Bob::EncSigSent { .. } => f.write_str("Encrypted signature sent"),
             Bob::BtcPunished { .. } => f.write_str("Bitcoin punished"),
