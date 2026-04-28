@@ -23,10 +23,16 @@ export interface SettingsState {
   /// Whether to fetch fiat prices from the internet
   fetchFiatPrices: boolean;
   fiatCurrency: FiatCurrency;
-  /// Whether to enable Tor for p2p connections
-  enableTor: boolean;
+  /// Which network proxy mode to use
+  networkProxyMode: NetworkProxyMode;
+  /// Address (host:port) for the system Tor SOCKS5 proxy when networkProxyMode is TorSocks
+  torSocksAddress: string | null;
   /// Whether to route Monero wallet traffic through Tor
   enableMoneroTor: boolean;
+  /// Whether the DFX (fiat on-ramp) integration is enabled. DFX only speaks
+  /// clearnet, so when this is false the Buy Monero entry-point is hidden
+  /// and the app never contacts DFX — independent of proxy mode.
+  allowDfxClearnet: boolean;
   /// Whether to use the Monero RPC pool for load balancing (true) or custom nodes (false)
   useMoneroRpcPool: boolean;
   userHasSeenIntroduction: boolean;
@@ -60,6 +66,12 @@ export enum RedeemPolicy {
 export enum RefundPolicy {
   Internal = "internal",
   External = "external",
+}
+
+export enum NetworkProxyMode {
+  InternalTor = "internal_tor",
+  TorSocks = "tor_socks",
+  None = "none",
 }
 
 export enum FiatCurrency {
@@ -117,8 +129,10 @@ const initialState: SettingsState = {
   theme: Theme.Dark,
   fetchFiatPrices: false,
   fiatCurrency: FiatCurrency.Usd,
-  enableTor: true,
-  enableMoneroTor: false, // Default to not routing Monero traffic through Tor
+  networkProxyMode: NetworkProxyMode.InternalTor,
+  torSocksAddress: null,
+  enableMoneroTor: false,
+  allowDfxClearnet: true,
   useMoneroRpcPool: true, // Default to using RPC pool
   userHasSeenIntroduction: false,
   userHasSeenAntiSpamInfo: false,
@@ -219,11 +233,17 @@ const alertsSlice = createSlice({
     resetSettings(_) {
       return initialState;
     },
-    setTorEnabled(slice, action: PayloadAction<boolean>) {
-      slice.enableTor = action.payload;
+    setNetworkProxyMode(slice, action: PayloadAction<NetworkProxyMode>) {
+      slice.networkProxyMode = action.payload;
+    },
+    setTorSocksAddress(slice, action: PayloadAction<string | null>) {
+      slice.torSocksAddress = action.payload;
     },
     setEnableMoneroTor(slice, action: PayloadAction<boolean>) {
       slice.enableMoneroTor = action.payload;
+    },
+    setAllowDfxClearnet(slice, action: PayloadAction<boolean>) {
+      slice.allowDfxClearnet = action.payload;
     },
     setUseMoneroRpcPool(slice, action: PayloadAction<boolean>) {
       slice.useMoneroRpcPool = action.payload;
@@ -337,8 +357,10 @@ export const {
   resetSettings,
   setFetchFiatPrices,
   setFiatCurrency,
-  setTorEnabled,
+  setNetworkProxyMode,
+  setTorSocksAddress,
   setEnableMoneroTor,
+  setAllowDfxClearnet,
   setUseMoneroRpcPool,
   setUserHasSeenIntroduction,
   setUserHasSeenAntiSpamInfo,

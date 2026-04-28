@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::result::Result;
+use std::time::Duration;
 use swap::cli::{
     api::{
-        ContextBuilder, data,
+        ContextBuilder, NetworkProxyConfig, data,
         request::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
             CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
@@ -19,7 +20,7 @@ use swap::cli::{
             SetMoneroWalletPasswordArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs,
             WithdrawBtcArgs,
         },
-        tauri_bindings::{ContextStatus, TauriSettings},
+        tauri_bindings::{ContextStatus, NetworkProxy, TauriSettings},
     },
     command::Bitcoin,
 };
@@ -79,7 +80,11 @@ macro_rules! generate_command_handlers {
             get_monero_subaddresses,
             create_monero_subaddress,
             set_monero_subaddress_label,
-            refresh_p2p
+            refresh_p2p,
+            http_get,
+            http_post_json,
+            check_socks5_address,
+            get_updater_proxy_url
         ]
     };
 }
@@ -153,6 +158,89 @@ mod util {
     }
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpGetArgs {
+    pub url: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpPostJsonArgs {
+    pub url: String,
+    pub body: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpResponse {
+    pub status: u16,
+    pub body: String,
+}
+
+#[tauri::command]
+pub async fn http_get(args: HttpGetArgs) -> Result<HttpResponse, String> {
+    send_http_request(reqwest::Method::GET, args.url, None).await
+}
+
+#[tauri::command]
+pub async fn http_post_json(args: HttpPostJsonArgs) -> Result<HttpResponse, String> {
+    send_http_request(reqwest::Method::POST, args.url, Some(args.body)).await
+}
+
+#[tauri::command]
+pub async fn check_socks5_address(address: String) -> bool {
+    tokio::task::spawn_blocking(move || tor_socks5::probe_addr_str(&address))
+        .await
+        .unwrap_or(false)
+}
+
+/// Build the updater SOCKS5 URL from a persisted IPv4 address.
+#[tauri::command]
+pub fn get_updater_proxy_url(address: String) -> Result<String, String> {
+    let addr: std::net::SocketAddrV4 = address.parse().map_err(|e| {
+        format!("Invalid SOCKS5 proxy address '{address}': {e}. Expected IPv4 ip:port, e.g. 127.0.0.1:9050.")
+    })?;
+    Ok(tor_socks5::Subsystem::Updater.proxy_url_for(addr))
+}
+
+async fn send_http_request(
+    method: reqwest::Method,
+    url: String,
+    body: Option<String>,
+) -> Result<HttpResponse, String> {
+    let parsed_url =
+        reqwest::Url::parse(&url).map_err(|e| format!("Failed to parse URL '{url}': {e}"))?;
+    let client = crate::http_client::build_http_client(&parsed_url, Duration::from_secs(20))
+        .map_err(|e| format!("Failed to build HTTP client for '{url}': {e:#}"))?;
+
+    let mut request = client.request(method.clone(), parsed_url.clone());
+
+    if let Some(body) = body {
+        request = request
+            .header("Content-Type", "application/json")
+            .body(body);
+    }
+
+    let response = request.send().await.map_err(|e| {
+        format!(
+            "Failed to send {} request to '{}': {e:#}",
+            method.as_str(),
+            parsed_url
+        )
+    })?;
+    let status = response.status().as_u16();
+    let body = response.text().await.map_err(|e| {
+        format!(
+            "Failed to read {} response body from '{}': {e:#}",
+            method.as_str(),
+            parsed_url
+        )
+    })?;
+
+    Ok(HttpResponse { status, body })
+}
+
 /// Tauri command to initialize the Context
 #[tauri::command]
 pub async fn initialize_context(
@@ -178,6 +266,22 @@ pub async fn initialize_context(
     // Parse rendeuvous points
     let rendezvous_points = settings.rendezvous_points.extract_peer_addresses();
 
+    let network_proxy = match settings.network_proxy {
+        NetworkProxy::InternalTor => NetworkProxyConfig::InternalTor,
+        NetworkProxy::None => NetworkProxyConfig::None,
+        NetworkProxy::SystemTorSocks5 { address } => {
+            let addr: std::net::SocketAddrV4 = address.parse().map_err(|e| {
+                format!("Invalid SOCKS5 proxy address '{address}': {e}. Expected IPv4 ip:port, e.g. 127.0.0.1:9050.")
+            })?;
+            NetworkProxyConfig::SystemTorSocks5(addr)
+        }
+    };
+
+    // Store the DFX kill switch from persisted settings.
+    state
+        .allow_dfx_clearnet
+        .store(settings.allow_dfx_clearnet, std::sync::atomic::Ordering::Relaxed);
+
     // Now populate the context in the background
     let context_result = ContextBuilder::new(testnet)
         .with_bitcoin(Bitcoin {
@@ -186,7 +290,7 @@ pub async fn initialize_context(
         })
         .with_monero(settings.monero_node_config)
         .with_json(false)
-        .with_tor(settings.use_tor)
+        .with_network_proxy(network_proxy)
         .with_enable_monero_tor(settings.enable_monero_tor)
         .with_rendezvous_points(rendezvous_points)
         .with_tauri(tauri_handle.clone())
@@ -393,9 +497,21 @@ pub async fn save_txt_files(
 pub async fn dfx_authenticate(
     state: tauri::State<'_, State>,
 ) -> Result<DfxAuthenticateResponse, String> {
+    const DFX_API_BASE_URL: &str = "https://api.dfx.swiss";
     use dfx_swiss_sdk::{DfxClient, SignRequest};
     use tokio::sync::{mpsc, oneshot};
     use tokio_util::task::AbortOnDropHandle;
+
+    // DFX is only available when the user enables the clearnet path.
+    if !state
+        .allow_dfx_clearnet
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return Err(
+            "DFX integration is disabled. Enable 'DFX (clearnet only)' in Settings to use it."
+                .to_string(),
+        );
+    }
 
     let context = state.context();
 
@@ -415,8 +531,8 @@ pub async fn dfx_authenticate(
     // Create channel for authentication
     let (auth_tx, mut auth_rx) = mpsc::channel::<(SignRequest, oneshot::Sender<String>)>(10);
 
-    // Create DFX client
-    let mut client = DfxClient::new(address, Some("https://api.dfx.swiss".to_string()), auth_tx);
+    // Keep DFX on its direct HTTP path.
+    let mut client = DfxClient::new(address, Some(DFX_API_BASE_URL.to_string()), auth_tx);
 
     // Start signing task with AbortOnDropHandle
     let signing_task = tokio::spawn(async move {
@@ -518,3 +634,32 @@ tauri_command!(create_monero_subaddress, CreateMoneroSubaddressArgs);
 tauri_command!(set_monero_subaddress_label, SetMoneroSubaddressLabelArgs);
 tauri_command!(get_monero_seed, GetMoneroSeedArgs, no_args);
 tauri_command!(refresh_p2p, RefreshP2PArgs, no_args);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_updater_proxy_url_accepts_valid_ipv4() {
+        // Keep the updater URL format aligned with `ProxyConfig::url()`.
+        let url = get_updater_proxy_url("127.0.0.1:9050".to_string()).unwrap();
+        assert_eq!(url, "socks5h://updater:updater@127.0.0.1:9050");
+    }
+
+    #[test]
+    fn get_updater_proxy_url_rejects_invalid_address() {
+        // Reject non-IPv4 `ip:port` inputs.
+        assert!(get_updater_proxy_url("localhost:9050".to_string()).is_err());
+        assert!(get_updater_proxy_url("[::1]:9050".to_string()).is_err());
+        assert!(get_updater_proxy_url("127.0.0.1".to_string()).is_err());
+        assert!(get_updater_proxy_url("".to_string()).is_err());
+    }
+
+    #[tokio::test]
+    async fn check_socks5_address_returns_false_for_invalid_input() {
+        // Invalid input should map to `false`.
+        assert!(!check_socks5_address("not-an-addr".to_string()).await);
+        assert!(!check_socks5_address("".to_string()).await);
+        assert!(!check_socks5_address("localhost:9050".to_string()).await);
+    }
+}

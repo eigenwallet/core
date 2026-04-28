@@ -1,20 +1,26 @@
+pub mod http;
 pub mod tor;
 pub mod tracing_util;
 
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use std::{collections::HashMap, future::Future, path::PathBuf, time::Duration};
 use tokio::{
     fs::{File, read_dir},
     io::{AsyncBufReadExt, BufReader},
 };
+use tor_socks5::Subsystem;
 use uuid::Uuid;
 
 const LATEST_RELEASE_URL: &str = "https://github.com/eigenwallet/core/releases/latest";
 
 /// Check the latest release from GitHub and warn if we are not on the latest version.
 pub async fn warn_if_outdated(current_version: &str) -> anyhow::Result<()> {
+    let release_url =
+        reqwest::Url::parse(LATEST_RELEASE_URL).context("Failed to parse latest release URL")?;
+    let client = http::build_http_client(&release_url, Duration::from_secs(20), Subsystem::Http, None)?;
+
     // Visit the Github releases page and check which url we are redirected to
-    let response = reqwest::get(LATEST_RELEASE_URL).await?;
+    let response = client.get(release_url).send().await?;
     let download_url = response.url();
 
     let segments = download_url

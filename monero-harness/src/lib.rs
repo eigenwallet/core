@@ -93,6 +93,7 @@ impl<'c> Monero {
                 hostname: "127.0.0.1".to_string(),
                 port: monerod_port,
                 ssl: false,
+                proxy_address: None,
             }
         };
 
