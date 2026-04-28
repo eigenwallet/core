@@ -1783,7 +1783,7 @@ impl CheckElectrumNodeArgs {
 
         // Check if the node is available by performing a lightweight RPC call.
         // This forces a real connection and TLS handshake (for ssl:// URLs).
-        let mut client =
+        let client =
             match bitcoin_wallet::Client::new(&[url.as_str().to_string()], Duration::from_secs(60))
                 .await
             {

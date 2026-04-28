@@ -32,6 +32,7 @@ use std::time::Duration;
 use std::time::Instant;
 use sync_ext::{CumulativeProgressHandle, InnerSyncCallback, SyncCallbackExt};
 use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::RwLock as TokioRwLock;
 use tokio::sync::watch;
 use tracing::{Instrument, debug_span};
 
@@ -100,7 +101,7 @@ pub struct Wallet<Persister = Connection, C = Client> {
     /// The database connection used to persist the wallet.
     persister: Arc<TokioMutex<Persister>>,
     /// The electrum client.
-    electrum_client: Arc<TokioMutex<C>>,
+    electrum_client: Arc<C>,
     /// The cached fee estimator for the electrum client.
     cached_electrum_fee_estimator: Arc<CachedFeeEstimator<C>>,
     /// The cached fee estimator for the mempool client.
@@ -125,15 +126,15 @@ pub struct Client {
     /// The underlying electrum balancer for load balancing across multiple servers.
     inner: Arc<ElectrumBalancer>,
     /// The history of transactions for each script.
-    script_history: BTreeMap<ScriptBuf, Vec<GetHistoryRes>>,
+    script_history: Arc<TokioRwLock<BTreeMap<ScriptBuf, Vec<GetHistoryRes>>>>,
     /// The subscriptions to the status of transactions.
-    subscriptions: HashMap<(Txid, ScriptBuf), Subscription>,
+    subscriptions: Arc<TokioMutex<HashMap<(Txid, ScriptBuf), Subscription>>>,
     /// The time of the last sync.
-    last_sync: Instant,
+    last_sync: Arc<SyncMutex<Instant>>,
     /// How often we sync with the server.
     sync_interval: Duration,
     /// The height of the latest block we know about.
-    latest_block_height: BlockHeight,
+    latest_block_height: Arc<SyncMutex<BlockHeight>>,
 }
 
 /// Holds the configuration parameters for creating a Bitcoin wallet.
@@ -604,7 +605,7 @@ impl Wallet {
 
         Ok(Wallet {
             wallet: wallet.into_arc_mutex_async(),
-            electrum_client: client.into_arc_mutex_async(),
+            electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator,
             persister: persister.into_arc_mutex_async(),
@@ -663,7 +664,7 @@ impl Wallet {
 
         let wallet = Wallet {
             wallet: wallet.into_arc_mutex_async(),
-            electrum_client: client.into_arc_mutex_async(),
+            electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(cached_mempool_fee_estimator),
             persister: persister.into_arc_mutex_async(),
@@ -696,8 +697,8 @@ impl Wallet {
             )))
             .await;
 
-        let client = self.electrum_client.lock().await;
-        let broadcast_results = client
+        let broadcast_results = self
+            .electrum_client
             .transaction_broadcast_all(&transaction)
             .await
             .with_context(|| {
@@ -796,24 +797,14 @@ impl Wallet {
     }
 
     pub async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
-        self.electrum_client
-            .lock()
-            .await
-            .status_of_script(tx, true)
-            .await
+        self.electrum_client.status_of_script(tx, true).await
     }
 
     pub async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
         let txid = tx.id();
         let script = tx.script();
 
-        let initial_status = match self
-            .electrum_client
-            .lock()
-            .await
-            .status_of_script(&tx, false)
-            .await
-        {
+        let initial_status = match self.electrum_client.status_of_script(&tx, false).await {
             Ok(status) => Some(status),
             Err(err) => {
                 tracing::debug!(%txid, %err, "Failed to get initial status for subscription. We won't notify the caller and will try again later.");
@@ -821,11 +812,9 @@ impl Wallet {
             }
         };
 
-        let sub = self
-            .electrum_client
-            .lock()
-            .await
-            .subscriptions
+        let mut subscriptions = self.electrum_client.subscriptions.lock().await;
+
+        let sub = subscriptions
             .entry((txid, script.clone()))
             .or_insert_with(|| {
                 let (sender, receiver) = watch::channel(ScriptStatus::Unseen);
@@ -835,8 +824,7 @@ impl Wallet {
                     let mut last_status = initial_status;
 
                     loop {
-                        let new_status = client.lock()
-                            .await
+                        let new_status = client
                             .status_of_script(&tx, false)
                             .await
                             .unwrap_or_else(|error| {
@@ -852,7 +840,7 @@ impl Wallet {
 
                             if all_receivers_gone {
                                 tracing::debug!(%txid, "All receivers gone, removing subscription");
-                                client.lock().await.subscriptions.remove(&(txid, script));
+                                client.subscriptions.lock().await.remove(&(txid, script));
                                 return;
                             }
                         }
@@ -886,8 +874,8 @@ impl Wallet {
 
     /// Get a transaction from the Electrum server or the cache.
     pub async fn get_tx(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
-        let client = self.electrum_client.lock().await;
-        let tx = client
+        let tx = self
+            .electrum_client
             .get_tx(txid)
             .await
             .context("Failed to get transaction from cache or Electrum server")?;
@@ -1029,8 +1017,6 @@ impl Wallet {
 
         let sync_response = self
             .electrum_client
-            .lock()
-            .await
             .inner
             .call_async("sync_wallet", move |client| {
                 let sync_request_factory = sync_request_factory.clone();
@@ -1629,32 +1615,37 @@ impl Client {
     /// Create a new client with multiple electrum servers for load balancing.
     pub async fn new(electrum_rpc_urls: &[String], sync_interval: Duration) -> Result<Self> {
         let balancer = ElectrumBalancer::new(electrum_rpc_urls.to_vec()).await?;
+        let initial_last_sync = Instant::now()
+            .checked_sub(sync_interval)
+            .ok_or(anyhow!("failed to set last sync time"))?;
 
         Ok(Self {
             inner: Arc::new(balancer),
-            script_history: Default::default(),
-            last_sync: Instant::now()
-                .checked_sub(sync_interval)
-                .ok_or(anyhow!("failed to set last sync time"))?,
+            script_history: Arc::new(TokioRwLock::new(BTreeMap::new())),
+            last_sync: Arc::new(SyncMutex::new(initial_last_sync)),
             sync_interval,
-            latest_block_height: BlockHeight::from(0),
-            subscriptions: Default::default(),
+            latest_block_height: Arc::new(SyncMutex::new(BlockHeight::from(0))),
+            subscriptions: Arc::new(TokioMutex::new(HashMap::new())),
         })
     }
 
     /// Update the client state, if the refresh duration has passed.
     ///
     /// Optionally force an update even if the sync interval has not passed.
-    pub async fn update_state(&mut self, force: bool) -> Result<()> {
+    pub async fn update_state(&self, force: bool) -> Result<()> {
         let now = Instant::now();
 
-        if !force && now.duration_since(self.last_sync) < self.sync_interval {
-            return Ok(());
+        if !force {
+            let last_sync = *self.last_sync.lock().expect("last_sync mutex poisoned");
+            if now.duration_since(last_sync) < self.sync_interval {
+                return Ok(());
+            }
         }
 
-        self.last_sync = now;
         self.update_script_histories().await?;
         self.update_block_height().await?;
+
+        *self.last_sync.lock().expect("last_sync mutex poisoned") = Instant::now();
 
         Ok(())
     }
@@ -1664,7 +1655,7 @@ impl Client {
     /// As opposed to [`update_state`] this function does not
     /// check the time since the last update before refreshing
     /// It therefore also does not take a [`force`] parameter
-    pub async fn update_state_single(&mut self, script: &dyn Watchable) -> Result<()> {
+    pub async fn update_state_single(&self, script: &dyn Watchable) -> Result<()> {
         self.update_script_history(script).await?;
         self.update_block_height().await?;
 
@@ -1672,7 +1663,7 @@ impl Client {
     }
 
     /// Update the block height.
-    async fn update_block_height(&mut self) -> Result<()> {
+    async fn update_block_height(&self) -> Result<()> {
         let latest_block = self
             .inner
             .call_async("block_headers_subscribe", |client| {
@@ -1682,20 +1673,24 @@ impl Client {
             .context("Failed to subscribe to header notifications")?;
         let latest_block_height = BlockHeight::try_from(latest_block)?;
 
-        if latest_block_height > self.latest_block_height {
+        let mut current = self
+            .latest_block_height
+            .lock()
+            .expect("latest_block_height mutex poisoned");
+        if latest_block_height > *current {
             tracing::trace!(
                 block_height = u32::from(latest_block_height),
                 "Got notification for new block"
             );
-            self.latest_block_height = latest_block_height;
+            *current = latest_block_height;
         }
 
         Ok(())
     }
 
     /// Update the script histories.
-    async fn update_script_histories(&mut self) -> Result<()> {
-        let scripts: Vec<_> = self.script_history.keys().cloned().collect();
+    async fn update_script_histories(&self) -> Result<()> {
+        let scripts: Vec<_> = self.script_history.read().await.keys().cloned().collect();
 
         // No need to do any network request if we have nothing to fetch
         if scripts.is_empty() {
@@ -1730,6 +1725,7 @@ impl Client {
 
         // Iterate through each script we fetched and find the highest
         // returned entry at any Electrum node
+        let mut script_history = self.script_history.write().await;
         for (script_index, script) in scripts.iter().enumerate() {
             let all_history_for_script: Vec<GetHistoryRes> = successful_results
                 .iter()
@@ -1751,14 +1747,14 @@ impl Client {
             }
 
             let final_history: Vec<GetHistoryRes> = best_history.into_values().collect();
-            self.script_history.insert(script.clone(), final_history);
+            script_history.insert(script.clone(), final_history);
         }
 
         Ok(())
     }
 
     /// Update the script history of a single script.
-    pub async fn update_script_history(&mut self, script: &dyn Watchable) -> Result<()> {
+    pub async fn update_script_history(&self, script: &dyn Watchable) -> Result<()> {
         let (script_buf, _) = script.script_and_txid();
         let script_clone = script_buf.clone();
 
@@ -1810,7 +1806,10 @@ impl Client {
 
         let final_history: Vec<GetHistoryRes> = best_history.into_values().collect();
 
-        self.script_history.insert(script_buf, final_history);
+        self.script_history
+            .write()
+            .await
+            .insert(script_buf, final_history);
 
         Ok(())
     }
@@ -1836,15 +1835,23 @@ impl Client {
 
     /// Get the status of a script.
     pub async fn status_of_script(
-        &mut self,
+        &self,
         script: &dyn Watchable,
         force: bool,
     ) -> Result<ScriptStatus> {
         let (script_buf, txid) = script.script_and_txid();
 
-        if !self.script_history.contains_key(&script_buf) {
-            self.script_history.insert(script_buf.clone(), vec![]);
+        let is_first_time = {
+            let mut history = self.script_history.write().await;
+            if history.contains_key(&script_buf) {
+                false
+            } else {
+                history.insert(script_buf.clone(), vec![]);
+                true
+            }
+        };
 
+        if is_first_time {
             // Immediately refetch the status of the script
             // when we first subscribe to it.
             self.update_state_single(script).await?;
@@ -1857,10 +1864,12 @@ impl Client {
             self.update_state(false).await?;
         }
 
-        let history = self.script_history.entry(script_buf).or_default();
+        let history_guard = self.script_history.read().await;
+        let history = history_guard.get(&script_buf);
 
         let history_of_tx: Vec<&GetHistoryRes> = history
-            .iter()
+            .into_iter()
+            .flatten()
             .filter(|entry| entry.tx_hash == txid)
             .collect();
 
@@ -1875,6 +1884,11 @@ impl Client {
             tracing::warn!(%txid, "Found multiple history entries for the same txid. Ignoring all but the last one.");
         }
 
+        let latest_block_height = *self
+            .latest_block_height
+            .lock()
+            .expect("latest_block_height mutex poisoned");
+
         match last.height {
             // If the height is 0 or less, the transaction is still in the mempool.
             ..=0 => Ok(ScriptStatus::InMempool),
@@ -1882,7 +1896,7 @@ impl Client {
             height => Ok(ScriptStatus::Confirmed(
                 Confirmed::from_inclusion_and_latest_block(
                     u32::try_from(height)?,
-                    u32::from(self.latest_block_height),
+                    u32::from(latest_block_height),
                 ),
             )),
         }
@@ -2866,7 +2880,7 @@ impl TestWalletBuilder {
 
         let wallet = Wallet {
             wallet: bdk_core_wallet.into_arc_mutex_async(),
-            electrum_client: client.into_arc_mutex_async(),
+            electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(None), // We don't use mempool client in tests
             persister: persister.into_arc_mutex_async(),
