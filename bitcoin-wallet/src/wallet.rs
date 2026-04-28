@@ -101,10 +101,6 @@ pub struct Wallet<Persister = Connection, C = Client> {
     /// The database connection used to persist the wallet.
     persister: Arc<TokioMutex<Persister>>,
     /// The electrum client.
-    ///
-    /// `Arc<C>` (no outer mutex): `C` is responsible for its own internal
-    /// synchronization. This lets `sync()` (a long-running call) and
-    /// `status_of_script()` proceed concurrently against the same client.
     electrum_client: Arc<C>,
     /// The cached fee estimator for the electrum client.
     cached_electrum_fee_estimator: Arc<CachedFeeEstimator<C>>,
@@ -125,11 +121,6 @@ pub struct Wallet<Persister = Connection, C = Client> {
 }
 
 /// This is our wrapper around a bdk electrum client.
-///
-/// All mutable state is held behind interior locks so methods can take `&self`
-/// and run concurrently. Network calls go through `inner` (the balancer) which
-/// is itself concurrency-safe; per-method short critical sections only protect
-/// the in-memory caches.
 #[derive(Clone)]
 pub struct Client {
     /// The underlying electrum balancer for load balancing across multiple servers.
@@ -1644,16 +1635,17 @@ impl Client {
     pub async fn update_state(&self, force: bool) -> Result<()> {
         let now = Instant::now();
 
-        {
-            let mut last_sync = self.last_sync.lock().expect("last_sync mutex poisoned");
-            if !force && now.duration_since(*last_sync) < self.sync_interval {
+        if !force {
+            let last_sync = *self.last_sync.lock().expect("last_sync mutex poisoned");
+            if now.duration_since(last_sync) < self.sync_interval {
                 return Ok(());
             }
-            *last_sync = now;
         }
 
         self.update_script_histories().await?;
         self.update_block_height().await?;
+
+        *self.last_sync.lock().expect("last_sync mutex poisoned") = Instant::now();
 
         Ok(())
     }
