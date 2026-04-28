@@ -1,32 +1,26 @@
 import { Box, Button } from "@mui/material";
+import { SwapState } from "models/storeModel";
 import { haveFundsBeenLocked } from "models/tauriModelExt";
-import { getCurrentSwapId, suspendCurrentSwap } from "renderer/rpc";
-import { swapReset } from "store/features/swapSlice";
-import { useAppDispatch, useAppSelector, useIsSwapRunning } from "store/hooks";
+import { suspendSwap } from "renderer/rpc";
 import { useState } from "react";
 import SwapSuspendAlert from "renderer/components/modal/SwapSuspendAlert";
 
-export default function CancelButton() {
-  const dispatch = useAppDispatch();
-  const swap = useAppSelector((state) => state.swap);
-  const isSwapRunning = useIsSwapRunning();
+export default function CancelButton({ swapState }: { swapState: SwapState }) {
   const [openSuspendAlert, setOpenSuspendAlert] = useState(false);
 
-  const hasFundsBeenLocked = haveFundsBeenLocked(swap.state?.curr);
+  const hasFundsBeenLocked = haveFundsBeenLocked(swapState.curr);
+
+  async function suspend() {
+    await suspendSwap(swapState.swapId);
+  }
 
   async function onCancel() {
-    const swapId = await getCurrentSwapId();
-
-    if (swapId.swap_id !== null) {
-      if (hasFundsBeenLocked && isSwapRunning) {
-        setOpenSuspendAlert(true);
-        return;
-      }
-
-      await suspendCurrentSwap();
+    if (hasFundsBeenLocked) {
+      setOpenSuspendAlert(true);
+      return;
     }
 
-    dispatch(swapReset());
+    await suspend();
   }
 
   return (
@@ -34,14 +28,15 @@ export default function CancelButton() {
       <SwapSuspendAlert
         open={openSuspendAlert}
         onClose={() => setOpenSuspendAlert(false)}
+        onSuspend={suspend}
       />
       <Box
         sx={{ display: "flex", justifyContent: "flex-start", width: "100%" }}
       >
         <Button variant="outlined" onClick={onCancel}>
-          {hasFundsBeenLocked && swap.state?.curr.type !== "Released"
+          {hasFundsBeenLocked && swapState.curr.type !== "Released"
             ? "Suspend"
-            : swap.state?.curr.type === "Released"
+            : swapState.curr.type === "Released"
               ? "Close"
               : "Cancel"}
         </Button>

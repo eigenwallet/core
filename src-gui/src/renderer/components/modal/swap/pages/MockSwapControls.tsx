@@ -27,7 +27,7 @@ import {
 } from "store/features/rpcSlice";
 import {
   swapProgressEventReceived,
-  swapReset,
+  swapProgressRemoved,
   setMockOnlyDisableTauriCallsOnSwapProgress,
 } from "store/features/swapSlice";
 
@@ -72,7 +72,7 @@ export default function MockSwapControls() {
       setScenario(null);
       setIndex(0);
       dispatch(setMockOnlyDisableTauriCallsOnSwapProgress(false));
-      dispatch(swapReset());
+      dispatch(swapProgressRemoved(MOCK_SWAP_ID));
       // Clean up mock alerts (mark as SafelyAborted so SwapStatusAlert hides them)
       for (const info of getMockAlertCleanupData())
         dispatch(rpcSetSwapInfo(info));

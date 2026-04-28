@@ -121,16 +121,9 @@ impl Watcher {
                     continue;
                 }
 
-                // If the swap is already running, we can skip the refund
-                // The refund will be handled by the state machine
-                if let Some(current_swap_id) = self.swap_lock.get_current_swap_id().await {
-                    if current_swap_id == swap_id {
-                        continue;
-                    }
-                }
-
-                if let Err(e) = self.swap_lock.acquire_swap_lock(swap_id).await {
-                    tracing::error!(%e, %swap_id, "Watcher failed to refund a swap in the background because another swap is already running");
+                // If the swap is already running, we can skip the refund.
+                // The refund will be handled by that swap's state machine.
+                if self.swap_lock.is_swap_running(swap_id).await {
                     continue;
                 }
 
@@ -152,9 +145,6 @@ impl Watcher {
                 }
 
                 background_process_handle.finish();
-
-                // We have to release the swap lock when we are done
-                self.swap_lock.release_swap_lock().await?;
             }
         }
 

@@ -12,17 +12,18 @@ import {
   Typography,
 } from "@mui/material";
 import CircleIcon from "@mui/icons-material/Circle";
-import { suspendCurrentSwap } from "renderer/rpc";
 import PromiseInvokeButton from "../PromiseInvokeButton";
 
 type SwapCancelAlertProps = {
   open: boolean;
   onClose: () => void;
+  onSuspend: () => Promise<void>;
 };
 
 export default function SwapSuspendAlert({
   open,
   onClose,
+  onSuspend,
 }: SwapCancelAlertProps) {
   return (
     <Dialog open={open} onClose={onClose}>
@@ -71,7 +72,7 @@ export default function SwapSuspendAlert({
         <PromiseInvokeButton
           color="primary"
           onSuccess={onClose}
-          onInvoke={suspendCurrentSwap}
+          onInvoke={onSuspend}
           contextRequirement={false}
         >
           Suspend

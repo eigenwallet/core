@@ -56,7 +56,12 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       break;
     case "SwapSetupInflight":
       if (state.curr.type === "SwapSetupInflight") {
-        return <SwapSetupInflightPage {...state.curr.content} />;
+        return (
+          <SwapSetupInflightPage
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "RetrievingMoneroBlockheight":
@@ -122,32 +127,59 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     //// 8 different types of Bitcoin refund states we can be in
     case "BtcRefundPublished": // tx_refund has been published but has not been confirmed yet
       if (state.curr.type === "BtcRefundPublished") {
-        return <BitcoinRefundPublishedPage {...state.curr.content} />;
+        return (
+          <BitcoinRefundPublishedPage
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcEarlyRefundPublished": // tx_early_refund has been published but has not been confirmed yet
       if (state.curr.type === "BtcEarlyRefundPublished") {
-        return <BitcoinEarlyRefundPublishedPage {...state.curr.content} />;
+        return (
+          <BitcoinEarlyRefundPublishedPage
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcRefunded": // tx_refund has been confirmed
       if (state.curr.type === "BtcRefunded") {
-        return <BitcoinRefundedPage {...state.curr.content} />;
+        return (
+          <BitcoinRefundedPage swapId={state.swapId} {...state.curr.content} />
+        );
       }
       break;
     case "BtcEarlyRefunded": // tx_early_refund has been confirmed
       if (state.curr.type === "BtcEarlyRefunded") {
-        return <BitcoinEarlyRefundedPage {...state.curr.content} />;
+        return (
+          <BitcoinEarlyRefundedPage
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcPartialRefundPublished":
       if (state.curr.type === "BtcPartialRefundPublished") {
-        return <BitcoinPartialRefundPublished {...state.curr.content} />;
+        return (
+          <BitcoinPartialRefundPublished
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcPartiallyRefunded":
       if (state.curr.type === "BtcPartiallyRefunded") {
-        return <BitcoinPartiallyRefunded {...state.curr.content} />;
+        return (
+          <BitcoinPartiallyRefunded
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "WaitingForEarnestDepositTimelockExpiration":
@@ -161,34 +193,61 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       break;
     case "BtcAmnestyPublished":
       if (state.curr.type === "BtcAmnestyPublished") {
-        return <BitcoinAmnestyPublished {...state.curr.content} />;
+        return (
+          <BitcoinAmnestyPublished
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcAmnestyReceived":
       if (state.curr.type === "BtcAmnestyReceived") {
-        return <BitcoinAmnestyReceived {...state.curr.content} />;
+        return (
+          <BitcoinAmnestyReceived
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
 
     //// 4 different types of withhold / mercy states
     case "BtcWithholdPublished":
       if (state.curr.type === "BtcWithholdPublished") {
-        return <BitcoinWithholdPublished {...state.curr.content} />;
+        return (
+          <BitcoinWithholdPublished
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcWithheld":
       if (state.curr.type === "BtcWithheld") {
-        return <BitcoinWithheld {...state.curr.content} />;
+        return (
+          <BitcoinWithheld swapId={state.swapId} {...state.curr.content} />
+        );
       }
       break;
     case "BtcMercyPublished":
       if (state.curr.type === "BtcMercyPublished") {
-        return <BitcoinMercyPublished {...state.curr.content} />;
+        return (
+          <BitcoinMercyPublished
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcMercyConfirmed":
       if (state.curr.type === "BtcMercyConfirmed") {
-        return <BitcoinMercyConfirmed {...state.curr.content} />;
+        return (
+          <BitcoinMercyConfirmed
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
 

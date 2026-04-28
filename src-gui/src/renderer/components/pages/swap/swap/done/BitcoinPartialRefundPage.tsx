@@ -21,7 +21,7 @@ import {
   Typography,
 } from "@mui/material";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
-import { useActiveSwapInfo, useAppSelector } from "store/hooks";
+import { useAppSelector, useSwapInfo } from "store/hooks";
 import FeedbackInfoBox from "renderer/components/pages/help/FeedbackInfoBox";
 import BitcoinTransactionInfoBox from "renderer/components/pages/swap/swap/components/BitcoinTransactionInfoBox";
 import DiscordIcon from "renderer/components/icons/DiscordIcon";
@@ -30,12 +30,16 @@ import { Book } from "@mui/icons-material";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 
 export function BitcoinPartialRefundPublished({
+  swapId,
   btc_partial_refund_txid,
   btc_lock_amount,
   btc_amnesty_amount,
-}: TauriSwapProgressEventContent<"BtcPartialRefundPublished">) {
+}: {
+  swapId: string;
+} & TauriSwapProgressEventContent<"BtcPartialRefundPublished">) {
   return (
     <PartialRefundPage
+      swapId={swapId}
       txid={btc_partial_refund_txid}
       confirmed={false}
       btcLockAmount={btc_lock_amount}
@@ -45,12 +49,14 @@ export function BitcoinPartialRefundPublished({
 }
 
 export function BitcoinPartiallyRefunded({
+  swapId,
   btc_partial_refund_txid,
   btc_lock_amount,
   btc_amnesty_amount,
-}: TauriSwapProgressEventContent<"BtcPartiallyRefunded">) {
+}: { swapId: string } & TauriSwapProgressEventContent<"BtcPartiallyRefunded">) {
   return (
     <PartialRefundPage
+      swapId={swapId}
       txid={btc_partial_refund_txid}
       confirmed={true}
       btcLockAmount={btc_lock_amount}
@@ -89,17 +95,19 @@ export function WaitingForEarnestDepositTimelockExpirationPage({
 }
 
 function PartialRefundPage({
+  swapId,
   txid,
   confirmed,
   btcLockAmount,
   btcAmnestyAmount,
 }: {
+  swapId: string;
   txid: string;
   confirmed: boolean;
   btcLockAmount: number;
   btcAmnestyAmount: number;
 }) {
-  const swap = useActiveSwapInfo();
+  const swap = useSwapInfo(swapId);
 
   const guaranteedPercent = Math.round(
     ((btcLockAmount - btcAmnestyAmount) / btcLockAmount) * 100,
@@ -144,25 +152,33 @@ function PartialRefundPage({
 // Amnesty pages - We're claiming the remaining Bitcoin ourselves (good outcome)
 
 export function BitcoinAmnestyPublished({
+  swapId,
   btc_amnesty_txid,
-}: TauriSwapProgressEventContent<"BtcAmnestyPublished">) {
-  return <AmnestyPage txid={btc_amnesty_txid} confirmed={false} />;
+}: { swapId: string } & TauriSwapProgressEventContent<"BtcAmnestyPublished">) {
+  return (
+    <AmnestyPage swapId={swapId} txid={btc_amnesty_txid} confirmed={false} />
+  );
 }
 
 export function BitcoinAmnestyReceived({
+  swapId,
   btc_amnesty_txid,
-}: TauriSwapProgressEventContent<"BtcAmnestyReceived">) {
-  return <AmnestyPage txid={btc_amnesty_txid} confirmed={true} />;
+}: { swapId: string } & TauriSwapProgressEventContent<"BtcAmnestyReceived">) {
+  return (
+    <AmnestyPage swapId={swapId} txid={btc_amnesty_txid} confirmed={true} />
+  );
 }
 
 function AmnestyPage({
+  swapId,
   txid,
   confirmed,
 }: {
+  swapId: string;
   txid: string;
   confirmed: boolean;
 }) {
-  const swap = useActiveSwapInfo();
+  const swap = useSwapInfo(swapId);
 
   const mainMessage = confirmed
     ? "All your Bitcoin have been refunded. The swap is complete."
@@ -202,12 +218,14 @@ function AmnestyPage({
 // If we're in this state, it means the maker actively published TxWithhold to revoke it.
 
 export function BitcoinWithholdPublished({
+  swapId,
   btc_withhold_txid,
   btc_lock_amount,
   btc_amnesty_amount,
-}: TauriSwapProgressEventContent<"BtcWithholdPublished">) {
+}: { swapId: string } & TauriSwapProgressEventContent<"BtcWithholdPublished">) {
   return (
     <WithholdPage
+      swapId={swapId}
       txid={btc_withhold_txid}
       confirmed={false}
       btcLockAmount={btc_lock_amount}
@@ -217,12 +235,14 @@ export function BitcoinWithholdPublished({
 }
 
 export function BitcoinWithheld({
+  swapId,
   btc_withhold_txid,
   btc_lock_amount,
   btc_amnesty_amount,
-}: TauriSwapProgressEventContent<"BtcWithheld">) {
+}: { swapId: string } & TauriSwapProgressEventContent<"BtcWithheld">) {
   return (
     <WithholdPage
+      swapId={swapId}
       txid={btc_withhold_txid}
       confirmed={true}
       btcLockAmount={btc_lock_amount}
@@ -258,23 +278,25 @@ function ContactIdentifierBox({
 }
 
 function WithholdPage({
+  swapId,
   txid,
   confirmed,
   btcLockAmount,
   btcAmnestyAmount,
 }: {
+  swapId: string;
   txid: string;
   confirmed: boolean;
   btcLockAmount: number;
   btcAmnestyAmount: number;
 }) {
-  const swapInfo = useActiveSwapInfo();
+  const swapInfo = useSwapInfo(swapId);
   const isMock = useAppSelector(
     (s) => s.swap._mockOnlyDisableTauriCallsOnSwapProgress,
   );
-  const swapId =
+  const displaySwapId =
     swapInfo?.swap_id ??
-    (isMock ? "a1b2c3d4-e5f6-7890-abcd-ef1234567890" : null);
+    (isMock ? "a1b2c3d4-e5f6-7890-abcd-ef1234567890" : swapId);
   const peerId =
     swapInfo?.seller.peer_id ??
     (isMock ? "12D3KooWF1rGmFnqJhNrHhEMPVbMM3eRnuf3XPG3JcvedAMdSHkj" : null);
@@ -335,13 +357,13 @@ function WithholdPage({
           !confirmed ? "Waiting for transaction to be confirmed..." : null
         }
       />
-      {(swapId != null || peerId != null) && (
+      {(displaySwapId != null || peerId != null) && (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {swapId != null && (
+          {displaySwapId != null && (
             <ContactIdentifierBox
               label="Swap ID"
               helperText="So the maker can find your swap."
-              value={swapId}
+              value={displaySwapId}
             />
           )}
           {peerId != null && (
@@ -360,19 +382,29 @@ function WithholdPage({
 // Mercy pages - The maker granted mercy after the user appealed
 
 export function BitcoinMercyPublished({
+  swapId,
   btc_mercy_txid,
-}: TauriSwapProgressEventContent<"BtcMercyPublished">) {
-  return <MercyPage txid={btc_mercy_txid} confirmed={false} />;
+}: { swapId: string } & TauriSwapProgressEventContent<"BtcMercyPublished">) {
+  return <MercyPage swapId={swapId} txid={btc_mercy_txid} confirmed={false} />;
 }
 
 export function BitcoinMercyConfirmed({
+  swapId,
   btc_mercy_txid,
-}: TauriSwapProgressEventContent<"BtcMercyConfirmed">) {
-  return <MercyPage txid={btc_mercy_txid} confirmed={true} />;
+}: { swapId: string } & TauriSwapProgressEventContent<"BtcMercyConfirmed">) {
+  return <MercyPage swapId={swapId} txid={btc_mercy_txid} confirmed={true} />;
 }
 
-function MercyPage({ txid, confirmed }: { txid: string; confirmed: boolean }) {
-  const swap = useActiveSwapInfo();
+function MercyPage({
+  swapId,
+  txid,
+  confirmed,
+}: {
+  swapId: string;
+  txid: string;
+  confirmed: boolean;
+}) {
+  const swap = useSwapInfo(swapId);
 
   const mainMessage = confirmed
     ? "The market maker has release the earnest deposit they withheld. The refund is complete."
