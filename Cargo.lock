@@ -6484,7 +6484,7 @@ dependencies = [
  "curve25519-dalek-ng",
  "hex",
  "monero-address",
- "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
+ "monero-wallet",
  "serde",
  "typeshare",
 ]
@@ -6598,34 +6598,10 @@ dependencies = [
  "monero-oxide-ext",
  "monero-simple-request-rpc",
  "monero-sys",
- "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
+ "monero-wallet",
  "monero-wallet-ng",
  "rand 0.8.5",
  "testcontainers",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "monero-wallet"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "backoff",
- "curve25519-dalek",
- "hex",
- "monero-address",
- "monero-daemon-rpc",
- "monero-oxide-ext",
- "monero-simple-request-rpc",
- "monero-sys",
- "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
- "monero-wallet-ng",
- "swap-core",
- "throttle",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -6666,13 +6642,44 @@ dependencies = [
  "monero-interface",
  "monero-oxide",
  "monero-simple-request-rpc",
- "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
+ "monero-wallet",
  "rand 0.8.5",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "zeroize",
+]
+
+[[package]]
+name = "monero_wallet"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "backoff",
+ "curve25519-dalek",
+ "hex",
+ "monero-address",
+ "monero-daemon-rpc",
+ "monero-harness",
+ "monero-oxide-ext",
+ "monero-simple-request-rpc",
+ "monero-sys",
+ "monero-wallet",
+ "monero-wallet-ng",
+ "paste",
+ "rand 0.8.5",
+ "rustls 0.23.37",
+ "serial_test",
+ "swap-core",
+ "tempfile",
+ "testcontainers",
+ "throttle",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
  "zeroize",
 ]
 
@@ -9248,6 +9255,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b63583a1dd0647d1484228529ab4ecaa874048d2956f117362aa5f5826456230"
 
 [[package]]
+name = "scc"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46e6f046b7fef48e2660c57ed794263155d713de679057f2d0c169bfc6e756cc"
+dependencies = [
+ "sdd",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9338,6 +9354,12 @@ dependencies = [
  "ring 0.17.14",
  "untrusted 0.9.0",
 ]
+
+[[package]]
+name = "sdd"
+version = "3.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490dcfcbfef26be6800d11870ff2df8774fa6e86d047e3e8c8a76b25655e41ca"
 
 [[package]]
 name = "seahash"
@@ -9770,6 +9792,32 @@ dependencies = [
  "ryu",
  "serde",
  "unsafe-libyaml",
+]
+
+[[package]]
+name = "serial_test"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "911bd979bf1070a3f3aa7b691a3b3e9968f339ceeec89e08c280a8a22207a32f"
+dependencies = [
+ "futures-executor",
+ "futures-util",
+ "log",
+ "once_cell",
+ "parking_lot 0.12.5",
+ "scc",
+ "serial_test_derive",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a7d91949b85b0d2fb687445e448b40d322b6b3e4af6b44a29b21d9a5f33e6d9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -10619,8 +10667,8 @@ dependencies = [
  "monero-rpc-pool",
  "monero-seed",
  "monero-sys",
- "monero-wallet 0.1.0",
- "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
+ "monero-wallet",
+ "monero_wallet",
  "pem",
  "proptest",
  "rand 0.8.5",
@@ -10742,7 +10790,7 @@ dependencies = [
  "hex",
  "monero-address",
  "monero-oxide-ext",
- "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
+ "monero-wallet",
  "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -10765,7 +10813,7 @@ name = "swap-db"
 version = "4.0.0"
 dependencies = [
  "bitcoin 0.32.8",
- "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
+ "monero-wallet",
  "serde",
  "serde_json",
  "strum 0.26.3",
@@ -10839,7 +10887,7 @@ dependencies = [
  "libp2p",
  "monero-address",
  "monero-oxide-ext",
- "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
+ "monero-wallet",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rust_decimal",
@@ -10929,7 +10977,7 @@ dependencies = [
  "libp2p",
  "monero-address",
  "monero-oxide-ext",
- "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
+ "monero-wallet",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
