@@ -14,6 +14,7 @@ use anyhow::{Context as AnyContext, Error, Result, bail};
 use arti_client::TorClient;
 use futures::future::try_join_all;
 use libp2p::{Multiaddr, PeerId};
+use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -106,96 +107,169 @@ mod swap_lock {
         }
     }
 
-    /// The `SwapLock` manages the state of the current swap, ensuring that only one swap can be active at a time.
-    /// It includes:
-    /// - A lock for the current swap (`current_swap`)
-    /// - A broadcast channel for suspension signals (`suspension_trigger`)
+    /// Coordinates swap initiation and running swap tasks.
     ///
-    /// The `SwapLock` provides methods to acquire and release the swap lock, and to listen for suspension signals.
-    /// This ensures that swap operations do not overlap and can be safely suspended if needed.
+    /// Swap initiation is globally exclusive because `determine_btc_to_swap`
+    /// reasons about wallet-wide spendable balance. Once a Bob state machine is
+    /// spawned, running swap suspension is tracked per swap id.
     pub struct SwapLock {
-        current_swap: RwLock<Option<Uuid>>,
-        suspension_trigger: Sender<()>,
+        current_initiation: RwLock<Option<Uuid>>,
+        initiation_suspension_trigger: Sender<()>,
+        running_swaps: RwLock<HashMap<Uuid, Sender<()>>>,
     }
 
     impl SwapLock {
         pub fn new() -> Self {
-            let (suspension_trigger, _) = broadcast::channel(10);
+            let (initiation_suspension_trigger, _) = broadcast::channel(10);
             SwapLock {
-                current_swap: RwLock::new(None),
-                suspension_trigger,
+                current_initiation: RwLock::new(None),
+                initiation_suspension_trigger,
+                running_swaps: RwLock::new(HashMap::new()),
             }
         }
 
-        pub async fn listen_for_swap_force_suspension(&self) -> Result<(), Error> {
-            let mut listener = self.suspension_trigger.subscribe();
-            let event = listener.recv().await;
-            match event {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    tracing::error!("Error receiving swap suspension signal: {}", e);
-                    bail!(e)
-                }
-            }
+        pub async fn listen_for_initiation_force_suspension(&self) -> Result<(), Error> {
+            receive_suspension(self.initiation_suspension_trigger.subscribe()).await
         }
 
-        pub async fn acquire_swap_lock(&self, swap_id: Uuid) -> Result<(), Error> {
-            let mut current_swap = self.current_swap.write().await;
-            if current_swap.is_some() {
-                bail!("There already exists an active swap lock");
+        pub async fn listen_for_swap_force_suspension(&self, swap_id: Uuid) -> Result<(), Error> {
+            let listener = {
+                let running_swaps = self.running_swaps.read().await;
+                let trigger = running_swaps.get(&swap_id).context("Swap is not running")?;
+
+                trigger.subscribe()
+            };
+
+            receive_suspension(listener).await
+        }
+
+        pub async fn acquire_initiation_lock(&self, swap_id: Uuid) -> Result<(), Error> {
+            let mut current_initiation = self.current_initiation.write().await;
+            if current_initiation.is_some() {
+                bail!("There already exists an active swap initiation");
             }
 
-            tracing::debug!(swap_id = %swap_id, "Acquiring swap lock");
-            *current_swap = Some(swap_id);
+            tracing::debug!(swap_id = %swap_id, "Acquiring swap initiation lock");
+            *current_initiation = Some(swap_id);
             Ok(())
         }
 
-        pub async fn get_current_swap_id(&self) -> Option<Uuid> {
-            *self.current_swap.read().await
+        pub async fn release_initiation_lock(&self, swap_id: Uuid) -> Result<(), Error> {
+            let mut current_initiation = self.current_initiation.write().await;
+            let Some(current_swap_id) = *current_initiation else {
+                bail!("There is no current swap initiation lock to release");
+            };
+
+            if current_swap_id != swap_id {
+                bail!(
+                    "Cannot release swap initiation lock for {swap_id}; current initiation is {current_swap_id}"
+                );
+            }
+
+            tracing::debug!(swap_id = %swap_id, "Releasing swap initiation lock");
+            *current_initiation = None;
+            Ok(())
         }
 
-        /// Sends a signal to suspend all ongoing swap processes.
-        ///
-        /// This function performs the following steps:
-        /// 1. Triggers the suspension by sending a unit `()` signal to all listeners via `self.suspension_trigger`.
-        /// 2. Polls the `current_swap` state every 50 milliseconds to check if it has been set to `None`, indicating that the swap processes have been suspended and the lock released.
-        /// 3. If the lock is not released within 10 seconds, the function returns an error.
-        ///
-        /// If we send a suspend signal while no swap is in progress, the function will not fail, but will return immediately.
-        ///
-        /// # Returns
-        /// - `Ok(())` if the swap lock is successfully released.
-        /// - `Err(Error)` if the function times out waiting for the swap lock to be released.
-        ///
-        /// # Notes
-        /// The 50ms polling interval is considered negligible overhead compared to the typical time required to suspend ongoing swap processes.
-        pub async fn send_suspend_signal(&self) -> Result<(), Error> {
+        pub async fn get_current_initiation_swap_id(&self) -> Option<Uuid> {
+            *self.current_initiation.read().await
+        }
+
+        pub async fn register_running_swap(&self, swap_id: Uuid) -> Result<(), Error> {
+            let mut running_swaps = self.running_swaps.write().await;
+            if running_swaps.contains_key(&swap_id) {
+                bail!("Swap {swap_id} is already running");
+            }
+
+            let (suspension_trigger, _) = broadcast::channel(10);
+            running_swaps.insert(swap_id, suspension_trigger);
+            tracing::debug!(swap_id = %swap_id, "Registered running swap");
+            Ok(())
+        }
+
+        pub async fn release_running_swap(&self, swap_id: Uuid) -> Result<(), Error> {
+            let mut running_swaps = self.running_swaps.write().await;
+            if running_swaps.remove(&swap_id).is_none() {
+                bail!("Swap {swap_id} is not running");
+            }
+
+            tracing::debug!(swap_id = %swap_id, "Released running swap");
+            Ok(())
+        }
+
+        pub async fn get_running_swap_ids(&self) -> Vec<Uuid> {
+            self.running_swaps.read().await.keys().copied().collect()
+        }
+
+        pub async fn is_swap_running(&self, swap_id: Uuid) -> bool {
+            self.running_swaps.read().await.contains_key(&swap_id)
+        }
+
+        pub async fn send_initiation_suspend_signal(&self) -> Result<(), Error> {
+            let swap_id = self.get_current_initiation_swap_id().await;
+
+            let Some(swap_id) = swap_id else {
+                return Ok(());
+            };
+
+            let _ = self.initiation_suspension_trigger.send(())?;
+            self.wait_until_not_initiating(swap_id).await
+        }
+
+        pub async fn send_swap_suspend_signal(&self, swap_id: Uuid) -> Result<(), Error> {
+            if self.get_current_initiation_swap_id().await == Some(swap_id) {
+                return self.send_initiation_suspend_signal().await;
+            }
+
+            let trigger = {
+                let running_swaps = self.running_swaps.read().await;
+                let Some(trigger) = running_swaps.get(&swap_id) else {
+                    return Ok(());
+                };
+
+                trigger.clone()
+            };
+
+            let _ = trigger.send(())?;
+            self.wait_until_not_running(swap_id).await
+        }
+
+        async fn wait_until_not_initiating(&self, swap_id: Uuid) -> Result<(), Error> {
             const TIMEOUT: u64 = 10_000;
             const INTERVAL: u64 = 50;
 
-            let _ = self.suspension_trigger.send(())?;
-
             for _ in 0..(TIMEOUT / INTERVAL) {
-                if self.get_current_swap_id().await.is_none() {
+                if self.get_current_initiation_swap_id().await != Some(swap_id) {
                     return Ok(());
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(INTERVAL)).await;
             }
 
-            bail!("Timed out waiting for swap lock to be released");
+            bail!("Timed out waiting for swap initiation lock to be released");
         }
 
-        pub async fn release_swap_lock(&self) -> Result<Uuid, Error> {
-            let mut current_swap = self.current_swap.write().await;
-            if let Some(swap_id) = current_swap.as_ref() {
-                tracing::debug!(swap_id = %swap_id, "Releasing swap lock");
+        async fn wait_until_not_running(&self, swap_id: Uuid) -> Result<(), Error> {
+            const TIMEOUT: u64 = 10_000;
+            const INTERVAL: u64 = 50;
 
-                let prev_swap_id = *swap_id;
-                *current_swap = None;
-                drop(current_swap);
-                Ok(prev_swap_id)
-            } else {
-                bail!("There is no current swap lock to release");
+            for _ in 0..(TIMEOUT / INTERVAL) {
+                if !self.is_swap_running(swap_id).await {
+                    return Ok(());
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(INTERVAL)).await;
+            }
+
+            bail!("Timed out waiting for running swap to be released");
+        }
+    }
+
+    async fn receive_suspension(mut listener: broadcast::Receiver<()>) -> Result<(), Error> {
+        let event = listener.recv().await;
+        match event {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                tracing::error!("Error receiving swap suspension signal: {}", e);
+                bail!(e)
             }
         }
     }

@@ -10,7 +10,6 @@ import {
   PendingLockBitcoinApprovalRequest,
   PendingSelectMakerApprovalRequest,
   isPendingSelectMakerApprovalEvent,
-  haveFundsBeenLocked,
   PendingSeedSelectionApprovalRequest,
   PendingSendMoneroApprovalRequest,
   isPendingSendMoneroApprovalEvent,
@@ -73,47 +72,23 @@ export function useResumeableSwapsCountExcludingPunished() {
 
 /// Returns true if we have any swap that is running
 export function useIsSwapRunning() {
-  return useAppSelector(
-    (state) =>
-      state.swap.state !== null && state.swap.state.curr.type !== "Released",
+  return useAppSelector((state) =>
+    Object.values(state.swap.swaps).some(
+      (swap) => swap.curr.type !== "Released",
+    ),
   );
-}
-
-/// Returns true if we have a swap that is running and
-/// that swap has any funds locked
-export function useIsSwapRunningAndHasFundsLocked() {
-  const swapInfo = useActiveSwapInfo();
-  const swapTauriState = useAppSelector(
-    (state) => state.swap.state?.curr ?? null,
-  );
-
-  // If the swap is in the Released state, we return false
-  if (swapTauriState?.type === "Released") {
-    return false;
-  }
-
-  // If the tauri state tells us that funds have been locked, we return true
-  if (haveFundsBeenLocked(swapTauriState)) {
-    return true;
-  }
-
-  // If we have a database entry (swapInfo) for this swap, we return true
-  if (swapInfo != null) {
-    return true;
-  }
-
-  return false;
 }
 
 /// Returns true if we have a swap that is running
 export function useIsSpecificSwapRunning(swapId: string | null) {
-  return useAppSelector(
-    (state) =>
-      swapId != null &&
-      state.swap.state !== null &&
-      state.swap.state.swapId === swapId &&
-      state.swap.state.curr.type !== "Released",
-  );
+  return useAppSelector((state) => {
+    if (swapId == null) {
+      return false;
+    }
+
+    const swap = state.swap.swaps[swapId];
+    return swap != null && swap.curr.type !== "Released";
+  });
 }
 
 export function useIsContextAvailable() {
@@ -130,17 +105,7 @@ export function useSwapInfo(
   );
 }
 
-export function useActiveSwapId(): string | null {
-  return useAppSelector((s) => s.swap.state?.swapId ?? null);
-}
-
-export function useActiveSwapInfo(): GetSwapInfoResponseExt | null {
-  const swapId = useActiveSwapId();
-  return useSwapInfo(swapId);
-}
-
-export function useActiveSwapLogs() {
-  const swapId = useActiveSwapId();
+export function useSwapLogs(swapId: string | null) {
   const logs = useAppSelector((s) => s.logs.state.logs);
 
   return useMemo(() => {

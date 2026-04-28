@@ -1,6 +1,4 @@
 import CircularProgressWithSubtitle from "../components/CircularProgressWithSubtitle";
-import { useActiveSwapInfo, useSwapInfosSortedByDate } from "store/hooks";
-import { Box } from "@mui/material";
 
 export default function EncryptedSignatureSentPage() {
   return (
