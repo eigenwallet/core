@@ -1841,14 +1841,17 @@ impl Client {
     ) -> Result<ScriptStatus> {
         let (script_buf, txid) = script.script_and_txid();
 
-        let is_first_time = !self.script_history.read().await.contains_key(&script_buf);
+        let is_first_time = {
+            let mut history = self.script_history.write().await;
+            if history.contains_key(&script_buf) {
+                false
+            } else {
+                history.insert(script_buf.clone(), vec![]);
+                true
+            }
+        };
 
         if is_first_time {
-            self.script_history
-                .write()
-                .await
-                .insert(script_buf.clone(), vec![]);
-
             // Immediately refetch the status of the script
             // when we first subscribe to it.
             self.update_state_single(script).await?;
