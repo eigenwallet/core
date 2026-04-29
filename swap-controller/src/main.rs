@@ -77,7 +77,21 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             println!("Connected to {} peers", response.connections);
         }
         Cmd::GetSwaps => {
-            let swaps = client.get_swaps().await?;
+            // How many swaps we query from the asb api at once
+            const MAX_SWAPS_PER_REQUEST: u32 = 1_000;
+
+            // Iterate through the paging system (`limit` at a time) to get all swaps
+            let mut swaps = Vec::new();
+            let mut offset = 0;
+            while let response = client
+                .get_swaps(Some(MAX_SWAPS_PER_REQUEST), Some(offset))
+                .await?
+                && !response.is_empty()
+            {
+                offset += u32::try_from(response.len()).unwrap();
+                swaps.extend(response);
+            }
+            let swaps = swaps; // Make vector immutable again
 
             let mut table = comfy_table::Table::new();
             table.set_header([

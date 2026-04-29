@@ -258,6 +258,13 @@ pub trait Database {
     async fn get_state(&self, swap_id: Uuid) -> Result<State>;
     async fn get_states(&self, swap_id: Uuid) -> Result<Vec<State>>;
     async fn all(&self) -> Result<Vec<(PeerId, Uuid, State)>>;
+    /// Same as `all` but paginated, and returns the first and last state per
+    /// swap. Implementations may filter out terminally-aborted swaps.
+    async fn all_paginated(
+        &self,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<(PeerId, Uuid, State, State)>>;
 
     /// Returns the current (latest) state and the starting state for a swap.
     async fn get_current_and_starting_state(&self, swap_id: Uuid) -> Result<(State, State)> {

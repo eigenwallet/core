@@ -163,8 +163,13 @@ pub trait AsbApi {
     async fn peer_id(&self) -> Result<PeerIdResponse, ErrorObjectOwned>;
     #[method(name = "active_connections")]
     async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned>;
+    /// Returns the `limit` swaps, starting from the `offset`th, in order of swap start time
     #[method(name = "get_swaps")]
-    async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned>;
+    async fn get_swaps(
+        &self,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Vec<Swap>, ErrorObjectOwned>;
     #[method(name = "registration_status")]
     async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned>;
     #[method(name = "set_burn_on_refund")]

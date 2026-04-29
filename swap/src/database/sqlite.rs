@@ -398,6 +398,84 @@ impl Database for SqliteDatabase {
         Ok(result)
     }
 
+    /// Same as [`all`] except paginated, and returns both the first and last
+    /// recorded state per swap. Swaps that never progressed past
+    /// `SafelyAborted` are filtered out. `limit` and `offset` must each fit
+    /// into `i32`.
+    async fn all_paginated(
+        &self,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<(PeerId, Uuid, State, State)>> {
+        // sqlite only accepts signed integers, but we want to expose a
+        // sensible api
+        let limit = i32::try_from(limit)?;
+        let offset = i32::try_from(offset)?;
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                peers.peer_id,
+                oldest.swap_id,
+                oldest.state       AS "first_state!: String",
+                newest.state       AS "last_state!: String",
+                oldest.entered_at  AS start_date
+            FROM (SELECT swap_id, state, MIN(entered_at) AS entered_at
+                  FROM swap_states GROUP BY swap_id) oldest
+            JOIN (SELECT swap_id, state, MAX(entered_at) AS entered_at
+                  FROM swap_states GROUP BY swap_id) newest
+                ON newest.swap_id = oldest.swap_id
+            JOIN peers ON peers.swap_id = oldest.swap_id
+            WHERE NOT (oldest.state LIKE '%"SafelyAborted"%' AND newest.state LIKE '%"SafelyAborted"%')
+            ORDER BY oldest.entered_at
+            LIMIT ?
+            OFFSET ?
+        "#,
+            limit,
+            offset
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let result = rows
+            .iter()
+            .filter_map(|row| {
+                let swap_id = match Uuid::from_str(&row.swap_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Failed to parse UUID");
+                        return None;
+                    }
+                };
+                let peer_id = match PeerId::from_str(&row.peer_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to parse PeerId");
+                        return None;
+                    }
+                };
+                let first_state = match serde_json::from_str::<Swap>(&row.first_state) {
+                    Ok(a) => State::from(a),
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to deserialize first state");
+                        return None;
+                    }
+                };
+                let last_state = match serde_json::from_str::<Swap>(&row.last_state) {
+                    Ok(a) => State::from(a),
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to deserialize last state");
+                        return None;
+                    }
+                };
+
+                Some((peer_id, swap_id, first_state, last_state))
+            })
+            .collect();
+
+        Ok(result)
+    }
+
     async fn get_states(&self, swap_id: Uuid) -> Result<Vec<State>> {
         let swap_id = swap_id.to_string();
 
