@@ -426,7 +426,10 @@ impl Database for SqliteDatabase {
                   FROM swap_states GROUP BY swap_id) newest
                 ON newest.swap_id = oldest.swap_id
             JOIN peers ON peers.swap_id = oldest.swap_id
-            WHERE NOT (oldest.state LIKE '%"SafelyAborted"%' AND newest.state LIKE '%"SafelyAborted"%')
+            WHERE NOT (
+                json_extract(oldest.state, '$.Alice.Done') IS 'SafelyAborted'
+                AND json_extract(newest.state, '$.Alice.Done') IS 'SafelyAborted'
+            )
             ORDER BY oldest.entered_at
             LIMIT ?
             OFFSET ?
