@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB+CONTROLLER: `get-swaps` now accepts optional `limit` and `offset` parameters which can be used for pagination.
+  If not present, no pagination will be done.
+
 ## [4.5.0] - 2026-04-27
 
 - ASB+CONTROLLER: `get-swaps` now includes the `btc_redeem_fee` per swap: the fee Alice paid (or will pay) for the Bitcoin redeem transaction.

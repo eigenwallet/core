@@ -77,7 +77,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             println!("Connected to {} peers", response.connections);
         }
         Cmd::GetSwaps => {
-            let swaps = client.get_swaps().await?;
+            let swaps = client.get_swaps(None, None).await?;
 
             let mut table = comfy_table::Table::new();
             table.set_header([
