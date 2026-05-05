@@ -103,7 +103,7 @@ export default function WalletActionButtons({
             onClick={() => setSendDialogOpen(true)}
           />
           <Chip
-            onClick={() => navigate("/swap")}
+            onClick={() => navigate("/offers")}
             icon={<SwapIcon />}
             label="Swap"
             variant="button"

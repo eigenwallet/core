@@ -3,12 +3,13 @@ import {
   Button,
   Dialog,
   DialogActions,
+  Link,
   Paper,
   Tooltip,
-  Typography,
 } from "@mui/material";
 import { useState } from "react";
 import { SwapState } from "models/storeModel";
+import { isOfferPhase } from "models/tauriModelExt";
 import { useAppSelector } from "store/hooks";
 import SwapStatePage from "renderer/components/pages/swap/swap/SwapStatePage";
 import CancelButton from "./CancelButton";
@@ -16,14 +17,26 @@ import SwapStateStepper from "renderer/components/modal/swap/SwapStateStepper";
 import DebugPageSwitchBadge from "renderer/components/modal/swap/pages/DebugPageSwitchBadge";
 import DebugPage from "renderer/components/modal/swap/pages/DebugPage";
 import MockSwapControls from "renderer/components/modal/swap/pages/MockSwapControls";
+import ClickToCopy from "renderer/components/other/ClickToCopy";
+import TruncatedText from "renderer/components/other/TruncatedText";
+import { swapIdColor } from "utils/swapColor";
 
-export default function SwapWidget() {
-  const runningSwaps = useAppSelector((state) =>
-    Object.values(state.swap.swaps).filter(
-      (swap) => swap.curr.type !== "Released",
-    ),
+export type SwapWidgetMode = "offers" | "swaps";
+
+export default function SwapWidget({ mode }: { mode: SwapWidgetMode }) {
+  const matchingSwaps = useAppSelector((state) =>
+    Object.values(state.swap.swaps).filter((swap) => {
+      if (swap.curr.type === "Released") return false;
+      return mode === "offers"
+        ? isOfferPhase(swap.curr)
+        : !isOfferPhase(swap.curr);
+    }),
   );
-  const visibleSwaps = runningSwaps.length > 0 ? runningSwaps : [null];
+  // The offers tab shows the InitPage placeholder when no offer is in flight,
+  // so the user can start a new swap. The swaps tab simply renders nothing
+  // when there is no in-progress swap to show.
+  const visibleSwaps: (SwapState | null)[] =
+    mode === "offers" && matchingSwaps.length === 0 ? [null] : matchingSwaps;
 
   return (
     <Box
@@ -40,25 +53,15 @@ export default function SwapWidget() {
           gap: 2,
         }}
       >
-        {visibleSwaps.map((swap, index) => (
-          <SwapStatePanel
-            key={swap?.swapId ?? "new-swap"}
-            swap={swap}
-            index={index}
-          />
+        {visibleSwaps.map((swap) => (
+          <SwapStatePanel key={swap?.swapId ?? "new-swap"} swap={swap} />
         ))}
       </Box>
     </Box>
   );
 }
 
-function SwapStatePanel({
-  swap,
-  index,
-}: {
-  swap: SwapState | null;
-  index: number;
-}) {
+function SwapStatePanel({ swap }: { swap: SwapState | null }) {
   const [debug, setDebug] = useState(false);
 
   return (
@@ -70,26 +73,13 @@ function SwapStatePanel({
         gap: 2,
         borderRadius: 2,
         padding: 2,
+        ...(swap != null && {
+          borderTop: `2px solid ${swapIdColor(swap.swapId, 0.85)}`,
+        }),
       }}
     >
       {swap != null && (
         <>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
-            <Typography variant="subtitle2">Swap {index + 1}</Typography>
-            <Tooltip title={swap.swapId}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {swap.swapId}
-              </Typography>
-            </Tooltip>
-          </Box>
           <Dialog
             fullWidth
             maxWidth="md"
@@ -125,6 +115,26 @@ function SwapStatePanel({
           }}
         >
           <CancelButton swapState={swap} />
+          <ClickToCopy content={swap.swapId}>
+            <Tooltip title={swap.swapId}>
+              <Link
+                component="span"
+                variant="caption"
+                color="text.secondary"
+                underline="always"
+                sx={{
+                  fontFamily: "monospace",
+                  textDecorationColor: swapIdColor(swap.swapId),
+                  textDecorationThickness: 2,
+                  textUnderlineOffset: 3,
+                }}
+              >
+                <TruncatedText limit={8} truncateMiddle>
+                  {swap.swapId}
+                </TruncatedText>
+              </Link>
+            </Tooltip>
+          </ClickToCopy>
           <DebugPageSwitchBadge enabled={debug} setEnabled={setDebug} />
         </Box>
       )}
