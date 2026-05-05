@@ -35,11 +35,7 @@ export default function BitcoinLockTxInMempoolPage({
           title="Bitcoin Lock Transaction"
           txId={btc_lock_txid}
           loading
-          additionalContent={
-            <>
-              {formatConfirmations(btc_lock_confirmations)}
-            </>
-          }
+          additionalContent={<>{formatConfirmations(btc_lock_confirmations)}</>}
         />
       </Box>
     </>

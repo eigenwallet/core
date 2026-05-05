@@ -15,8 +15,9 @@ use swap::cli::{
             GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
             GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs,
             RedactArgs, RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
-            SetMoneroWalletPasswordArgs, SetRestoreHeightArgs, SuspendSwapArgs, WithdrawBtcArgs,
+            ResolveApprovalArgs, ResumeAllSwapsArgs, ResumeSwapArgs, SendMoneroArgs,
+            SetMoneroSubaddressLabelArgs, SetMoneroWalletPasswordArgs, SetRestoreHeightArgs,
+            SuspendSwapArgs, WithdrawBtcArgs,
         },
         tauri_bindings::{ContextStatus, TauriSettings},
     },
@@ -45,6 +46,7 @@ macro_rules! generate_command_handlers {
             withdraw_btc,
             buy_xmr,
             resume_swap,
+            resume_all_swaps,
             get_history,
             monero_recovery,
             get_logs,
@@ -486,6 +488,7 @@ pub async fn dfx_authenticate(
 tauri_command!(get_balance, BalanceArgs);
 tauri_command!(buy_xmr, BuyXmrArgs);
 tauri_command!(resume_swap, ResumeSwapArgs);
+tauri_command!(resume_all_swaps, ResumeAllSwapsArgs, no_args);
 tauri_command!(withdraw_btc, WithdrawBtcArgs);
 tauri_command!(monero_recovery, MoneroRecoveryArgs);
 tauri_command!(get_logs, GetLogsArgs);

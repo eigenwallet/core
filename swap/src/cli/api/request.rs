@@ -101,6 +101,26 @@ impl Request for ResumeSwapArgs {
     }
 }
 
+// ResumeAllSwaps
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ResumeAllSwapsArgs;
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ResumeAllSwapsResponse {
+    #[typeshare(serialized_as = "Vec<string>")]
+    pub resumed_swap_ids: Vec<Uuid>,
+}
+
+impl Request for ResumeAllSwapsArgs {
+    type Response = ResumeAllSwapsResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        resume_all_swaps(ctx).await
+    }
+}
+
 // CancelAndRefund
 #[typeshare]
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1172,6 +1192,30 @@ pub async fn resume_swap(
     Ok(ResumeSwapResponse {
         result: "OK".to_string(),
     })
+}
+
+#[tracing::instrument(fields(method = "resume_all_swaps"), skip(context))]
+pub async fn resume_all_swaps(context: Arc<Context>) -> Result<ResumeAllSwapsResponse> {
+    let db = context.try_get_db().await?;
+    let config = context.try_get_config().await?;
+    let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
+    let monero_manager = context.try_get_monero_manager().await?;
+    let event_loop_handle = context.try_get_event_loop_handle().await?;
+    let tauri_handle = context.tauri_handle.clone();
+
+    let resumed_swap_ids = context
+        .swap_manager
+        .resume_all(
+            db,
+            bitcoin_wallet,
+            monero_manager,
+            config.env_config,
+            event_loop_handle,
+            tauri_handle,
+        )
+        .await?;
+
+    Ok(ResumeAllSwapsResponse { resumed_swap_ids })
 }
 
 #[tracing::instrument(fields(method = "cancel_and_refund"), skip(context))]

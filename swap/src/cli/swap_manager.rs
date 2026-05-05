@@ -275,6 +275,57 @@ impl SwapManager {
             .await
     }
 
+    /// Resume every Bob swap that is in a resumable state.
+    ///
+    /// A swap is considered resumable when it has not reached a terminal
+    /// state and is not already running. Each resumable swap is started via
+    /// [`resume`](Self::resume); failures for individual swaps are logged
+    /// and skipped, so one bad swap does not prevent the rest from resuming.
+    pub async fn resume_all(
+        self: &Arc<Self>,
+        db: Arc<dyn Database + Send + Sync>,
+        bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
+        monero_wallet: Arc<monero::Wallets>,
+        env_config: EnvConfig,
+        event_loop_handle: EventLoopHandle,
+        tauri_handle: Option<TauriHandle>,
+    ) -> Result<Vec<Uuid>> {
+        let swaps = db.all().await.context("Failed to load swaps from db")?;
+
+        let mut resumed = Vec::new();
+        for (_, swap_id, state) in swaps {
+            if !matches!(state, crate::protocol::State::Bob(_)) {
+                continue;
+            }
+            if state.swap_finished() {
+                continue;
+            }
+            if self.is_running(swap_id).await {
+                continue;
+            }
+
+            match self
+                .resume(
+                    swap_id,
+                    Arc::clone(&db),
+                    Arc::clone(&bitcoin_wallet),
+                    Arc::clone(&monero_wallet),
+                    env_config,
+                    event_loop_handle.clone(),
+                    tauri_handle.clone(),
+                )
+                .await
+            {
+                Ok(()) => resumed.push(swap_id),
+                Err(error) => {
+                    tracing::error!(%swap_id, "Failed to resume swap: {:#}", error);
+                }
+            }
+        }
+
+        Ok(resumed)
+    }
+
     /// Suspend a swap.
     ///
     /// If `swap_id` is currently in the initiation phase, sends an initiation
