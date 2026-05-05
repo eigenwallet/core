@@ -7,6 +7,8 @@ import {
   GetLogsResponse,
   GetSwapInfoResponse,
   MoneroRecoveryArgs,
+  ResumeAllSwapsArgs,
+  ResumeAllSwapsResponse,
   ResumeSwapArgs,
   ResumeSwapResponse,
   SuspendSwapArgs,
@@ -384,6 +386,13 @@ export async function resumeSwap(swapId: string) {
   await invoke<ResumeSwapArgs, ResumeSwapResponse>("resume_swap", {
     swap_id: swapId,
   });
+}
+
+export async function resumeAllSwaps(): Promise<ResumeAllSwapsResponse> {
+  return await invoke<ResumeAllSwapsArgs, ResumeAllSwapsResponse>(
+    "resume_all_swaps",
+    {},
+  );
 }
 
 export async function suspendSwap(swapId: string) {

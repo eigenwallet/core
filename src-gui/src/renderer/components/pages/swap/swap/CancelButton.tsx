@@ -4,10 +4,14 @@ import { haveFundsBeenLocked } from "models/tauriModelExt";
 import { suspendSwap } from "renderer/rpc";
 import { useState } from "react";
 import SwapSuspendAlert from "renderer/components/modal/SwapSuspendAlert";
+import { useAppDispatch } from "store/hooks";
+import { swapProgressRemoved } from "store/features/swapSlice";
 
 export default function CancelButton({ swapState }: { swapState: SwapState }) {
   const [openSuspendAlert, setOpenSuspendAlert] = useState(false);
+  const dispatch = useAppDispatch();
 
+  const isReleased = swapState.curr.type === "Released";
   const hasFundsBeenLocked = haveFundsBeenLocked(swapState.curr);
 
   async function suspend() {
@@ -15,6 +19,12 @@ export default function CancelButton({ swapState }: { swapState: SwapState }) {
   }
 
   async function onCancel() {
+    if (isReleased) {
+      // Swap is already done; "Close" just dismisses the final-state panel.
+      dispatch(swapProgressRemoved(swapState.swapId));
+      return;
+    }
+
     if (hasFundsBeenLocked) {
       setOpenSuspendAlert(true);
       return;
@@ -23,12 +33,11 @@ export default function CancelButton({ swapState }: { swapState: SwapState }) {
     await suspend();
   }
 
-  const label =
-    hasFundsBeenLocked && swapState.curr.type !== "Released"
+  const label = isReleased
+    ? "Close"
+    : hasFundsBeenLocked
       ? "Suspend"
-      : swapState.curr.type === "Released"
-        ? "Close"
-        : "Cancel";
+      : "Cancel";
 
   return (
     <>

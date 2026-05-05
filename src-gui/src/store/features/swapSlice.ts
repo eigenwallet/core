@@ -1,5 +1,6 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { TauriSwapProgressEventWrapper } from "models/tauriModel";
+import { isOfferPhase } from "models/tauriModelExt";
 import { SwapSlice } from "../../models/storeModel";
 
 const initialState: SwapSlice = {
@@ -21,6 +22,19 @@ export const swapSlice = createSlice({
       action: PayloadAction<TauriSwapProgressEventWrapper>,
     ) {
       const existingSwap = swap.swaps[action.payload.swap_id];
+
+      // If a swap is released while still in the offer phase (e.g. the user
+      // cancelled before any funds were committed) there is no meaningful
+      // final state worth keeping around — drop it instead of leaving a
+      // panel for the user to acknowledge.
+      if (
+        action.payload.event.type === "Released" &&
+        existingSwap != null &&
+        isOfferPhase(existingSwap.curr)
+      ) {
+        delete swap.swaps[action.payload.swap_id];
+        return;
+      }
 
       if (existingSwap == null) {
         swap.swaps[action.payload.swap_id] = {
