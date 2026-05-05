@@ -1,7 +1,7 @@
-use super::api::SwapLock;
 use super::api::tauri_bindings::{BackgroundRefundProgress, TauriBackgroundProgress, TauriEmitter};
 use super::cancel_and_refund;
 use crate::cli::api::tauri_bindings::TauriHandle;
+use crate::cli::swap_manager::SwapManager;
 use crate::protocol::bob::BobState;
 use crate::protocol::{Database, State};
 use anyhow::{Context, Result};
@@ -18,7 +18,7 @@ pub struct Watcher {
     wallet: Arc<Wallet>,
     database: Arc<dyn Database + Send + Sync>,
     tauri: Option<TauriHandle>,
-    swap_lock: Arc<SwapLock>,
+    swap_manager: Arc<SwapManager>,
     /// This saves for every running swap the last known timelock status
     cached_timelocks: HashMap<Uuid, Option<ExpiredTimelocks>>,
 }
@@ -32,14 +32,14 @@ impl Watcher {
         wallet: Arc<Wallet>,
         database: Arc<dyn Database + Send + Sync>,
         tauri: Option<TauriHandle>,
-        swap_lock: Arc<SwapLock>,
+        swap_manager: Arc<SwapManager>,
     ) -> Self {
         Self {
             wallet,
             database,
             cached_timelocks: HashMap::new(),
             tauri,
-            swap_lock,
+            swap_manager,
         }
     }
 
@@ -123,7 +123,7 @@ impl Watcher {
 
                 // If the swap is already running, we can skip the refund.
                 // The refund will be handled by that swap's state machine.
-                if self.swap_lock.is_swap_running(swap_id).await {
+                if self.swap_manager.is_running(swap_id).await {
                     continue;
                 }
 
