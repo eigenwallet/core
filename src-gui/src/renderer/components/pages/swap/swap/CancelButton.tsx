@@ -1,4 +1,4 @@
-import { Box, Button } from "@mui/material";
+import { Link } from "@mui/material";
 import { SwapState } from "models/storeModel";
 import { haveFundsBeenLocked } from "models/tauriModelExt";
 import { suspendSwap } from "renderer/rpc";
@@ -23,6 +23,13 @@ export default function CancelButton({ swapState }: { swapState: SwapState }) {
     await suspend();
   }
 
+  const label =
+    hasFundsBeenLocked && swapState.curr.type !== "Released"
+      ? "Suspend"
+      : swapState.curr.type === "Released"
+        ? "Close"
+        : "Cancel";
+
   return (
     <>
       <SwapSuspendAlert
@@ -30,17 +37,16 @@ export default function CancelButton({ swapState }: { swapState: SwapState }) {
         onClose={() => setOpenSuspendAlert(false)}
         onSuspend={suspend}
       />
-      <Box
-        sx={{ display: "flex", justifyContent: "flex-start", width: "100%" }}
+      <Link
+        component="button"
+        type="button"
+        onClick={onCancel}
+        variant="caption"
+        color="text.secondary"
+        underline="hover"
       >
-        <Button variant="outlined" onClick={onCancel}>
-          {hasFundsBeenLocked && swapState.curr.type !== "Released"
-            ? "Suspend"
-            : swapState.curr.type === "Released"
-              ? "Close"
-              : "Cancel"}
-        </Button>
-      </Box>
+        {label}
+      </Link>
     </>
   );
 }

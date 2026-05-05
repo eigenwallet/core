@@ -16,6 +16,7 @@ import {
   PendingPasswordApprovalRequest,
   isPendingPasswordApprovalEvent,
   isContextFullyInitialized,
+  isOfferPhase,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
@@ -75,6 +76,24 @@ export function useIsSwapRunning() {
   return useAppSelector((state) =>
     Object.values(state.swap.swaps).some(
       (swap) => swap.curr.type !== "Released",
+    ),
+  );
+}
+
+/// Returns true if we have a swap that is still in the offer/setup phase
+export function useHasOfferPhaseSwap() {
+  return useAppSelector((state) =>
+    Object.values(state.swap.swaps).some(
+      (swap) => swap.curr.type !== "Released" && isOfferPhase(swap.curr),
+    ),
+  );
+}
+
+/// Returns true if we have a swap that has progressed past the offer phase
+export function useHasSwapPhaseSwap() {
+  return useAppSelector((state) =>
+    Object.values(state.swap.swaps).some(
+      (swap) => swap.curr.type !== "Released" && !isOfferPhase(swap.curr),
     ),
   );
 }
