@@ -58,8 +58,6 @@ pub fn default_rendezvous_points() -> Vec<Multiaddr> {
 
 pub fn default_electrum_servers_mainnet() -> Vec<Url> {
     vec![
-        Url::parse("tcp://electrum.eigenwallet.org:22293")
-            .expect("default electrum server url to be valid"),
         Url::parse("ssl://electrum.blockstream.info:50002")
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://bitcoin.stackwallet.com:50002")
@@ -97,10 +95,6 @@ pub fn default_electrum_servers_testnet() -> Vec<Url> {
         Url::parse("tcp://testnet.aranguren.org:51001")
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://testnet.aranguren.org:51002")
-            .expect("default electrum server url to be valid"),
-        Url::parse("ssl://bitcoin.devmole.eu:5010")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://bitcoin.devmole.eu:5000")
             .expect("default electrum server url to be valid"),
     ]
 }
