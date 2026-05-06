@@ -3,6 +3,7 @@ import {
   BobStateName,
   GetSwapInfoResponseExt,
   isBitcoinSyncProgress,
+  isBobStateNameRunningSwap,
   isPendingBackgroundProcess,
   isPendingLockBitcoinApprovalEvent,
   isPendingSeedSelectionApprovalEvent,
@@ -71,30 +72,67 @@ export function useResumeableSwapsCountExcludingPunished() {
   );
 }
 
+// A swap entry counts as "still in flight" while its current event is anything
+// other than a *terminal* Released. A Released event carrying
+// `next_auto_resume_at_unix_ms` is a retry signal — the swap manager will
+// auto-resume — so the GUI should keep treating those swaps as active.
+function isSwapInFlight(swap: import("models/storeModel").SwapState) {
+  if (swap.curr.type !== "Released") return true;
+  return swap.curr.content.next_auto_resume_at_unix_ms != null;
+}
+
+// For "in flight, past the offer phase" we look at the previous event when the
+// current is Released — `prev` carries the actual swap-machine state.
+function effectivePhaseEvent(swap: import("models/storeModel").SwapState) {
+  if (swap.curr.type !== "Released") return swap.curr;
+  return swap.prev;
+}
+
 /// Returns true if we have any swap that is running
 export function useIsSwapRunning() {
   return useAppSelector((state) =>
-    Object.values(state.swap.swaps).some(
-      (swap) => swap.curr.type !== "Released",
-    ),
+    Object.values(state.swap.swaps).some(isSwapInFlight),
+  );
+}
+
+/// Returns the number of swaps that are currently running
+export function useRunningSwapsCount() {
+  return useAppSelector(
+    (state) => Object.values(state.swap.swaps).filter(isSwapInFlight).length,
   );
 }
 
 /// Returns true if we have a swap that is still in the offer/setup phase
 export function useHasOfferPhaseSwap() {
   return useAppSelector((state) =>
-    Object.values(state.swap.swaps).some(
-      (swap) => swap.curr.type !== "Released" && isOfferPhase(swap.curr),
-    ),
+    Object.values(state.swap.swaps).some((swap) => {
+      if (!isSwapInFlight(swap)) return false;
+      const phase = effectivePhaseEvent(swap);
+      return phase != null && isOfferPhase(phase);
+    }),
   );
 }
 
 /// Returns true if we have a swap that has progressed past the offer phase
 export function useHasSwapPhaseSwap() {
   return useAppSelector((state) =>
-    Object.values(state.swap.swaps).some(
-      (swap) => swap.curr.type !== "Released" && !isOfferPhase(swap.curr),
-    ),
+    Object.values(state.swap.swaps).some((swap) => {
+      if (!isSwapInFlight(swap)) return false;
+      const phase = effectivePhaseEvent(swap);
+      return phase != null && !isOfferPhase(phase);
+    }),
+  );
+}
+
+/// Returns the number of swaps that have progressed past the offer phase
+export function useSwapPhaseSwapsCount() {
+  return useAppSelector(
+    (state) =>
+      Object.values(state.swap.swaps).filter((swap) => {
+        if (!isSwapInFlight(swap)) return false;
+        const phase = effectivePhaseEvent(swap);
+        return phase != null && !isOfferPhase(phase);
+      }).length,
   );
 }
 
@@ -165,6 +203,21 @@ export function useSwapInfosSortedByDate() {
   const swapInfos = useSaneSwapInfos();
 
   return sortBy(swapInfos, (swap) => -parseDateString(swap.start_date));
+}
+
+/// Swaps that are resumable per the on-disk state (`isBobStateNameRunningSwap`)
+/// but have no entry in the redux swap slice — i.e. no state-machine task in
+/// this session has touched them. The Swaps page surfaces these so the user
+/// can resume them without leaving the page. Swaps that *do* have a redux
+/// entry (running, retry-backoff, or terminally released) are left to their
+/// existing in-flight panel.
+export function useIdleResumableSwapInfos(): GetSwapInfoResponseExt[] {
+  const saneSwapInfos = useSaneSwapInfos();
+  const swaps = useAppSelector((state) => state.swap.swaps);
+  return saneSwapInfos.filter(
+    (info) =>
+      isBobStateNameRunningSwap(info.state_name) && swaps[info.swap_id] == null,
+  );
 }
 
 /// Returns true if swapInfos has been loaded

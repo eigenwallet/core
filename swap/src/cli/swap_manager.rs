@@ -24,22 +24,37 @@ use libp2p::{Multiaddr, PeerId};
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use swap_core::bitcoin;
 use swap_env::env::Config as EnvConfig;
 use tokio::sync::{Mutex as TokioMutex, RwLock, broadcast, oneshot};
 use tokio::task::JoinHandle;
-use tracing::Instrument;
+use tracing::{Instrument, debug_span};
 use uuid::Uuid;
 
 const RETRY_INITIAL_INTERVAL: Duration = Duration::from_secs(1);
 const RETRY_MAX_INTERVAL: Duration = Duration::from_secs(60);
 
-/// Closure that produces a fresh [`bob::Swap`] for each attempt of a retry
-/// loop. The closure is invoked once per retry; it is responsible for
-/// reloading state from the DB on subsequent invocations and for registering
-/// a fresh swap-handle with the event loop.
-type MakeSwap = Box<dyn FnMut() -> BoxFuture<'static, Result<Swap>> + Send + 'static>;
+/// Closure that rebuilds a [`bob::Swap`] for a retry attempt by reloading
+/// state from the DB and registering a fresh swap-handle with the event
+/// loop. Only invoked when the previous attempt errored — `bob::run`
+/// persists state transitions itself, so retries simply pick up whatever
+/// was last persisted.
+type RebuildSwap = Box<dyn FnMut() -> BoxFuture<'static, Result<Swap>> + Send + 'static>;
+type MakeInitialSwap = Box<dyn FnOnce() -> BoxFuture<'static, Result<Swap>> + Send + 'static>;
+
+/// Why a swap-task was asked to suspend. Lets the task decide whether to
+/// emit a final `Released` event on the way out: a regular `Terminate`
+/// (user-initiated suspend, shutdown, etc.) does emit, but an
+/// `ExternalTakeover` (another `start`/`resume`/`cancel_and_refund` is about
+/// to take over the swap) suppresses it so the frontend doesn't see a
+/// spurious "released" flicker before the new owner emits its own progress
+/// event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SuspendReason {
+    Terminate,
+    ExternalTakeover,
+}
 
 /// Inputs needed to start a fresh swap, after the user has selected a maker
 /// and the wallet has enough deposited bitcoin to cover the lock amount + fee.
@@ -65,13 +80,18 @@ pub struct SwapManager {
 
 struct RunningSwap {
     /// Force-suspension trigger for this swap's state machine task.
-    suspend: broadcast::Sender<()>,
+    suspend: broadcast::Sender<SuspendReason>,
     /// JoinHandle for the spawned state-machine task. `None` once
     /// [`SwapManager::suspend`] has taken it. Removal of the entry itself is
     /// always done by [`SwapManager::release_running`] on the task's exit
     /// path, so that [`is_running`](Self::is_running) stays true until the
     /// state machine has actually finished cleaning up.
     handle: Option<JoinHandle<()>>,
+    /// `true` while the task is sleeping in retry backoff after an error.
+    /// In that state the state machine is idle, so `start`/`resume`/
+    /// `cancel_and_refund` can pre-empt the pending retry by signalling
+    /// `ExternalTakeover` on `suspend` rather than bailing.
+    in_retry_backoff: bool,
 }
 
 impl SwapManager {
@@ -136,10 +156,8 @@ impl SwapManager {
     ///   - `bob::run` returns `Ok` (the swap reached a terminal state), or
     ///   - [`suspend`](Self::suspend) is called for `swap_id`.
     ///
-    /// The first attempt uses [`Swap::new`] with the inputs supplied here;
-    /// subsequent retries reload state from the DB via [`Swap::from_db`]
-    /// (which sees whatever progress `bob::run` persisted on the previous
-    /// attempt).
+    /// `bob::run` persists state transitions as they happen, so retries
+    /// simply reload whatever was last persisted via [`Swap::from_db`].
     ///
     /// The pre-swap maker selection (currently `determine_btc_to_swap`) must
     /// run before calling this and produce the [`StartSwapInputs`]. Use
@@ -175,47 +193,48 @@ impl SwapManager {
             .queue_peer_address(seller_peer_id, seller_multiaddr.clone())
             .await?;
 
-        // Persist the initial `Started` state so every retry — including the
-        // very first one if its prior attempt failed before any transition —
-        // can uniformly reload via `Swap::from_db`.
-        let initial_state = BobState::Started {
-            btc_amount: tx_lock_amount,
-            tx_lock_fee,
-            change_address: bitcoin_change_address,
-        };
-        db.insert_latest_state(swap_id, initial_state.into())
-            .await
-            .context("Failed to persist initial swap state")?;
-
-        let tauri_handle_for_release = tauri_handle.clone();
-
-        let make_swap: MakeSwap = Box::new(move || {
+        let make_initial_swap: MakeInitialSwap = Box::new({
             let mut event_loop_handle = event_loop_handle.clone();
             let db = Arc::clone(&db);
             let bitcoin_wallet = Arc::clone(&bitcoin_wallet);
             let monero_wallet = Arc::clone(&monero_wallet);
             let monero_receive_pool = monero_receive_pool.clone();
             let tauri_handle = tauri_handle.clone();
-            Box::pin(async move {
-                let swap_event_loop_handle = event_loop_handle
-                    .swap_handle(seller_peer_id, swap_id)
-                    .await?;
-                let swap = Swap::from_db(
-                    db,
-                    swap_id,
-                    bitcoin_wallet,
-                    monero_wallet,
-                    env_config,
-                    swap_event_loop_handle,
-                    monero_receive_pool,
-                )
-                .await?
-                .with_event_emitter(tauri_handle);
-                Ok(swap)
-            })
+            move || {
+                Box::pin(async move {
+                    let swap = Swap::new(
+                        db,
+                        swap_id,
+                        bitcoin_wallet,
+                        monero_wallet,
+                        env_config,
+                        event_loop_handle
+                            .swap_handle(seller_peer_id, swap_id)
+                            .await?,
+                        monero_receive_pool,
+                        bitcoin_change_address,
+                        tx_lock_amount,
+                        tx_lock_fee,
+                    )
+                    .with_event_emitter(tauri_handle);
+                    Ok(swap)
+                })
+            }
         });
 
-        self.spawn_swap_task(swap_id, tauri_handle_for_release, make_swap)
+        let rebuild_swap = build_rebuild_swap(
+            seller_peer_id,
+            swap_id,
+            db,
+            bitcoin_wallet,
+            monero_wallet,
+            env_config,
+            event_loop_handle,
+            monero_receive_pool,
+            tauri_handle.clone(),
+        );
+
+        self.spawn_swap_task(swap_id, tauri_handle, make_initial_swap, rebuild_swap)
             .await
     }
 
@@ -241,37 +260,48 @@ impl SwapManager {
 
         let monero_receive_pool = db.get_monero_address_pool(swap_id).await?;
 
-        tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Resuming);
-
-        let tauri_handle_for_release = tauri_handle.clone();
-
-        let make_swap: MakeSwap = Box::new(move || {
+        let make_initial_swap: MakeInitialSwap = Box::new({
             let mut event_loop_handle = event_loop_handle.clone();
             let db = Arc::clone(&db);
             let bitcoin_wallet = Arc::clone(&bitcoin_wallet);
             let monero_wallet = Arc::clone(&monero_wallet);
             let monero_receive_pool = monero_receive_pool.clone();
             let tauri_handle = tauri_handle.clone();
-            Box::pin(async move {
-                let swap_event_loop_handle = event_loop_handle
-                    .swap_handle(seller_peer_id, swap_id)
-                    .await?;
-                let swap = Swap::from_db(
-                    db,
-                    swap_id,
-                    bitcoin_wallet,
-                    monero_wallet,
-                    env_config,
-                    swap_event_loop_handle,
-                    monero_receive_pool,
-                )
-                .await?
-                .with_event_emitter(tauri_handle);
-                Ok(swap)
-            })
+            move || {
+                Box::pin(async move {
+                    tauri_handle
+                        .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Resuming);
+                    let swap = Swap::from_db(
+                        db,
+                        swap_id,
+                        bitcoin_wallet,
+                        monero_wallet,
+                        env_config,
+                        event_loop_handle
+                            .swap_handle(seller_peer_id, swap_id)
+                            .await?,
+                        monero_receive_pool,
+                    )
+                    .await?
+                    .with_event_emitter(tauri_handle);
+                    Ok(swap)
+                })
+            }
         });
 
-        self.spawn_swap_task(swap_id, tauri_handle_for_release, make_swap)
+        let rebuild_swap = build_rebuild_swap(
+            seller_peer_id,
+            swap_id,
+            db,
+            bitcoin_wallet,
+            monero_wallet,
+            env_config,
+            event_loop_handle,
+            monero_receive_pool,
+            tauri_handle.clone(),
+        );
+
+        self.spawn_swap_task(swap_id, tauri_handle, make_initial_swap, rebuild_swap)
             .await
     }
 
@@ -294,16 +324,21 @@ impl SwapManager {
 
         let mut resumed = Vec::new();
         for (_, swap_id, state) in swaps {
-            if !matches!(state, crate::protocol::State::Bob(_)) {
+            let crate::protocol::State::Bob(bob_state) = &state else {
                 continue;
-            }
-            if state.swap_finished() {
+            };
+            if !bob::is_resumable(bob_state) {
                 continue;
             }
             if self.is_running(swap_id).await {
                 continue;
             }
 
+            // Match the per-swap span that `request()` attaches for a
+            // single `resume_swap` call so the spawned state-machine task
+            // is tagged with `swap{swap_id=…}` and log lines stay
+            // filterable by swap.
+            let swap_span = debug_span!("swap", %swap_id);
             match self
                 .resume(
                     swap_id,
@@ -314,6 +349,7 @@ impl SwapManager {
                     event_loop_handle.clone(),
                     tauri_handle.clone(),
                 )
+                .instrument(swap_span)
                 .await
             {
                 Ok(()) => resumed.push(swap_id),
@@ -347,7 +383,7 @@ impl SwapManager {
             };
             // Best-effort: a task with no live subscriber means it already
             // raced past the select! and we'll just await it below.
-            let _ = entry.suspend.send(());
+            let _ = entry.suspend.send(SuspendReason::Terminate);
             entry.handle.take()
         };
 
@@ -366,6 +402,49 @@ impl SwapManager {
                     .context("State machine task panicked while shutting down"))
             }
             Err(_) => bail!("Timed out waiting for swap state machine task to exit"),
+        }
+    }
+
+    /// If a swap-task is currently sleeping in retry backoff, signal it to
+    /// exit silently and await its completion. No-op if the swap is not
+    /// running, or is running but not in backoff.
+    ///
+    /// Used by `start`, `resume`, and `cancel_and_refund` to take over a swap
+    /// whose state machine is idle between retries.
+    async fn cancel_pending_retry_if_any(&self, swap_id: Uuid) -> Result<()> {
+        let handle = {
+            let mut running = self.running.lock().await;
+            let Some(entry) = running.get_mut(&swap_id) else {
+                return Ok(());
+            };
+            if !entry.in_retry_backoff {
+                return Ok(());
+            }
+            let _ = entry.suspend.send(SuspendReason::ExternalTakeover);
+            entry.handle.take()
+        };
+
+        let Some(handle) = handle else {
+            return self.wait_until_not_running(swap_id).await;
+        };
+
+        tracing::debug!(%swap_id, "Awaiting pending-retry task exit before takeover");
+        match tokio::time::timeout(Duration::from_secs(10), handle).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(join_err)) => {
+                Err(Error::from(join_err)
+                    .context("Pending-retry task panicked while being cancelled"))
+            }
+            Err(_) => bail!("Timed out waiting for pending-retry task to exit"),
+        }
+    }
+
+    /// Set the `in_retry_backoff` flag on the running entry. Called by the
+    /// task when it enters / exits the inter-retry sleep.
+    async fn set_in_retry_backoff(&self, swap_id: Uuid, value: bool) {
+        let mut running = self.running.lock().await;
+        if let Some(entry) = running.get_mut(&swap_id) {
+            entry.in_retry_backoff = value;
         }
     }
 
@@ -388,8 +467,11 @@ impl SwapManager {
             .map_err(|_| anyhow::anyhow!("Timed out waiting for swap to exit"))
     }
 
-    /// Cancel and refund a swap. Bails if the swap is currently running, since
-    /// the running state machine is responsible for its own refunds.
+    /// Cancel and refund a swap. Bails if the swap is actively running (its
+    /// state machine is in flight), since the running state machine is
+    /// responsible for its own refunds. A swap that is sleeping in retry
+    /// backoff is pre-empted: we cancel the pending retry and then run the
+    /// refund ourselves.
     pub async fn cancel_and_refund(
         &self,
         swap_id: Uuid,
@@ -397,13 +479,20 @@ impl SwapManager {
         db: Arc<dyn Database + Send + Sync>,
         tauri_handle: Option<TauriHandle>,
     ) -> Result<BobState> {
+        self.cancel_pending_retry_if_any(swap_id).await?;
+
         if self.is_running(swap_id).await {
             bail!("Cannot cancel and refund swap {swap_id} because it is currently running");
         }
 
         let result = cli::cancel_and_refund(swap_id, bitcoin_wallet, db).await;
 
-        tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
+        tauri_handle.emit_swap_progress_event(
+            swap_id,
+            TauriSwapProgressEvent::Released {
+                next_auto_resume_at_unix_ms: None,
+            },
+        );
 
         result
     }
@@ -449,9 +538,16 @@ impl SwapManager {
         self: &Arc<Self>,
         swap_id: Uuid,
         tauri_handle: Option<TauriHandle>,
-        make_swap: MakeSwap,
+        make_initial_swap: MakeInitialSwap,
+        rebuild_swap: RebuildSwap,
     ) -> Result<()> {
-        let suspend_tx = broadcast::channel::<()>(10).0;
+        // If this swap is currently asleep between retries, pre-empt it: the
+        // existing task will exit silently and free the slot. An actively-
+        // running task is left alone (the slot-conflict check below will
+        // surface a clear error to the caller).
+        self.cancel_pending_retry_if_any(swap_id).await?;
+
+        let suspend_tx = broadcast::channel::<SuspendReason>(10).0;
         let suspend_rx = suspend_tx.subscribe();
         let (gate_tx, gate_rx) = oneshot::channel::<()>();
 
@@ -462,7 +558,15 @@ impl SwapManager {
                 if gate_rx.await.is_err() {
                     return;
                 }
-                run_swap_task(manager, swap_id, suspend_rx, tauri_handle, make_swap).await;
+                run_swap_task(
+                    manager,
+                    swap_id,
+                    suspend_rx,
+                    tauri_handle,
+                    make_initial_swap,
+                    rebuild_swap,
+                )
+                .await;
             }
             .instrument(span),
         );
@@ -478,6 +582,7 @@ impl SwapManager {
                 RunningSwap {
                     suspend: suspend_tx,
                     handle: Some(handle),
+                    in_retry_backoff: false,
                 },
             );
         }
@@ -523,7 +628,12 @@ where
     let result = tokio::select! {
         result = body => result.map(Some),
         _ = manager.await_initiation_force_suspension() => {
-            tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
+            tauri_handle.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::Released {
+                    next_auto_resume_at_unix_ms: None,
+                },
+            );
             Ok(None)
         }
     };
@@ -538,17 +648,21 @@ where
 /// Drive a single swap task. Retries the state machine with exponential
 /// backoff on `Err`, exits on `Ok` (terminal state reached) or on receipt of
 /// a force-suspension signal. Always releases the running-map entry and
-/// emits `Released` on exit.
+/// (unless pre-empted by an external takeover) emits a final `Released` on
+/// exit.
 ///
 /// The retry behaviour is intentional: individual states inside `bob::run`
 /// already retry their own operations, but `bob::run` itself can still
-/// return `Err`.
+/// return `Err`. While we're sleeping between retries the `in_retry_backoff`
+/// flag is set on our running entry so `start`/`resume`/`cancel_and_refund`
+/// can pre-empt us instead of bailing with "already running".
 async fn run_swap_task(
     manager: Arc<SwapManager>,
     swap_id: Uuid,
-    mut suspend_rx: broadcast::Receiver<()>,
+    mut suspend_rx: broadcast::Receiver<SuspendReason>,
     tauri_handle: Option<TauriHandle>,
-    mut make_swap: MakeSwap,
+    make_initial_swap: MakeInitialSwap,
+    mut rebuild_swap: RebuildSwap,
 ) {
     let mut backoff = backoff::ExponentialBackoffBuilder::new()
         .with_initial_interval(RETRY_INITIAL_INTERVAL)
@@ -557,15 +671,22 @@ async fn run_swap_task(
         .with_max_elapsed_time(None)
         .build();
 
+    let mut external_takeover = false;
+    let mut make_initial_swap = Some(make_initial_swap);
+
     'retry: loop {
         let outcome: Result<BobState> = tokio::select! {
             biased;
-            _ = suspend_rx.recv() => {
+            reason = suspend_rx.recv() => {
                 tracing::debug!(%swap_id, "Suspend signal received, exiting state machine");
+                external_takeover = matches!(reason, Ok(SuspendReason::ExternalTakeover));
                 break 'retry;
             }
             result = async {
-                let swap = make_swap().await?;
+                let swap = match make_initial_swap.take() {
+                    Some(make_initial_swap) => make_initial_swap().await?,
+                    None => rebuild_swap().await?,
+                };
                 bob::run(swap).await
             } => result,
         };
@@ -577,6 +698,8 @@ async fn run_swap_task(
             }
             Err(error) => {
                 let next = backoff.next_backoff().unwrap_or(RETRY_MAX_INTERVAL);
+                let next_at_unix_ms = unix_now_ms().saturating_add(next.as_millis() as u64);
+
                 tracing::error!(
                     %swap_id,
                     retry_in_secs = next.as_secs(),
@@ -584,23 +707,102 @@ async fn run_swap_task(
                     error,
                 );
 
+                // Mark the slot as idle and tell the frontend we've released
+                // the swap *with* a hint about when we'll auto-resume — the
+                // user can manually resume / cancel during this window and
+                // pre-empt us.
+                manager.set_in_retry_backoff(swap_id, true).await;
+                tauri_handle.emit_swap_progress_event(
+                    swap_id,
+                    TauriSwapProgressEvent::Released {
+                        next_auto_resume_at_unix_ms: Some(next_at_unix_ms),
+                    },
+                );
+
                 tokio::select! {
                     biased;
-                    _ = suspend_rx.recv() => {
+                    reason = suspend_rx.recv() => {
                         tracing::debug!(
                             %swap_id,
                             "Suspend signal received during retry backoff, exiting state machine",
                         );
+                        external_takeover = matches!(reason, Ok(SuspendReason::ExternalTakeover));
                         break 'retry;
                     }
                     _ = tokio::time::sleep(next) => {}
                 }
+
+                // Sleep finished naturally — clear the flag so the next
+                // iteration's `make_swap` runs under "actively running"
+                // semantics again.
+                manager.set_in_retry_backoff(swap_id, false).await;
             }
         }
     }
 
     manager.release_running(swap_id).await;
-    tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
+
+    // Suppress the final Released only when another caller is about to take
+    // over the swap and will emit its own progress event. This avoids a
+    // brief "released" flash in the frontend between takeovers.
+    if !external_takeover {
+        tauri_handle.emit_swap_progress_event(
+            swap_id,
+            TauriSwapProgressEvent::Released {
+                next_auto_resume_at_unix_ms: None,
+            },
+        );
+    }
+}
+
+fn unix_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Build the closure that the retry loop calls to reconstruct a [`Swap`]
+/// from whatever state `bob::run` last persisted. Identical for `start` and
+/// `resume`, since after the first attempt the source-of-truth is always
+/// the DB.
+#[allow(clippy::too_many_arguments)]
+fn build_rebuild_swap(
+    seller_peer_id: PeerId,
+    swap_id: Uuid,
+    db: Arc<dyn Database + Send + Sync>,
+    bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
+    monero_wallet: Arc<monero::Wallets>,
+    env_config: EnvConfig,
+    event_loop_handle: EventLoopHandle,
+    monero_receive_pool: MoneroAddressPool,
+    tauri_handle: Option<TauriHandle>,
+) -> RebuildSwap {
+    Box::new(move || {
+        let mut event_loop_handle = event_loop_handle.clone();
+        let db = Arc::clone(&db);
+        let bitcoin_wallet = Arc::clone(&bitcoin_wallet);
+        let monero_wallet = Arc::clone(&monero_wallet);
+        let monero_receive_pool = monero_receive_pool.clone();
+        let tauri_handle = tauri_handle.clone();
+        Box::pin(async move {
+            let swap_event_loop_handle = event_loop_handle
+                .swap_handle(seller_peer_id, swap_id)
+                .await?;
+            let swap = Swap::from_db(
+                db,
+                swap_id,
+                bitcoin_wallet,
+                monero_wallet,
+                env_config,
+                swap_event_loop_handle,
+                monero_receive_pool,
+            )
+            .await?
+            .with_event_emitter(tauri_handle);
+            Ok(swap)
+        })
+    })
 }
 
 /// Poll `predicate` every 50ms for up to 10s, returning `Ok(())` when it

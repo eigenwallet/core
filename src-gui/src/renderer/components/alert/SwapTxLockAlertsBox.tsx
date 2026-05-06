@@ -3,9 +3,8 @@ import { useSwapInfosSortedByDate } from "store/hooks";
 import SwapStatusAlert from "./SwapStatusAlert/SwapStatusAlert";
 
 export default function SwapTxLockAlertsBox() {
-  // We specifically choose ALL swaps here
-  // If a swap is in a state where an Alert is not needed (becaue no Bitcoin have been locked or because the swap has been completed)
-  // the SwapStatusAlert component will not render an Alert
+  // We specifically choose ALL swaps here. SwapStatusAlert renders nothing for
+  // swaps without a relevant timelock alert (no funds locked / already done).
   const swaps = useSwapInfosSortedByDate();
 
   return (
