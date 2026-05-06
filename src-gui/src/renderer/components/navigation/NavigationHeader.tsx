@@ -7,7 +7,7 @@ import RouteListItemIconButton from "./RouteListItemIconButton";
 import UnfinishedSwapsBadge from "./UnfinishedSwapsCountBadge";
 import {
   useHasOfferPhaseSwap,
-  useHasSwapPhaseSwap,
+  useSwapPhaseSwapsCount,
   useTotalUnreadMessagesCount,
 } from "store/hooks";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -62,10 +62,14 @@ function FeedbackIconWithBadge() {
 }
 
 function SwapIconWithBadge() {
-  const hasSwapPhaseSwap = useHasSwapPhaseSwap();
+  const swapPhaseSwapsCount = useSwapPhaseSwapsCount();
 
   return (
-    <Badge invisible={!hasSwapPhaseSwap} variant="dot" color="primary">
+    <Badge
+      badgeContent={swapPhaseSwapsCount}
+      invisible={swapPhaseSwapsCount === 0}
+      color="primary"
+    >
       <SwapHorizOutlinedIcon />
     </Badge>
   );

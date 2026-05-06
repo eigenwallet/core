@@ -23,12 +23,15 @@ export const swapSlice = createSlice({
     ) {
       const existingSwap = swap.swaps[action.payload.swap_id];
 
-      // If a swap is released while still in the offer phase (e.g. the user
-      // cancelled before any funds were committed) there is no meaningful
-      // final state worth keeping around — drop it instead of leaving a
-      // panel for the user to acknowledge.
+      // If a swap is *terminally* released while still in the offer phase
+      // (e.g. the user cancelled before any funds were committed) there is no
+      // meaningful final state worth keeping around — drop it. A Released
+      // event carrying `next_auto_resume_at_unix_ms` is just a retry signal,
+      // not a terminal release, so we keep the entry around so the UI can
+      // show the retry banner.
       if (
         action.payload.event.type === "Released" &&
+        action.payload.event.content.next_auto_resume_at_unix_ms == null &&
         existingSwap != null &&
         isOfferPhase(existingSwap.curr)
       ) {
@@ -43,7 +46,14 @@ export const swapSlice = createSlice({
           swapId: action.payload.swap_id,
         };
       } else {
-        existingSwap.prev = existingSwap.curr;
+        // Preserve `prev` as the last *non-Released* event. Two consecutive
+        // Released events (e.g. `make_swap` fails before `bob::run` emits
+        // any progress, so we go straight from one retry-Released to the
+        // next) would otherwise squash the meaningful prior state and force
+        // every consumer to walk further back themselves.
+        if (existingSwap.curr.type !== "Released") {
+          existingSwap.prev = existingSwap.curr;
+        }
         existingSwap.curr = action.payload.event;
       }
     },

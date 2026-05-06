@@ -2,6 +2,6 @@ import CircularProgressWithSubtitle from "../components/CircularProgressWithSubt
 
 export default function PreflightEncSigPage() {
   return (
-    <CircularProgressWithSubtitle description="Running final checks before allowing Bitcoin to be redeemed..." />
+    <CircularProgressWithSubtitle description="Final checks before allowing Bitcoin to be redeemed..." />
   );
 }

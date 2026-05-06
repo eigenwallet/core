@@ -296,6 +296,25 @@ pub fn is_complete(state: &BobState) -> bool {
     )
 }
 
+/// States the swap is in *before* any Bitcoin has been locked. These are
+/// reachable when the user terminated the setup flow prior to approving the
+/// offer, so there is nothing on-chain to recover and the swap should not
+/// be auto-resumed by `resume_all`. Treated by the GUI as un-listable for
+/// the same reason.
+pub fn is_pre_lock_setup(state: &BobState) -> bool {
+    matches!(
+        state,
+        BobState::Started { .. } | BobState::SwapSetupCompleted(..)
+    )
+}
+
+/// Whether the swap is in a state that `resume_all` should pick up on
+/// startup: not yet terminal, and past the pre-lock setup phase where no
+/// funds have been committed.
+pub fn is_resumable(state: &BobState) -> bool {
+    !is_complete(state) && !is_pre_lock_setup(state)
+}
+
 #[allow(non_snake_case)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct State0 {

@@ -1,4 +1,3 @@
-import { Typography } from "@mui/material";
 import SwapTxLockAlertsBox from "../../alert/SwapTxLockAlertsBox";
 import HistoryTable from "./table/HistoryTable";
 
