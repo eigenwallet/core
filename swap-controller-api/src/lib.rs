@@ -79,6 +79,9 @@ pub struct Swap {
     /// Exchange rate: BTC per XMR (amount of BTC needed to buy 1 XMR)
     #[serde(with = "bitcoin::amount::serde::as_sat")]
     pub exchange_rate: bitcoin::Amount,
+    /// Fee paid by Alice for the Bitcoin redeem transaction, in satoshis.
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub btc_redeem_fee: bitcoin::Amount,
     pub peer_id: String,
     pub completed: bool,
 }
@@ -160,8 +163,13 @@ pub trait AsbApi {
     async fn peer_id(&self) -> Result<PeerIdResponse, ErrorObjectOwned>;
     #[method(name = "active_connections")]
     async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned>;
+    /// Returns the `limit` swaps, starting from the `offset`th, in order of swap start time
     #[method(name = "get_swaps")]
-    async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned>;
+    async fn get_swaps(
+        &self,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Vec<Swap>, ErrorObjectOwned>;
     #[method(name = "registration_status")]
     async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned>;
     #[method(name = "set_burn_on_refund")]

@@ -170,7 +170,10 @@ namespace Monero
     }
 
     /**
-     * Creates a transaction that spends the unlocked balance to multiple destinations with given ratios.
+     * Creates a transaction that pays a list of (address, amount) destinations.
+     * If subtract_fee_from_outputs is true, the fee is taken from the largest output
+     * (used to drain the wallet to the destinations); otherwise the wallet pays the
+     * fee and produces a change output.
      */
     inline PendingTransaction *createTransactionMultiDest(
         Wallet &wallet,
@@ -189,10 +192,10 @@ namespace Monero
             return nullptr;
         }
 
-        // Check if the number of destinations and sweep ratios match
+        // Check if the number of destinations and amounts match
         if (amounts.size() != n)
         {
-            // wallet.setStatusError("Number of destinations and sweep ratios must match");
+            // wallet.setStatusError("Number of destinations and amounts must match");
             return nullptr;
         }
 

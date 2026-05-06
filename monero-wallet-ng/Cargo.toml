@@ -11,6 +11,7 @@ thiserror = { workspace = true }
 
 # Cryptography
 curve25519-dalek = { workspace = true }
+rand = { workspace = true }
 zeroize = { workspace = true }
 
 # Serialization

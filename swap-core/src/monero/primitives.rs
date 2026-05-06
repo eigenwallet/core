@@ -411,6 +411,16 @@ impl From<TransferProof> for TransferProofMaybeWithTxKey {
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TxHash(pub String);
 
+impl TxHash {
+    pub fn from_tx(
+        tx: &monero_oxide_wallet::transaction::Transaction<
+            monero_oxide_wallet::transaction::NotPruned,
+        >,
+    ) -> Self {
+        TxHash(hex::encode(tx.hash()))
+    }
+}
+
 impl From<TxHash> for String {
     fn from(from: TxHash) -> Self {
         from.0

@@ -77,7 +77,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             println!("Connected to {} peers", response.connections);
         }
         Cmd::GetSwaps => {
-            let swaps = client.get_swaps().await?;
+            let swaps = client.get_swaps(None, None).await?;
 
             let mut table = comfy_table::Table::new();
             table.set_header([
@@ -88,6 +88,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 "BTC",
                 "XMR",
                 "Rate (BTC/XMR)",
+                "BTC Redeem Fee",
                 "Peer ID",
                 "Completed",
             ]);
@@ -106,6 +107,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                         // Floating point may introduce very small inaccuracies here
                         &format!("{:.12} XMR", xmr.as_xmr()),
                         &swap.exchange_rate.to_string(),
+                        &swap.btc_redeem_fee.to_string(),
                         &swap.peer_id,
                         &swap.completed.to_string(),
                     ]);

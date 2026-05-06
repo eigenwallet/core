@@ -154,6 +154,71 @@ pub mod address {
     }
 }
 
+pub mod transaction {
+    //! Serialize a signed Monero `Transaction` as its wire-format hex string —
+    //! the same blob that would be submitted to the `send_raw_transaction` RPC.
+    //!
+    //! - Human-readable formats (JSON): lowercase hex string.
+    //! - Binary formats: raw wire bytes.
+
+    use monero_oxide_wallet::transaction::{NotPruned, Transaction};
+    use serde::de::Visitor;
+    use serde::{Deserializer, Serializer, de};
+    use std::fmt;
+
+    struct BytesVisitor;
+
+    impl Visitor<'_> for BytesVisitor {
+        type Value = Transaction<NotPruned>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(formatter, "a Monero transaction serialized as wire bytes")
+        }
+
+        fn visit_bytes<E>(self, s: &[u8]) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Transaction::read(&mut &*s).map_err(E::custom)
+        }
+
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            let bytes = data_encoding::HEXLOWER_PERMISSIVE
+                .decode(s.as_bytes())
+                .map_err(|err| E::custom(format!("{err:?}")))?;
+            self.visit_bytes(&bytes)
+        }
+    }
+
+    pub fn serialize<S>(tx: &Transaction<NotPruned>, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let bytes = tx.serialize();
+        if s.is_human_readable() {
+            s.serialize_str(&data_encoding::HEXLOWER.encode(&bytes))
+        } else {
+            s.serialize_bytes(&bytes)
+        }
+    }
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Transaction<NotPruned>, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_string(BytesVisitor)
+        } else {
+            deserializer.deserialize_bytes(BytesVisitor)
+        }
+    }
+}
+
 pub mod scalar {
     // https://docs.rs/curve25519-dalek/4.1.3/src/curve25519_dalek/scalar.rs.html#405-458
 

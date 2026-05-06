@@ -9,6 +9,7 @@ pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 use anyhow::{Context, Result};
 use monero_address::Network;
 use monero_daemon_rpc::MoneroDaemon;
+use monero_oxide_wallet::transaction::{NotPruned, Transaction};
 use monero_simple_request_rpc::SimpleRequestTransport;
 use std::time::Duration;
 use std::{path::PathBuf, sync::Arc};
@@ -301,6 +302,66 @@ impl Wallets {
             .context("Failed to get block height from daemon")?;
 
         Ok(height as u64)
+    }
+
+    /// Construct and sign a sweep transaction for the largest output of
+    /// `lock_tx_hash` (viewable by the given view-pair) across a set of
+    /// `destinations` split by ratio.
+    ///
+    /// This is the monero-wallet-ng-based replacement for the old monero-sys
+    /// `sweep_multi_destination` flow: the caller hands over the keys of a
+    /// single-use view-pair that only ever receives the lock transaction, and
+    /// this method locates the block that contains `lock_tx_hash`, scans it,
+    /// and sweeps its single output across the destinations.
+    ///
+    /// `destinations` must be non-empty and its ratios must sum to 1.
+    pub async fn construct_sweep_to(
+        &self,
+        lock_tx_hash: &TxHash,
+        spend_key: monero_oxide_ext::PrivateKey,
+        view_key: PrivateViewKey,
+        destinations: Vec<(monero_address::MoneroAddress, f64)>,
+    ) -> Result<Transaction<NotPruned>> {
+        let rpc_client = self.rpc_client().await;
+        let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
+
+        let spend_scalar = Zeroizing::new(spend_key.scalar);
+        let view_scalar = Zeroizing::new(view_key.0.scalar);
+
+        monero_wallet_ng::sweep::construct_sweep_tx_to(
+            rpc_client,
+            spend_scalar,
+            view_scalar,
+            tx_id,
+            destinations,
+        )
+        .await
+        .context("Failed to construct sweep transaction to destinations")
+    }
+
+    /// Convenience wrapper around [`Self::construct_sweep_to`] for the single-destination case.
+    pub async fn construct_sweep_to_single(
+        &self,
+        lock_tx_hash: &TxHash,
+        spend_key: monero_oxide_ext::PrivateKey,
+        view_key: PrivateViewKey,
+        destination: monero_address::MoneroAddress,
+    ) -> Result<Transaction<NotPruned>> {
+        let rpc_client = self.rpc_client().await;
+        let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
+
+        let spend_scalar = Zeroizing::new(spend_key.scalar);
+        let view_scalar = Zeroizing::new(view_key.0.scalar);
+
+        monero_wallet_ng::sweep::construct_sweep_tx_to_single(
+            rpc_client,
+            spend_scalar,
+            view_scalar,
+            tx_id,
+            destination,
+        )
+        .await
+        .context("Failed to construct sweep transaction to destination")
     }
 
     /// Verify a transfer using the new monero-wallet-ng implementation.

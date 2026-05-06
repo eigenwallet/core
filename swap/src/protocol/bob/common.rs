@@ -4,83 +4,77 @@ use anyhow::{Context, Result};
 use uuid::Uuid;
 
 use bitcoin_wallet;
-use swap_core::monero::TxHash;
 use swap_machine::bob::{State3, State4, State5};
 
 use crate::cli::SwapEventLoopHandle;
 use crate::common::retry;
 use crate::monero;
 use crate::monero::MoneroAddressPool;
+use monero_oxide_wallet::transaction::{NotPruned, Transaction};
 
 pub(super) trait XmrRedeemable {
-    async fn redeem_xmr(
+    async fn construct_xmr_redeem_transaction(
         self,
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
         monero_receive_pool: MoneroAddressPool,
-    ) -> Result<TxHash>;
+    ) -> Result<Transaction<NotPruned>>;
 }
 
 pub(super) trait InfallibleXmrRedeemable {
-    async fn infallible_redeem_xmr(
+    async fn infallible_construct_xmr_redeem_transaction(
         &self,
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
         monero_receive_pool: MoneroAddressPool,
-    ) -> TxHash;
+    ) -> Transaction<NotPruned>;
 }
 
 impl XmrRedeemable for State5 {
-    // TODO: Use monero-wallet-ng with monero-oxide here
-    async fn redeem_xmr(
+    async fn construct_xmr_redeem_transaction(
         self: State5,
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
         monero_receive_pool: MoneroAddressPool,
-    ) -> Result<TxHash> {
+    ) -> Result<Transaction<NotPruned>> {
         let (spend_key, view_key) = self.xmr_keys();
 
-        tracing::info!(%swap_id, "Redeeming Monero");
-
-        let wallet = monero_wallet
-            .swap_wallet_spendable(
-                swap_id,
-                spend_key,
-                view_key,
-                self.lock_transfer_proof.tx_hash(),
-            )
-            .await
-            .context("Failed to open Monero wallet")?;
-
-        // Before we sweep, we ensure that the wallet is synchronized
-        wallet.refresh_blocking().await?;
-
-        tracing::debug!(%swap_id, receive_address=?monero_receive_pool, "Opened temporary Monero wallet, sweeping to receive address");
+        tracing::info!(%swap_id, "Constructing Monero redeem transaction");
 
         let main_address = monero_wallet.main_wallet().await.main_address().await?;
+        let addresses = monero_receive_pool.fill_empty_addresses(main_address);
+        let ratios = monero_receive_pool.percentages();
+        let destinations: Vec<_> = addresses.into_iter().zip(ratios).collect();
 
-        let tx_hash = wallet
-            .sweep_multi_destination(
-                &monero_receive_pool.fill_empty_addresses(main_address),
-                &monero_receive_pool.percentages(),
+        tracing::debug!(
+            %swap_id,
+            destinations = ?destinations,
+            "Sweeping lock output across receive pool"
+        );
+
+        let tx = monero_wallet
+            .construct_sweep_to(
+                &self.lock_transfer_proof.tx_hash(),
+                spend_key,
+                view_key,
+                destinations,
             )
             .await
-            .context("Failed to redeem Monero")?
-            .txid;
+            .context("Failed to construct Monero redeem transaction")?;
 
-        tracing::info!(%swap_id, %tx_hash, "Redeemed Monero");
+        tracing::info!(%swap_id, tx_hash = %monero::TxHash::from_tx(&tx), "Constructed Monero redeem transaction");
 
-        Ok(TxHash(tx_hash))
+        Ok(tx)
     }
 }
 
 impl InfallibleXmrRedeemable for State5 {
-    async fn infallible_redeem_xmr(
+    async fn infallible_construct_xmr_redeem_transaction(
         &self,
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
         monero_receive_pool: MoneroAddressPool,
-    ) -> TxHash {
+    ) -> Transaction<NotPruned> {
         let state_for_retry = self.clone();
         let monero_receive_pool_for_retry = monero_receive_pool;
 
@@ -92,7 +86,11 @@ impl InfallibleXmrRedeemable for State5 {
 
                 async move {
                     state
-                        .redeem_xmr(monero_wallet, swap_id, monero_receive_pool)
+                        .construct_xmr_redeem_transaction(
+                            monero_wallet,
+                            swap_id,
+                            monero_receive_pool,
+                        )
                         .await
                         .map_err(backoff::Error::transient)
                 }

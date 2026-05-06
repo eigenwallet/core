@@ -94,12 +94,14 @@ function getActiveStep(state: SwapState | null): PathStep | null {
     // Step 3: Waiting for XMR redemption
     // Bitcoin has been redeemed by Alice, now waiting for us to redeem Monero
     case "WaitingForXmrConfirmationsBeforeRedeem":
-    case "RedeemingMonero":
+    case "ConstructingMoneroRedeem":
+    case "PublishingMoneroRedeem":
       return [PathType.HAPPY_PATH, 3, isReleased];
 
     // Step 4: Swap completed successfully
-    // XMR redemption transaction is in mempool, swap is essentially complete
-    case "XmrRedeemInMempool":
+    // XMR redemption transaction has been published / confirmed
+    case "XmrRedeemPublished":
+    case "XmrRedeemed":
       return [PathType.HAPPY_PATH, 4, false];
 
     // Recovery Path States - Generic (early states before we know outcome)

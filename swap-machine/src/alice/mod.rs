@@ -86,7 +86,22 @@ pub enum AliceState {
         spend_key: monero::PrivateKey,
         state3: Box<State3>,
     },
-    // TODO: save redeem transaction id
+    /// We have constructed and signed the Monero refund transaction but have
+    /// not yet published it.
+    XmrRefundTxConstructed {
+        state3: Box<State3>,
+        /// The signed transaction blob to publish.
+        xmr_refund_tx: monero_oxide_wallet::transaction::Transaction,
+    },
+    /// We have published the Monero refund transaction but it has not yet
+    /// been included in a block.
+    XmrRefundTxPublished {
+        state3: Box<State3>,
+        /// The signed transaction blob we published.
+        xmr_refund_tx: monero_oxide_wallet::transaction::Transaction,
+    },
+    /// We have published the Monero refund transaction and it has been
+    /// included in a block.
     XmrRefunded {
         state3: Option<Box<State3>>,
     },
@@ -184,6 +199,12 @@ impl fmt::Display for AliceState {
             AliceState::BtcPunished { .. } => write!(f, "btc is punished"),
             AliceState::SafelyAborted => write!(f, "safely aborted"),
             AliceState::BtcPunishable { .. } => write!(f, "btc is punishable"),
+            AliceState::XmrRefundTxConstructed { .. } => {
+                write!(f, "xmr refund tx is constructed")
+            }
+            AliceState::XmrRefundTxPublished { .. } => {
+                write!(f, "xmr refund tx is published")
+            }
             AliceState::XmrRefunded { .. } => write!(f, "xmr is refunded"),
             AliceState::BtcWithholdPublished { .. } => write!(f, "btc withhold published"),
             AliceState::BtcWithholdConfirmed { .. } => write!(f, "btc withheld"),
@@ -731,7 +752,7 @@ pub struct State3 {
     /// in case of a refund. Otherwise Bob will only be partially refunded.
     #[serde(default)]
     tx_reclaim_sig_bob: Option<swap_core::bitcoin::Signature>,
-    tx_redeem_fee: bitcoin::Amount,
+    pub tx_redeem_fee: bitcoin::Amount,
     pub tx_punish_fee: bitcoin::Amount,
     pub tx_refund_fee: bitcoin::Amount,
     #[serde(default)]

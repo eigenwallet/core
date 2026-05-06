@@ -3,8 +3,8 @@ import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import FeedbackInfoBox from "renderer/components/pages/help/FeedbackInfoBox";
 import MoneroTransactionInfoBox from "renderer/components/pages/swap/swap/components/MoneroTransactionInfoBox";
 
-export default function XmrRedeemInMempoolPage(
-  state: TauriSwapProgressEventContent<"XmrRedeemInMempool">,
+export default function XmrRedeemedPage(
+  state: TauriSwapProgressEventContent<"XmrRedeemed">,
 ) {
   const xmr_redeem_txid = state.xmr_redeem_txids[0] ?? null;
 
