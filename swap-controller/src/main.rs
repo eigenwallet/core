@@ -89,6 +89,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 "XMR",
                 "Rate (BTC/XMR)",
                 "BTC Redeem Fee",
+                "BTC Redeem TxID",
                 "Peer ID",
                 "Completed",
             ]);
@@ -108,6 +109,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                         &format!("{:.12} XMR", xmr.as_xmr()),
                         &swap.exchange_rate.to_string(),
                         &swap.btc_redeem_fee.to_string(),
+                        &swap.btc_redeem_txid,
                         &swap.peer_id,
                         &swap.completed.to_string(),
                     ]);

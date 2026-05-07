@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB+CONTROLLER: `get-swaps` now includes the `btc_redeem_txid` per swap: the Bitcoin redeem transaction id. This is deterministic from the swap's locked state, so it is set even before the redeem transaction is published.
+
 ## [4.5.1] - 2026-05-05
 
 - ASB+CONTROLLER: `get-swaps` now accepts optional `limit` and `offset` parameters which can be used for pagination.
