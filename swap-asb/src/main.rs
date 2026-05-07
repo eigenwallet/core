@@ -360,6 +360,7 @@ pub async fn main() -> Result<()> {
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
+                config.maker.btc_redeem_fee_multiplier,
                 tip_config,
                 config.maker.refund_policy,
                 onion_service_handle,

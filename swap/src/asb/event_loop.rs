@@ -54,6 +54,7 @@ where
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
     external_redeem_address: Option<bitcoin::Address>,
+    btc_redeem_fee_multiplier: Decimal,
     developer_tip: TipConfig,
     refund_policy: RefundPolicy,
 
@@ -183,6 +184,7 @@ where
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
+        btc_redeem_fee_multiplier: Decimal,
         developer_tip: TipConfig,
         refund_policy: RefundPolicy,
         onion_service_handle: Option<Arc<RunningOnionService>>,
@@ -205,6 +207,7 @@ where
             min_buy,
             max_buy,
             external_redeem_address,
+            btc_redeem_fee_multiplier,
             developer_tip,
             refund_policy,
             quote_cache,
@@ -289,13 +292,14 @@ where
                             let bitcoin_wallet = self.bitcoin_wallet.clone();
                             let monero_wallet = self.monero_wallet.clone();
                             let external_redeem_address = self.external_redeem_address.clone();
+                            let btc_redeem_fee_multiplier = self.btc_redeem_fee_multiplier;
 
                             self.inflight_wallet_snapshots.push(async move {
                                 // Wait for the swap setup handler to request the wallet snapshot
                                 let (btc, responder) = send_wallet_snapshot.recv().await?;
 
                                 // Compute the wallet snapshot
-                                let wallet_snapshot = capture_wallet_snapshot(bitcoin_wallet, &monero_wallet, &external_redeem_address, btc).await?;
+                                let wallet_snapshot = capture_wallet_snapshot(bitcoin_wallet, &monero_wallet, &external_redeem_address, btc_redeem_fee_multiplier, btc).await?;
 
                                 // This is used further down to then actually respond to the swap setup handler
                                 Ok((btc, responder, wallet_snapshot))
@@ -1161,10 +1165,22 @@ fn apply_anti_spam_policy(
     ))
 }
 
+/// Multiply a fee amount by `multiplier`, rounding to the nearest satoshi.
+fn scale_fee(fee: bitcoin::Amount, multiplier: Decimal) -> Result<bitcoin::Amount> {
+    let sats: u64 = Decimal::from(fee.to_sat())
+        .checked_mul(multiplier)
+        .context("Decimal overflow when scaling fee")?
+        .round()
+        .try_into()
+        .context("Scaled fee does not fit in u64")?;
+    Ok(bitcoin::Amount::from_sat(sats))
+}
+
 async fn capture_wallet_snapshot(
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: &monero::Wallets,
     external_redeem_address: &Option<bitcoin::Address>,
+    btc_redeem_fee_multiplier: Decimal,
     transfer_amount: bitcoin::Amount,
 ) -> Result<WalletSnapshot> {
     let start_time = Instant::now();
@@ -1184,6 +1200,8 @@ async fn capture_wallet_snapshot(
     let redeem_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxRedeem::weight(), Some(transfer_amount))
         .await?;
+    let redeem_fee = scale_fee(redeem_fee, btc_redeem_fee_multiplier)
+        .context("Failed to apply btc_redeem_fee_multiplier")?;
     let punish_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
         .await?;

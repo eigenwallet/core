@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: New `maker.btc_redeem_fee_multiplier` config option (default `1.0`) that scales the estimated BTC redeem fee. Setting it higher (e.g. `2.0`) acts as a safety margin so the redeem still confirms when fee estimation undershoots actual mempool conditions.
+
 ## [4.5.2] - 2026-05-07
 
 - ASB+CONTROLLER: `get-swaps` now includes the `btc_redeem_txid` per swap: the Bitcoin redeem transaction id. This is deterministic from the swap's locked state, so it is set even before the redeem transaction is published.
