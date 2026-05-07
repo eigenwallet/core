@@ -1425,6 +1425,22 @@ impl WalletManager {
     ) -> anyhow::Result<FfiWallet> {
         tracing::debug!(%path, "Recovering wallet from seed");
 
+        let pathbuf = PathBuf::from(path);
+        if let Some(directory) = pathbuf.parent() {
+            tracing::debug!(
+                "Making sure to create wallet directory `{}`",
+                directory.display()
+            );
+            std::fs::create_dir_all(directory).with_context(|| {
+                format!(
+                    "failed to create wallet directory `{}`",
+                    directory.display()
+                )
+            })?;
+        }
+
+        let path = pathbuf.display().to_string();
+
         let_cxx_string!(path = path);
         let_cxx_string!(password = password.unwrap_or(""));
         let_cxx_string!(mnemonic = mnemonic);
