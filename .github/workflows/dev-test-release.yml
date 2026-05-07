@@ -1,0 +1,76 @@
+name: "Create dev test release"
+
+# Allows a developer to build a release from a specific commit hash for testing
+# purposes. The resulting release is a GitHub pre-release tagged
+# `test-<short-sha>-<timestamp>` and is wired up so that the existing build
+# workflows (build-release-binaries.yml, build-gui-release-binaries.yml) build
+# binaries and attach them to the release, but DO NOT:
+#   - push Docker images to ghcr
+#   - upload to crabnebula
+#   - update the Homebrew formula
+#   - update the Flatpak repo on gh-pages
+# Those publishing steps are gated on the tag prefix `test-` in the consuming
+# workflows.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "Commit SHA (or ref) to build the testing release from"
+        required: true
+      description:
+        description: "Short description shown after 'TESTING RELEASE:' in the release body"
+        required: false
+        default: ""
+
+concurrency:
+  group: dev-test-release-${{ github.event.inputs.commit }}
+  cancel-in-progress: false
+
+jobs:
+  create_testing_release:
+    name: Create testing release from commit
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.7
+        with:
+          ref: ${{ github.event.inputs.commit }}
+          fetch-depth: 0
+
+      - name: Resolve commit SHA
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse "${{ github.event.inputs.commit }}^{commit}")"
+          SHORT_SHA="$(git rev-parse --short "$SHA")"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Compute tag name
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="test-${{ steps.commit.outputs.short_sha }}-$(date -u +%Y%m%d%H%M%S)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create testing release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          release_name: ${{ steps.tag.outputs.tag }}
+          draft: false
+          prerelease: true
+          commitish: ${{ steps.commit.outputs.sha }}
+          body: |
+            TESTING RELEASE: ${{ github.event.inputs.description }}
+
+            Built from commit `${{ steps.commit.outputs.sha }}` by @${{ github.actor }}.
+
+            This is a developer test build. Docker images were NOT pushed to
+            ghcr, binaries were NOT uploaded to crabnebula, the Homebrew
+            formula was NOT updated, and the Flatpak repo was NOT republished.
+            Do not distribute this build to end users.
