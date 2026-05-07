@@ -992,10 +992,8 @@ mod wallet {
                         let wallet_path =
                             eigenwallet_wallets_dir.join(format!("wallet_{}", timestamp));
 
-                        if let Some(parent) = wallet_path.parent() {
-                            swap_fs::ensure_directory_exists(parent)
-                                .context("Failed to create wallet directory")?;
-                        }
+                        swap_fs::ensure_directory_exists(&wallet_path)
+                            .context("Failed to create wallet directory")?;
 
                         Ok(wallet_path)
                     }

@@ -61,8 +61,8 @@ async fn bob_refunds_when_xmr_amount_is_not_exact() {
             .stop_and_resume_bob_from_db(bob_join_handle, bob_swap_id)
             .await;
 
-        let bob_state = bob::run_until(bob_swap, |s| matches!(s, BobState::BtcRefunded(..)))
-            .await?;
+        let bob_state =
+            bob::run_until(bob_swap, |s| matches!(s, BobState::BtcRefunded(..))).await?;
 
         ctx.assert_bob_refunded(bob_state).await;
         ctx.assert_alice_refunded(alice_swap.await??).await;
