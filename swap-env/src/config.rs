@@ -308,6 +308,15 @@ pub fn read_config(config_path: PathBuf) -> Result<Result<Config, ConfigNotIniti
 /// and likely indicate a misconfiguration (e.g. deposit exceeding fees).
 pub const MAX_ANTI_SPAM_DEPOSIT_RATIO: Decimal = Decimal::from_parts(2, 0, 0, false, 1); // 0.2
 
+/// Minimum allowed BTC redeem fee multiplier. Values below this would scale
+/// the estimated fee down so far that the redeem transaction is unlikely to
+/// confirm, and likely indicate a misconfiguration.
+pub const MIN_BTC_REDEEM_FEE_MULTIPLIER: Decimal = Decimal::from_parts(1, 0, 0, false, 1); // 0.1
+
+/// Maximum allowed BTC redeem fee multiplier. Values above this are implausible
+/// (10x the estimated fee) and likely indicate a misconfiguration.
+pub const MAX_BTC_REDEEM_FEE_MULTIPLIER: Decimal = Decimal::from_parts(10, 0, 0, false, 0); // 10
+
 pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Result<()> {
     if config.monero.network != env_config.monero_network {
         bail!(
@@ -332,6 +341,23 @@ pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Resul
         bail!(
             "anti_spam_deposit_ratio of {ratio} exceeds maximum of {MAX_ANTI_SPAM_DEPOSIT_RATIO}. \
              Such a high deposit ratio is implausible and likely a misconfiguration."
+        );
+    }
+
+    let multiplier = config.maker.btc_redeem_fee_multiplier;
+    if multiplier < MIN_BTC_REDEEM_FEE_MULTIPLIER {
+        bail!(
+            "btc_redeem_fee_multiplier of {multiplier} is below minimum of \
+             {MIN_BTC_REDEEM_FEE_MULTIPLIER}. A multiplier this low scales the \
+             redeem fee down so far that the transaction is unlikely to confirm \
+             (a non-positive multiplier would also fail at runtime in scale_fee)."
+        );
+    }
+    if multiplier > MAX_BTC_REDEEM_FEE_MULTIPLIER {
+        bail!(
+            "btc_redeem_fee_multiplier of {multiplier} exceeds maximum of \
+             {MAX_BTC_REDEEM_FEE_MULTIPLIER}. Such a high multiplier is implausible \
+             and likely a misconfiguration."
         );
     }
 
