@@ -82,6 +82,9 @@ pub struct Swap {
     /// Fee paid by Alice for the Bitcoin redeem transaction, in satoshis.
     #[serde(with = "bitcoin::amount::serde::as_sat")]
     pub btc_redeem_fee: bitcoin::Amount,
+    /// Bitcoin redeem transaction id. Deterministic from the swap's locked state,
+    /// so this is set even before the redeem transaction is published.
+    pub btc_redeem_txid: String,
     pub peer_id: String,
     pub completed: bool,
 }

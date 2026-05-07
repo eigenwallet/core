@@ -217,6 +217,7 @@ impl AsbApiServer for RpcImpl {
                 xmr_amount: state3.xmr.as_pico(),
                 exchange_rate,
                 btc_redeem_fee: state3.tx_redeem_fee,
+                btc_redeem_txid: state3.tx_redeem().txid().to_string(),
                 peer_id: peer_id.to_string(),
                 completed: is_complete(&current_alice),
             });
