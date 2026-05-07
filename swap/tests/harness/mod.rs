@@ -394,6 +394,7 @@ async fn start_alice(
         min_buy,
         max_buy,
         None,
+        swap_env::config::default_btc_redeem_fee_multiplier(),
         developer_tip,
         refund_policy,
         None,

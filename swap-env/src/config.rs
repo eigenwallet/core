@@ -181,6 +181,11 @@ pub struct Maker {
     /// If specified, Bitcoin received from successful swaps will be sent to this address.
     #[serde(default, with = "swap_serde::bitcoin::address_serde::option")]
     pub external_bitcoin_redeem_address: Option<bitcoin::Address>,
+    /// Multiplier applied to the estimated BTC redeem fee. Defaults to 1.0;
+    /// set higher (e.g. 2.0) to overpay for faster confirmation as a safety
+    /// margin against fee estimation undershooting actual mempool conditions.
+    #[serde(default = "default_btc_redeem_fee_multiplier")]
+    pub btc_redeem_fee_multiplier: Decimal,
     /// Percentage (between 0.0 and 1.0) of the swap amount
     /// that will be donated to the devepment fund as part of the Monero lock transaction.
     #[serde(default = "default_developer_tip")]
@@ -241,6 +246,10 @@ pub fn default_price_ticker_validity_duration_secs() -> u64 {
 
 fn default_developer_tip() -> Decimal {
     Decimal::ZERO
+}
+
+pub fn default_btc_redeem_fee_multiplier() -> Decimal {
+    Decimal::ONE
 }
 
 fn default_anti_spam_deposit_ratio() -> Decimal {
@@ -405,6 +414,7 @@ pub fn query_user_for_initial_config_with_network(
             price_ticker_source_bitfinex_enabled: default_price_ticker_source_enabled(),
             price_ticker_source_kucoin_enabled: default_price_ticker_source_enabled(),
             external_bitcoin_redeem_address: None,
+            btc_redeem_fee_multiplier: default_btc_redeem_fee_multiplier(),
             developer_tip,
             refund_policy: defaults.refund_policy,
         },
