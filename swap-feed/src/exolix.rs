@@ -165,13 +165,13 @@ pub mod wire {
     #[derive(Debug, Serialize)]
     #[serde(rename_all = "lowercase")]
     pub enum RateType {
-        Float,
         #[allow(dead_code)]
+        Float,
         Fixed,
     }
 
     impl RateRequest {
-        /// Request the XMR -> BTC floating rate for a 1 XMR send amount.
+        /// Request the XMR -> BTC fixed rate for a 1 XMR send amount.
         pub fn xmr_to_btc() -> Self {
             Self {
                 coin_from: "XMR".to_string(),
@@ -179,7 +179,7 @@ pub mod wire {
                 coin_to: "BTC".to_string(),
                 network_to: "BTC".to_string(),
                 amount: Decimal::ONE,
-                rate_type: RateType::Float,
+                rate_type: RateType::Fixed,
             }
         }
     }
