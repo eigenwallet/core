@@ -21,10 +21,14 @@ let
   };
 
   # Link-time deps for src-tauri and upstream Rust crates. These are found
-  # via pkg-config + nix-managed RPATH; do NOT add them to LD_LIBRARY_PATH
-  # because that overrides RPATH and can shadow binaries built against a
-  # newer openssl (e.g. curl's ngtcp2 module).
-  tauriLinkLibs = with pkgs; [
+  # via pkg-config and the RPATH baked in by NIX_LDFLAGS (rewritten in
+  # shellHook below — see the comment there for why); we deliberately keep
+  # them off LD_LIBRARY_PATH so they can't shadow nix-built tools like curl
+  # whose ngtcp2 module is pinned to a specific openssl ABI.
+  #
+  # `stdenv.cc.cc.lib` is included so RUNPATH covers libstdc++.so.6, which
+  # the tauri binary pulls in via the C++ webkitgtk/cxx bindings.
+  tauriLinkLibs = (with pkgs; [
     glib
     gtk3
     gdk-pixbuf
@@ -38,16 +42,28 @@ let
     libayatana-appindicator
     openssl
     zlib
-  ];
+  ]) ++ [ pkgs.stdenv.cc.cc.lib ];
 
   # Subset that WebKitGTK / GTK dlopen at runtime (tray icon, SVG pixbuf
-  # loaders, webview plugins). These must be reachable via LD_LIBRARY_PATH.
+  # loaders, webview plugins). dlopen of a bare soname only consults
+  # LD_LIBRARY_PATH and the system cache, not the calling binary's RUNPATH,
+  # so these have to be on LD_LIBRARY_PATH even though they're also linked.
+  #
+  # zlib is here as a safety net for cargo build-script binaries (e.g.
+  # the vergen-git2 -> libgit2-sys path used by swap, swap-asb,
+  # swap-orchestrator). The rpath rewrite in shellHook fixes their
+  # RUNPATH for fresh links, but build-script binaries linked before
+  # the fix went in still carry a dead RUNPATH and would fail to
+  # resolve libz when cargo re-runs them after a `rerun-if-changed`
+  # trigger (e.g. a new git commit). Keeping libz on LD_LIBRARY_PATH
+  # avoids forcing users to `cargo clean` after picking up shell.nix.
   tauriRuntimeLibs = with pkgs; [
     webkitgtk_4_1
     libsoup_3
     librsvg
     libayatana-appindicator
     gdk-pixbuf
+    zlib
   ];
 in
 pkgs.mkShell {
@@ -99,7 +115,37 @@ pkgs.mkShell {
   # needs them reachable via LD_LIBRARY_PATH in addition to being linked.
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath tauriRuntimeLibs;
 
+  # WebKitGTK uses libglvnd (from nixpkgs) for EGL/GLX dispatch, but the
+  # nix-shipped libglvnd has no vendor ICD installed by default. On NixOS
+  # the system populates `/run/opengl-driver/lib`; on a non-NixOS host
+  # there's nothing for libglvnd to dispatch to, so `eglGetDisplay` returns
+  # EGL_NO_DISPLAY, WebKit prints `Could not create default EGL display:
+  # EGL_BAD_PARAMETER. Aborting...`, and the WebProcess crashes — leaving
+  # the tauri window as a blank whitescreen. Point libglvnd at nixpkgs'
+  # mesa (which ships `libEGL_mesa.so.0`, `swrast_dri.so` and the matching
+  # `egl_vendor.d` JSON) and force software rendering so we don't try to
+  # talk to the host's NVIDIA/Mesa drivers (whose ABIs would clash with
+  # the nix-built lib stack).
+  WEBKIT_DISABLE_DMABUF_RENDERER = "1";
+  LIBGL_ALWAYS_SOFTWARE = "1";
+  __EGL_VENDOR_LIBRARY_DIRS = "${pkgs.mesa}/share/glvnd/egl_vendor.d";
+  LIBGL_DRIVERS_PATH = "${pkgs.mesa}/lib/dri";
+
   shellHook = ''
+    # cc-wrapper's add-flags.sh prepends `-rpath $out/lib` to NIX_LDFLAGS so
+    # mkDerivation builds get a working RUNPATH at install time. In a
+    # nix-shell, however, $out resolves to <repo>/outputs/out — a path that
+    # never exists — so every binary cargo links here (build scripts and
+    # the tauri app itself) ends up with a dead RUNPATH and can't load its
+    # dynamic deps at runtime. Rewrite the bogus rpath to point at the
+    # link-time inputs so RUNPATH actually resolves and we don't have to
+    # leak everything onto LD_LIBRARY_PATH.
+    if [ -n "$out" ] && [[ "$NIX_LDFLAGS" == *"-rpath $out/lib"* ]]; then
+      _rpath_real=${pkgs.lib.makeLibraryPath tauriLinkLibs}
+      export NIX_LDFLAGS="''${NIX_LDFLAGS//-rpath $out\/lib/-rpath $_rpath_real}"
+      unset _rpath_real
+    fi
+
     # Rustup-managed toolchain lives in ~/.cargo/bin; nix-shell resets PATH
     # for its own deps, so re-prepend it. rust-toolchain.toml pins the version.
     export PATH="$HOME/.cargo/bin:$PATH"
