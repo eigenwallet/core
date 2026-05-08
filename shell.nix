@@ -115,21 +115,13 @@ pkgs.mkShell {
   # needs them reachable via LD_LIBRARY_PATH in addition to being linked.
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath tauriRuntimeLibs;
 
-  # WebKitGTK uses libglvnd (from nixpkgs) for EGL/GLX dispatch, but the
-  # nix-shipped libglvnd has no vendor ICD installed by default. On NixOS
-  # the system populates `/run/opengl-driver/lib`; on a non-NixOS host
-  # there's nothing for libglvnd to dispatch to, so `eglGetDisplay` returns
-  # EGL_NO_DISPLAY, WebKit prints `Could not create default EGL display:
-  # EGL_BAD_PARAMETER. Aborting...`, and the WebProcess crashes — leaving
-  # the tauri window as a blank whitescreen. Point libglvnd at nixpkgs'
-  # mesa (which ships `libEGL_mesa.so.0`, `swrast_dri.so` and the matching
-  # `egl_vendor.d` JSON) and force software rendering so we don't try to
-  # talk to the host's NVIDIA/Mesa drivers (whose ABIs would clash with
-  # the nix-built lib stack).
+  # WebKit's DMA-BUF renderer needs an EGL backend that can negotiate
+  # buffer sharing with the compositor; the host driver path below covers
+  # the EGL initialisation, but DMA-BUF still tends to fail on non-NixOS
+  # hosts (mismatch between the nix-built webkitgtk and the host's
+  # wayland/drm stack). Disable it so WebKit falls back to a glReadPixels-
+  # style upload that works with any GL backend.
   WEBKIT_DISABLE_DMABUF_RENDERER = "1";
-  LIBGL_ALWAYS_SOFTWARE = "1";
-  __EGL_VENDOR_LIBRARY_DIRS = "${pkgs.mesa}/share/glvnd/egl_vendor.d";
-  LIBGL_DRIVERS_PATH = "${pkgs.mesa}/lib/dri";
 
   shellHook = ''
     # cc-wrapper's add-flags.sh prepends `-rpath $out/lib` to NIX_LDFLAGS so
@@ -144,6 +136,40 @@ pkgs.mkShell {
       _rpath_real=${pkgs.lib.makeLibraryPath tauriLinkLibs}
       export NIX_LDFLAGS="''${NIX_LDFLAGS//-rpath $out\/lib/-rpath $_rpath_real}"
       unset _rpath_real
+    fi
+
+    # WebKitGTK uses nixpkgs' libglvnd for EGL/GLX dispatch, but nixpkgs
+    # ships libglvnd without any vendor ICD installed — on NixOS the system
+    # populates /run/opengl-driver/lib, on a non-NixOS host there's nothing
+    # for libglvnd to dispatch to. Result: WebKit aborts with `Could not
+    # create default EGL display: EGL_BAD_PARAMETER` and the tauri webview
+    # renders as a blank whitescreen.
+    #
+    # If the host has the proprietary NVIDIA driver, surface its
+    # libnvidia-*/libEGL_nvidia/libGLX_nvidia files via a focused symlink
+    # dir on LD_LIBRARY_PATH (we can NOT put /usr/lib64 on LD_LIBRARY_PATH
+    # directly — that shadows nix's libstdc++/libc and segfaults the
+    # process). Combined with the host's /usr/share/glvnd/egl_vendor.d/
+    # JSON, nix's libglvnd dispatches into the host driver and gets real
+    # GPU rendering.
+    #
+    # Otherwise fall back to nixpkgs' mesa software rasteriser. Slow but
+    # works without any host driver and without ABI mixing.
+    if [ -e /usr/lib64/libEGL_nvidia.so.0 ] && [ -d /usr/share/glvnd/egl_vendor.d ]; then
+      _nv_dir="''${XDG_RUNTIME_DIR:-/tmp}/eigenwallet-nvidia-libs"
+      rm -rf "$_nv_dir"
+      mkdir -p "$_nv_dir"
+      for _f in /usr/lib64/libnvidia-*.so.* /usr/lib64/libEGL_nvidia.so.* /usr/lib64/libGLX_nvidia.so.*; do
+        [ -e "$_f" ] && ln -s "$_f" "$_nv_dir/"
+      done
+      export LD_LIBRARY_PATH="''${LD_LIBRARY_PATH}:$_nv_dir"
+      export __EGL_VENDOR_LIBRARY_DIRS=/usr/share/glvnd/egl_vendor.d
+      export __GLX_VENDOR_LIBRARY_NAME=nvidia
+      unset _nv_dir _f
+    else
+      export __EGL_VENDOR_LIBRARY_DIRS=${pkgs.mesa}/share/glvnd/egl_vendor.d
+      export LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri
+      export LIBGL_ALWAYS_SOFTWARE=1
     fi
 
     # Rustup-managed toolchain lives in ~/.cargo/bin; nix-shell resets PATH
