@@ -24,3 +24,5 @@ libp2p-rendezvous-node/rendezvous-data
 rust-electrum-client/
 rust-libp2p/
 bdk/
+
+.direnv/
