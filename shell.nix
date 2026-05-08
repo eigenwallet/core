@@ -1,6 +1,14 @@
 { pkgs ? import (builtins.fetchTarball {
     url = "https://github.com/NixOS/nixpkgs/archive/refs/heads/nixos-25.05.tar.gz";
-  }) { }
+    # config.allowUnfree is required for the proprietary NVIDIA user-space
+    # driver that nixGLNvidia (below) builds against; falls back to mesa
+    # software rendering on hosts without the NVIDIA driver.
+  }) { config.allowUnfree = true; }
+, # Override to match `cat /proc/driver/nvidia/version` when your host's
+  # NVIDIA kernel module differs from the default. nixpkgs fixed-output-
+  # fetches the matching user-space runfile, so a wrong value produces a
+  # clear hash-mismatch error rather than silent corruption.
+  nvidiaVersion ? "580.142"
 }:
 
 let
@@ -19,6 +27,22 @@ let
       ++ map (prefixWrapper pkgs.binutils)
         [ "ar" "ranlib" "nm" "strip" "ld" "as" "objcopy" "objdump" "readelf" ];
   };
+
+  # nixGLNvidia is a thin wrapper script that sets `LD_LIBRARY_PATH` and
+  # `__EGL_VENDOR_LIBRARY_FILENAMES` to nix-managed copies of the host's
+  # proprietary NVIDIA driver, so nix-built libglvnd can dispatch into a
+  # working EGL/GLX vendor. We don't invoke the wrapper directly — its
+  # `export` statements are sourced into the shell below so `cargo tauri
+  # dev` picks up the right env without further wrapping.
+  #
+  # Without this, nix's libglvnd has no vendor ICD installed (NixOS
+  # populates /run/opengl-driver/lib; non-NixOS hosts have nothing), so
+  # WebKit's WebProcess can't initialise EGL and either aborts with
+  # `EGL_BAD_PARAMETER` or silently falls back to CPU rasterisation,
+  # capping the GUI at single-digit fps even on a discrete GPU.
+  nixGLNvidia = (import (builtins.fetchTarball {
+    url = "https://github.com/nix-community/nixGL/archive/refs/heads/main.tar.gz";
+  }) { inherit pkgs nvidiaVersion; }).nixGLNvidia;
 
   # Link-time deps for src-tauri and upstream Rust crates. These are found
   # via pkg-config and the RPATH baked in by NIX_LDFLAGS (rewritten in
@@ -115,14 +139,6 @@ pkgs.mkShell {
   # needs them reachable via LD_LIBRARY_PATH in addition to being linked.
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath tauriRuntimeLibs;
 
-  # WebKit's DMA-BUF renderer needs an EGL backend that can negotiate
-  # buffer sharing with the compositor; the host driver path below covers
-  # the EGL initialisation, but DMA-BUF still tends to fail on non-NixOS
-  # hosts (mismatch between the nix-built webkitgtk and the host's
-  # wayland/drm stack). Disable it so WebKit falls back to a glReadPixels-
-  # style upload that works with any GL backend.
-  WEBKIT_DISABLE_DMABUF_RENDERER = "1";
-
   shellHook = ''
     # cc-wrapper's add-flags.sh prepends `-rpath $out/lib` to NIX_LDFLAGS so
     # mkDerivation builds get a working RUNPATH at install time. In a
@@ -138,38 +154,39 @@ pkgs.mkShell {
       unset _rpath_real
     fi
 
-    # WebKitGTK uses nixpkgs' libglvnd for EGL/GLX dispatch, but nixpkgs
-    # ships libglvnd without any vendor ICD installed — on NixOS the system
-    # populates /run/opengl-driver/lib, on a non-NixOS host there's nothing
-    # for libglvnd to dispatch to. Result: WebKit aborts with `Could not
-    # create default EGL display: EGL_BAD_PARAMETER` and the tauri webview
-    # renders as a blank whitescreen.
+    # GPU rendering setup. WebKitGTK uses libglvnd for EGL/GLX dispatch;
+    # nix's libglvnd has no vendor ICD installed, so on a non-NixOS host
+    # WebKit can't reach the GPU. Two paths:
     #
-    # If the host has the proprietary NVIDIA driver, surface its
-    # libnvidia-*/libEGL_nvidia/libGLX_nvidia files via a focused symlink
-    # dir on LD_LIBRARY_PATH (we can NOT put /usr/lib64 on LD_LIBRARY_PATH
-    # directly — that shadows nix's libstdc++/libc and segfaults the
-    # process). Combined with the host's /usr/share/glvnd/egl_vendor.d/
-    # JSON, nix's libglvnd dispatches into the host driver and gets real
-    # GPU rendering.
+    #   - host has the proprietary NVIDIA driver: source the env vars from
+    #     a pre-built nixGLNvidia wrapper, which points libglvnd at nix-
+    #     managed copies of the host's NVIDIA libs (avoids ABI-mixing
+    #     /usr/lib64 with the nix lib stack). We also force GDK_BACKEND=x11
+    #     because NVIDIA + native Wayland + nix's webkitgtk hits a Wayland
+    #     EPROTO during DMA-BUF setup; XWayland sidesteps that path.
     #
-    # Otherwise fall back to nixpkgs' mesa software rasteriser. Slow but
-    # works without any host driver and without ABI mixing.
-    if [ -e /usr/lib64/libEGL_nvidia.so.0 ] && [ -d /usr/share/glvnd/egl_vendor.d ]; then
-      _nv_dir="''${XDG_RUNTIME_DIR:-/tmp}/eigenwallet-nvidia-libs"
-      rm -rf "$_nv_dir"
-      mkdir -p "$_nv_dir"
-      for _f in /usr/lib64/libnvidia-*.so.* /usr/lib64/libEGL_nvidia.so.* /usr/lib64/libGLX_nvidia.so.*; do
-        [ -e "$_f" ] && ln -s "$_f" "$_nv_dir/"
-      done
-      export LD_LIBRARY_PATH="''${LD_LIBRARY_PATH}:$_nv_dir"
-      export __EGL_VENDOR_LIBRARY_DIRS=/usr/share/glvnd/egl_vendor.d
-      export __GLX_VENDOR_LIBRARY_NAME=nvidia
-      unset _nv_dir _f
+    #   - no NVIDIA: fall back to nixpkgs' mesa software rasteriser. Slow
+    #     (single-digit fps) but works on any host without ABI mixing, and
+    #     WEBKIT_DISABLE_DMABUF_RENDERER=1 keeps the WebProcess from
+    #     trying a hardware path it can't satisfy.
+    if [ -e /proc/driver/nvidia/version ]; then
+      _host_nv=$(awk '/Module/ { for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+/) { print $i; exit } }' /proc/driver/nvidia/version 2>/dev/null)
+      if [ -n "$_host_nv" ] && [ "$_host_nv" != "${nvidiaVersion}" ]; then
+        echo "[shell.nix] WARNING: nvidia kernel module is $_host_nv but shell.nix is pinned to ${nvidiaVersion}." >&2
+        echo "[shell.nix]          GPU rendering may break — pass --argstr nvidiaVersion $_host_nv or update shell.nix." >&2
+      fi
+      unset _host_nv
+
+      # Source the nixGLNvidia wrapper's env-var setup. The wrapper ends
+      # in `exec "$@"`; strip that line so sourcing doesn't try to exec
+      # an empty argv. Bash arrays (NVIDIA_JSON*=) are evaluated too.
+      eval "$(${pkgs.gnused}/bin/sed '/^[[:space:]]*exec /d' ${nixGLNvidia}/bin/nixGLNvidia-${nvidiaVersion})"
+      export GDK_BACKEND=x11
     else
       export __EGL_VENDOR_LIBRARY_DIRS=${pkgs.mesa}/share/glvnd/egl_vendor.d
       export LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri
       export LIBGL_ALWAYS_SOFTWARE=1
+      export WEBKIT_DISABLE_DMABUF_RENDERER=1
     fi
 
     # Rustup-managed toolchain lives in ~/.cargo/bin; nix-shell resets PATH
