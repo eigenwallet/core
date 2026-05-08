@@ -42,6 +42,8 @@ pub async fn punish(
         | AliceState::BtcLockTransactionSeen { .. }
         | AliceState::BtcLocked { .. }
         | AliceState::BtcRedeemed { .. }
+        | AliceState::XmrRefundTxConstructed { .. }
+        | AliceState::XmrRefundTxPublished { .. }
         | AliceState::XmrRefunded { .. }
         | AliceState::BtcWithholdPublished { .. }
         | AliceState::BtcWithholdConfirmed { .. }

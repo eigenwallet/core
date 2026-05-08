@@ -15,10 +15,10 @@ export default function ProcessExitedPage({
   const logs = useActiveSwapLogs();
 
   // If we have a previous state, we can show the user the last state of the swap
-  // We only show the last state if its a final state (XmrRedeemInMempool, BtcRefunded, BtcPunished, CooperativeRedeemRejected)
+  // We only show the last state if its a final state (XmrRedeemed, BtcRefunded, BtcPunished, CooperativeRedeemRejected)
   if (
     prevState != null &&
-    (prevState.type === "XmrRedeemInMempool" ||
+    (prevState.type === "XmrRedeemed" ||
       prevState.type === "BtcRefunded" ||
       prevState.type === "BtcPunished" ||
       prevState.type === "CooperativeRedeemRejected" ||

@@ -214,7 +214,8 @@ jobs:
 
   build_and_push_docker:
     name: Build and Push Docker Image
-    if: github.event_name == 'release'
+    # Skip Docker publishing for developer testing releases (tag prefix `test-`).
+    if: github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'test-')
     runs-on: ubuntu-22.04
     needs: build_binaries
     permissions:

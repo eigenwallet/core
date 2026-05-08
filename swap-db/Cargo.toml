@@ -11,6 +11,7 @@ swap-serde = { path = "../swap-serde" }
 
 # Crypto
 bitcoin = { workspace = true }
+monero-oxide-wallet = { workspace = true }
 
 # Serialization
 serde = { workspace = true }

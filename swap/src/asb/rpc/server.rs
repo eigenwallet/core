@@ -158,37 +158,35 @@ impl AsbApiServer for RpcImpl {
         Ok(ActiveConnectionsResponse { connections })
     }
 
-    async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned> {
+    async fn get_swaps(
+        &self,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Vec<Swap>, ErrorObjectOwned> {
         use crate::protocol::State;
         use crate::protocol::alice::{AliceState, is_complete};
 
+        const DEFAULT_OFFSET: u32 = 0;
+        // Must fit into i32
+        const DEFAULT_LIMIT: u32 = i32::MAX as u32;
+
+        let limit = limit.unwrap_or(DEFAULT_LIMIT);
+        let offset = offset.unwrap_or(DEFAULT_OFFSET);
+
         let swaps = self
             .db
-            .all()
+            .all_paginated(limit, offset)
             .await
             .context("Error fetching all swap's from database")
             .into_json_rpc_result()?;
         let mut results = Vec::with_capacity(swaps.len());
 
-        for (peer_id, swap_id, _) in swaps {
-            let (current, starting) = self
-                .db
-                .get_current_and_starting_state(swap_id)
-                .await
-                .context("Error fetching current and first state from database")
-                .into_json_rpc_result()?;
-
-            let (current_alice, state3) = match (current, starting) {
+        for (peer_id, swap_id, first_state, last_state) in swaps {
+            let (current_alice, state3) = match (last_state, first_state) {
                 (
                     State::Alice(current_alice),
                     State::Alice(AliceState::BtcLockTransactionSeen { state3 }),
                 ) => (current_alice, state3),
-                (
-                    State::Alice(AliceState::SafelyAborted),
-                    State::Alice(AliceState::SafelyAborted),
-                ) => {
-                    continue;
-                }
                 (State::Alice(current_alice), State::Alice(starting_alice)) => {
                     tracing::error!(
                         %swap_id,
@@ -218,6 +216,8 @@ impl AsbApiServer for RpcImpl {
                 btc_amount: state3.btc,
                 xmr_amount: state3.xmr.as_pico(),
                 exchange_rate,
+                btc_redeem_fee: state3.tx_redeem_fee,
+                btc_redeem_txid: state3.tx_redeem().txid().to_string(),
                 peer_id: peer_id.to_string(),
                 completed: is_complete(&current_alice),
             });

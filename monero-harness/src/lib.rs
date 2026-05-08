@@ -572,21 +572,22 @@ impl MoneroWallet {
             .context("Failed to perform sweep")
     }
 
-    /// Sweep multiple addresses with different ratios
-    /// If the address is `None`, the address will be set to the primary address of the
-    /// main wallet.
-    pub async fn sweep_multi(
-        &self,
-        addresses: &[MoneroAddress],
-        ratios: &[f64],
-    ) -> Result<TxReceipt> {
-        tracing::info!("`{}` sweeping multi ({:?})", self.name, ratios);
-        self.balance().await?;
+    pub async fn transfer_multi(&self, destinations: &[(MoneroAddress, u64)]) -> Result<TxReceipt> {
+        tracing::info!(
+            "`{}` transferring to {} destinations",
+            self.name,
+            destinations.len()
+        );
+
+        let destinations: Vec<(MoneroAddress, Amount)> = destinations
+            .iter()
+            .map(|(addr, pico)| (*addr, Amount::from_pico(*pico)))
+            .collect();
 
         self.wallet
-            .sweep_multi_destination(addresses, ratios)
+            .transfer_multi_destination(&destinations)
             .await
-            .context("Failed to perform sweep")
+            .context("Failed to perform multi-destination transfer")
     }
 
     pub async fn blockchain_height(&self) -> Result<u64> {

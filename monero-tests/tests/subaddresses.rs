@@ -41,9 +41,10 @@ async fn subaddress_methods_and_balances() -> anyhow::Result<()> {
     );
 
     // Send funds to both subaddresses in a single transaction
-    tracing::info!("Sending funds to Alice's subaddresses via sweep_multi");
+    tracing::info!("Sending funds to Alice's subaddresses");
+    let amount = 1_000_000_000;
     let tx_receipt = miner
-        .sweep_multi(&[alice_sa1.clone(), alice_sa2.clone()], &[0.5, 0.5])
+        .transfer_multi(&[(alice_sa1.clone(), amount), (alice_sa2.clone(), amount)])
         .await?;
 
     assert_eq!(
