@@ -2921,7 +2921,7 @@ impl TestWalletBuilder {
     }
 }
 
-/// Implement BitcoinWallet trait for a stub wallet and panic when the function is not implemented
+/// Implement the wallet trait for the in-memory static-fee wallet used by tests.
 #[async_trait::async_trait]
 #[allow(unused)]
 impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
@@ -2934,15 +2934,15 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     async fn balance(&self) -> Result<Amount> {
-        unimplemented!("stub method called erroneously")
+        Wallet::balance(self).await
     }
 
     async fn balance_info(&self) -> Result<Balance> {
-        unimplemented!("stub method called erroneously")
+        Wallet::balance_info(self).await
     }
 
     async fn new_address(&self) -> Result<Address> {
-        unimplemented!("stub method called erroneously")
+        Wallet::new_address(self).await
     }
 
     async fn send_to_address(
@@ -2952,7 +2952,7 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         spending_fee: Amount,
         change_override: Option<Address>,
     ) -> Result<Psbt> {
-        unimplemented!("stub method called erroneously")
+        Wallet::send_to_address(self, address, amount, spending_fee, change_override).await
     }
 
     async fn send_to_address_dynamic_fee(
@@ -2961,15 +2961,15 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         amount: Amount,
         change_override: Option<Address>,
     ) -> Result<Psbt> {
-        unimplemented!("stub method called erroneously")
+        Wallet::send_to_address_dynamic_fee(self, address, amount, change_override).await
     }
 
     async fn sweep_balance_to_address_dynamic_fee(&self, address: Address) -> Result<Psbt> {
-        unimplemented!("stub method called erroneously")
+        Wallet::sweep_balance_to_address_dynamic_fee(self, address).await
     }
 
     async fn sign_and_finalize(&self, psbt: Psbt) -> Result<bitcoin::Transaction> {
-        unimplemented!("stub method called erroneously")
+        Wallet::sign_and_finalize(self, psbt).await
     }
 
     async fn sync(&self) -> Result<()> {
@@ -2992,7 +2992,7 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
-        unimplemented!("stub method called erroneously")
+        Wallet::max_giveable(self, locking_script_size).await
     }
 
     async fn estimate_fee(
@@ -3000,15 +3000,15 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         weight: Weight,
         transfer_amount: Option<Amount>,
     ) -> Result<Amount> {
-        unimplemented!("stub method called erroneously")
+        Wallet::estimate_fee(self, weight, transfer_amount).await
     }
 
     fn network(&self) -> Network {
-        unimplemented!("stub method called erroneously")
+        Wallet::network(self)
     }
 
     fn finality_confirmations(&self) -> u32 {
-        unimplemented!("stub method called erroneously")
+        Wallet::finality_confirmations(self)
     }
 
     async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
