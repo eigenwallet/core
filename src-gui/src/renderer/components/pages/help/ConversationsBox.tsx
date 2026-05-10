@@ -46,14 +46,17 @@ import { Message, PrimitiveDateTimeString } from "models/apiModel";
 import { formatDateTime } from "utils/conversionUtils";
 import { Theme } from "renderer/components/theme";
 
+const EMPTY_MESSAGES: Message[] = [];
+
 // Hook: sorted feedback IDs by latest activity, then unread
 function useSortedFeedbackIds() {
   const ids = useAppSelector((s) => s.conversations.knownFeedbackIds || []);
   const conv = useAppSelector((s) => s.conversations.conversations);
-  const seen = useAppSelector((s) => new Set(s.conversations.seenMessages));
+  const seenMessages = useAppSelector((s) => s.conversations.seenMessages);
   return useMemo(() => {
+    const seen = new Set(seenMessages);
     const arr = ids.map((id) => {
-      const msgs = conv[id] || [];
+      const msgs = conv[id] ?? EMPTY_MESSAGES;
       const unread = msgs.filter(
         (m) => m.is_from_staff && !seen.has(m.id.toString()),
       ).length;
@@ -74,7 +77,7 @@ function useSortedFeedbackIds() {
         b.latest - a.latest || (b.unread > 0 ? 1 : 0) - (a.unread > 0 ? 1 : 0),
     );
     return arr.map((x) => x.id);
-  }, [ids, conv, seen]);
+  }, [ids, conv, seenMessages]);
 }
 
 // Main component
@@ -173,7 +176,7 @@ function ConversationRow({
   onOpen: (id: string) => void;
 }) {
   const msgs = useAppSelector(
-    (s) => s.conversations.conversations[feedbackId] || [],
+    (s) => s.conversations.conversations[feedbackId] ?? EMPTY_MESSAGES,
   );
   const unread = useUnreadMessagesCount(feedbackId);
   const sorted = useMemo(
@@ -245,7 +248,7 @@ function ConversationModal({
 }) {
   const dispatch = useAppDispatch();
   const msgs = useAppSelector(
-    (s) => s.conversations.conversations[feedbackId] || [],
+    (s) => s.conversations.conversations[feedbackId] ?? EMPTY_MESSAGES,
   );
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);

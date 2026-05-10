@@ -31,7 +31,7 @@ import {
   TauriBackgroundProgress,
   TauriBitcoinSyncProgress,
 } from "models/tauriModel";
-import { Alert } from "models/apiModel";
+import { Alert, Message } from "models/apiModel";
 import { fnv1a } from "utils/hash";
 import {
   selectAllSwapInfos,
@@ -42,6 +42,8 @@ import {
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
+
+const EMPTY_MESSAGES: Message[] = [];
 
 export function useResumeableSwapsCount(
   additionalFilter?: (s: GetSwapInfoResponseExt) => boolean,
@@ -300,19 +302,20 @@ export function useConservativeBitcoinSyncProgress(): TauriBitcoinSyncProgress |
  * @returns The number of unread staff messages.
  */
 export function useUnreadMessagesCount(feedbackId: string): number {
-  const { conversationsMap, seenMessagesSet } = useAppSelector((state) => ({
-    conversationsMap: state.conversations.conversations,
-    // Convert seenMessages array to a Set for efficient lookup
-    seenMessagesSet: new Set(state.conversations.seenMessages),
-  }));
-
-  const messages = conversationsMap[feedbackId] || [];
-
-  const unreadStaffMessages = messages.filter(
-    (msg) => msg.is_from_staff && !seenMessagesSet.has(msg.id.toString()),
+  const messages = useAppSelector(
+    (state) => state.conversations.conversations[feedbackId] ?? EMPTY_MESSAGES,
+  );
+  const seenMessages = useAppSelector(
+    (state) => state.conversations.seenMessages,
   );
 
-  return unreadStaffMessages.length;
+  return useMemo(() => {
+    const seenMessagesSet = new Set(seenMessages);
+
+    return messages.filter(
+      (msg) => msg.is_from_staff && !seenMessagesSet.has(msg.id.toString()),
+    ).length;
+  }, [messages, seenMessages]);
 }
 
 /**
@@ -320,21 +323,27 @@ export function useUnreadMessagesCount(feedbackId: string): number {
  * @returns The total number of unread staff messages.
  */
 export function useTotalUnreadMessagesCount(): number {
-  const { conversationsMap, seenMessagesSet } = useAppSelector((state) => ({
-    conversationsMap: state.conversations.conversations,
-    seenMessagesSet: new Set(state.conversations.seenMessages),
-  }));
+  const conversationsMap = useAppSelector(
+    (state) => state.conversations.conversations,
+  );
+  const seenMessages = useAppSelector(
+    (state) => state.conversations.seenMessages,
+  );
 
-  let totalUnreadCount = 0;
-  for (const feedbackId in conversationsMap) {
-    const messages = conversationsMap[feedbackId] || [];
-    const unreadStaffMessages = messages.filter(
-      (msg) => msg.is_from_staff && !seenMessagesSet.has(msg.id.toString()),
-    );
-    totalUnreadCount += unreadStaffMessages.length;
-  }
+  return useMemo(() => {
+    const seenMessagesSet = new Set(seenMessages);
 
-  return totalUnreadCount;
+    let totalUnreadCount = 0;
+    for (const feedbackId in conversationsMap) {
+      const messages = conversationsMap[feedbackId] ?? EMPTY_MESSAGES;
+      const unreadStaffMessages = messages.filter(
+        (msg) => msg.is_from_staff && !seenMessagesSet.has(msg.id.toString()),
+      );
+      totalUnreadCount += unreadStaffMessages.length;
+    }
+
+    return totalUnreadCount;
+  }, [conversationsMap, seenMessages]);
 }
 
 /// Returns all the alerts that have not been acknowledged
