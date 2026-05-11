@@ -682,10 +682,12 @@ impl WalletHandle {
     /// Returns a map of subaddress index -> balance (in atomic units).
     /// strict: If true, only includes confirmed and unlocked balance.
     ///         If false, pending and unconfirmed transactions are also included.
-    pub async fn balance_per_subaddress(&self) -> std::collections::HashMap<u32, u64> {
+    pub async fn balance_per_subaddress(
+        &self,
+    ) -> anyhow::Result<std::collections::HashMap<u32, u64>> {
         self.call(move |wallet| wallet.balance_per_subaddress_sync())
             .await
-            .expect("wallet thread closed while fetching balance per subaddress")
+            .context("Couldn't complete wallet call")
     }
 
     /// Check if the wallet is synchronized.
