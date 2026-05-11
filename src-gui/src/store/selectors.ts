@@ -9,6 +9,8 @@ import {
 
 const selectRpcState = (state: RootState) => state.rpc.state;
 const selectP2pState = (state: RootState) => state.p2p;
+const selectConnectionStatus = (state: RootState) => state.p2p.connectionStatus;
+const selectQuoteStatus = (state: RootState) => state.p2p.quoteStatus;
 
 export const selectSwapInfosRaw = createSelector(
   [selectRpcState],
@@ -60,7 +62,26 @@ export const selectPendingApprovals = createSelector(
     ),
 );
 
-// TODO: This should be split into multiple selectors/hooks to avoid excessive re-rendering
+export const selectConnectedPeerIds = createSelector(
+  [selectConnectionStatus],
+  (connectionStatus) =>
+    Object.entries(connectionStatus)
+      .filter(([, status]) => status === ConnectionStatus.Connected)
+      .map(([peerId]) => peerId),
+);
+
+export const selectMakerDiscoveryActivity = createSelector(
+  [selectConnectionStatus, selectQuoteStatus],
+  (connectionStatus, quoteStatus) => ({
+    dialsInflight: Object.values(connectionStatus).filter(
+      (status) => status === ConnectionStatus.Dialing,
+    ).length,
+    quotesInflight: Object.values(quoteStatus).filter(
+      (status) => status === QuoteStatus.Inflight,
+    ).length,
+  }),
+);
+
 export const selectPeers = createSelector([selectP2pState], (p2p) => {
   const peerIds = new Set([
     ...Object.keys(p2p.connectionStatus),
