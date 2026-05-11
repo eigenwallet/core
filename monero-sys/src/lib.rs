@@ -17,7 +17,7 @@ pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::{
     any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
     pin::Pin, time::Duration,
@@ -3219,7 +3219,7 @@ impl Deref for TransactionInfoHandle {
 /// This listener does things on certain events like storing the wallet to disk.
 /// This is supposed to improve upon the behaviour of wallet2
 pub struct WalletHandleListener {
-    wallet: Arc<WalletHandle>,
+    wallet: Weak<WalletHandle>,
     /// We need a handle to the runtime to be able to spawn tasks
     rt_handle: tokio::runtime::Handle,
     /// We throttle the saving of the wallet to disk to avoid storing the wallet too often
@@ -3234,6 +3234,7 @@ impl WalletHandleListener {
     pub fn new(wallet: Arc<WalletHandle>) -> Self {
         // Get the current runtime handle
         let rt_handle = tokio::runtime::Handle::current();
+        let wallet = Arc::downgrade(&wallet);
 
         // Create a throttle wrapper around the save job
         let store_job = {
@@ -3241,7 +3242,10 @@ impl WalletHandleListener {
             let rt = rt_handle.clone();
 
             move |()| {
-                let wallet = wallet.clone();
+                let Some(wallet) = wallet.upgrade() else {
+                    tracing::trace!("Skipping wallet store because wallet handle is gone");
+                    return;
+                };
                 let rt = rt.clone();
 
                 rt.spawn(async move {
@@ -3291,7 +3295,10 @@ impl WalletEventListener for WalletHandleListener {
         // When the wallet finishes refreshing, we start the refresh thread again.
         // The purpose of this is to ensure that if the user does a rescan (restore height changed)
         // We start the refresh thread again after the rescan is complete.
-        let handle = self.wallet.clone();
+        let Some(handle) = self.wallet.upgrade() else {
+            tracing::trace!("Skipping refresh thread restart because wallet handle is gone");
+            return;
+        };
         self.rt_handle.spawn(async move {
             if let Err(e) = handle.start_refresh_thread().await {
                 tracing::error!(error=%e, "Failed to start refresh thread");
