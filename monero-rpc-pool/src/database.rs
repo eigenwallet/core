@@ -294,3 +294,95 @@ impl Database {
         Ok(addresses)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn temp_db() -> (tempfile::TempDir, Database) {
+        let temp_dir = tempfile::tempdir().expect("temporary database directory");
+        let db = Database::new(temp_dir.path().to_path_buf())
+            .await
+            .expect("database initialization");
+        (temp_dir, db)
+    }
+
+    #[test]
+    fn network_round_trips_between_enum_and_db_string() {
+        assert!(matches!(
+            parse_network("mainnet").unwrap(),
+            Network::Mainnet
+        ));
+        assert!(matches!(
+            parse_network("STAGENET").unwrap(),
+            Network::Stagenet
+        ));
+        assert!(matches!(
+            parse_network("testnet").unwrap(),
+            Network::Testnet
+        ));
+        assert!(parse_network("regtest").is_err());
+
+        assert_eq!(network_to_string(&Network::Mainnet), "mainnet");
+        assert_eq!(network_to_string(&Network::Stagenet), "stagenet");
+        assert_eq!(network_to_string(&Network::Testnet), "testnet");
+    }
+
+    #[tokio::test]
+    async fn migrations_seed_default_nodes_for_each_network() {
+        let (_temp_dir, db) = temp_db().await;
+
+        let (mainnet_total, mainnet_reachable, mainnet_reliable) =
+            db.get_node_stats("mainnet").await.unwrap();
+        let (stagenet_total, stagenet_reachable, stagenet_reliable) =
+            db.get_node_stats("stagenet").await.unwrap();
+
+        assert!(mainnet_total > 0);
+        assert!(stagenet_total > 0);
+        assert_eq!(mainnet_reachable, 0);
+        assert_eq!(mainnet_reliable, 0);
+        assert_eq!(stagenet_reachable, 0);
+        assert_eq!(stagenet_reliable, 0);
+    }
+
+    #[tokio::test]
+    async fn health_checks_update_stats_and_reliable_nodes() {
+        let (_temp_dir, db) = temp_db().await;
+
+        db.record_health_check("http", "stagenet.xmr-tw.org", 38081, true, Some(250.0))
+            .await
+            .unwrap();
+        db.record_health_check("http", "stagenet.xmr-tw.org", 38081, false, None)
+            .await
+            .unwrap();
+
+        let (_total, reachable, reliable) = db.get_node_stats("stagenet").await.unwrap();
+        assert_eq!(reachable, 1);
+        assert_eq!(reliable, 0);
+
+        let (successful, unsuccessful) = db.get_health_check_stats("stagenet").await.unwrap();
+        assert_eq!((successful, unsuccessful), (1, 1));
+
+        let reliable_nodes = db.get_reliable_nodes("stagenet").await.unwrap();
+        let node = reliable_nodes
+            .iter()
+            .find(|node| node.address.host == "stagenet.xmr-tw.org")
+            .expect("health-checked node should be considered");
+        assert_eq!(node.health.success_count, 1);
+        assert_eq!(node.health.failure_count, 1);
+        assert_eq!(node.health.avg_latency_ms, Some(250.0));
+        assert_eq!(node.success_rate(), 0.5);
+    }
+
+    #[tokio::test]
+    async fn unknown_node_health_checks_are_ignored() {
+        let (_temp_dir, db) = temp_db().await;
+
+        db.record_health_check("http", "missing.example", 18081, true, Some(10.0))
+            .await
+            .unwrap();
+
+        let (successful, unsuccessful) = db.get_health_check_stats("mainnet").await.unwrap();
+        assert_eq!((successful, unsuccessful), (0, 0));
+    }
+}
