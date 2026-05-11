@@ -17,10 +17,8 @@ import NetworkWifiIcon from "@mui/icons-material/NetworkWifi";
 import { useAppSelector } from "store/hooks";
 
 export default function MoneroPoolHealthBox() {
-  const { poolStatus, isLoading } = useAppSelector((state) => ({
-    poolStatus: state.pool.status,
-    isLoading: state.pool.isLoading,
-  }));
+  const poolStatus = useAppSelector((state) => state.pool.status);
+  const isLoading = useAppSelector((state) => state.pool.isLoading);
   const theme = useTheme();
 
   const formatLatency = (latencyMs?: number) => {

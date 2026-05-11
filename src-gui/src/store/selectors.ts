@@ -6,9 +6,13 @@ import {
   ExpiredTimelocks,
   QuoteStatus,
 } from "models/tauriModel";
+import { fnv1a } from "utils/hash";
 
 const selectRpcState = (state: RootState) => state.rpc.state;
 const selectP2pState = (state: RootState) => state.p2p;
+const selectAlerts = (state: RootState) => state.alerts.alerts;
+const selectAcknowledgedAlerts = (state: RootState) =>
+  state.alerts.acknowledgedAlerts;
 
 export const selectSwapInfosRaw = createSelector(
   [selectRpcState],
@@ -57,6 +61,17 @@ export const selectPendingApprovals = createSelector(
   (rpcState) =>
     Object.values(rpcState.approvalRequests).filter(
       (c) => c.request_status.state === "Pending",
+    ),
+);
+
+export const selectUnacknowledgedAlerts = createSelector(
+  [selectAlerts, selectAcknowledgedAlerts],
+  (alerts, acknowledgedAlerts) =>
+    alerts.filter(
+      (alert) =>
+        !acknowledgedAlerts.some(
+          (ack) => ack.id === alert.id && ack.titleHash === fnv1a(alert.title),
+        ),
     ),
 );
 

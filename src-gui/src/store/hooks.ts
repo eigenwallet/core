@@ -32,12 +32,12 @@ import {
   TauriBitcoinSyncProgress,
 } from "models/tauriModel";
 import { Alert } from "models/apiModel";
-import { fnv1a } from "utils/hash";
 import {
   selectAllSwapInfos,
   selectPendingApprovals,
   selectSwapInfoWithTimelock,
   selectSwapInfosRaw,
+  selectUnacknowledgedAlerts,
 } from "./selectors";
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
@@ -339,16 +339,7 @@ export function useTotalUnreadMessagesCount(): number {
 
 /// Returns all the alerts that have not been acknowledged
 export function useAlerts(): Alert[] {
-  return useAppSelector((state) =>
-    state.alerts.alerts.filter(
-      (alert) =>
-        // Check if there is an acknowledgement with
-        // the same id and the same title hash
-        !state.alerts.acknowledgedAlerts.some(
-          (ack) => ack.id === alert.id && ack.titleHash === fnv1a(alert.title),
-        ),
-    ),
-  );
+  return useAppSelector(selectUnacknowledgedAlerts);
 }
 
 /// Returns true if the we heuristically determine that the user has used the app at least a little bit
