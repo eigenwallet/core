@@ -18,7 +18,12 @@ import {
   isPendingPasswordApprovalEvent,
   isContextFullyInitialized,
 } from "models/tauriModelExt";
-import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
+import {
+  shallowEqual,
+  TypedUseSelectorHook,
+  useDispatch,
+  useSelector,
+} from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
 import { parseDateString } from "utils/parseUtils";
 import { useEffect, useMemo, useState } from "react";
@@ -191,13 +196,11 @@ export function useAreSwapInfosLoaded(): boolean {
 }
 
 export function useSettings<T>(selector: (settings: SettingsState) => T): T {
-  const settings = useAppSelector((state) => state.settings);
-  return selector(settings);
+  return useAppSelector((state) => selector(state.settings), shallowEqual);
 }
 
 export function useNodes<T>(selector: (nodes: NodesSlice) => T): T {
-  const nodes = useAppSelector((state) => state.nodes);
-  return selector(nodes);
+  return useAppSelector((state) => selector(state.nodes), shallowEqual);
 }
 
 export function usePendingApprovals(): PendingApprovalRequest[] {
