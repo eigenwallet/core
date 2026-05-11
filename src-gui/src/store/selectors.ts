@@ -1,6 +1,6 @@
 import { createSelector } from "@reduxjs/toolkit";
 import { RootState } from "renderer/store/storeRenderer";
-import { GetSwapInfoResponseExt } from "models/tauriModelExt";
+import { BobStateName, GetSwapInfoResponseExt } from "models/tauriModelExt";
 import {
   ConnectionStatus,
   ExpiredTimelocks,
@@ -58,6 +58,59 @@ export const selectPendingApprovals = createSelector(
     Object.values(rpcState.approvalRequests).filter(
       (c) => c.request_status.state === "Pending",
     ),
+);
+
+export type SwapReputation = {
+  successfulSwaps: number;
+  refundedSwaps: number;
+  failedSwaps: number;
+};
+
+export const EMPTY_SWAP_REPUTATION: SwapReputation = {
+  successfulSwaps: 0,
+  refundedSwaps: 0,
+  failedSwaps: 0,
+};
+
+const REFUNDED_SWAP_STATES = new Set<BobStateName>([
+  BobStateName.BtcRefunded,
+  BobStateName.BtcEarlyRefunded,
+  BobStateName.BtcMercyConfirmed,
+]);
+
+const FAILED_SWAP_STATES = new Set<BobStateName>([
+  BobStateName.BtcPunished,
+  BobStateName.BtcWithheld,
+]);
+
+export const selectSwapReputationByPeer = createSelector(
+  [selectSwapInfosRaw],
+  (swapInfos) => {
+    const reputationByPeer: Record<string, SwapReputation> = {};
+
+    if (!swapInfos) return reputationByPeer;
+
+    for (const swap of Object.values(swapInfos)) {
+      const peerId = swap.seller.peer_id;
+      const reputation =
+        reputationByPeer[peerId] ??
+        (reputationByPeer[peerId] = {
+          successfulSwaps: 0,
+          refundedSwaps: 0,
+          failedSwaps: 0,
+        });
+
+      if (swap.state_name === BobStateName.XmrRedeemed) {
+        reputation.successfulSwaps += 1;
+      } else if (REFUNDED_SWAP_STATES.has(swap.state_name)) {
+        reputation.refundedSwaps += 1;
+      } else if (FAILED_SWAP_STATES.has(swap.state_name)) {
+        reputation.failedSwaps += 1;
+      }
+    }
+
+    return reputationByPeer;
+  },
 );
 
 // TODO: This should be split into multiple selectors/hooks to avoid excessive re-rendering
