@@ -248,3 +248,75 @@ impl NodePool {
         Ok(selected_nodes)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::Database;
+    use monero_address::Network;
+    use tokio::time::{Duration, timeout};
+
+    async fn temp_pool() -> (tempfile::TempDir, NodePool, broadcast::Receiver<PoolStatus>) {
+        let temp_dir = tempfile::tempdir().expect("temporary database directory");
+        let db = Database::new(temp_dir.path().to_path_buf())
+            .await
+            .expect("database initialization");
+        let (pool, receiver) = NodePool::new(db, Network::Stagenet);
+        (temp_dir, pool, receiver)
+    }
+
+    #[test]
+    fn bandwidth_tracker_requires_enough_samples() {
+        let tracker = BandwidthTracker::new();
+        for _ in 0..4 {
+            tracker.record_bytes(1024);
+        }
+
+        assert_eq!(tracker.get_kb_per_sec(), 0.0);
+    }
+
+    #[tokio::test]
+    async fn status_reports_health_counts_and_reliable_nodes() {
+        let (_temp_dir, pool, _receiver) = temp_pool().await;
+
+        pool.record_success("http", "stagenet.xmr-tw.org", 38081, 120.0)
+            .await
+            .unwrap();
+        pool.record_failure("http", "node.monerodevs.org", 38089)
+            .await
+            .unwrap();
+
+        let status = pool.get_current_status().await.unwrap();
+
+        assert!(status.total_node_count > 0);
+        assert_eq!(status.healthy_node_count, 1);
+        assert_eq!(status.successful_health_checks, 1);
+        assert_eq!(status.unsuccessful_health_checks, 1);
+        assert!(
+            status
+                .top_reliable_nodes
+                .iter()
+                .any(|node| node.url == "http://stagenet.xmr-tw.org:38081"
+                    && node.success_rate == 1.0
+                    && node.avg_latency_ms == Some(120.0))
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_status_update_notifies_receivers() {
+        let (_temp_dir, pool, mut receiver) = temp_pool().await;
+
+        pool.record_success("http", "stagenet.xmr-tw.org", 38081, 100.0)
+            .await
+            .unwrap();
+        pool.publish_status_update().await.unwrap();
+
+        let status = timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .expect("status broadcast timeout")
+            .expect("status broadcast");
+
+        assert_eq!(status.healthy_node_count, 1);
+        assert_eq!(status.successful_health_checks, 1);
+    }
+}
