@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Weak},
+    time::Duration,
+};
 
 use monero_sys::WalletEventListener;
 
@@ -29,13 +32,17 @@ impl TauriWalletListener {
 
     pub async fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
         let rt_handle = tokio::runtime::Handle::current();
+        let wallet: Weak<Wallet> = Arc::downgrade(&wallet);
 
         let balance_job = {
             let wallet = wallet.clone();
             let tauri = tauri_handle.clone();
             let rt = rt_handle.clone();
             move |()| {
-                let wallet = wallet.clone();
+                let Some(wallet) = wallet.upgrade() else {
+                    tracing::trace!("Skipping balance update because wallet handle is gone");
+                    return;
+                };
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
@@ -64,7 +71,10 @@ impl TauriWalletListener {
             let tauri = tauri_handle.clone();
             let rt = rt_handle.clone();
             move |()| {
-                let wallet = wallet.clone();
+                let Some(wallet) = wallet.upgrade() else {
+                    tracing::trace!("Skipping history update because wallet handle is gone");
+                    return;
+                };
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
@@ -86,7 +96,10 @@ impl TauriWalletListener {
             let tauri = tauri_handle.clone();
             let rt = rt_handle.clone();
             move |()| {
-                let wallet = wallet.clone();
+                let Some(wallet) = wallet.upgrade() else {
+                    tracing::trace!("Skipping sync update because wallet handle is gone");
+                    return;
+                };
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
