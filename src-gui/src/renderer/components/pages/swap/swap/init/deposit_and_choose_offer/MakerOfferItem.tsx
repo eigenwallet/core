@@ -16,7 +16,10 @@ import WarningIcon from "@mui/icons-material/Warning";
 import { isMakerVersionOld, isMakerVersionTooOld } from "utils/multiAddrUtils";
 import { RefundPolicy } from "store/features/settingsSlice";
 import { useAppSelector } from "store/hooks";
-import { BobStateName } from "models/tauriModelExt";
+import {
+  EMPTY_SWAP_REPUTATION,
+  selectSwapReputationByPeer,
+} from "store/selectors";
 
 const FULL_WARNING_ANTI_SPAM_DEPOSIT_RATIO = 0.1;
 
@@ -240,30 +243,10 @@ function AntiSpamDepositChip(quote: BidQuote) {
 }
 
 function ReputationChip(peer_id: string) {
-  const allSwaps = useAppSelector((state) => state.rpc.state.swapInfos);
-  if (!allSwaps) {
-    return <></>;
-  }
-  const swapsWithThisPeer = Object.values(allSwaps).filter(
-    (swap) => swap.seller.peer_id == peer_id,
+  const { successfulSwaps, refundedSwaps, failedSwaps } = useAppSelector(
+    (state) =>
+      selectSwapReputationByPeer(state)[peer_id] ?? EMPTY_SWAP_REPUTATION,
   );
-
-  const successfulSwaps = swapsWithThisPeer.filter(
-    (swap) => swap.state_name === BobStateName.XmrRedeemed,
-  ).length;
-  // TODO: don't hardcode this check (was swap refunded/punished?) here, put into tauriModelExt or other place
-  const refundedSwaps = swapsWithThisPeer.filter((swap) =>
-    [
-      BobStateName.BtcRefunded,
-      BobStateName.BtcEarlyRefunded,
-      BobStateName.BtcMercyConfirmed,
-    ].includes(swap.state_name),
-  ).length;
-  const failedSwaps = swapsWithThisPeer.filter((swap) =>
-    [BobStateName.BtcPunished, BobStateName.BtcWithheld].includes(
-      swap.state_name,
-    ),
-  ).length;
 
   return (
     <Chip
