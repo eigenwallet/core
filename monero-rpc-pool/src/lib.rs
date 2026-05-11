@@ -185,3 +185,32 @@ pub async fn start_server_with_random_port(
 
     Ok((server_info, status_receiver, pool_handle))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use monero_address::Network;
+    use tokio::time::{Duration, timeout};
+
+    #[tokio::test]
+    async fn create_app_publishes_initial_status() {
+        let temp_dir = tempfile::tempdir().expect("temporary database directory");
+        let config = Config::new_with_port(
+            "127.0.0.1".to_string(),
+            0,
+            temp_dir.path().to_path_buf(),
+            Network::Stagenet,
+        );
+
+        let (_app, mut receiver, _handle) = create_app_with_receiver(config).await.unwrap();
+        let status = timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .expect("initial status timeout")
+            .expect("initial status");
+
+        assert!(status.total_node_count > 0);
+        assert_eq!(status.healthy_node_count, 0);
+        assert_eq!(status.successful_health_checks, 0);
+        assert_eq!(status.unsuccessful_health_checks, 0);
+    }
+}
