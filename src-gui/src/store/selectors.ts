@@ -1,11 +1,12 @@
 import { createSelector } from "@reduxjs/toolkit";
 import { RootState } from "renderer/store/storeRenderer";
-import { GetSwapInfoResponseExt } from "models/tauriModelExt";
+import { BobStateName, GetSwapInfoResponseExt } from "models/tauriModelExt";
 import {
   ConnectionStatus,
   ExpiredTimelocks,
   QuoteStatus,
 } from "models/tauriModel";
+import { parseDateString } from "utils/parseUtils";
 
 const selectRpcState = (state: RootState) => state.rpc.state;
 const selectP2pState = (state: RootState) => state.p2p;
@@ -22,6 +23,40 @@ export const selectAllSwapIds = createSelector([selectRpcState], (rpcState) =>
 export const selectAllSwapInfos = createSelector(
   [selectRpcState],
   (rpcState) => (rpcState.swapInfos ? Object.values(rpcState.swapInfos) : []),
+);
+
+export const selectSaneSwapInfos = createSelector(
+  [selectAllSwapInfos],
+  (swapInfos) =>
+    swapInfos.filter(
+      (swap) =>
+        swap.state_name !== BobStateName.SwapSetupCompleted &&
+        swap.state_name !== BobStateName.SafelyAborted,
+    ),
+);
+
+export const selectSwapInfosSortedByDate = createSelector(
+  [selectSaneSwapInfos],
+  (swapInfos) =>
+    [...swapInfos].sort(
+      (a, b) => parseDateString(b.start_date) - parseDateString(a.start_date),
+    ),
+);
+
+export const selectResumableSwapsCount = createSelector(
+  [selectSaneSwapInfos],
+  (swapInfos) => swapInfos.filter((swapInfo) => !swapInfo.completed).length,
+);
+
+export const selectResumableSwapsCountExcludingPunished = createSelector(
+  [selectSaneSwapInfos],
+  (swapInfos) =>
+    swapInfos.filter(
+      (swapInfo) =>
+        !swapInfo.completed &&
+        swapInfo.state_name !== BobStateName.BtcPunished &&
+        swapInfo.state_name !== BobStateName.SwapSetupCompleted,
+    ).length,
 );
 
 export const selectSwapTimelocks = createSelector(

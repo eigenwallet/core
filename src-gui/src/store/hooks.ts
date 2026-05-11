@@ -1,6 +1,5 @@
-import { sortBy, sum, throttle } from "lodash";
+import { sum, throttle } from "lodash";
 import {
-  BobStateName,
   GetSwapInfoResponseExt,
   isBitcoinSyncProgress,
   isPendingBackgroundProcess,
@@ -20,7 +19,6 @@ import {
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
-import { parseDateString } from "utils/parseUtils";
 import { useEffect, useMemo, useState } from "react";
 import { isCliLogRelatedToSwap } from "models/cliModel";
 import { SettingsState } from "./features/settingsSlice";
@@ -36,8 +34,12 @@ import { fnv1a } from "utils/hash";
 import {
   selectAllSwapInfos,
   selectPendingApprovals,
+  selectResumableSwapsCount,
+  selectResumableSwapsCountExcludingPunished,
+  selectSaneSwapInfos,
   selectSwapInfoWithTimelock,
   selectSwapInfosRaw,
+  selectSwapInfosSortedByDate,
 } from "./selectors";
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
@@ -46,16 +48,19 @@ export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
 export function useResumeableSwapsCount(
   additionalFilter?: (s: GetSwapInfoResponseExt) => boolean,
 ) {
-  const saneSwapInfos = useSaneSwapInfos();
+  const defaultCount = useAppSelector(selectResumableSwapsCount);
+  const saneSwapInfos = useAppSelector(selectSaneSwapInfos);
 
-  return useAppSelector(
-    (state) =>
-      saneSwapInfos.filter(
-        (swapInfo: GetSwapInfoResponseExt) =>
-          !swapInfo.completed &&
-          (additionalFilter == null || additionalFilter(swapInfo)),
-      ).length,
-  );
+  return useMemo(() => {
+    if (additionalFilter == null) {
+      return defaultCount;
+    }
+
+    return saneSwapInfos.filter(
+      (swapInfo: GetSwapInfoResponseExt) =>
+        !swapInfo.completed && additionalFilter(swapInfo),
+    ).length;
+  }, [additionalFilter, defaultCount, saneSwapInfos]);
 }
 
 /**
@@ -64,11 +69,7 @@ export function useResumeableSwapsCount(
  * - Swaps where the sanity check was not passed (e.g. they were aborted)
  */
 export function useResumeableSwapsCountExcludingPunished() {
-  return useResumeableSwapsCount(
-    (s) =>
-      s.state_name !== BobStateName.BtcPunished &&
-      s.state_name !== BobStateName.SwapSetupCompleted,
-  );
+  return useAppSelector(selectResumableSwapsCountExcludingPunished);
 }
 
 /// Returns true if we have any swap that is running
@@ -155,32 +156,12 @@ export function useActiveSwapLogs() {
 /// This hook returns the all swap infos, as an array
 /// Excluding those who are in a state where it's better to hide them from the user
 export function useSaneSwapInfos() {
-  const swapInfos = useAppSelector(selectAllSwapInfos);
-  return swapInfos.filter((swap) => {
-    // We hide swaps that are in the SwapSetupCompleted state
-    // This is because they are probably ones where:
-    // 1. The user force stopped the swap while we were waiting for their confirmation of the offer
-    // 2. We where therefore unable to transition to SafelyAborted
-    if (swap.state_name === BobStateName.SwapSetupCompleted) {
-      return false;
-    }
-
-    // We hide swaps that were safely aborted
-    // No funds were locked. Cannot be resumed.
-    // Wouldn't be beneficial to show them to the user
-    if (swap.state_name === BobStateName.SafelyAborted) {
-      return false;
-    }
-
-    return true;
-  });
+  return useAppSelector(selectSaneSwapInfos);
 }
 
 /// This hook returns the swap infos sorted by date
 export function useSwapInfosSortedByDate() {
-  const swapInfos = useSaneSwapInfos();
-
-  return sortBy(swapInfos, (swap) => -parseDateString(swap.start_date));
+  return useAppSelector(selectSwapInfosSortedByDate);
 }
 
 /// Returns true if swapInfos has been loaded
