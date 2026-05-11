@@ -531,7 +531,7 @@ impl MoneroWallet {
 
     /// Get non-strict balance per subaddress for main account (index 0).
     pub async fn balance_per_subaddress(&self) -> Result<HashMap<u32, u64>> {
-        Ok(self.wallet.balance_per_subaddress().await)
+        self.wallet.balance_per_subaddress().await
     }
 
     pub async fn refresh(&self) -> Result<()> {
