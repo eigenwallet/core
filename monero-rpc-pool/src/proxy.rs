@@ -830,3 +830,94 @@ pub async fn stats_handler(State(state): State<AppState>) -> Response {
     .instrument(info_span!("stats_request"))
     .await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::Request;
+
+    async fn body_bytes(response: Response) -> Vec<u8> {
+        response
+            .into_body()
+            .collect()
+            .await
+            .expect("response body")
+            .to_bytes()
+            .to_vec()
+    }
+
+    #[tokio::test]
+    async fn cloneable_request_buffers_body_and_extracts_jsonrpc_method() {
+        let request = Request::builder()
+            .uri("/json_rpc")
+            .body(Body::from(r#"{"jsonrpc":"2.0","method":"get_info"}"#))
+            .unwrap();
+
+        let cloneable = CloneableRequest::from_request(request).await.unwrap();
+
+        assert_eq!(cloneable.uri(), "/json_rpc");
+        assert_eq!(cloneable.jsonrpc_method(), Some("get_info".to_string()));
+
+        let cloned_request = cloneable.to_request();
+        let cloned_body = cloned_request
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
+        assert_eq!(cloned_body.as_ref(), cloneable.body.as_slice());
+    }
+
+    #[tokio::test]
+    async fn cloneable_request_marks_safe_block_downloads_as_clearnet() {
+        let blocks = CloneableRequest::from_request(
+            Request::builder()
+                .uri("/getblocks.bin")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let rpc = CloneableRequest::from_request(
+            Request::builder()
+                .uri("/json_rpc")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert!(blocks.clearnet_whitelisted());
+        assert!(!rpc.clearnet_whitelisted());
+    }
+
+    #[tokio::test]
+    async fn cloneable_response_detects_string_jsonrpc_errors() {
+        let response = Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::from(r#"{"error":"daemon busy"}"#))
+            .unwrap();
+
+        let cloneable = CloneableResponse::from_response(response).await.unwrap();
+
+        assert_eq!(cloneable.status(), StatusCode::OK);
+        assert_eq!(
+            cloneable.get_jsonrpc_error(),
+            Some("daemon busy".to_string())
+        );
+        assert_eq!(get_jsonrpc_error(b"not json"), None);
+    }
+
+    #[tokio::test]
+    async fn handler_errors_render_status_and_details_json() {
+        let response = HandlerError::NoNodes.to_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let body = body_bytes(response).await;
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["error"]["code"], 503);
+        assert_eq!(json["error"]["message"], "No nodes available");
+        assert_eq!(json["error"]["details"], "No nodes available");
+    }
+}
