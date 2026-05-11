@@ -97,3 +97,46 @@ impl NodeRecord {
         self.health.success_rate()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use monero_address::Network;
+
+    #[test]
+    fn node_address_formats_full_url_and_display() {
+        let address = NodeAddress::new("https".to_string(), "node.example".to_string(), 18089);
+
+        assert_eq!(address.full_url(), "https://node.example:18089");
+        assert_eq!(address.to_string(), "https://node.example:18089");
+    }
+
+    #[test]
+    fn node_health_success_rate_handles_empty_and_mixed_counts() {
+        let empty = NodeHealthStats::default();
+        assert_eq!(empty.success_rate(), 0.0);
+
+        let mixed = NodeHealthStats {
+            success_count: 3,
+            failure_count: 1,
+            ..Default::default()
+        };
+        assert_eq!(mixed.success_rate(), 0.75);
+    }
+
+    #[test]
+    fn node_record_delegates_url_and_success_rate() {
+        let record = NodeRecord::new(
+            NodeAddress::new("http".to_string(), "localhost".to_string(), 38081),
+            NodeMetadata::new(7, Network::Stagenet, Utc::now()),
+            NodeHealthStats {
+                success_count: 9,
+                failure_count: 1,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(record.full_url(), "http://localhost:38081");
+        assert_eq!(record.success_rate(), 0.9);
+    }
+}
