@@ -27,7 +27,11 @@ import {
 import { useState, useMemo, useEffect } from "react";
 import { useAppSelector } from "store/hooks";
 import { QuoteStatus, ConnectionStatus } from "models/tauriModel";
-import { selectPeers } from "store/selectors";
+import {
+  selectConnectedPeerIds,
+  selectMakerDiscoveryActivity,
+  selectPeers,
+} from "store/selectors";
 import TorIcon from "renderer/components/icons/TorIcon";
 import TruncatedText from "renderer/components/other/TruncatedText";
 import ClickToCopy from "renderer/components/other/ClickToCopy";
@@ -42,11 +46,10 @@ export default function MakerDiscoveryStatus() {
   const [everConnectedPeers, setEverConnectedPeers] = useState<Set<string>>(
     new Set(),
   );
-  const peers = useAppSelector(selectPeers);
-
-  const connectedPeerIds = peers
-    .filter((p) => p.connection === ConnectionStatus.Connected)
-    .map((p) => p.peer_id);
+  const connectedPeerIds = useAppSelector(selectConnectedPeerIds);
+  const { quotesInflight, dialsInflight } = useAppSelector(
+    selectMakerDiscoveryActivity,
+  );
 
   // Track peers that have ever been connected (accumulating historical state)
   useEffect(() => {
@@ -58,15 +61,7 @@ export default function MakerDiscoveryStatus() {
       newIds.forEach((id) => updated.add(id));
       return updated;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- peers is the stable source
-  }, [peers]);
-
-  const quotesInflight = peers.filter(
-    (p) => p.quote === QuoteStatus.Inflight,
-  ).length;
-  const dialsInflight = peers.filter(
-    (p) => p.connection === ConnectionStatus.Dialing,
-  ).length;
+  }, [connectedPeerIds]);
 
   const isActive = quotesInflight > 0 || dialsInflight > 0;
 
@@ -140,12 +135,13 @@ export default function MakerDiscoveryStatus() {
           </Stack>
         </Paper>
       </Tooltip>
-      <PeerDetailsDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        peers={peers}
-        everConnectedPeers={everConnectedPeers}
-      />
+      {dialogOpen && (
+        <PeerDetailsDialog
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          everConnectedPeers={everConnectedPeers}
+        />
+      )}
     </>
   );
 }
@@ -338,16 +334,15 @@ function PeerTable({ peers, page, rowsPerPage }: PeerTableProps) {
 interface PeerDetailsDialogProps {
   open: boolean;
   onClose: () => void;
-  peers: Peer[];
   everConnectedPeers: Set<string>;
 }
 
 function PeerDetailsDialog({
   open,
   onClose,
-  peers,
   everConnectedPeers,
 }: PeerDetailsDialogProps) {
+  const peers = useAppSelector(selectPeers);
   const [page, setPage] = useState(0);
   const rowsPerPage = 8;
 
