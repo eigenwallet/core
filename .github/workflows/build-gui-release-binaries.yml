@@ -66,6 +66,9 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Bundled Wayland libraries can conflict with the host graphics stack on Fedora.
+          LINUXDEPLOY_EXCLUDED_LIBRARIES: >-
+            libwayland-client.so.0*;libwayland-cursor.so.0*;libwayland-egl.so.1*;libwayland-server.so.0*
         with:
           # Empty releaseId for PRs prevents uploading to GitHub releases
           # Empty strings are treated as an omitted argument: https://github.com/actions/runner/issues/924
@@ -103,6 +106,21 @@ jobs:
             ./eigenwallet.AppImage --appimage-extract >/dev/null
           )
 
+          wayland_violations="$(
+            find "$workdir/squashfs-root/usr/lib" \
+              \( -type f -o -type l \) \
+              \( -name 'libwayland-client.so.0*' \
+                -o -name 'libwayland-cursor.so.0*' \
+                -o -name 'libwayland-egl.so.1*' \
+                -o -name 'libwayland-server.so.0*' \) \
+              -print 2>/dev/null || true
+          )"
+          if [[ -n "$wayland_violations" ]]; then
+            echo "The AppImage still bundles host graphics-stack Wayland libraries:" >&2
+            printf '%s\n' "$wayland_violations" >&2
+            exit 1
+          fi
+
           find "$workdir/squashfs-root" -type f -print0 \
             | xargs -0 grep -aohE 'GLIBC_[0-9]+\.[0-9]+|GLIBCXX_3\.4\.[0-9]+' \
             > "$workdir/symbol-versions.txt" || true
@@ -125,6 +143,7 @@ jobs:
           fi
 
           echo "AppImage GLIBC/GLIBCXX requirements are compatible with Debian 12."
+          echo "AppImage does not bundle the Wayland libraries known to break Fedora."
 
       # TODO: Remove this duplication of the steps in build-release-binaries.yml
       - name: Install GnuPG (macOS)
