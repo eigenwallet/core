@@ -1,20 +1,20 @@
 import { Box, Chip, Typography } from "@mui/material";
 import { CliLog } from "models/cliModel";
 import { HashedLog } from "store/features/logsSlice";
-import { ReactNode, useMemo, useState } from "react";
+import { memo, ReactNode, useMemo, useState } from "react";
 import { logsToRawString } from "utils/parseUtils";
 import ScrollablePaperTextBox from "./ScrollablePaperTextBox";
 
-function RenderedCliLog({ log }: { log: CliLog }) {
-  const { timestamp, level, fields, target } = log;
+const levelColorMap = {
+  DEBUG: "#1976d2", // Blue
+  INFO: "#388e3c", // Green
+  WARN: "#fbc02d", // Yellow
+  ERROR: "#d32f2f", // Red
+  TRACE: "#8e24aa", // Purple
+} as const;
 
-  const levelColorMap = {
-    DEBUG: "#1976d2", // Blue
-    INFO: "#388e3c", // Green
-    WARN: "#fbc02d", // Yellow
-    ERROR: "#d32f2f", // Red
-    TRACE: "#8e24aa", // Purple
-  };
+const RenderedCliLog = memo(function RenderedCliLog({ log }: { log: CliLog }) {
+  const { timestamp, level, fields, target } = log;
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column" }}>
@@ -57,7 +57,7 @@ function RenderedCliLog({ log }: { log: CliLog }) {
       </Box>
     </Box>
   );
-}
+});
 
 export default function CliLogsBox({
   label,
@@ -79,8 +79,10 @@ export default function CliLogsBox({
       return logs;
     }
 
+    const normalizedSearchQuery = searchQuery.toLowerCase();
+
     return logs.filter(({ log }) =>
-      JSON.stringify(log).toLowerCase().includes(searchQuery.toLowerCase()),
+      JSON.stringify(log).toLowerCase().includes(normalizedSearchQuery),
     );
   }, [logs, searchQuery]);
 
@@ -101,11 +103,13 @@ export default function CliLogsBox({
     [filteredLogs],
   );
 
+  const copyValue = useMemo(() => logsToRawString(rawStrings), [rawStrings]);
+
   return (
     <ScrollablePaperTextBox
       minHeight={minHeight}
       title={label}
-      copyValue={logsToRawString(rawStrings)}
+      copyValue={copyValue}
       searchQuery={searchQuery}
       setSearchQuery={setSearchQuery}
       topRightButton={topRightButton}
