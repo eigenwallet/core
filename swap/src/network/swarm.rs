@@ -4,8 +4,9 @@ use crate::seed::Seed;
 use crate::{asb, cli};
 use anyhow::Result;
 use arti_client::TorClient;
+use libp2p::connection_limits::ConnectionLimits;
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{identity, Multiaddr, Swarm};
+use libp2p::{Multiaddr, Swarm, identity};
 use libp2p::{PeerId, SwarmBuilder};
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -13,10 +14,11 @@ use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
+use tor_hsservice::RunningOnionService;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
-// We keep connections open for 15 minutes
-const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 15);
+// We keep connections open for 2 minutes
+const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 2);
 
 #[allow(clippy::too_many_arguments)]
 pub fn asb<LR>(
@@ -31,7 +33,17 @@ pub fn asb<LR>(
     maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
     register_hidden_service: bool,
     num_intro_points: u8,
-) -> Result<(Swarm<asb::Behaviour<LR>>, Vec<Multiaddr>)>
+    max_concurrent_rend_requests: usize,
+    wormhole_enabled: bool,
+    wormhole_max_concurrent_rend_requests: usize,
+    wormhole_num_intro_points: u8,
+    wormhole_swap_freshness_hours: u64,
+    trust_provider: Arc<dyn super::wormhole::PeerTrust + Send + Sync>,
+) -> Result<(
+    Swarm<asb::Behaviour<LR>>,
+    Vec<Multiaddr>,
+    Option<Arc<RunningOnionService>>,
+)>
 where
     LR: LatestRate + Send + 'static + Debug + Clone,
 {
@@ -45,6 +57,25 @@ where
         })
         .collect();
 
+    // TODO: Prioritize honest peers in this queue
+    let connection_limits = ConnectionLimits::default()
+        // Limit peers stuck in the handshake phase
+        .with_max_pending_incoming(Some(64 * 4))
+        .with_max_established_incoming(Some(128 * 4))
+        // A single peer only needs one connection; allow 4 for brief overlap during reconnects
+        .with_max_established_per_peer(Some(4));
+
+    let (transport, onion_addresses, wormhole_channels, onion_service_handle) =
+        asb::transport::new(
+            &identity,
+            maybe_tor_client,
+            register_hidden_service,
+            num_intro_points,
+            max_concurrent_rend_requests,
+            wormhole_max_concurrent_rend_requests,
+            wormhole_num_intro_points,
+        )?;
+
     let behaviour = asb::Behaviour::new(
         min_buy,
         max_buy,
@@ -53,14 +84,16 @@ where
         env_config,
         (identity.clone(), namespace),
         rendezvous_nodes,
+        connection_limits,
+        trust_provider,
+        // Passing None disables the wormhole behaviour entirely.
+        if wormhole_enabled {
+            wormhole_channels
+        } else {
+            None
+        },
+        wormhole_swap_freshness_hours,
     );
-
-    let (transport, onion_addresses) = asb::transport::new(
-        &identity,
-        maybe_tor_client,
-        register_hidden_service,
-        num_intro_points,
-    )?;
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
@@ -76,7 +109,7 @@ where
         swarm.add_peer_address(peer_id, addr.clone());
     }
 
-    Ok((swarm, onion_addresses))
+    Ok((swarm, onion_addresses, onion_service_handle))
 }
 
 pub async fn cli<T>(

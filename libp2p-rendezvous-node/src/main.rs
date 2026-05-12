@@ -11,7 +11,7 @@ use tokio::fs::{DirBuilder, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tracing::level_filters::LevelFilter;
 
-use crate::swarm::{create_swarm, create_swarm_with_onion, Addresses};
+use crate::swarm::{Addresses, create_swarm, create_swarm_with_onion};
 
 pub mod behaviour;
 pub mod swarm;

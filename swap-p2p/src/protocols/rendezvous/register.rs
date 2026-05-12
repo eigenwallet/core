@@ -1,14 +1,14 @@
 use crate::behaviour_util::{AddressTracker, BackoffTracker, ConnectionTracker};
 use crate::futures_util::FuturesHashSet;
 use crate::protocols::redial;
-use futures::{future, FutureExt};
-use libp2p::rendezvous::client::RegisterError;
+use futures::{FutureExt, future};
 use libp2p::rendezvous::ErrorCode;
+use libp2p::rendezvous::client::RegisterError;
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
     THandlerOutEvent, ToSwarm,
 };
-use libp2p::{identity, rendezvous, Multiaddr, PeerId};
+use libp2p::{Multiaddr, PeerId, identity, rendezvous};
 use std::collections::{HashSet, VecDeque};
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -294,7 +294,7 @@ impl NetworkBehaviour for Behaviour {
                 other => {
                     return Poll::Ready(other.map_out(|_| {
                         unreachable!("we handled all generated events in the arm above")
-                    }))
+                    }));
                 }
             }
         }
@@ -376,7 +376,7 @@ impl NetworkBehaviour for Behaviour {
 mod tests {
     use super::*;
     use crate::protocols::rendezvous::XmrBtcNamespace;
-    use crate::test::{new_swarm, SwarmExt};
+    use crate::test::{SwarmExt, new_swarm};
     use futures::StreamExt;
     use libp2p::rendezvous;
     use libp2p::swarm::SwarmEvent;

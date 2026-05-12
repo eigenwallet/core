@@ -1,18 +1,18 @@
 use self::quote::{
-    make_quote, reserve_proof_with_timeout, unlocked_monero_balance_with_timeout, QuoteCacheKey,
-    QUOTE_CACHE_TTL,
+    QUOTE_CACHE_TTL, QuoteCacheKey, make_quote, reserve_proof_with_timeout,
+    unlocked_monero_balance_with_timeout,
 };
 use crate::asb::{Behaviour, OutEvent};
 use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
-use crate::network::quote::BidQuote;
+use crate::network::quote::{BidQuote, RefundPolicyWire};
 use crate::network::swap_setup::alice::WalletSnapshot;
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use bitcoin_wallet::BitcoinWallet;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
@@ -22,19 +22,23 @@ use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
 use moka::future::Cache;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::io::Write;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use swap_core::bitcoin;
+use swap_env::config::RefundPolicy;
 use swap_env::env;
 use swap_feed::LatestRate;
+use swap_p2p::protocols::cooperative_xmr_redeem_after_punish;
 use tokio::sync::{mpsc, oneshot};
+use tor_hsservice::RunningOnionService;
 use uuid::Uuid;
 
-pub use service::{EventLoopRequest, EventLoopService};
+pub use service::{EventLoopRequest, EventLoopService, OnionServiceStatusInfo};
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop<LR>
@@ -50,7 +54,9 @@ where
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
     external_redeem_address: Option<bitcoin::Address>,
+    btc_redeem_fee_multiplier: Decimal,
     developer_tip: TipConfig,
+    refund_policy: RefundPolicy,
 
     /// Cache for quotes
     quote_cache: Cache<QuoteCacheKey, Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
@@ -65,6 +71,11 @@ where
     /// the sender is removed from this map.
     recv_encrypted_signature: HashMap<Uuid, bmrng::RequestSender<bitcoin::EncryptedSignature, ()>>,
 
+    /// Stores where to send burn-on-refund instructions to
+    /// The corresponding receiver is stored in the EventLoopHandle
+    /// Uses watch channel to allow multiple updates before consumption
+    recv_burn_on_refund_instruction: HashMap<Uuid, tokio::sync::watch::Sender<Option<bool>>>,
+
     /// Once we receive an [`EncryptedSignature`] from Bob, we forward it to the EventLoopHandle.
     /// Once the EventLoopHandle acknowledges the receipt of the [`EncryptedSignature`], we need to confirm this to Bob.
     /// When the EventLoopHandle acknowledges the receipt, a future in this collection resolves and returns the libp2p channel
@@ -76,6 +87,35 @@ where
     /// 3. When future completes, the EventLoop uses the ResponseChannel to send an acknowledgment to Bob
     /// 4. Future is removed from this collection
     inflight_encrypted_signatures: FuturesUnordered<BoxFuture<'static, ResponseChannel<()>>>,
+
+    /// In-flight quote computation. At most one real future at a time;
+    /// a permanent `pending()` sentinel keeps the stream alive.
+    inflight_quote_computation:
+        FuturesUnordered<BoxFuture<'static, Result<Arc<BidQuote>, Arc<anyhow::Error>>>>,
+
+    /// Response channels waiting for the in-flight quote computation to finish.
+    /// Drained once the computation resolves.
+    pending_quote_channels: Vec<(ResponseChannel<BidQuote>, PeerId)>,
+
+    /// Controller RPC responders waiting for the in-flight quote computation.
+    /// Drained alongside `pending_quote_channels` when the computation resolves.
+    pending_quote_controller_responders:
+        Vec<oneshot::Sender<Result<Arc<BidQuote>, Arc<anyhow::Error>>>>,
+
+    /// In-flight wallet snapshot computations for swap setup.
+    /// Each future waits for a single swap setup handler to request a wallet snapshot.
+    /// It then computes the wallet snapshot and returns the BTC amount, responder and wallet snapshot.
+    #[allow(clippy::type_complexity)]
+    inflight_wallet_snapshots: FuturesUnordered<
+        BoxFuture<
+            'static,
+            Result<(
+                bitcoin::Amount,
+                bmrng::Responder<(WalletSnapshot, bitcoin::Amount, bool)>,
+                WalletSnapshot,
+            )>,
+        >,
+    >,
 
     /// Channel for sending transfer proofs to Bobs. The sender is shared with every EventLoopHandle.
     /// The receiver is polled by the event loop to send transfer proofs over the network to Bob.
@@ -99,6 +139,9 @@ where
 
     /// Channel for service requests
     service_requests: mpsc::UnboundedReceiver<EventLoopRequest>,
+
+    /// Handle to the primary onion service (if registered)
+    onion_service_handle: Option<Arc<RunningOnionService>>,
 
     /// Temporarily stores transfer proof requests for peers that are currently disconnected.
     ///
@@ -141,7 +184,10 @@ where
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
+        btc_redeem_fee_multiplier: Decimal,
         developer_tip: TipConfig,
+        refund_policy: RefundPolicy,
+        onion_service_handle: Option<Arc<RunningOnionService>>,
     ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
@@ -161,13 +207,21 @@ where
             min_buy,
             max_buy,
             external_redeem_address,
+            btc_redeem_fee_multiplier,
             developer_tip,
+            refund_policy,
             quote_cache,
             recv_encrypted_signature: Default::default(),
+            recv_burn_on_refund_instruction: Default::default(),
             inflight_encrypted_signatures: Default::default(),
+            inflight_quote_computation: Default::default(),
+            pending_quote_channels: Default::default(),
+            pending_quote_controller_responders: Default::default(),
+            inflight_wallet_snapshots: Default::default(),
             outgoing_transfer_proofs_requests,
             outgoing_transfer_proofs_sender,
             service_requests,
+            onion_service_handle,
             buffered_transfer_proofs: Default::default(),
             inflight_transfer_proofs: Default::default(),
         };
@@ -190,6 +244,10 @@ where
         // terminate forever.
         self.inflight_encrypted_signatures
             .push(future::pending().boxed());
+        self.inflight_quote_computation
+            .push(future::pending().boxed());
+        self.inflight_wallet_snapshots
+            .push(future::pending().boxed());
 
         let swaps = match self.db.all().await {
             Ok(swaps) => swaps,
@@ -201,18 +259,10 @@ where
 
         let unfinished_swaps = swaps
             .into_iter()
-            .filter(|(_swap_id, state)| !state.swap_finished())
-            .collect::<Vec<(Uuid, State)>>();
+            .filter(|(_, _, state)| !state.swap_finished())
+            .collect::<Vec<_>>();
 
-        for (swap_id, state) in unfinished_swaps {
-            let peer_id = match self.db.get_peer_id(swap_id).await {
-                Ok(peer_id) => peer_id,
-                Err(_) => {
-                    tracing::warn!(%swap_id, "Resuming swap skipped because no peer-id found for swap in database");
-                    continue;
-                }
-            };
-
+        for (peer_id, swap_id, state) in unfinished_swaps {
             let handle = self.new_handle(peer_id, swap_id);
 
             let swap = Swap {
@@ -239,24 +289,21 @@ where
                 swarm_event = self.swarm.select_next_some() => {
                     match swarm_event {
                         SwarmEvent::Behaviour(OutEvent::SwapSetupInitiated { mut send_wallet_snapshot }) => {
-                            let (btc, responder) = match send_wallet_snapshot.recv().await {
-                                Ok((btc, responder)) => (btc, responder),
-                                Err(error) => {
-                                    tracing::error!("Swap request will be ignored because of a failure when requesting information for the wallet snapshot: {:#}", error);
-                                    continue;
-                                }
-                            };
+                            let bitcoin_wallet = self.bitcoin_wallet.clone();
+                            let monero_wallet = self.monero_wallet.clone();
+                            let external_redeem_address = self.external_redeem_address.clone();
+                            let btc_redeem_fee_multiplier = self.btc_redeem_fee_multiplier;
 
-                            let wallet_snapshot = match capture_wallet_snapshot(self.bitcoin_wallet.clone(), &self.monero_wallet, &self.external_redeem_address, btc).await {
-                                Ok(wallet_snapshot) => wallet_snapshot,
-                                Err(error) => {
-                                    tracing::error!("Swap request will be ignored because we were unable to create wallet snapshot for swap: {:#}", error);
-                                    continue;
-                                }
-                            };
+                            self.inflight_wallet_snapshots.push(async move {
+                                // Wait for the swap setup handler to request the wallet snapshot
+                                let (btc, responder) = send_wallet_snapshot.recv().await?;
 
-                            // Ignore result, we should never hit this because the receiver will alive as long as the connection is.
-                            let _ = responder.respond(wallet_snapshot);
+                                // Compute the wallet snapshot
+                                let wallet_snapshot = capture_wallet_snapshot(bitcoin_wallet, &monero_wallet, &external_redeem_address, btc_redeem_fee_multiplier, btc).await?;
+
+                                // This is used further down to then actually respond to the swap setup handler
+                                Ok((btc, responder, wallet_snapshot))
+                            }.boxed());
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3}) => {
                             if let Err(error) = self.handle_execution_setup_done(peer_id, swap_id, state3).await {
@@ -267,28 +314,8 @@ where
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
                         }
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
-                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy, self.developer_tip.ratio).await {
-                                Ok(quote_arc) => {
-                                    if self.swarm.behaviour_mut().quote.send_response(channel, (*quote_arc).clone()).is_err() {
-                                        tracing::debug!(%peer, "Failed to respond with quote");
-                                    }
-                                }
-                                // The error is already logged in the make_quote_or_use_cached function
-                                // We don't log it here to avoid spamming on each request
-                                Err(_) => {
-                                    // We respond with a zero quote. This will stop Bob from trying to start a swap but doesn't require
-                                    // a breaking network change by changing the definition of the quote protocol
-                                    if self
-                                        .swarm
-                                        .behaviour_mut()
-                                        .quote
-                                        .send_response(channel, BidQuote::ZERO)
-                                        .is_err()
-                                    {
-                                        tracing::debug!(%peer, "Failed to respond with zero quote");
-                                    }
-                                }
-                            }
+                            self.pending_quote_channels.push((channel, peer));
+                            self.ensure_quote_computation_is_inflight();
                         }
                         SwarmEvent::Behaviour(OutEvent::TransferProofAcknowledged { peer, id }) => {
                             tracing::debug!(%peer, "Bob acknowledged transfer proof");
@@ -370,62 +397,8 @@ where
                             }.boxed());
                         }
                         SwarmEvent::Behaviour(OutEvent::CooperativeXmrRedeemRequested { swap_id, channel, peer }) => {
-                            let swap_peer = self.db.get_peer_id(swap_id).await;
-                            let swap_state = self.db.get_state(swap_id).await;
-
-                            // If we do not find the swap in the database, or we do not have a peer-id for it, reject
-                            let (swap_peer, swap_state) = match (swap_peer, swap_state) {
-                                (Ok(peer), Ok(state)) => (peer, state),
-                                _ => {
-                                    tracing::warn!(
-                                        swap_id = %swap_id,
-                                        received_from = %peer,
-                                        reason = "swap not found",
-                                        "Rejecting cooperative XMR redeem request"
-                                    );
-                                    if self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Rejected { swap_id, reason: CooperativeXmrRedeemRejectReason::UnknownSwap }).is_err() {
-                                        tracing::error!(swap_id = %swap_id, "Failed to reject cooperative XMR redeem request");
-                                    }
-                                    continue;
-                                }
-                            };
-
-                            // If the peer is not the one associated with the swap, reject
-                            if swap_peer != peer {
-                                tracing::warn!(
-                                    swap_id = %swap_id,
-                                    received_from = %peer,
-                                    expected_from = %swap_peer,
-                                    reason = "unexpected peer",
-                                    "Rejecting cooperative XMR redeem request"
-                                );
-                                if self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Rejected { swap_id, reason: CooperativeXmrRedeemRejectReason::MaliciousRequest }).is_err() {
-                                    tracing::error!(swap_id = %swap_id, "Failed to reject cooperative XMR redeem request");
-                                }
-                                continue;
-                            }
-
-                            // If we are in either of these states, the punish timelock has expired
-                            // Bob cannot refund the Bitcoin anymore. We can publish tx_punish to redeem the Bitcoin.
-                            // Therefore it is safe to reveal s_a to let him redeem the Monero
-                            let State::Alice (AliceState::BtcPunished { state3, transfer_proof, .. } | AliceState::BtcPunishable { state3, transfer_proof, .. }) = swap_state else {
-                                tracing::warn!(
-                                    swap_id = %swap_id,
-                                    reason = "swap is in invalid state",
-                                    "Rejecting cooperative Monero redeem request"
-                                );
-                                if self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Rejected { swap_id, reason: CooperativeXmrRedeemRejectReason::SwapInvalidState }).is_err() {
-                                    tracing::error!(swap_id = %swap_id, "Failed to send rejection for cooperative Monero redeem request");
-                                }
-                                continue;
-                            };
-
-                            if self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Fullfilled { swap_id, s_a: state3.s_a, lock_transfer_proof: transfer_proof }).is_err() {
-                                tracing::error!(peer = %peer, "Failed to respond to cooperative XMR redeem request");
-                                continue;
-                            }
-
-                            tracing::info!(swap_id = %swap_id, peer = %peer, "Fullfilled cooperative XMR redeem request");
+                            let _ = self.handle_cooperative_redeem_request(swap_id, channel, peer).await
+                                .inspect_err(|err| tracing::error!(error=?err, "Could not process cooperative redeem request, ignoring"));
                         }
                         SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::Registered { peer_id })) => {
                             tracing::trace!("Successfully registered with rendezvous node: {}", peer_id);
@@ -478,7 +451,15 @@ where
                             }
                         }
                         SwarmEvent::IncomingConnectionError { send_back_addr: address, error, .. } => {
-                            tracing::trace!(%address, "Failed to set up connection with peer: {:?}", error);
+                            if let libp2p::swarm::ListenError::Denied { cause } = &error {
+                                if let Some(exceeded) = cause.downcast_ref::<libp2p::connection_limits::Exceeded>() {
+                                    tracing::warn!(%address, error = %exceeded, "Rejected inbound connection to prevent against denial-of-service");
+                                } else {
+                                    tracing::trace!(%address, "Failed to set up connection with peer: {:?}", error);
+                                }
+                            } else {
+                                tracing::trace!(%address, "Failed to set up connection with peer: {:?}", error);
+                            }
                         }
                         SwarmEvent::ConnectionClosed { peer_id: peer, num_established: 0, endpoint, cause: Some(error), connection_id } => {
                             tracing::trace!(%peer, address = %endpoint.get_remote_address(), %connection_id, "Lost connection to peer: {:?}", error);
@@ -518,6 +499,59 @@ where
                 Some(response_channel) = self.inflight_encrypted_signatures.next() => {
                     let _ = self.swarm.behaviour_mut().encrypted_signature.send_response(response_channel, ());
                 },
+                Some(quote_result) = self.inflight_quote_computation.next() => {
+                    let quote = match &quote_result {
+                        Ok(quote_arc) => (**quote_arc).clone(),
+                        // We respond with a zero quote. This will stop Bob from trying to start a swap but doesn't require
+                        // a breaking network change by changing the definition of the quote protocol
+                        //
+                        // The error is already logged in the make_quote_or_use_cached function
+                        // We don't log it here to avoid spamming on each request
+                        Err(_) => BidQuote::ZERO,
+                    };
+
+                    tracing::trace!(?quote, num_requests = self.pending_quote_channels.len(), "Responding with quote to requests");
+
+                    for (channel, peer) in self.pending_quote_channels.drain(..) {
+                        if self.swarm.behaviour_mut().quote.send_response(channel, quote.clone()).is_err() {
+                            tracing::debug!(%peer, "Failed to respond with quote");
+                        }
+                    }
+
+                    // Also respond to any controller RPC callers waiting on this computation.
+                    for responder in self.pending_quote_controller_responders.drain(..) {
+                        let _ = responder.send(quote_result.clone());
+                    }
+                },
+
+                // Swap setup routine:
+                // 1. We receive a `SwapSetupInitiated` event with a `send_wallet_snapshot` receiver
+                // 2. We push a future to `inflight_wallet_snapshots` that waits for the swap setup handler to
+                //    request the wallet snapshot (with the BTC amount), then computes it
+                // 3. Once the future resolves, we compute the amnesty amount and respond to the swap setup handler
+                Some(result) = self.inflight_wallet_snapshots.next() => {
+                    let (btc, responder, wallet_snapshot) = match result {
+                        Ok((btc, responder, wallet_snapshot)) => (btc, responder, wallet_snapshot),
+                        Err(error) => {
+                            // TODO: Propagate error to the swap_setup handler instead of swallowing it
+                            tracing::error!("Swap request will be ignored because we were unable to create wallet snapshot for swap: {:#}", error);
+                            continue;
+                        }
+                    };
+
+                    let (btc_amnesty_amount, should_publish_tx_withhold) = match apply_anti_spam_policy(btc, &self.refund_policy) {
+                        Ok(amount) => amount,
+                        Err(error) => {
+                            // TODO: Propagate error to the swap_setup handler instead of swallowing it
+                            tracing::error!("Swap request will be ignored because we were unable to compute the amnesty amount for the swap: {:#}", error);
+                            continue;
+                        }
+                    };
+
+                    if responder.respond((wallet_snapshot, btc_amnesty_amount, should_publish_tx_withhold)).is_err() {
+                        tracing::warn!("Failed to send wallet snapshot and amnesty amount back to swap setup handler, connection may have been dropped");
+                    }
+                },
                 Some(request) = self.service_requests.recv() => {
                     match request {
                         EventLoopRequest::GetMultiaddresses { respond_to } => {
@@ -540,83 +574,146 @@ where
 
                             let _ = respond_to.send(registrations);
                         }
+                        EventLoopRequest::SetBurnOnRefund { swap_id, burn, respond_to } => {
+                            let result = if let Some(sender) = self.recv_burn_on_refund_instruction.get(&swap_id) {
+                                sender.send(Some(burn))
+                                    .map_err(|_| anyhow!("Failed to send burn instruction - receiver dropped"))
+                            } else {
+                                Err(anyhow!("No active swap found with id {}", swap_id))
+                            };
+                            let _ = respond_to.send(result);
+                        }
+                        EventLoopRequest::GrantMercy { swap_id, respond_to } => {
+                            let result = self.handle_grant_mercy(swap_id).await;
+                            let _ = respond_to.send(result);
+                        }
+                        EventLoopRequest::GetWormholeServices { respond_to } => {
+                            let services = self.swarm.behaviour().wormhole
+                                .as_ref()
+                                .map(|w| w.services())
+                                .unwrap_or_default();
+                            let _ = respond_to.send(services);
+                        }
+                        EventLoopRequest::GetOnionServiceStatus { respond_to } => {
+                            let info = self.onion_service_handle.as_ref().map(|svc| {
+                                let status = svc.status();
+                                OnionServiceStatusInfo {
+                                    state: format!("{:?}", status.state()),
+                                    reachable: status.state().is_fully_reachable(),
+                                    problem: status.current_problem().map(|p| format!("{p:?}")),
+                                }
+                            });
+                            let _ = respond_to.send(info);
+                        }
+                        EventLoopRequest::GetCurrentQuote { respond_to } => {
+                            self.pending_quote_controller_responders.push(respond_to);
+                            self.ensure_quote_computation_is_inflight();
+                        }
                     }
                 }
             }
         }
     }
 
-    /// Get a quote from the cache or calculate a new one by calling make_quote.
-    /// Returns the result wrapped in Arcs for consistent caching.
-    async fn make_quote_or_use_cached(
-        &mut self,
+    /// Start a quote computation if none is currently in flight.
+    ///
+    /// The `inflight_quote_computation` stream always contains a permanent
+    /// `pending()` keep-alive future, so `len() == 1` means no real
+    /// computation is running. Called by every site that queues a
+    /// consumer for the next quote result (p2p quote protocol, controller
+    /// RPC) to guarantee there is a future that will eventually wake up
+    /// the result-draining select arm.
+    fn ensure_quote_computation_is_inflight(&mut self) {
+        if self.inflight_quote_computation.len() == 1 {
+            self.inflight_quote_computation
+                .push(self.make_quote_or_use_cached(
+                    self.min_buy,
+                    self.max_buy,
+                    self.developer_tip.ratio,
+                    self.refund_policy.clone().into(),
+                ));
+        }
+    }
+
+    /// Get a quote from the cache or compute a new one.
+    ///
+    /// Returns a `'static` future so it can be stored in the event loop
+    /// and polled without blocking other select arms.
+    fn make_quote_or_use_cached(
+        &self,
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         developer_tip: Decimal,
-    ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>> {
-        // We use the min and max buy amounts to create a unique key for the cache
-        // Although these values stay constant over the lifetime of an instance of the asb, this might change in the future
-        let key = QuoteCacheKey { min_buy, max_buy };
-
-        // Check if we have a cached quote
-        let maybe_cached_quote = self.quote_cache.get(&key).await;
-
-        if let Some(cached_quote_result) = maybe_cached_quote {
-            tracing::trace!("Got a request for a quote, using cached value.");
-            return cached_quote_result;
-        }
-
-        // We have a cache miss, so we compute a new quote
-        tracing::trace!("Got a request for a quote, computing new quote.");
-
+        refund_policy: RefundPolicyWire,
+    ) -> BoxFuture<'static, Result<Arc<BidQuote>, Arc<anyhow::Error>>> {
+        let quote_cache = self.quote_cache.clone();
         let rate = self.latest_rate.clone();
-
-        let get_reserved_items = || async {
-            let all_swaps = self.db.all().await?;
-            let alice_states: Vec<_> = all_swaps
-                .into_iter()
-                .filter_map(|(_, state)| match state {
-                    State::Alice(state) => Some(state),
-                    _ => None,
-                })
-                .collect();
-
-            Ok(alice_states)
-        };
-
+        let db = self.db.clone();
         let monero_wallet = self.monero_wallet.clone();
-        let get_unlocked_balance = || async {
-            unlocked_monero_balance_with_timeout(monero_wallet.main_wallet().await).await
-        };
-
-        let peer_id = self.peer_id();
         let monero_wallet_for_proof = self.monero_wallet.clone();
-        let get_reserve_proof = || async move {
-            reserve_proof_with_timeout(monero_wallet_for_proof.main_wallet().await, peer_id).await
-        };
+        let peer_id = self.peer_id();
 
-        let result = make_quote(
-            min_buy,
-            max_buy,
-            rate,
-            get_unlocked_balance,
-            get_reserved_items,
-            get_reserve_proof,
-            developer_tip,
-        )
-        .await;
+        async move {
+            // We use the min and max buy amounts to create a unique key for the cache
+            // Although these values stay constant over the lifetime of an instance of the asb, this might change in the future
+            let key = QuoteCacheKey { min_buy, max_buy };
 
-        // Insert the computed quote into the cache
-        // Need to clone it as insert takes ownership
-        self.quote_cache.insert(key, result.clone()).await;
+            // Check if we have a cached quote
+            if let Some(cached) = quote_cache.get(&key).await {
+                tracing::trace!("Got a request for a quote, using cached value.");
+                return cached;
+            }
 
-        // If the quote failed, we log the error
-        if let Err(err) = result.clone() {
-            tracing::warn!(?err, "Failed to make quote. We will retry again later.");
+            // We have a cache miss, so we compute a new quote
+            tracing::trace!("Got a request for a quote, computing new quote.");
+
+            let get_reserved_items = || async {
+                let all_swaps = db.all().await?;
+                let alice_states: Vec<_> = all_swaps
+                    .into_iter()
+                    .filter_map(|(_, _, state)| match state {
+                        State::Alice(state) => Some(state),
+                        _ => None,
+                    })
+                    .collect();
+
+                Ok(alice_states)
+            };
+
+            let get_unlocked_balance = || async {
+                unlocked_monero_balance_with_timeout(monero_wallet.main_wallet().await).await
+            };
+
+            let get_reserve_proof = || async move {
+                reserve_proof_with_timeout(monero_wallet_for_proof.main_wallet().await, peer_id)
+                    .await
+            };
+
+            let result = make_quote(
+                min_buy,
+                max_buy,
+                rate,
+                get_unlocked_balance,
+                get_reserved_items,
+                get_reserve_proof,
+                developer_tip,
+                refund_policy,
+            )
+            .await;
+
+            // Insert the computed quote into the cache
+            // Need to clone it as insert takes ownership
+            quote_cache.insert(key, result.clone()).await;
+
+            // If the quote failed, we log the error
+            if let Err(err) = &result {
+                tracing::warn!(?err, "Failed to make quote. We will retry again later.");
+            }
+
+            // Return the computed quote
+            result
         }
-
-        // Return the computed quote
-        result
+        .boxed()
     }
 
     async fn handle_execution_setup_done(
@@ -664,6 +761,110 @@ where
         Ok(())
     }
 
+    async fn handle_cooperative_redeem_request(
+        &mut self,
+        swap_id: Uuid,
+        channel: ResponseChannel<cooperative_xmr_redeem_after_punish::Response>,
+        peer: PeerId,
+    ) -> Result<()> {
+        let swap_peer = self.db.get_peer_id(swap_id).await;
+        let swap_state = self.db.get_state(swap_id).await;
+
+        // If we do not find the swap in the database, or we do not have a peer-id for it, reject
+        let (swap_peer, swap_state) = match (swap_peer, swap_state) {
+            (Ok(peer), Ok(state)) => (peer, state),
+            _ => {
+                tracing::warn!(
+                    swap_id = %swap_id,
+                    received_from = %peer,
+                    reason = "swap not found",
+                    "Rejecting cooperative XMR redeem request"
+                );
+                self.swarm
+                    .behaviour_mut()
+                    .cooperative_xmr_redeem
+                    .send_response(
+                        channel,
+                        Rejected {
+                            swap_id,
+                            reason: CooperativeXmrRedeemRejectReason::UnknownSwap,
+                        },
+                    )
+                    .map_err(|_| anyhow!("Couldn't reject cooperative redeem request"))?;
+                bail!("swap not found")
+            }
+        };
+
+        // If the peer is not the one associated with the swap, reject
+        if swap_peer != peer {
+            tracing::warn!(
+                swap_id = %swap_id,
+                received_from = %peer,
+                expected_from = %swap_peer,
+                reason = "unexpected peer",
+                "Rejecting cooperative XMR redeem request"
+            );
+            self.swarm
+                .behaviour_mut()
+                .cooperative_xmr_redeem
+                .send_response(
+                    channel,
+                    Rejected {
+                        swap_id,
+                        reason: CooperativeXmrRedeemRejectReason::MaliciousRequest,
+                    },
+                )
+                .map_err(|_| anyhow!("Failed to reject cooperative XMR redeem request"))?;
+            bail!("malicious request (wrong peer)")
+        }
+
+        // Bob cannot refund the Bitcoin anymore. We can publish tx_punish to redeem the Bitcoin.
+        // Therefore it is safe to reveal s_a to let him redeem the Monero
+        let State::Alice(AliceState::BtcPunished {
+            state3,
+            transfer_proof,
+            ..
+        }) = swap_state
+        else {
+            tracing::warn!(
+                swap_id = %swap_id,
+                reason = "swap is in invalid state",
+                "Rejecting cooperative Monero redeem request"
+            );
+            self.swarm
+                .behaviour_mut()
+                .cooperative_xmr_redeem
+                .send_response(
+                    channel,
+                    Rejected {
+                        swap_id,
+                        reason: CooperativeXmrRedeemRejectReason::SwapInvalidState,
+                    },
+                )
+                .map_err(|_| {
+                    anyhow!("Failed to send rejection for cooperative Monero redeem request")
+                })?;
+            bail!("swap in invalid state")
+        };
+
+        self.swarm
+            .behaviour_mut()
+            .cooperative_xmr_redeem
+            .send_response(
+                channel,
+                Fullfilled {
+                    swap_id,
+                    s_a: state3.s_a,
+                    lock_transfer_proof: transfer_proof,
+                },
+            )
+            .map_err(|_| anyhow!("Failed to respond to cooperative XMR redeem request"))?;
+
+        tracing::info!(swap_id = %swap_id, peer = %peer, "Fullfilled cooperative XMR redeem request");
+
+        Ok(())
+    }
+
     /// Create a new [`EventLoopHandle`] that is scoped for communication with
     /// the given peer.
     fn new_handle(&mut self, peer: PeerId, swap_id: Uuid) -> EventLoopHandle {
@@ -677,14 +878,91 @@ where
         self.recv_encrypted_signature
             .insert(swap_id, encrypted_signature_sender);
 
+        // Create a watch channel for burn-on-refund instructions
+        // Uses watch instead of bmrng to allow multiple updates before consumption
+        let (burn_instruction_sender, burn_instruction_receiver) =
+            tokio::sync::watch::channel(None);
+        self.recv_burn_on_refund_instruction
+            .insert(swap_id, burn_instruction_sender);
+
         let transfer_proof_sender = self.outgoing_transfer_proofs_sender.clone();
 
         EventLoopHandle {
             swap_id,
             peer,
             recv_encrypted_signature: tokio::sync::Mutex::new(Some(encrypted_signature_receiver)),
+            recv_burn_on_refund_instruction: tokio::sync::Mutex::new(burn_instruction_receiver),
             transfer_proof_sender: tokio::sync::Mutex::new(Some(transfer_proof_sender)),
         }
+    }
+
+    /// Handle a request to grant mercy for a swap.
+    ///
+    /// This checks that the swap is not currently running, transitions the
+    /// state to BtcMercyGranted, and resumes the swap.
+    async fn handle_grant_mercy(&mut self, swap_id: Uuid) -> Result<()> {
+        use crate::asb::grant_mercy;
+
+        // Make sure swap isn't already running.
+        if self.is_swap_running(swap_id) {
+            return Err(anyhow!(
+                "Cannot grant mercy while swap {} is still running",
+                swap_id
+            ));
+        }
+
+        // Use the grant_mercy function to transition the state
+        let new_state = grant_mercy(swap_id, self.db.clone()).await?;
+
+        // Get peer ID for this swap
+        let peer_id = self.db.get_peer_id(swap_id).await?;
+
+        // Create handle and swap to resume
+        let handle = self.new_handle(peer_id, swap_id);
+        let swap = Swap {
+            event_loop_handle: handle,
+            bitcoin_wallet: self.bitcoin_wallet.clone(),
+            monero_wallet: self.monero_wallet.clone(),
+            env_config: self.env_config,
+            db: self.db.clone(),
+            state: new_state,
+            swap_id,
+            developer_tip: self.developer_tip.clone(),
+        };
+
+        // Send swap to be resumed
+        self.swap_sender
+            .send(swap)
+            .await
+            .context("Failed to send swap to be resumed")?;
+
+        tracing::info!(%swap_id, "Granted mercy and resumed swap");
+
+        Ok(())
+    }
+
+    /// Check whether we are currently executing a specific swap.
+    fn is_swap_running(&self, swap_id: Uuid) -> bool {
+        // Check whether the channels between event loop and event loop handle
+        // are still intact.
+        // Yes -> swap is running
+        // No -> swap is not running (channels were dropped with event loop handle)
+
+        // We are eager to assume a swap is running. It can do more harm to run two instances than to not run a swap.
+        // We assume the swap is running if either of the channels is still open.
+        if let Some(channel) = self.recv_encrypted_signature.get(&swap_id)
+            && !channel.is_closed()
+        {
+            return true;
+        }
+
+        if let Some(channel) = self.recv_burn_on_refund_instruction.get(&swap_id)
+            && !channel.is_closed()
+        {
+            return true;
+        }
+
+        return false;
     }
 }
 
@@ -695,6 +973,7 @@ pub struct EventLoopHandle {
     peer: PeerId,
     recv_encrypted_signature:
         tokio::sync::Mutex<Option<bmrng::RequestReceiver<bitcoin::EncryptedSignature, ()>>>,
+    recv_burn_on_refund_instruction: tokio::sync::Mutex<tokio::sync::watch::Receiver<Option<bool>>>,
     #[allow(clippy::type_complexity)]
     transfer_proof_sender: tokio::sync::Mutex<
         Option<
@@ -815,14 +1094,97 @@ impl EventLoopHandle {
 
         Ok(())
     }
+
+    /// Wait for a NEW burn-on-refund instruction from the operator
+    ///
+    /// This method waits until the operator sends a new decision via the EventLoopService.
+    /// Use this in select! arms to react to operator commands.
+    ///
+    /// Returns the new burn decision when one is received.
+    pub async fn wait_for_burn_on_refund_instruction(&self) -> Result<bool> {
+        let mut guard = self.recv_burn_on_refund_instruction.lock().await;
+
+        guard
+            .changed()
+            .await
+            .map_err(|_| anyhow!("Burn instruction sender was dropped"))?;
+
+        let value = *guard.borrow();
+        Ok(value.expect("changed() returned Ok, so value should be set"))
+    }
+
+    /// Get the current burn-on-refund instruction value
+    ///
+    /// Returns Some(bool) if an instruction has been set, None otherwise.
+    /// Use this to check the current decision before taking action.
+    pub async fn get_burn_on_refund_instruction(&self) -> Option<bool> {
+        let guard = self.recv_burn_on_refund_instruction.lock().await;
+        let value = *guard.borrow();
+        value
+    }
+}
+
+/// For a new swap of `swap_amount`, this function calculates how much
+/// Bitcoin should go into the anti spam deposit incase of a refund.
+/// Returns ZERO when anti_spam_deposit_ratio is 0, indicating immediate and full refund.
+/// Also returns whether or not to always withhold the the anti spam deposit output if the taker refunds.
+fn apply_anti_spam_policy(
+    swap_amount: bitcoin::Amount,
+    refund_policy: &RefundPolicy,
+) -> Result<(bitcoin::Amount, bool)> {
+    let should_always_withhold = refund_policy.always_withhold_deposit;
+
+    // When ratio is 0.0, no amnesty - use full refund path for fewer fees
+    if refund_policy.anti_spam_deposit_ratio == Decimal::ZERO {
+        return Ok((bitcoin::Amount::ZERO, should_always_withhold));
+    }
+
+    let btc_anti_spam_deposit_ratio = refund_policy.anti_spam_deposit_ratio;
+
+    let amount_sats = swap_amount.to_sat();
+    let amount_decimal =
+        Decimal::from_u64(amount_sats).context("Decimal overflowed by Bitcoin sats")?;
+
+    let btc_amnesty_decimal = amount_decimal
+        .checked_mul(btc_anti_spam_deposit_ratio)
+        .context("Decimal overflow when computing amnesty amount in sats")?
+        .floor();
+    let btc_amnesty_sats: u64 = btc_amnesty_decimal
+        .try_into()
+        .context("Couldn't convert Decimal to u64")?;
+
+    let btc_amnesty_amount = bitcoin::Amount::from_sat(btc_amnesty_sats);
+
+    let minimum_to_cover_fees = bitcoin::Amount::from_sat(
+        bitcoin_wallet::MIN_ABSOLUTE_TX_FEE_SATS * swap_machine::common::NUM_WITHHOLD_PATH_TXS + 1,
+    );
+
+    Ok((
+        btc_amnesty_amount.max(minimum_to_cover_fees),
+        should_always_withhold,
+    ))
+}
+
+/// Multiply a fee amount by `multiplier`, rounding to the nearest satoshi.
+fn scale_fee(fee: bitcoin::Amount, multiplier: Decimal) -> Result<bitcoin::Amount> {
+    let sats: u64 = Decimal::from(fee.to_sat())
+        .checked_mul(multiplier)
+        .context("Decimal overflow when scaling fee")?
+        .round()
+        .try_into()
+        .context("Scaled fee does not fit in u64")?;
+    Ok(bitcoin::Amount::from_sat(sats))
 }
 
 async fn capture_wallet_snapshot(
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: &monero::Wallets,
     external_redeem_address: &Option<bitcoin::Address>,
+    btc_redeem_fee_multiplier: Decimal,
     transfer_amount: bitcoin::Amount,
 ) -> Result<WalletSnapshot> {
+    let start_time = Instant::now();
+
     let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await?;
     let total_balance = monero_wallet.main_wallet().await.total_balance().await?;
 
@@ -838,9 +1200,18 @@ async fn capture_wallet_snapshot(
     let redeem_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxRedeem::weight(), Some(transfer_amount))
         .await?;
+    let redeem_fee = scale_fee(redeem_fee, btc_redeem_fee_multiplier)
+        .context("Failed to apply btc_redeem_fee_multiplier")?;
     let punish_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
         .await?;
+    let withhold_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxWithhold::weight(), Some(transfer_amount))
+        .await?;
+
+    let end_time = Instant::now();
+
+    tracing::debug!(duration_ms=%end_time.duration_since(start_time).as_millis(), "Finished capturing wallet snapshot");
 
     Ok(WalletSnapshot::new(
         unlocked_balance.into(),
@@ -848,11 +1219,20 @@ async fn capture_wallet_snapshot(
         punish_address,
         redeem_fee,
         punish_fee,
+        withhold_fee,
     ))
 }
 
 mod service {
     use super::*;
+
+    /// Status snapshot of the primary onion service.
+    #[derive(Debug)]
+    pub struct OnionServiceStatusInfo {
+        pub state: String,
+        pub reachable: bool,
+        pub problem: Option<String>,
+    }
 
     /// Request types for the EventLoop service with typed responders
     #[derive(Debug)]
@@ -867,6 +1247,24 @@ mod service {
             respond_to: oneshot::Sender<
                 Vec<swap_p2p::protocols::rendezvous::register::public::RendezvousNodeStatus>,
             >,
+        },
+        SetBurnOnRefund {
+            swap_id: Uuid,
+            burn: bool,
+            respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+        },
+        GrantMercy {
+            swap_id: Uuid,
+            respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+        },
+        GetWormholeServices {
+            respond_to: oneshot::Sender<Vec<crate::network::wormhole::alice::WormholeServiceInfo>>,
+        },
+        GetOnionServiceStatus {
+            respond_to: oneshot::Sender<Option<OnionServiceStatusInfo>>,
+        },
+        GetCurrentQuote {
+            respond_to: oneshot::Sender<Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
         },
     }
 
@@ -913,19 +1311,94 @@ mod service {
             rx.await
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
         }
+
+        /// Set the burn-on-refund decision for a specific swap
+        ///
+        /// This can be called multiple times to update the decision before
+        /// the swap state machine polls for it.
+        pub async fn set_withhold_deposit(&self, swap_id: Uuid, burn: bool) -> anyhow::Result<()> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::SetBurnOnRefund {
+                    swap_id,
+                    burn,
+                    respond_to: tx,
+                })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+        }
+
+        /// Get the list of active wormhole services
+        pub async fn get_wormhole_services(
+            &self,
+        ) -> anyhow::Result<Vec<crate::network::wormhole::alice::WormholeServiceInfo>> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetWormholeServices { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+
+        /// Get the status of the primary onion service
+        pub async fn get_onion_service_status(
+            &self,
+        ) -> anyhow::Result<Option<OnionServiceStatusInfo>> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetOnionServiceStatus { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+
+        /// Get the quote the ASB is currently serving to peers.
+        ///
+        /// Reuses the same cache and in-flight computation as the p2p
+        /// quote protocol, so repeated calls during a single computation
+        /// share the result.
+        pub async fn get_current_quote(&self) -> anyhow::Result<Arc<BidQuote>> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetCurrentQuote { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+                .map_err(|e| anyhow::anyhow!("Failed to compute quote: {}", e))
+        }
+
+        /// Grant mercy for a swap in BtcWithholdConfirmed state
+        ///
+        /// This transitions the swap to BtcMercyGranted and resumes
+        /// the swap state machine to publish the mercy transaction.
+        pub async fn grant_mercy(&self, swap_id: Uuid) -> anyhow::Result<()> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GrantMercy {
+                    swap_id,
+                    respond_to: tx,
+                })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+        }
     }
 }
 
 mod quote {
-    use crate::monero::Amount;
-    use anyhow::{anyhow, Context};
+    use crate::monero::{Amount, AmountExt};
+    use anyhow::{Context, anyhow};
     use rust_decimal::Decimal;
-    use std::{sync::Arc, time::Duration};
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
     use swap_feed::LatestRate;
     use tokio::time::timeout;
 
     use crate::{
-        network::quote::{BidQuote, ReserveProofWithAddress},
+        network::quote::{BidQuote, RefundPolicyWire, ReserveProofWithAddress},
         protocol::alice::ReservesMonero,
     };
 
@@ -949,6 +1422,7 @@ mod quote {
         get_reserved_items: I,
         get_reserve_proof: P,
         developer_tip: Decimal,
+        refund_policy: RefundPolicyWire,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>>
     where
         LR: LatestRate,
@@ -960,6 +1434,8 @@ mod quote {
         P: FnOnce() -> Fut3,
         Fut3: futures::Future<Output = Result<ReserveProofWithAddress, anyhow::Error>>,
     {
+        let start_time = Instant::now();
+
         let ask_price = latest_rate
             .latest_rate()
             .map_err(|e| Arc::new(anyhow!(e).context("Failed to get latest rate")))?
@@ -1006,18 +1482,21 @@ mod quote {
                 ))
             })?;
 
-        tracing::trace!(%ask_price, %unreserved_xmr_balance, %max_bitcoin_for_monero, "Computed quote");
+        let end_time = Instant::now();
+        tracing::info!(%ask_price, %unreserved_xmr_balance, %max_bitcoin_for_monero, duration_ms=%end_time.duration_since(start_time).as_millis(), "Computed quote");
 
         if min_buy > max_bitcoin_for_monero {
             tracing::trace!(
                 "Your Monero balance is too low to initiate a swap, as your minimum swap amount is {}. You could at most swap {}",
-                min_buy, max_bitcoin_for_monero
+                min_buy,
+                max_bitcoin_for_monero
             );
 
             return Ok(Arc::new(BidQuote {
                 price: ask_price,
                 min_quantity: bitcoin::Amount::ZERO,
                 max_quantity: bitcoin::Amount::ZERO,
+                refund_policy: refund_policy.clone(),
                 reserve_proof,
             }));
         }
@@ -1025,13 +1504,15 @@ mod quote {
         if max_buy > max_bitcoin_for_monero {
             tracing::trace!(
                 "Your Monero balance is too low to initiate a swap with the maximum swap amount {} that you have specified in your config. You can at most swap {}",
-                max_buy, max_bitcoin_for_monero
+                max_buy,
+                max_bitcoin_for_monero
             );
 
             return Ok(Arc::new(BidQuote {
                 price: ask_price,
                 min_quantity: min_buy,
                 max_quantity: max_bitcoin_for_monero,
+                refund_policy: refund_policy.clone(),
                 reserve_proof,
             }));
         }
@@ -1040,6 +1521,7 @@ mod quote {
             price: ask_price,
             min_quantity: min_buy,
             max_quantity: max_buy,
+            refund_policy,
             reserve_proof,
         }))
     }
@@ -1052,7 +1534,7 @@ mod quote {
     ) -> Amount {
         use rust_decimal::prelude::ToPrimitive;
 
-        let unlocked_balance_piconero = unlocked_balance.as_piconero_decimal();
+        let unlocked_balance_piconero = Decimal::from(unlocked_balance.as_pico());
 
         // If a developer tip is configured, we need to account for the fact that
         // to lock X XMR for a swap, we actually need X * (1 + tip_percentage) XMR
@@ -1082,9 +1564,11 @@ mod quote {
         //
         // Note: It is important that we subtract this AFTER accounting for the tip
         // as these other swaps will also require a tip output
-        let total_reserved_piconero = reserved_amounts
-            .fold(Amount::ZERO, |acc, amount| acc + amount)
-            .as_piconero_decimal();
+        let total_reserved_piconero = Decimal::from(
+            reserved_amounts
+                .fold(Amount::ZERO, |acc, amount| acc + amount)
+                .as_pico(),
+        );
 
         // Unlocked balance after accounting for the tip and the reserved amounts
         let unreserved_unlocked_piconero_after_accounting_for_tip =
@@ -1094,7 +1578,7 @@ mod quote {
                 .to_u64()
                 .unwrap_or(0);
 
-        Amount::from_piconero(unreserved_unlocked_piconero_after_accounting_for_tip)
+        Amount::from_pico(unreserved_unlocked_piconero_after_accounting_for_tip)
     }
 
     /// This is how long we maximally wait for the wallet operation
@@ -1172,11 +1656,11 @@ mod tests {
 
     use super::*;
 
-    use crate::monero::Amount;
+    use crate::monero::{Amount, AmountExt};
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_with_no_reserved_amounts() {
-        let balance = Amount::from_monero(10.0).unwrap();
+        let balance = Amount::parse_monero("10.0").unwrap();
         let reserved_amounts = vec![];
 
         let result =
@@ -1187,25 +1671,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_with_reserved_amounts() {
-        let balance = monero::Amount::from_monero(10.0).unwrap();
+        let balance = monero::Amount::parse_monero("10.0").unwrap();
         let reserved_amounts = vec![
-            monero::Amount::from_monero(2.0).unwrap(),
-            monero::Amount::from_monero(3.0).unwrap(),
+            monero::Amount::parse_monero("2.0").unwrap(),
+            monero::Amount::parse_monero("3.0").unwrap(),
         ];
 
         let result =
             unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
-        let expected = monero::Amount::from_monero(5.0).unwrap();
+        let expected = monero::Amount::parse_monero("5.0").unwrap();
         assert_eq!(result, expected);
     }
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_insufficient_balance() {
-        let balance = monero::Amount::from_monero(5.0).unwrap();
+        let balance = monero::Amount::parse_monero("5.0").unwrap();
         let reserved_amounts = vec![
-            monero::Amount::from_monero(3.0).unwrap(),
-            monero::Amount::from_monero(4.0).unwrap(), // Total reserved > balance
+            monero::Amount::parse_monero("3.0").unwrap(),
+            monero::Amount::parse_monero("4.0").unwrap(), // Total reserved > balance
         ];
 
         let result =
@@ -1217,10 +1701,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_exact_match() {
-        let balance = monero::Amount::from_monero(10.0).unwrap();
+        let balance = monero::Amount::parse_monero("10.0").unwrap();
         let reserved_amounts = vec![
-            monero::Amount::from_monero(4.0).unwrap(),
-            monero::Amount::from_monero(6.0).unwrap(), // Exactly equals balance
+            monero::Amount::parse_monero("4.0").unwrap(),
+            monero::Amount::parse_monero("6.0").unwrap(), // Exactly equals balance
         ];
 
         let result =
@@ -1232,7 +1716,7 @@ mod tests {
     #[tokio::test]
     async fn test_unreserved_monero_balance_zero_balance() {
         let balance = monero::Amount::ZERO;
-        let reserved_amounts = vec![monero::Amount::from_monero(1.0).unwrap()];
+        let reserved_amounts = vec![monero::Amount::parse_monero("1.0").unwrap()];
 
         let result =
             unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
@@ -1242,7 +1726,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_empty_reserved_amounts() {
-        let balance = monero::Amount::from_monero(5.0).unwrap();
+        let balance = monero::Amount::parse_monero("5.0").unwrap();
         let reserved_amounts: Vec<MockReservedItem> = vec![];
 
         let result = unreserved_monero_balance(
@@ -1256,13 +1740,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_large_amounts() {
-        let balance = monero::Amount::from_piconero(1_000_000_000);
-        let reserved_amounts = vec![monero::Amount::from_piconero(300_000_000)];
+        let balance = monero::Amount::from_pico(1_000_000_000);
+        let reserved_amounts = vec![monero::Amount::from_pico(300_000_000)];
 
         let result =
             unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
-        let expected = monero::Amount::from_piconero(700_000_000);
+        let expected = monero::Amount::from_pico(700_000_000);
         assert_eq!(result, expected);
     }
 
@@ -1271,7 +1755,7 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(100_000);
         let max_buy = bitcoin::Amount::from_sat(500_000);
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(1.0).unwrap();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
         let reserved_items: Vec<MockReservedItem> = vec![];
 
         let result = make_quote(
@@ -1282,6 +1766,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
@@ -1296,13 +1781,13 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(50_000);
         let max_buy = bitcoin::Amount::from_sat(300_000);
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(1.0).unwrap();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
         let reserved_items = vec![
             MockReservedItem {
-                reserved: monero::Amount::from_monero(0.2).unwrap(),
+                reserved: monero::Amount::parse_monero("0.2").unwrap(),
             },
             MockReservedItem {
-                reserved: monero::Amount::from_monero(0.3).unwrap(),
+                reserved: monero::Amount::parse_monero("0.3").unwrap(),
             },
         ];
 
@@ -1314,6 +1799,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
@@ -1330,7 +1816,7 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(600_000); // More than available
         let max_buy = bitcoin::Amount::from_sat(800_000);
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(0.5).unwrap(); // Only 0.005 BTC worth at rate 0.01
+        let balance = monero::Amount::parse_monero("0.5").unwrap(); // Only 0.005 BTC worth at rate 0.01
         let reserved_items: Vec<MockReservedItem> = vec![];
 
         let result = make_quote(
@@ -1341,6 +1827,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
@@ -1355,7 +1842,7 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(100_000);
         let max_buy = bitcoin::Amount::from_sat(800_000); // More than available
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(0.6).unwrap(); // 0.006 BTC worth at rate 0.01
+        let balance = monero::Amount::parse_monero("0.6").unwrap(); // 0.006 BTC worth at rate 0.01
         let reserved_items: Vec<MockReservedItem> = vec![];
 
         let result = make_quote(
@@ -1366,6 +1853,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
@@ -1383,9 +1871,9 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(100_000);
         let max_buy = bitcoin::Amount::from_sat(500_000);
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(1.0).unwrap();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
         let reserved_items = vec![MockReservedItem {
-            reserved: monero::Amount::from_monero(1.0).unwrap(), // All balance reserved
+            reserved: monero::Amount::parse_monero("1.0").unwrap(), // All balance reserved
         }];
 
         let result = make_quote(
@@ -1396,6 +1884,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
@@ -1420,14 +1909,17 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await;
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to get unlocked Monero balance"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to get unlocked Monero balance")
+        );
     }
 
     #[tokio::test]
@@ -1435,7 +1927,7 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(100_000);
         let max_buy = bitcoin::Amount::from_sat(500_000);
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(1.0).unwrap();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
         let reserved_items: Vec<MockReservedItem> = vec![];
 
         let result = make_quote(
@@ -1446,6 +1938,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
@@ -1458,7 +1951,36 @@ mod tests {
 
     #[tokio::test]
     async fn test_make_quote_with_developer_tip() {
-        todo!("implement once unit tests compile again")
+        let min_buy = bitcoin::Amount::from_sat(100_000);
+        let max_buy = bitcoin::Amount::from_sat(5_000_000); // High enough to be balance-limited
+        let rate = FixedRate::default();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
+        let reserved_items: Vec<MockReservedItem> = vec![];
+        let developer_tip = Decimal::new(5, 2); // 0.05 = 5%
+
+        let result = make_quote(
+            min_buy,
+            max_buy,
+            rate.clone(),
+            || async { Ok(balance) },
+            || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
+            developer_tip,
+            RefundPolicyWire::FullRefund,
+        )
+        .await
+        .unwrap();
+
+        // Compute expected max: effective balance is reduced by the tip multiplier
+        let unreserved = unreserved_monero_balance(balance, std::iter::empty(), developer_tip);
+        let expected_max = unreserved
+            .max_bitcoin_for_price(rate.value().ask().unwrap())
+            .unwrap();
+
+        assert_eq!(result.min_quantity, min_buy);
+        assert_eq!(result.max_quantity, expected_max);
+        // The tip should have reduced max_quantity below max_buy
+        assert!(result.max_quantity < max_buy);
     }
 
     // Mock struct for testing

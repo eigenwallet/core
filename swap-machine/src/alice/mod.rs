@@ -1,20 +1,21 @@
 #![allow(non_snake_case)]
 
-use crate::common::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
-use anyhow::{anyhow, bail, Context, Result};
+use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
+use anyhow::{Context, Result, bail};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
-use std::fmt;
+use std::fmt::{self, Debug};
 use std::sync::Arc;
 use swap_core::bitcoin::{
-    current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
-    TxEarlyRefund, TxPunish, TxRedeem, TxRefund, Txid,
+    CancelTimelock, ExpiredTimelocks, PunishTimelock, RemainingRefundTimelock, Transaction,
+    TxCancel, TxEarlyRefund, TxFullRefund, TxMercy, TxPartialRefund, TxPunish, TxReclaim, TxRedeem,
+    TxWithhold, Txid, current_epoch,
 };
-use swap_core::compat::IntoDalekNg;
-use swap_core::monero;
-use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest};
+use swap_core::compat::{IntoDalek, IntoDalekNg, IntoMoneroOxide};
 use swap_core::monero::ScalarExt;
+use swap_core::monero::primitives::{AmountExt, BlockHeight, TransferProof, TransferRequest};
+use swap_core::monero::{self, Scalar};
 use swap_env::env::Config;
 use uuid::Uuid;
 
@@ -64,24 +65,74 @@ pub enum AliceState {
         state3: Box<State3>,
     },
     BtcEarlyRefunded(Box<State3>),
+    // We enter the refund states regardless of whether or not the refund
+    // transaction was confirmed because we do not care. We can extract the key
+    // we need to refund ourself regardless.
     BtcRefunded {
+        monero_wallet_restore_blockheight: BlockHeight,
+        transfer_proof: TransferProof,
+        spend_key: monero_oxide_ext::PrivateKey,
+        state3: Box<State3>,
+    },
+    BtcPartiallyRefunded {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
         spend_key: monero::PrivateKey,
         state3: Box<State3>,
     },
-    BtcPunishable {
+    XmrRefundable {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
+        spend_key: monero::PrivateKey,
         state3: Box<State3>,
     },
-    XmrRefunded,
+    /// We have constructed and signed the Monero refund transaction but have
+    /// not yet published it.
+    XmrRefundTxConstructed {
+        state3: Box<State3>,
+        /// The signed transaction blob to publish.
+        xmr_refund_tx: monero_oxide_wallet::transaction::Transaction,
+    },
+    /// We have published the Monero refund transaction but it has not yet
+    /// been included in a block.
+    XmrRefundTxPublished {
+        state3: Box<State3>,
+        /// The signed transaction blob we published.
+        xmr_refund_tx: monero_oxide_wallet::transaction::Transaction,
+    },
+    /// We have published the Monero refund transaction and it has been
+    /// included in a block.
+    XmrRefunded {
+        state3: Option<Box<State3>>,
+    },
+    BtcWithholdPublished {
+        state3: Box<State3>,
+    },
+    BtcWithholdConfirmed {
+        state3: Box<State3>,
+    },
+    /// Operator has decided to grant final amnesty to Bob.
+    /// This state will publish TxMercy and transition to BtcMercyPublished.
+    BtcMercyGranted {
+        state3: Box<State3>,
+    },
+    BtcMercyPublished {
+        state3: Box<State3>,
+    },
+    BtcMercyConfirmed {
+        state3: Box<State3>,
+    },
     WaitingForCancelTimelockExpiration {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
         state3: Box<State3>,
     },
     CancelTimelockExpired {
+        monero_wallet_restore_blockheight: BlockHeight,
+        transfer_proof: TransferProof,
+        state3: Box<State3>,
+    },
+    BtcPunishable {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
         state3: Box<State3>,
@@ -93,15 +144,36 @@ pub enum AliceState {
     SafelyAborted,
 }
 
+impl AliceState {
+    /// Returns true if this state is at or past BtcLocked.
+    ///
+    /// This indicates that the counterparty has committed real funds to the
+    /// swap.
+    pub fn is_at_or_past_btc_locked(&self) -> bool {
+        !matches!(
+            self,
+            AliceState::Started { .. }
+                | AliceState::BtcLockTransactionSeen { .. }
+                | AliceState::SafelyAborted
+        )
+    }
+}
+
 pub fn is_complete(state: &AliceState) -> bool {
-    matches!(
-        state,
-        AliceState::XmrRefunded
-            | AliceState::BtcRedeemed
-            | AliceState::BtcPunished { .. }
-            | AliceState::SafelyAborted
-            | AliceState::BtcEarlyRefunded(_)
-    )
+    match state {
+        // XmrRefunded is only complete if we don't need to publish TxWithhold
+        AliceState::XmrRefunded { state3 } => match state3 {
+            Some(s3) if s3.should_publish_tx_withhold == Some(true) => false,
+            _ => true,
+        },
+        AliceState::BtcRedeemed
+        | AliceState::BtcPunished { .. }
+        | AliceState::SafelyAborted
+        | AliceState::BtcEarlyRefunded(_)
+        | AliceState::BtcWithholdConfirmed { .. }
+        | AliceState::BtcMercyConfirmed { .. } => true,
+        _ => false,
+    }
 }
 
 impl fmt::Display for AliceState {
@@ -127,13 +199,30 @@ impl fmt::Display for AliceState {
             AliceState::BtcPunished { .. } => write!(f, "btc is punished"),
             AliceState::SafelyAborted => write!(f, "safely aborted"),
             AliceState::BtcPunishable { .. } => write!(f, "btc is punishable"),
-            AliceState::XmrRefunded => write!(f, "xmr is refunded"),
+            AliceState::XmrRefundTxConstructed { .. } => {
+                write!(f, "xmr refund tx is constructed")
+            }
+            AliceState::XmrRefundTxPublished { .. } => {
+                write!(f, "xmr refund tx is published")
+            }
+            AliceState::XmrRefunded { .. } => write!(f, "xmr is refunded"),
+            AliceState::BtcWithholdPublished { .. } => write!(f, "btc withhold published"),
+            AliceState::BtcWithholdConfirmed { .. } => write!(f, "btc withheld"),
+            AliceState::BtcMercyGranted { .. } => write!(f, "btc mercy granted"),
+            AliceState::BtcMercyPublished { .. } => {
+                write!(f, "btc mercy published")
+            }
+            AliceState::BtcMercyConfirmed { .. } => {
+                write!(f, "btc mercy confirmed")
+            }
             AliceState::WaitingForCancelTimelockExpiration { .. } => {
                 write!(f, "waiting for cancel timelock expiration")
             }
             AliceState::CancelTimelockExpired { .. } => write!(f, "cancel timelock is expired"),
             AliceState::BtcEarlyRefundable { .. } => write!(f, "btc is early refundable"),
             AliceState::BtcEarlyRefunded(_) => write!(f, "btc is early refunded"),
+            AliceState::BtcPartiallyRefunded { .. } => write!(f, "btc is partially refunded"),
+            AliceState::XmrRefundable { .. } => write!(f, "xmr is refundable"),
         }
     }
 }
@@ -142,19 +231,23 @@ impl fmt::Display for AliceState {
 #[derive(Clone, Debug, PartialEq)]
 pub struct State0 {
     a: swap_core::bitcoin::SecretKey,
-    s_a: monero::Scalar,
+    s_a: swap_core::monero::Scalar,
     v_a: monero::PrivateViewKey,
-    S_a_monero: monero::PublicKey,
+    S_a_monero: monero_oxide_ext::PublicKey,
     S_a_bitcoin: swap_core::bitcoin::PublicKey,
     dleq_proof_s_a: CrossCurveDLEQProof,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
+    tx_withhold_fee: Option<bitcoin::Amount>,
+    should_publish_tx_withhold: Option<bool>,
 }
 
 impl State0 {
@@ -162,11 +255,14 @@ impl State0 {
     pub fn new<R>(
         btc: bitcoin::Amount,
         xmr: monero::Amount,
+        btc_amnesty_amount: bitcoin::Amount,
         env_config: Config,
         redeem_address: bitcoin::Address,
         punish_address: bitcoin::Address,
         tx_redeem_fee: bitcoin::Amount,
         tx_punish_fee: bitcoin::Amount,
+        tx_withhold_fee: bitcoin::Amount,
+        should_publish_tx_withhold: bool,
         rng: &mut R,
     ) -> Self
     where
@@ -175,7 +271,7 @@ impl State0 {
         let a = swap_core::bitcoin::SecretKey::new_random(rng);
         let v_a = monero::PrivateViewKey::new_random(rng);
 
-        let s_a = monero::Scalar::random(rng);
+        let s_a = swap_core::monero::Scalar::random(rng);
         let (dleq_proof_s_a, (S_a_bitcoin, S_a_monero)) =
             CROSS_CURVE_PROOF_SYSTEM.prove(&s_a.into_dalek_ng(), rng);
 
@@ -184,31 +280,27 @@ impl State0 {
             s_a,
             v_a,
             S_a_bitcoin: S_a_bitcoin.into(),
-            S_a_monero: monero::PublicKey {
-                point: S_a_monero.compress(),
-            },
+            S_a_monero: S_a_monero.compress().into(),
             dleq_proof_s_a,
+            btc_amnesty_amount: Some(btc_amnesty_amount),
             redeem_address,
             punish_address,
             btc,
             xmr,
             cancel_timelock: env_config.bitcoin_cancel_timelock.into(),
             punish_timelock: env_config.bitcoin_punish_timelock.into(),
+            remaining_refund_timelock: Some(env_config.bitcoin_remaining_refund_timelock.into()),
             tx_redeem_fee,
             tx_punish_fee,
+            tx_withhold_fee: Some(tx_withhold_fee),
+            should_publish_tx_withhold: Some(should_publish_tx_withhold),
         }
     }
 
     pub fn receive(self, msg: Message0) -> Result<(Uuid, State1)> {
         let valid = CROSS_CURVE_PROOF_SYSTEM.verify(
             &msg.dleq_proof_s_b,
-            (
-                msg.S_b_bitcoin.into(),
-                msg.S_b_monero
-                    .point
-                    .decompress()
-                    .ok_or_else(|| anyhow!("S_b is not a monero curve point"))?,
-            ),
+            (msg.S_b_bitcoin.into(), msg.S_b_monero.decompress_ng()),
         );
 
         if !valid {
@@ -232,15 +324,22 @@ impl State0 {
                 dleq_proof_s_a: self.dleq_proof_s_a,
                 btc: self.btc,
                 xmr: self.xmr,
+                btc_amnesty_amount: self.btc_amnesty_amount,
                 cancel_timelock: self.cancel_timelock,
                 punish_timelock: self.punish_timelock,
+                remaining_refund_timelock: self.remaining_refund_timelock,
                 refund_address: msg.refund_address,
                 redeem_address: self.redeem_address,
                 punish_address: self.punish_address,
                 tx_redeem_fee: self.tx_redeem_fee,
                 tx_punish_fee: self.tx_punish_fee,
                 tx_refund_fee: msg.tx_refund_fee,
+                tx_partial_refund_fee: Some(msg.tx_partial_refund_fee),
+                tx_reclaim_fee: Some(msg.tx_reclaim_fee),
+                tx_withhold_fee: self.tx_withhold_fee,
+                tx_mercy_fee: Some(msg.tx_mercy_fee),
                 tx_cancel_fee: msg.tx_cancel_fee,
+                should_publish_tx_withhold: self.should_publish_tx_withhold,
             },
         ))
     }
@@ -252,29 +351,36 @@ pub struct State1 {
     a: swap_core::bitcoin::SecretKey,
     B: swap_core::bitcoin::PublicKey,
     s_a: swap_core::monero::Scalar,
-    S_a_monero: monero::PublicKey,
+    S_a_monero: monero_oxide_ext::PublicKey,
     S_a_bitcoin: swap_core::bitcoin::PublicKey,
-    S_b_monero: monero::PublicKey,
+    S_b_monero: monero_oxide_ext::PublicKey,
     S_b_bitcoin: swap_core::bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     v_a: monero::PrivateViewKey,
     dleq_proof_s_a: CrossCurveDLEQProof,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     refund_address: bitcoin::Address,
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_reclaim_fee: Option<bitcoin::Amount>,
+    tx_withhold_fee: Option<bitcoin::Amount>,
+    tx_mercy_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
+    should_publish_tx_withhold: Option<bool>,
 }
 
 impl State1 {
-    pub fn next_message(&self) -> Message1 {
-        Message1 {
+    pub fn next_message(&self) -> Result<Message1> {
+        Ok(Message1 {
             A: self.a.public(),
             S_a_monero: self.S_a_monero,
             S_a_bitcoin: self.S_a_bitcoin,
@@ -284,13 +390,23 @@ impl State1 {
             punish_address: self.punish_address.clone(),
             tx_redeem_fee: self.tx_redeem_fee,
             tx_punish_fee: self.tx_punish_fee,
-        }
+            amnesty_amount: self
+                .btc_amnesty_amount
+                .context("Missing btc_amesty_amount for new swap that should have it")?,
+            tx_withhold_fee: self
+                .tx_withhold_fee
+                .context("Missing tx_withhold_fee for new swap that should have it")?,
+        })
     }
 
     pub fn receive(self, msg: Message2) -> Result<State2> {
-        let tx_lock =
-            swap_core::bitcoin::TxLock::from_psbt(msg.psbt, self.a.public(), self.B, self.btc)
-                .context("Failed to re-construct TxLock from received PSBT")?;
+        let tx_lock = swap_core::bitcoin::TxLock::from_psbt(
+            msg.tx_lock_psbt,
+            self.a.public(),
+            self.B,
+            self.btc,
+        )
+        .context("Failed to re-construct TxLock from received PSBT")?;
 
         Ok(State2 {
             a: self.a,
@@ -301,8 +417,10 @@ impl State1 {
             v: self.v,
             btc: self.btc,
             xmr: self.xmr,
+            btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
+            remaining_refund_timelock: self.remaining_refund_timelock,
             refund_address: self.refund_address,
             redeem_address: self.redeem_address,
             punish_address: self.punish_address,
@@ -310,7 +428,12 @@ impl State1 {
             tx_redeem_fee: self.tx_redeem_fee,
             tx_punish_fee: self.tx_punish_fee,
             tx_refund_fee: self.tx_refund_fee,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
+            tx_reclaim_fee: self.tx_reclaim_fee,
+            tx_withhold_fee: self.tx_withhold_fee,
+            tx_mercy_fee: self.tx_mercy_fee,
             tx_cancel_fee: self.tx_cancel_fee,
+            should_publish_tx_withhold: self.should_publish_tx_withhold,
         })
     }
 }
@@ -320,14 +443,16 @@ impl State1 {
 pub struct State2 {
     a: swap_core::bitcoin::SecretKey,
     B: swap_core::bitcoin::PublicKey,
-    s_a: monero::Scalar,
-    S_b_monero: monero::PublicKey,
+    s_a: swap_core::monero::Scalar,
+    S_b_monero: monero_oxide_ext::PublicKey,
     S_b_bitcoin: swap_core::bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     refund_address: bitcoin::Address,
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
@@ -335,11 +460,16 @@ pub struct State2 {
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_reclaim_fee: Option<bitcoin::Amount>,
+    tx_withhold_fee: Option<bitcoin::Amount>,
+    tx_mercy_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
+    should_publish_tx_withhold: Option<bool>,
 }
 
 impl State2 {
-    pub fn next_message(&self) -> Message3 {
+    pub fn next_message(&self) -> Result<Message3> {
         let tx_cancel = swap_core::bitcoin::TxCancel::new(
             &self.tx_lock,
             self.cancel_timelock,
@@ -349,20 +479,58 @@ impl State2 {
         )
         .expect("valid cancel tx");
 
-        let tx_refund =
-            swap_core::bitcoin::TxRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
-        // Alice encsigns the refund transaction(bitcoin) digest with Bob's monero
-        // pubkey(S_b). The refund transaction spends the output of
-        // tx_lock_bitcoin to Bob's refund address.
+        let tx_cancel_sig = self.a.sign(tx_cancel.digest());
+
+        // When the amnesty output is zero, we can't construct the tx partial refund transaction
+        // due to an integer underflow.
+        // We only send the cancel and full refund signatures.
+        if self.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO) == bitcoin::Amount::ZERO {
+            let tx_full_refund =
+                TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
+            let tx_refund_encsig = self.a.encsign(self.S_b_bitcoin, tx_full_refund.digest());
+
+            return Ok(Message3 {
+                tx_cancel_sig,
+                tx_partial_refund_encsig: None,
+                tx_full_refund_encsig: Some(tx_refund_encsig),
+                tx_reclaim_sig: None,
+            });
+        }
+
+        let tx_partial_refund = swap_core::bitcoin::TxPartialRefund::new(
+            &tx_cancel,
+            &self.refund_address,
+            self.a.public(),
+            self.B,
+            self.btc_amnesty_amount
+                .context("Missing btc_amnesty_amount for new swap that should have it")?,
+            self.tx_partial_refund_fee
+                .context("Missing tx_partial_refund_fee for new swap")?,
+        )?;
+        // Alice encsigns the partial refund transaction(bitcoin) digest with Bob's monero
+        // pubkey(S_b). The partial refund transaction spends the output of
+        // tx_lock_bitcoin to Bob's refund address (except for the amnesty output).
         // recover(encsign(a, S_b, d), sign(a, d), S_b) = s_b where d is a digest, (a,
         // A) is alice's keypair and (s_b, S_b) is bob's keypair.
-        let tx_refund_encsig = self.a.encsign(self.S_b_bitcoin, tx_refund.digest());
+        let tx_partial_refund_encsig = self.a.encsign(self.S_b_bitcoin, tx_partial_refund.digest());
 
-        let tx_cancel_sig = self.a.sign(tx_cancel.digest());
-        Message3 {
+        // Construct and sign TxReclaim
+        let tx_reclaim = swap_core::bitcoin::TxReclaim::new(
+            &tx_partial_refund,
+            &self.refund_address,
+            self.tx_reclaim_fee
+                .context("Missing tx_reclaim_fee for new swap")?,
+            self.remaining_refund_timelock
+                .context("Missing remaining_refund_timelock for new swap")?,
+        )?;
+        let tx_reclaim_sig = self.a.sign(tx_reclaim.digest());
+
+        Ok(Message3 {
             tx_cancel_sig,
-            tx_refund_encsig,
-        }
+            tx_partial_refund_encsig: Some(tx_partial_refund_encsig),
+            tx_reclaim_sig: Some(tx_reclaim_sig),
+            tx_full_refund_encsig: None,
+        })
     }
 
     pub fn receive(self, msg: Message4) -> Result<State3> {
@@ -406,6 +574,105 @@ impl State2 {
         )
         .context("Failed to verify early refund transaction")?;
 
+        // When the bitcoin amnesty amount is zero, we can't construct the transactions for the partial refund path.
+        // We sent Bob the encsig for the full refund path already, so we don't
+        // care about the partial refund path signatures of Bob anyway.
+        // We just save `None`.
+        if self.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO) == bitcoin::Amount::ZERO {
+            return Ok(State3 {
+                a: self.a,
+                B: self.B,
+                s_a: self.s_a,
+                S_b_monero: self.S_b_monero,
+                S_b_bitcoin: self.S_b_bitcoin,
+                v: self.v,
+                btc: self.btc,
+                xmr: self.xmr,
+                btc_amnesty_amount: self.btc_amnesty_amount,
+                cancel_timelock: self.cancel_timelock,
+                punish_timelock: self.punish_timelock,
+                remaining_refund_timelock: self.remaining_refund_timelock,
+                refund_address: self.refund_address,
+                redeem_address: self.redeem_address,
+                punish_address: self.punish_address,
+                tx_lock: self.tx_lock,
+                tx_punish_sig_bob: msg.tx_punish_sig,
+                tx_cancel_sig_bob: msg.tx_cancel_sig,
+                tx_early_refund_sig_bob: msg.tx_early_refund_sig.into(),
+                tx_reclaim_sig_bob: None,
+                tx_redeem_fee: self.tx_redeem_fee,
+                tx_punish_fee: self.tx_punish_fee,
+                tx_refund_fee: self.tx_refund_fee,
+                tx_partial_refund_fee: self.tx_partial_refund_fee,
+                tx_reclaim_fee: self.tx_reclaim_fee,
+                tx_withhold_fee: self.tx_withhold_fee,
+                tx_mercy_fee: self.tx_mercy_fee,
+                tx_cancel_fee: self.tx_cancel_fee,
+                tx_withhold_sig_bob: None,
+                tx_mercy_sig_bob: None,
+                should_publish_tx_withhold: self.should_publish_tx_withhold,
+            });
+        }
+
+        // Create TxReclaim ourself
+        let tx_partial_refund = TxPartialRefund::new(
+            &tx_cancel,
+            &self.refund_address,
+            self.a.public(),
+            self.B,
+            self.btc_amnesty_amount
+                .context("missing btc_amnesty_amount")?,
+            self.tx_partial_refund_fee
+                .context("missing tx_partial_refund_fee")?,
+        )
+        .context("Couldn't construct TxPartialRefund")?;
+        let tx_reclaim = TxReclaim::new(
+            &tx_partial_refund,
+            &self.refund_address,
+            self.tx_reclaim_fee.context("missing tx_reclaim_fee")?,
+            self.remaining_refund_timelock
+                .context("missing remaining_refund_timelock")?,
+        )?;
+
+        // Check if the provided signature by Bob is valid for the transaction
+        let tx_reclaim_sig = msg
+            .tx_reclaim_sig
+            .as_ref()
+            .context("Missing tx_reclaim_sig from Bob")?;
+        swap_core::bitcoin::verify_sig(&self.B, &tx_reclaim.digest(), tx_reclaim_sig)
+            .context("Failed to verify reclaim transaction")?;
+
+        // Create TxWithhold ourself
+        let tx_withhold = TxWithhold::new(
+            &tx_partial_refund,
+            self.a.public(),
+            self.B,
+            self.tx_withhold_fee.context("missing tx_withhold_fee")?,
+        )?;
+
+        // Check if the provided signature by Bob is valid for the transaction
+        let tx_withhold_sig = msg
+            .tx_withhold_sig
+            .as_ref()
+            .context("Missing tx_withhold_sig from Bob")?;
+        swap_core::bitcoin::verify_sig(&self.B, &tx_withhold.digest(), tx_withhold_sig)
+            .context("Failed to verify withhold transaction")?;
+
+        // Create TxMercy ourself
+        let tx_mercy = TxMercy::new(
+            &tx_withhold,
+            &self.refund_address,
+            self.tx_mercy_fee.context("missing tx_mercy_fee")?,
+        );
+
+        // Check if the provided signature by Bob is valid for the transaction
+        let tx_mercy_sig = msg
+            .tx_mercy_sig
+            .as_ref()
+            .context("Missing tx_mercy_sig from Bob")?;
+        swap_core::bitcoin::verify_sig(&self.B, &tx_mercy.digest(), tx_mercy_sig)
+            .context("Failed to verify mercy transaction")?;
+
         Ok(State3 {
             a: self.a,
             B: self.B,
@@ -415,8 +682,10 @@ impl State2 {
             v: self.v,
             btc: self.btc,
             xmr: self.xmr,
+            btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
+            remaining_refund_timelock: self.remaining_refund_timelock,
             refund_address: self.refund_address,
             redeem_address: self.redeem_address,
             punish_address: self.punish_address,
@@ -424,10 +693,18 @@ impl State2 {
             tx_punish_sig_bob: msg.tx_punish_sig,
             tx_cancel_sig_bob: msg.tx_cancel_sig,
             tx_early_refund_sig_bob: msg.tx_early_refund_sig.into(),
+            tx_reclaim_sig_bob: msg.tx_reclaim_sig.into(),
             tx_redeem_fee: self.tx_redeem_fee,
             tx_punish_fee: self.tx_punish_fee,
             tx_refund_fee: self.tx_refund_fee,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
+            tx_reclaim_fee: self.tx_reclaim_fee,
+            tx_withhold_fee: self.tx_withhold_fee,
+            tx_mercy_fee: self.tx_mercy_fee,
             tx_cancel_fee: self.tx_cancel_fee,
+            tx_withhold_sig_bob: msg.tx_withhold_sig,
+            tx_mercy_sig_bob: msg.tx_mercy_sig,
+            should_publish_tx_withhold: self.should_publish_tx_withhold,
         })
     }
 }
@@ -437,15 +714,18 @@ impl State2 {
 pub struct State3 {
     a: swap_core::bitcoin::SecretKey,
     B: swap_core::bitcoin::PublicKey,
-    pub s_a: monero::Scalar,
-    S_b_monero: monero::PublicKey,
+    #[serde(with = "swap_serde::monero::scalar")]
+    pub s_a: swap_core::monero::Scalar,
+    S_b_monero: monero_oxide_ext::PublicKey,
     S_b_bitcoin: swap_core::bitcoin::PublicKey,
     pub v: monero::PrivateViewKey,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc: bitcoin::Amount,
     pub xmr: monero::Amount,
+    pub btc_amnesty_amount: Option<bitcoin::Amount>,
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
+    #[serde(default)]
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
     refund_address: bitcoin::Address,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
@@ -466,14 +746,34 @@ pub struct State3 {
     /// to wait for the timelock to expire.
     #[serde(default)]
     tx_early_refund_sig_bob: Option<swap_core::bitcoin::Signature>,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
-    tx_redeem_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    /// This field was added in PR [#675](https://github.com/eigenwallet/core/pull/344).
+    /// It is optional to maintain backwards compatibility with old swaps in the database.
+    /// Bob must send this to us during swap setup, in order for us to publish TxReclaim
+    /// in case of a refund. Otherwise Bob will only be partially refunded.
+    #[serde(default)]
+    tx_reclaim_sig_bob: Option<swap_core::bitcoin::Signature>,
+    pub tx_redeem_fee: bitcoin::Amount,
     pub tx_punish_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    #[serde(default)]
+    pub tx_partial_refund_fee: Option<bitcoin::Amount>,
+    #[serde(default)]
+    pub tx_reclaim_fee: Option<bitcoin::Amount>,
+    #[serde(default)]
+    pub tx_withhold_fee: Option<bitcoin::Amount>,
+    #[serde(default)]
+    pub tx_mercy_fee: Option<bitcoin::Amount>,
     pub tx_cancel_fee: bitcoin::Amount,
+    #[serde(default)]
+    tx_withhold_sig_bob: Option<swap_core::bitcoin::Signature>,
+    #[serde(default)]
+    tx_mercy_sig_bob: Option<swap_core::bitcoin::Signature>,
+    /// Whether Alice should publish TxWithhold to deny Bob's amnesty.
+    /// None = no decision yet (legacy swaps or awaiting controller input)
+    /// Some(false) = don't burn (default for new swaps)
+    /// Some(true) = withhold the amnesty output
+    #[serde(default)]
+    pub should_publish_tx_withhold: Option<bool>,
 }
 
 impl State3 {
@@ -485,18 +785,29 @@ impl State3 {
 
         let tx_lock_status = bitcoin_wallet.status_of_script(&self.tx_lock).await?;
         let tx_cancel_status = bitcoin_wallet.status_of_script(&tx_cancel).await?;
+        // Only check partial refund status if we have the data to construct it
+        // (old swaps won't have these fields)
+        let tx_partial_refund_status =
+            if let (Some(_), Some(_)) = (self.btc_amnesty_amount, self.tx_partial_refund_fee) {
+                let tx = self.tx_partial_refund()?;
+                Some(bitcoin_wallet.status_of_script(&tx).await?)
+            } else {
+                None
+            };
 
         Ok(current_epoch(
             self.cancel_timelock,
             self.punish_timelock,
+            self.remaining_refund_timelock,
             tx_lock_status,
             tx_cancel_status,
+            tx_partial_refund_status,
         ))
     }
 
     pub fn lock_xmr_transfer_request(&self) -> TransferRequest {
-        let S_a = monero::PublicKey::from_private_key(&monero::PrivateKey {
-            scalar: self.s_a.into_dalek_ng(),
+        let S_a = monero_oxide_ext::PublicKey::from_private_key(&monero_oxide_ext::PrivateKey {
+            scalar: self.s_a,
         });
 
         let public_spend_key = S_a + self.S_b_monero;
@@ -520,11 +831,24 @@ impl State3 {
         .expect("valid cancel tx")
     }
 
-    pub fn tx_refund(&self) -> TxRefund {
-        swap_core::bitcoin::TxRefund::new(
+    pub fn tx_refund(&self) -> TxFullRefund {
+        swap_core::bitcoin::TxFullRefund::new(
             &self.tx_cancel(),
             &self.refund_address,
             self.tx_refund_fee,
+        )
+    }
+
+    pub fn tx_partial_refund(&self) -> Result<TxPartialRefund> {
+        swap_core::bitcoin::TxPartialRefund::new(
+            &self.tx_cancel(),
+            &self.refund_address,
+            self.a.public(),
+            self.B,
+            self.btc_amnesty_amount
+                .context("Missing btc_amnesty_amount")?,
+            self.tx_partial_refund_fee
+                .context("Missing tx_partial_refund_fee")?,
         )
     }
 
@@ -540,20 +864,34 @@ impl State3 {
         )
     }
 
-    pub fn extract_monero_private_key(
+    pub fn extract_monero_private_key_from_refund(
         &self,
         signed_refund_tx: Arc<bitcoin::Transaction>,
-    ) -> Result<monero::PrivateKey> {
-        Ok(monero::PrivateKey::from_scalar(
+    ) -> Result<monero_oxide_ext::PrivateKey> {
+        Ok(monero_oxide_ext::PrivateKey::from_scalar(
             self.tx_refund()
                 .extract_monero_private_key(
                     signed_refund_tx,
-                    self.s_a,
+                    self.s_a.into_dalek(),
                     self.a.clone(),
                     self.S_b_bitcoin,
                 )?
-                .into_dalek_ng(),
+                .into_monero_oxide(),
         ))
+    }
+
+    pub fn extract_monero_private_key_from_partial_refund(
+        &self,
+        signed_partial_refund_tx: Arc<bitcoin::Transaction>,
+    ) -> Result<monero::PrivateKey> {
+        Ok(monero::PrivateKey::from_scalar(Scalar::from(
+            self.tx_partial_refund()?.extract_monero_private_key(
+                signed_partial_refund_tx,
+                self.s_a.into(),
+                self.a.clone(),
+                self.S_b_bitcoin,
+            )?,
+        )))
     }
 
     pub async fn check_for_tx_cancel(
@@ -587,8 +925,79 @@ impl State3 {
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
     ) -> Result<Txid> {
         let transaction = self.signed_cancel_transaction()?;
-        let (tx_id, _) = bitcoin_wallet.broadcast(transaction, "cancel").await?;
+        let (tx_id, _) = bitcoin_wallet
+            .ensure_broadcasted(transaction, "cancel")
+            .await?;
         Ok(tx_id)
+    }
+
+    pub fn signed_bitcoin_amnesty_transaction(&self) -> Result<Transaction> {
+        let tx_partial_refund = self.tx_partial_refund()?;
+        let tx_amnesty = TxReclaim::new(
+            &tx_partial_refund,
+            &self.refund_address,
+            self.tx_reclaim_fee.context("Missing tx_reclaim_fee")?,
+            self.remaining_refund_timelock
+                .context("Missing remaining_refund_timelock")?,
+        )?;
+
+        tx_amnesty.complete_as_alice(
+            self.a.clone(),
+            self.B,
+            self.tx_reclaim_sig_bob
+                .clone()
+                .context("missing Bob's signature for TxReclaim")?,
+        )
+    }
+
+    /// Check if we have Bob's signature for TxWithhold.
+    pub fn has_tx_withhold_sig(&self) -> bool {
+        self.tx_withhold_sig_bob.is_some()
+    }
+
+    /// Construct TxWithhold from tx_partial_refund output.
+    pub fn tx_withhold(&self) -> Result<TxWithhold> {
+        TxWithhold::new(
+            &self.tx_partial_refund()?,
+            self.a.public(),
+            self.B,
+            self.tx_withhold_fee.context("Missing tx_withhold_fee")?,
+        )
+    }
+
+    /// Construct signed TxWithhold using Alice's key and Bob's presigned signature.
+    pub fn signed_withhold_transaction(&self) -> Result<Transaction> {
+        let tx_withhold = self.tx_withhold()?;
+
+        tx_withhold.complete_as_alice(
+            self.a.clone(),
+            self.B,
+            self.tx_withhold_sig_bob
+                .clone()
+                .context("missing Bob's signature for TxWithhold")?,
+        )
+    }
+
+    /// Construct TxMercy from tx_withhold output.
+    pub fn tx_mercy(&self) -> Result<TxMercy> {
+        Ok(TxMercy::new(
+            &self.tx_withhold()?,
+            &self.refund_address,
+            self.tx_mercy_fee.context("Missing tx_mercy_fee")?,
+        ))
+    }
+
+    /// Construct signed TxMercy using Alice's key and Bob's presigned signature.
+    pub fn signed_mercy_transaction(&self) -> Result<Transaction> {
+        let tx_mercy = self.tx_mercy()?;
+
+        tx_mercy.complete_as_alice(
+            self.a.clone(),
+            self.B,
+            self.tx_mercy_sig_bob
+                .clone()
+                .context("missing Bob's signature for TxMercy")?,
+        )
     }
 
     pub async fn punish_btc(
@@ -597,7 +1006,9 @@ impl State3 {
     ) -> Result<Txid> {
         let signed_tx_punish = self.signed_punish_transaction()?;
 
-        let (txid, subscription) = bitcoin_wallet.broadcast(signed_tx_punish, "punish").await?;
+        let (txid, subscription) = bitcoin_wallet
+            .ensure_broadcasted(signed_tx_punish, "punish")
+            .await?;
         subscription.wait_until_final().await?;
 
         Ok(txid)
@@ -652,26 +1063,58 @@ impl State3 {
     pub async fn refund_btc(
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
-    ) -> Result<Option<monero::PrivateKey>> {
+    ) -> Result<Option<monero_oxide_ext::PrivateKey>> {
         let refund_tx = bitcoin_wallet
             .get_raw_transaction(self.tx_refund().txid())
             .await?;
+        // We can't rely on swaps having the deposit amount set, so we need
+        // to make sure we dont' fail immediately because of it
+        let partial_refund_tx = if self.btc_amnesty_amount.is_some() {
+            bitcoin_wallet
+                .get_raw_transaction(self.tx_partial_refund()?.txid())
+                .await?
+        } else {
+            None
+        };
 
-        match refund_tx {
-            Some(refund_tx) => {
-                let spend_key = self.extract_monero_private_key(refund_tx)?;
+        match (refund_tx, partial_refund_tx) {
+            (Some(refund_tx), _) => {
+                let spend_key = self.extract_monero_private_key_from_refund(refund_tx)?;
                 Ok(Some(spend_key))
             }
-            None => Ok(None),
+            (_, Some(partial_refund_tx)) => {
+                let spend_key =
+                    self.extract_monero_private_key_from_partial_refund(partial_refund_tx)?;
+                Ok(Some(spend_key))
+            }
+            (None, None) => Ok(None),
         }
     }
 
-    pub async fn watch_for_btc_tx_refund(
+    pub async fn watch_for_btc_tx_full_refund(
+        &self,
+        bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
+    ) -> Result<monero_oxide_ext::PrivateKey> {
+        let tx_refund_status = bitcoin_wallet
+            .subscribe_to(Box::new(self.tx_refund()))
+            .await;
+
+        tx_refund_status
+            .wait_until_seen()
+            .await
+            .context("Failed to monitor refund transaction")?;
+
+        self.refund_btc(bitcoin_wallet).await?.context(
+            "Bitcoin refund transaction not found even though we saw it in the mempool previously",
+        )
+    }
+
+    pub async fn watch_for_btc_tx_partial_refund(
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
     ) -> Result<monero::PrivateKey> {
         let tx_refund_status = bitcoin_wallet
-            .subscribe_to(Box::new(self.tx_refund()))
+            .subscribe_to(Box::new(self.tx_partial_refund()?))
             .await;
 
         tx_refund_status

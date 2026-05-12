@@ -1,8 +1,8 @@
 pub mod harness;
 
+use harness::FastCancelConfig;
 use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::bob_run_until::is_btc_locked;
-use harness::FastCancelConfig;
 use swap::asb::FixedRate;
 use swap::protocol::alice::AliceState;
 use swap::protocol::bob::BobState;
@@ -11,7 +11,7 @@ use swap::{asb, cli};
 
 #[tokio::test]
 async fn given_alice_and_bob_manually_cancel_and_refund_after_funds_locked_both_refund() {
-    harness::setup_test(FastCancelConfig, None, |mut ctx| async move {
+    harness::setup_test(FastCancelConfig, None, None, |mut ctx| async move {
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
         let bob_swap_id = bob_swap.id;
         let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_btc_locked));

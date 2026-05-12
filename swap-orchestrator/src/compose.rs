@@ -13,10 +13,32 @@ pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
 
 pub struct OrchestratorInput {
     pub ports: OrchestratorPorts,
-    pub networks: OrchestratorNetworks<monero::Network, bitcoin::Network>,
+    pub networks: OrchestratorNetworks<monero_address::Network, bitcoin::Network>,
     pub images: OrchestratorImages<OrchestratorImage>,
     pub directories: OrchestratorDirectories,
     pub want_tor: bool,
+    pub cloudflared: Option<CloudflaredConfig>,
+}
+
+/// Cloudflare Tunnel configuration.
+///
+/// When set, the orchestrator adds a `cloudflared` service to the compose file
+/// and configures the ASB to listen on a WebSocket transport and advertise the
+/// tunnel's public hostname as an external libp2p address.
+#[derive(Clone)]
+pub struct CloudflaredConfig {
+    /// The tunnel run token from the Cloudflare Zero Trust dashboard.
+    pub token: String,
+    /// The public hostname assigned to the tunnel in the Cloudflare dashboard
+    /// (e.g. `asb.example.com`). Advertised to peers as `/dns4/<host>/tcp/<port>/wss`.
+    pub external_host: String,
+    /// The port clients will dial on the public hostname.
+    /// Almost always `443` for `wss`.
+    pub external_port: u16,
+    /// The port the ASB will listen on inside the docker network for the
+    /// WebSocket transport. The tunnel's ingress rule should point at
+    /// `http://asb:<internal_port>`.
+    pub internal_port: u16,
 }
 
 pub struct OrchestratorDirectories {
@@ -38,6 +60,7 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub asb_controller: T,
     pub asb_tracing_logger: T,
     pub rendezvous_node: T,
+    pub cloudflared: T,
 }
 
 pub struct OrchestratorPorts {
@@ -51,10 +74,10 @@ pub struct OrchestratorPorts {
     pub rendezvous_node_port: u16,
 }
 
-impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for OrchestratorPorts {
-    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for OrchestratorPorts {
+    fn from(val: OrchestratorNetworks<monero_address::Network, bitcoin::Network>) -> Self {
         match (val.monero, val.bitcoin) {
-            (monero::Network::Mainnet, bitcoin::Network::Bitcoin) => OrchestratorPorts {
+            (monero_address::Network::Mainnet, bitcoin::Network::Bitcoin) => OrchestratorPorts {
                 monerod_rpc: 18081,
                 bitcoind_rpc: 8332,
                 bitcoind_p2p: 8333,
@@ -64,7 +87,7 @@ impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for Orchestra
                 asb_rpc_port: 9944,
                 rendezvous_node_port: 8888,
             },
-            (monero::Network::Stagenet, bitcoin::Network::Testnet) => OrchestratorPorts {
+            (monero_address::Network::Stagenet, bitcoin::Network::Testnet) => OrchestratorPorts {
                 monerod_rpc: 38081,
                 bitcoind_rpc: 18332,
                 bitcoind_p2p: 18333,
@@ -79,14 +102,14 @@ impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for Orchestra
     }
 }
 
-impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for asb::Network {
-    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for asb::Network {
+    fn from(val: OrchestratorNetworks<monero_address::Network, bitcoin::Network>) -> Self {
         containers::asb::Network::new(val.monero, val.bitcoin)
     }
 }
 
-impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for electrs::Network {
-    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for electrs::Network {
+    fn from(val: OrchestratorNetworks<monero_address::Network, bitcoin::Network>) -> Self {
         containers::electrs::Network::new(val.bitcoin)
     }
 }
@@ -242,6 +265,35 @@ fn build(input: OrchestratorInput) -> String {
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
 
+    let cloudflared_segment = if let Some(cf) = input.cloudflared.as_ref() {
+        // We clear the image's ENTRYPOINT below, so `command` must start with
+        // the binary name, matching every other service in this compose file.
+        let command_cloudflared = command![
+            "cloudflared",
+            flag!("--no-autoupdate"),
+            flag!("tunnel"),
+            flag!("run"),
+            flag!("--token"),
+            flag!("{}", cf.token),
+        ];
+
+        format!(
+            "\
+  cloudflared:
+    container_name: cloudflared
+    {image_cloudflared}
+    restart: unless-stopped
+    depends_on:
+      - asb
+    entrypoint: ''
+    command: {command_cloudflared}\
+",
+            image_cloudflared = input.images.cloudflared.to_image_attribute(),
+        )
+    } else {
+        String::new()
+    };
+
     let (tor_segment, tor_volume) = if input.want_tor {
         // This image comes with an empty /etc/tor/, so this is the entire config
         let command_tor = command![
@@ -331,10 +383,13 @@ services:
     entrypoint: ''
     command: {command_electrs}
   {tor_segment}
+  {cloudflared_segment}
   asb:
     container_name: asb
     {image_asb}
     restart: unless-stopped
+    cap_add:
+      - SYS_PTRACE
     depends_on:
       - electrs
     volumes:

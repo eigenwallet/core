@@ -24,8 +24,8 @@
 
 use futures::prelude::*;
 use libp2p::{
-    core::{Endpoint, UpgradeInfo},
     InboundUpgrade, OutboundUpgrade,
+    core::{Endpoint, UpgradeInfo},
 };
 use std::iter;
 

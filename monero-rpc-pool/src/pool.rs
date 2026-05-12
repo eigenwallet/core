@@ -6,7 +6,7 @@ use tokio::sync::broadcast;
 use tracing::warn;
 use typeshare::typeshare;
 
-use crate::database::{network_to_string, Database};
+use crate::database::{Database, network_to_string};
 use crate::types::NodeAddress;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -101,13 +101,16 @@ impl BandwidthTracker {
 
 pub struct NodePool {
     db: Database,
-    network: monero::Network,
+    network: monero_address::Network,
     status_sender: broadcast::Sender<PoolStatus>,
     bandwidth_tracker: Arc<BandwidthTracker>,
 }
 
 impl NodePool {
-    pub fn new(db: Database, network: monero::Network) -> (Self, broadcast::Receiver<PoolStatus>) {
+    pub fn new(
+        db: Database,
+        network: monero_address::Network,
+    ) -> (Self, broadcast::Receiver<PoolStatus>) {
         let (status_sender, status_receiver) = broadcast::channel(100);
         let pool = Self {
             db,

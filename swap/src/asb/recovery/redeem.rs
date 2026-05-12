@@ -1,6 +1,6 @@
-use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
-use anyhow::{bail, Result};
+use crate::protocol::alice::AliceState;
+use anyhow::{Result, bail};
 use bitcoin_wallet::BitcoinWallet;
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -40,7 +40,9 @@ pub async fn redeem(
             tracing::info!(%swap_id, "Trying to redeem swap");
 
             let redeem_tx = state3.signed_redeem_transaction(*encrypted_signature)?;
-            let (txid, subscription) = bitcoin_wallet.broadcast(redeem_tx, "redeem").await?;
+            let (txid, subscription) = bitcoin_wallet
+                .ensure_broadcasted(redeem_tx, "redeem")
+                .await?;
 
             subscription.wait_until_seen().await?;
 
@@ -87,9 +89,18 @@ pub async fn redeem(
         | AliceState::CancelTimelockExpired { .. }
         | AliceState::BtcCancelled { .. }
         | AliceState::BtcRefunded { .. }
+        | AliceState::BtcPartiallyRefunded { .. }
         | AliceState::BtcPunishable { .. }
         | AliceState::BtcRedeemed
-        | AliceState::XmrRefunded
+        | AliceState::XmrRefundTxConstructed { .. }
+        | AliceState::XmrRefundTxPublished { .. }
+        | AliceState::XmrRefunded { .. }
+        | AliceState::BtcWithholdPublished { .. }
+        | AliceState::BtcWithholdConfirmed { .. }
+        | AliceState::BtcMercyGranted { .. }
+        | AliceState::BtcMercyPublished { .. }
+        | AliceState::BtcMercyConfirmed { .. }
+        | AliceState::XmrRefundable { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)
         | AliceState::BtcPunished { .. }

@@ -10,7 +10,7 @@ use crate::harness::SlowCancelConfig;
 
 #[tokio::test]
 async fn alice_zero_xmr_refunds_bitcoin() {
-    harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
+    harness::setup_test(SlowCancelConfig, None, None, |mut ctx| async move {
         let (bob_swap, bob_handle) = ctx.bob_swap().await;
         let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_btc_locked));
 

@@ -1,8 +1,8 @@
 [package]
 name = "swap"
-version = "3.6.3"
+version = "4.5.3"
 authors = ["The COMIT guys <hello@comit.network>"]
-edition = "2021"
+edition = "2024"
 description = "XMR/BTC trustless atomic swaps."
 
 [lib]
@@ -22,11 +22,14 @@ bitcoin-wallet = { path = "../bitcoin-wallet" }
 monero-wallet = { path = "../monero-wallet" }
 
 # Tor
-arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service"] }
+arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service", "hs-pow-full", "ephemeral-keystore"] }
+tor-hscrypto = { workspace = true }
+tor-hsservice = { workspace = true }
+tor-llcrypto = { workspace = true }
 tor-rtcompat = { workspace = true, features = ["tokio"] }
 
 # LibP2P
-libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
+libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa", "websocket"] }
 libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service"] }
 
 # Error handling
@@ -36,6 +39,7 @@ thiserror = { workspace = true }
 
 # Crypto / Decoding / Encoding
 curve25519-dalek = { workspace = true, features = ["rand_core"] }
+data-encoding = { workspace = true }
 ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
@@ -48,7 +52,10 @@ config = { version = "0.14", default-features = false, features = ["toml"] }
 electrum-pool = { path = "../electrum-pool" }
 jsonrpsee = { workspace = true, features = ["server"] }
 moka = { version = "0.12", features = ["sync", "future"] }
-monero = { workspace = true }
+monero-address = { workspace = true }
+monero-interface = { workspace = true }
+monero-oxide-ext = { path = "../monero-oxide-ext" }
+monero-oxide-wallet = { workspace = true }
 monero-rpc-pool = { path = "../monero-rpc-pool" }
 monero-seed = { git = "https://github.com/monero-oxide/monero-wallet-util.git", package = "monero-seed" }
 monero-sys = { path = "../monero-sys" }
@@ -57,6 +64,7 @@ proptest = "1"
 regex = "1.10"
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
+safelog = { workspace = true }
 semver = { workspace = true }
 structopt = "0.3"
 swap-controller-api = { path = "../swap-controller-api" }
@@ -73,6 +81,7 @@ tauri = { version = "2.0", features = ["config-json5"], optional = true, default
 time = "0.3"
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
+void = "1"
 zeroize = { workspace = true }
 
 # Tokio
@@ -107,6 +116,7 @@ proptest = "1"
 swap-p2p = { path = "../swap-p2p", features = ["test-support"] }
 tempfile = "3"
 testcontainers = "0.15"
+tokio = { workspace = true, features = ["test-util"] }
 tracing-ext = { path = "../tracing-ext" }
 
 [build-dependencies]

@@ -5,12 +5,12 @@ use crate::cli::api::tauri_bindings::{ContextStatus, SeedChoice};
 use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
-use crate::database::{open_db, AccessMode};
+use crate::database::{AccessMode, open_db};
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::Seed;
 use crate::{common, monero};
-use anyhow::{bail, Context as AnyContext, Error, Result};
+use anyhow::{Context as AnyContext, Error, Result, bail};
 use arti_client::TorClient;
 use futures::future::try_join_all;
 use libp2p::{Multiaddr, PeerId};
@@ -21,7 +21,7 @@ use std::sync::{Arc, Once};
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
 use tauri_bindings::{MoneroNodeConfig, TauriBackgroundProgress, TauriEmitter, TauriHandle};
-use tokio::sync::{broadcast, broadcast::Sender, Mutex as TokioMutex, RwLock};
+use tokio::sync::{Mutex as TokioMutex, RwLock, broadcast, broadcast::Sender};
 use tokio::task::JoinHandle;
 use tokio_util::task::AbortOnDropHandle;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
@@ -834,6 +834,7 @@ mod builder {
                     seed.derive_libp2p_identity(),
                     namespace,
                     rendezvous_peer_ids,
+                    db.clone(),
                 );
 
                 let mut swarm = crate::network::swarm::cli(
@@ -991,10 +992,8 @@ mod wallet {
                         let wallet_path =
                             eigenwallet_wallets_dir.join(format!("wallet_{}", timestamp));
 
-                        if let Some(parent) = wallet_path.parent() {
-                            swap_fs::ensure_directory_exists(parent)
-                                .context("Failed to create wallet directory")?;
-                        }
+                        swap_fs::ensure_directory_exists(&wallet_path)
+                            .context("Failed to create wallet directory")?;
 
                         Ok(wallet_path)
                     }

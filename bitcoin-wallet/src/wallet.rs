@@ -1,28 +1,26 @@
 use crate::primitives::{Confirmed, EstimateFeeRate, ScriptStatus, Subscription, Watchable};
-use crate::{bitcoin_address, parse_rpc_error_code, BitcoinWallet, BlockHeight, RpcErrorCode};
-use anyhow::{anyhow, bail, Context, Result};
-use bdk_chain::spk_client::{SyncRequest, SyncRequestBuilder};
+use crate::{BitcoinWallet, BlockHeight, RpcErrorCode, bitcoin_address, parse_rpc_error_code};
+use anyhow::{Context, Result, anyhow, bail};
 use bdk_chain::CheckPoint;
+use bdk_chain::spk_client::{SyncRequest, SyncRequestBuilder};
 use bdk_electrum::electrum_client::{ElectrumApi, GetHistoryRes};
 
+use bdk_wallet::KeychainKind;
+use bdk_wallet::WalletPersister;
 use bdk_wallet::bitcoin::FeeRate;
 use bdk_wallet::bitcoin::Network;
 use bdk_wallet::export::FullyNodedExport;
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::template::{Bip84, DescriptorTemplate};
-use bdk_wallet::KeychainKind;
-use bdk_wallet::WalletPersister;
 use bdk_wallet::{Balance, PersistedWallet};
-#[allow(deprecated)]
-use bitcoin::bip32::ExtendedPrivKey;
 use bitcoin::bip32::Xpriv;
-use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Address, Amount, Transaction, Txid};
+use bitcoin::{Address, Amount, Transaction, Txid, psbt::Psbt as PartiallySignedTransaction};
 use bitcoin::{Psbt, ScriptBuf, Weight};
 use derive_builder::Builder;
 use electrum_pool::ElectrumBalancer;
 use moka;
-use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -33,9 +31,10 @@ use std::sync::Mutex as SyncMutex;
 use std::time::Duration;
 use std::time::Instant;
 use sync_ext::{CumulativeProgressHandle, InnerSyncCallback, SyncCallbackExt};
-use tokio::sync::watch;
 use tokio::sync::Mutex as TokioMutex;
-use tracing::{debug_span, Instrument};
+use tokio::sync::RwLock as TokioRwLock;
+use tokio::sync::watch;
+use tracing::{Instrument, debug_span};
 
 pub type TauriHandle = Option<Arc<dyn BitcoinTauriHandle>>;
 pub trait BitcoinTauriHandle: Send + Sync {
@@ -68,7 +67,7 @@ pub trait BitcoinTauriBackgroundTask: Send + Sync {
 }
 
 pub trait BitcoinWalletSeed {
-    fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<ExtendedPrivKey>;
+    fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<Xpriv>;
 
     /// Same as `derive_extended_private_key`, but using the legacy BDK API.
     ///
@@ -84,7 +83,8 @@ pub trait BitcoinWalletSeed {
 const TWENTY_PERCENT: Decimal = Decimal::from_parts(20, 0, 0, false, 2);
 pub const MAX_RELATIVE_TX_FEE: Decimal = TWENTY_PERCENT;
 pub const MAX_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(100_000);
-pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(1000);
+pub const MIN_ABSOLUTE_TX_FEE_SATS: u64 = 1000;
+pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(MIN_ABSOLUTE_TX_FEE_SATS);
 pub const DUST_AMOUNT: Amount = Amount::from_sat(546);
 
 /// This is our wrapper around a bdk wallet and a corresponding
@@ -101,7 +101,7 @@ pub struct Wallet<Persister = Connection, C = Client> {
     /// The database connection used to persist the wallet.
     persister: Arc<TokioMutex<Persister>>,
     /// The electrum client.
-    electrum_client: Arc<TokioMutex<C>>,
+    electrum_client: Arc<C>,
     /// The cached fee estimator for the electrum client.
     cached_electrum_fee_estimator: Arc<CachedFeeEstimator<C>>,
     /// The cached fee estimator for the mempool client.
@@ -126,15 +126,15 @@ pub struct Client {
     /// The underlying electrum balancer for load balancing across multiple servers.
     inner: Arc<ElectrumBalancer>,
     /// The history of transactions for each script.
-    script_history: BTreeMap<ScriptBuf, Vec<GetHistoryRes>>,
+    script_history: Arc<TokioRwLock<BTreeMap<ScriptBuf, Vec<GetHistoryRes>>>>,
     /// The subscriptions to the status of transactions.
-    subscriptions: HashMap<(Txid, ScriptBuf), Subscription>,
+    subscriptions: Arc<TokioMutex<HashMap<(Txid, ScriptBuf), Subscription>>>,
     /// The time of the last sync.
-    last_sync: Instant,
+    last_sync: Arc<SyncMutex<Instant>>,
     /// How often we sync with the server.
     sync_interval: Duration,
     /// The height of the latest block we know about.
-    latest_block_height: BlockHeight,
+    latest_block_height: Arc<SyncMutex<BlockHeight>>,
 }
 
 /// Holds the configuration parameters for creating a Bitcoin wallet.
@@ -555,24 +555,22 @@ impl Wallet {
 
         let progress_handle = tauri_handle.as_ref().map(|th| th.start_full_scan());
 
-        let callback = progress_handle.clone().and_then(|ph| InnerSyncCallback::new(move |consumed, total| {
-            ph.update(consumed,total);
-        })).chain(InnerSyncCallback::new(move |consumed, total| {
-            tracing::debug!(
-                "Full scanning Bitcoin wallet, currently at index {}. We will scan around {} in total.",
-                consumed,
-                total
-            );
-        }).throttle_callback(10.0)).to_full_scan_callback(Self::SCAN_STOP_GAP, 100);
+        let wallet = Arc::new(wallet);
+        let ph = progress_handle.clone();
+        let full_scan_response = client.inner.call_async("full_scan_wallet", move |electrum_client| {
+            let callback = ph.clone().and_then(|ph| InnerSyncCallback::new(move |consumed, total| {
+                ph.update(consumed, total);
+            })).chain(InnerSyncCallback::new(move |consumed, total| {
+                tracing::debug!(
+                    "Full scanning Bitcoin wallet, currently at index {}. We will scan around {} in total.",
+                    consumed,
+                    total
+                );
+            }).throttle_callback(10.0)).to_full_scan_callback(Self::SCAN_STOP_GAP, 100);
 
-        let full_scan = wallet.start_full_scan().inspect(callback);
-
-        let full_scan_response = client.inner.get_any_client().await?.full_scan(
-            full_scan,
-            Self::SCAN_STOP_GAP as usize,
-            Self::SCAN_BATCH_SIZE as usize,
-            true,
-        )?;
+            let full_scan = wallet.start_full_scan().inspect(callback);
+            electrum_client.full_scan(full_scan, Self::SCAN_STOP_GAP as usize, Self::SCAN_BATCH_SIZE as usize, true)
+        }).await?;
 
         // Only create the persister once we have the full scan result
         let mut persister = persister_constructor()?;
@@ -607,7 +605,7 @@ impl Wallet {
 
         Ok(Wallet {
             wallet: wallet.into_arc_mutex_async(),
-            electrum_client: client.into_arc_mutex_async(),
+            electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator,
             persister: persister.into_arc_mutex_async(),
@@ -666,7 +664,7 @@ impl Wallet {
 
         let wallet = Wallet {
             wallet: wallet.into_arc_mutex_async(),
-            electrum_client: client.into_arc_mutex_async(),
+            electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(cached_mempool_fee_estimator),
             persister: persister.into_arc_mutex_async(),
@@ -699,8 +697,8 @@ impl Wallet {
             )))
             .await;
 
-        let client = self.electrum_client.lock().await;
-        let broadcast_results = client
+        let broadcast_results = self
+            .electrum_client
             .transaction_broadcast_all(&transaction)
             .await
             .with_context(|| {
@@ -760,6 +758,25 @@ impl Wallet {
         Ok((txid, subscription))
     }
 
+    /// Broadcast a transaction, but only if it's not already in the mempool/blockchain.
+    /// Return txid and a subcription to it's status in either case.
+    pub async fn ensure_broadcasted(
+        &self,
+        tx: Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        let txid = tx.compute_txid();
+
+        let status = self.status_of_script(&tx).await?;
+
+        if matches!(status, ScriptStatus::InMempool | ScriptStatus::Confirmed(_)) {
+            let subscription = self.subscribe_to(Box::new(tx)).await;
+            return Ok((txid, subscription));
+        }
+
+        self.broadcast(tx, kind).await
+    }
+
     pub async fn get_raw_transaction(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
         self.get_tx(txid)
             .await
@@ -780,24 +797,14 @@ impl Wallet {
     }
 
     pub async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
-        self.electrum_client
-            .lock()
-            .await
-            .status_of_script(tx, true)
-            .await
+        self.electrum_client.status_of_script(tx, true).await
     }
 
     pub async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
         let txid = tx.id();
         let script = tx.script();
 
-        let initial_status = match self
-            .electrum_client
-            .lock()
-            .await
-            .status_of_script(&tx, false)
-            .await
-        {
+        let initial_status = match self.electrum_client.status_of_script(&tx, false).await {
             Ok(status) => Some(status),
             Err(err) => {
                 tracing::debug!(%txid, %err, "Failed to get initial status for subscription. We won't notify the caller and will try again later.");
@@ -805,11 +812,9 @@ impl Wallet {
             }
         };
 
-        let sub = self
-            .electrum_client
-            .lock()
-            .await
-            .subscriptions
+        let mut subscriptions = self.electrum_client.subscriptions.lock().await;
+
+        let sub = subscriptions
             .entry((txid, script.clone()))
             .or_insert_with(|| {
                 let (sender, receiver) = watch::channel(ScriptStatus::Unseen);
@@ -819,8 +824,7 @@ impl Wallet {
                     let mut last_status = initial_status;
 
                     loop {
-                        let new_status = client.lock()
-                            .await
+                        let new_status = client
                             .status_of_script(&tx, false)
                             .await
                             .unwrap_or_else(|error| {
@@ -836,7 +840,7 @@ impl Wallet {
 
                             if all_receivers_gone {
                                 tracing::debug!(%txid, "All receivers gone, removing subscription");
-                                client.lock().await.subscriptions.remove(&(txid, script));
+                                client.subscriptions.lock().await.remove(&(txid, script));
                                 return;
                             }
                         }
@@ -870,8 +874,8 @@ impl Wallet {
 
     /// Get a transaction from the Electrum server or the cache.
     pub async fn get_tx(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
-        let client = self.electrum_client.lock().await;
-        let tx = client
+        let tx = self
+            .electrum_client
             .get_tx(txid)
             .await
             .context("Failed to get transaction from cache or Electrum server")?;
@@ -1013,8 +1017,6 @@ impl Wallet {
 
         let sync_response = self
             .electrum_client
-            .lock()
-            .await
             .inner
             .call_async("sync_wallet", move |client| {
                 let sync_request_factory = sync_request_factory.clone();
@@ -1613,32 +1615,37 @@ impl Client {
     /// Create a new client with multiple electrum servers for load balancing.
     pub async fn new(electrum_rpc_urls: &[String], sync_interval: Duration) -> Result<Self> {
         let balancer = ElectrumBalancer::new(electrum_rpc_urls.to_vec()).await?;
+        let initial_last_sync = Instant::now()
+            .checked_sub(sync_interval)
+            .ok_or(anyhow!("failed to set last sync time"))?;
 
         Ok(Self {
             inner: Arc::new(balancer),
-            script_history: Default::default(),
-            last_sync: Instant::now()
-                .checked_sub(sync_interval)
-                .ok_or(anyhow!("failed to set last sync time"))?,
+            script_history: Arc::new(TokioRwLock::new(BTreeMap::new())),
+            last_sync: Arc::new(SyncMutex::new(initial_last_sync)),
             sync_interval,
-            latest_block_height: BlockHeight::from(0),
-            subscriptions: Default::default(),
+            latest_block_height: Arc::new(SyncMutex::new(BlockHeight::from(0))),
+            subscriptions: Arc::new(TokioMutex::new(HashMap::new())),
         })
     }
 
     /// Update the client state, if the refresh duration has passed.
     ///
     /// Optionally force an update even if the sync interval has not passed.
-    pub async fn update_state(&mut self, force: bool) -> Result<()> {
+    pub async fn update_state(&self, force: bool) -> Result<()> {
         let now = Instant::now();
 
-        if !force && now.duration_since(self.last_sync) < self.sync_interval {
-            return Ok(());
+        if !force {
+            let last_sync = *self.last_sync.lock().expect("last_sync mutex poisoned");
+            if now.duration_since(last_sync) < self.sync_interval {
+                return Ok(());
+            }
         }
 
-        self.last_sync = now;
         self.update_script_histories().await?;
         self.update_block_height().await?;
+
+        *self.last_sync.lock().expect("last_sync mutex poisoned") = Instant::now();
 
         Ok(())
     }
@@ -1648,7 +1655,7 @@ impl Client {
     /// As opposed to [`update_state`] this function does not
     /// check the time since the last update before refreshing
     /// It therefore also does not take a [`force`] parameter
-    pub async fn update_state_single(&mut self, script: &dyn Watchable) -> Result<()> {
+    pub async fn update_state_single(&self, script: &dyn Watchable) -> Result<()> {
         self.update_script_history(script).await?;
         self.update_block_height().await?;
 
@@ -1656,7 +1663,7 @@ impl Client {
     }
 
     /// Update the block height.
-    async fn update_block_height(&mut self) -> Result<()> {
+    async fn update_block_height(&self) -> Result<()> {
         let latest_block = self
             .inner
             .call_async("block_headers_subscribe", |client| {
@@ -1666,20 +1673,24 @@ impl Client {
             .context("Failed to subscribe to header notifications")?;
         let latest_block_height = BlockHeight::try_from(latest_block)?;
 
-        if latest_block_height > self.latest_block_height {
+        let mut current = self
+            .latest_block_height
+            .lock()
+            .expect("latest_block_height mutex poisoned");
+        if latest_block_height > *current {
             tracing::trace!(
                 block_height = u32::from(latest_block_height),
                 "Got notification for new block"
             );
-            self.latest_block_height = latest_block_height;
+            *current = latest_block_height;
         }
 
         Ok(())
     }
 
     /// Update the script histories.
-    async fn update_script_histories(&mut self) -> Result<()> {
-        let scripts: Vec<_> = self.script_history.keys().cloned().collect();
+    async fn update_script_histories(&self) -> Result<()> {
+        let scripts: Vec<_> = self.script_history.read().await.keys().cloned().collect();
 
         // No need to do any network request if we have nothing to fetch
         if scripts.is_empty() {
@@ -1714,6 +1725,7 @@ impl Client {
 
         // Iterate through each script we fetched and find the highest
         // returned entry at any Electrum node
+        let mut script_history = self.script_history.write().await;
         for (script_index, script) in scripts.iter().enumerate() {
             let all_history_for_script: Vec<GetHistoryRes> = successful_results
                 .iter()
@@ -1735,14 +1747,14 @@ impl Client {
             }
 
             let final_history: Vec<GetHistoryRes> = best_history.into_values().collect();
-            self.script_history.insert(script.clone(), final_history);
+            script_history.insert(script.clone(), final_history);
         }
 
         Ok(())
     }
 
     /// Update the script history of a single script.
-    pub async fn update_script_history(&mut self, script: &dyn Watchable) -> Result<()> {
+    pub async fn update_script_history(&self, script: &dyn Watchable) -> Result<()> {
         let (script_buf, _) = script.script_and_txid();
         let script_clone = script_buf.clone();
 
@@ -1756,11 +1768,15 @@ impl Client {
 
         // Collect all successful history entries from all servers.
         let mut all_history_items: Vec<GetHistoryRes> = Vec::new();
+        let mut any_success = false;
         let mut first_error = None;
 
         for result in results {
             match result {
-                Ok(history) => all_history_items.extend(history),
+                Ok(history) => {
+                    any_success = true;
+                    all_history_items.extend(history);
+                }
                 Err(e) => {
                     if first_error.is_none() {
                         first_error = Some(e);
@@ -1769,12 +1785,10 @@ impl Client {
             }
         }
 
-        // If we got no history items at all, and there was an error, propagate it.
-        // Otherwise, it's valid for a script to have no history.
-        if all_history_items.is_empty() {
-            if let Some(err) = first_error {
-                return Err(err.into());
-            }
+        // If any of the calls succeeded, that is fine. Only if none
+        // succeeded we return the error.
+        if !any_success && let Some(err) = first_error {
+            return Err(err.into());
         }
 
         // Use a map to find the best (highest confirmation) entry for each transaction.
@@ -1792,7 +1806,10 @@ impl Client {
 
         let final_history: Vec<GetHistoryRes> = best_history.into_values().collect();
 
-        self.script_history.insert(script_buf, final_history);
+        self.script_history
+            .write()
+            .await
+            .insert(script_buf, final_history);
 
         Ok(())
     }
@@ -1818,15 +1835,23 @@ impl Client {
 
     /// Get the status of a script.
     pub async fn status_of_script(
-        &mut self,
+        &self,
         script: &dyn Watchable,
         force: bool,
     ) -> Result<ScriptStatus> {
         let (script_buf, txid) = script.script_and_txid();
 
-        if !self.script_history.contains_key(&script_buf) {
-            self.script_history.insert(script_buf.clone(), vec![]);
+        let is_first_time = {
+            let mut history = self.script_history.write().await;
+            if history.contains_key(&script_buf) {
+                false
+            } else {
+                history.insert(script_buf.clone(), vec![]);
+                true
+            }
+        };
 
+        if is_first_time {
             // Immediately refetch the status of the script
             // when we first subscribe to it.
             self.update_state_single(script).await?;
@@ -1839,10 +1864,12 @@ impl Client {
             self.update_state(false).await?;
         }
 
-        let history = self.script_history.entry(script_buf).or_default();
+        let history_guard = self.script_history.read().await;
+        let history = history_guard.get(&script_buf);
 
         let history_of_tx: Vec<&GetHistoryRes> = history
-            .iter()
+            .into_iter()
+            .flatten()
             .filter(|entry| entry.tx_hash == txid)
             .collect();
 
@@ -1857,6 +1884,11 @@ impl Client {
             tracing::warn!(%txid, "Found multiple history entries for the same txid. Ignoring all but the last one.");
         }
 
+        let latest_block_height = *self
+            .latest_block_height
+            .lock()
+            .expect("latest_block_height mutex poisoned");
+
         match last.height {
             // If the height is 0 or less, the transaction is still in the mempool.
             ..=0 => Ok(ScriptStatus::InMempool),
@@ -1864,7 +1896,7 @@ impl Client {
             height => Ok(ScriptStatus::Confirmed(
                 Confirmed::from_inclusion_and_latest_block(
                     u32::try_from(height)?,
-                    u32::from(self.latest_block_height),
+                    u32::from(latest_block_height),
                 ),
             )),
         }
@@ -2122,12 +2154,12 @@ impl BitcoinWallet for Wallet {
         Wallet::sign_and_finalize(self, psbt).await
     }
 
-    async fn broadcast(
+    async fn ensure_broadcasted(
         &self,
-        transaction: bitcoin::Transaction,
+        tx: bitcoin::Transaction,
         kind: &str,
     ) -> Result<(Txid, Subscription)> {
-        Wallet::broadcast(self, transaction, kind).await
+        Wallet::ensure_broadcasted(self, tx, kind).await
     }
 
     async fn sync(&self) -> Result<()> {
@@ -2220,7 +2252,7 @@ impl EstimateFeeRate for Client {
     }
 
     async fn min_relay_fee(&self) -> Result<FeeRate> {
-        self.min_relay_fee().await
+        Client::min_relay_fee(self).await
     }
 }
 
@@ -2550,7 +2582,7 @@ mod mempool_client {
     static BASE_URL: &str = "https://mempool.space";
 
     use super::EstimateFeeRate;
-    use anyhow::{bail, Context, Result};
+    use anyhow::{Context, Result, bail};
     use bitcoin::{FeeRate, Network};
     use serde::Deserialize;
     use std::time::Duration;
@@ -2638,11 +2670,11 @@ pub mod pre_1_0_0_bdk {
     use std::path::Path;
     use std::sync::Arc;
 
-    use anyhow::{anyhow, Result};
-    use bdk::bitcoin::util::bip32::ExtendedPrivKey;
-    use bdk::bitcoin::Network;
-    use bdk::sled::Tree;
+    use anyhow::{Result, anyhow};
     use bdk::KeychainKind;
+    use bdk::bitcoin::Network;
+    use bdk::bitcoin::util::bip32::ExtendedPrivKey;
+    use bdk::sled::Tree;
     use tokio::sync::Mutex as TokioMutex;
 
     use super::IntoArcMutex;
@@ -2848,7 +2880,7 @@ impl TestWalletBuilder {
 
         let wallet = Wallet {
             wallet: bdk_core_wallet.into_arc_mutex_async(),
-            electrum_client: client.into_arc_mutex_async(),
+            electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(None), // We don't use mempool client in tests
             persister: persister.into_arc_mutex_async(),
@@ -2893,6 +2925,14 @@ impl TestWalletBuilder {
 #[async_trait::async_trait]
 #[allow(unused)]
 impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
+    async fn ensure_broadcasted(
+        &self,
+        tx: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        unimplemented!("stub method called erroneously")
+    }
+
     async fn balance(&self) -> Result<Amount> {
         unimplemented!("stub method called erroneously")
     }
@@ -2929,14 +2969,6 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     async fn sign_and_finalize(&self, psbt: Psbt) -> Result<bitcoin::Transaction> {
-        unimplemented!("stub method called erroneously")
-    }
-
-    async fn broadcast(
-        &self,
-        transaction: bitcoin::Transaction,
-        kind: &str,
-    ) -> Result<(Txid, Subscription)> {
         unimplemented!("stub method called erroneously")
     }
 

@@ -44,13 +44,14 @@
 //! and begin pinging each other over Tor.
 
 use futures::StreamExt;
-use libp2p::core::upgrade::Version;
 use libp2p::Transport;
+use libp2p::core::upgrade::Version;
 use libp2p::{
+    Multiaddr, PeerId, SwarmBuilder,
     core::muxing::StreamMuxerBox,
     identity, noise,
     swarm::{NetworkBehaviour, SwarmEvent},
-    yamux, Multiaddr, PeerId, SwarmBuilder,
+    yamux,
 };
 use libp2p_tor::{AddressConversion, TorTransport};
 use std::error::Error;
@@ -86,7 +87,8 @@ async fn onion_transport(
         .build()
         .unwrap();
 
-    let onion_listen_address = transport.add_onion_service(svg_cfg, 999).unwrap();
+    let (onion_listen_address, _onion_service) =
+        transport.add_onion_service(svg_cfg, 999, 16).unwrap();
 
     let auth_upgrade = noise::Config::new(&keypair)?;
     let multiplex_upgrade = yamux::Config::default();

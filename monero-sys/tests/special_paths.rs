@@ -1,4 +1,4 @@
-use monero::Network;
+use monero_address::Network;
 use monero_sys::{Daemon, WalletHandle};
 use tempfile::tempdir;
 

@@ -1,8 +1,8 @@
 pub mod harness;
 
+use harness::FastPunishConfig;
 use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::bob_run_until::is_btc_locked;
-use harness::FastPunishConfig;
 use swap::asb;
 use swap::asb::FixedRate;
 use swap::protocol::alice::AliceState;
@@ -14,7 +14,7 @@ use swap::protocol::{alice, bob};
 /// punish command. Bob then cooperates with Alice and redeems XMR with her key.
 #[tokio::test]
 async fn alice_manually_punishes_after_bob_dead() {
-    harness::setup_test(FastPunishConfig, None, |mut ctx| async move {
+    harness::setup_test(FastPunishConfig, None, None, |mut ctx| async move {
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
         let bob_swap_id = bob_swap.id;
         let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_btc_locked));

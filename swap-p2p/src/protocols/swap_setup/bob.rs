@@ -1,7 +1,7 @@
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
 use crate::protocols::swap_setup::{
-    protocol, BlockchainNetwork, SpotPriceError, SpotPriceResponse,
+    BlockchainNetwork, SpotPriceError, SpotPriceResponse, protocol,
 };
 use anyhow::{Context, Result};
 use bitcoin_wallet::BitcoinWallet;
@@ -25,7 +25,7 @@ use swap_machine::bob::{State0, State2};
 use swap_machine::common::{Message1, Message3};
 use uuid::Uuid;
 
-use super::{read_cbor_message, write_cbor_message, SpotPriceRequest};
+use super::{SpotPriceRequest, read_cbor_message, write_cbor_error, write_cbor_message};
 
 // TODO: This should use redial::Behaviour to keep connections alive for peers with queued requests
 // TODO: Do not use swap_id as key inside the ConnectionHandler, use another key
@@ -174,7 +174,10 @@ impl NetworkBehaviour for Behaviour {
                 result,
             });
         } else {
-            debug_assert!(false, "Received a swap setup result from a connection handler for which we have no inflight request stored");
+            debug_assert!(
+                false,
+                "Received a swap setup result from a connection handler for which we have no inflight request stored"
+            );
         }
     }
 
@@ -326,6 +329,9 @@ pub struct NewSwap {
     pub btc: bitcoin::Amount,
     pub tx_lock_fee: bitcoin::Amount,
     pub tx_refund_fee: bitcoin::Amount,
+    pub tx_partial_refund_fee: bitcoin::Amount,
+    pub tx_reclaim_fee: bitcoin::Amount,
+    pub tx_mercy_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
     pub bitcoin_refund_address: bitcoin::Address,
 }
@@ -381,9 +387,12 @@ impl ConnectionHandler for Handler {
                     let result =
                         run_swap_setup(&mut substream, info, env_config, bitcoin_wallet).await;
 
-                    result.map_err(|err: anyhow::Error| {
-                        tracing::error!(?err, "Error occurred during swap setup protocol");
-                        Error::Protocol(format!("{:?}", err))
+                    result.map_err(|err| match err {
+                        SetupError::Rejected(reason) => Error::SwapRejected(reason),
+                        SetupError::Transient(e) => {
+                            tracing::error!(?e, "Error occurred during swap setup protocol");
+                            Error::Protocol(format!("{:?}", e))
+                        }
                     })
                 });
 
@@ -401,7 +410,10 @@ impl ConnectionHandler for Handler {
                 // In poll(..), we ensure that we never dispatch multiple concurrent swap setup requests for the same swap on the same ConnectionHandler
                 // This invariant should therefore never be violated
                 // TODO: Is this truly true?
-                assert!(!did_replace_existing_future, "Replacing an existing inflight swap setup request is not allowed. We should have checked for this invariant before instructing the Behaviour to start a substream.");
+                assert!(
+                    !did_replace_existing_future,
+                    "Replacing an existing inflight swap setup request is not allowed. We should have checked for this invariant before instructing the Behaviour to start a substream."
+                );
             }
             libp2p::swarm::handler::ConnectionEvent::DialUpgradeError(
                 libp2p::swarm::handler::DialUpgradeError { info, error },
@@ -462,7 +474,10 @@ impl ConnectionHandler for Handler {
                 );
 
                 // TODO: Potentially make this a production assert
-                debug_assert!(false, "Multiple concurrent swap setup requests with the same swap id are not allowed.");
+                debug_assert!(
+                    false,
+                    "Multiple concurrent swap setup requests with the same swap id are not allowed."
+                );
 
                 continue;
             }
@@ -478,7 +493,10 @@ impl ConnectionHandler for Handler {
                 );
 
                 // TODO: Potentially make this a production assert
-                debug_assert!(false, "Multiple concurrent substream negotiations for the same swap id are not allowed.");
+                debug_assert!(
+                    false,
+                    "Multiple concurrent substream negotiations for the same swap id are not allowed."
+                );
 
                 continue;
             }
@@ -512,13 +530,33 @@ impl ConnectionHandler for Handler {
     }
 }
 
+/// Distinguishes permanent rejections from transient errors during swap setup.
+enum SetupError {
+    /// The peer (or our own sanity check) explicitly rejected the swap.
+    Rejected(String),
+    /// A transient error (network, serialization, etc.) that may succeed on retry.
+    Transient(anyhow::Error),
+}
+
+impl From<anyhow::Error> for SetupError {
+    fn from(err: anyhow::Error) -> Self {
+        SetupError::Transient(err)
+    }
+}
+
+impl From<Error> for SetupError {
+    fn from(err: Error) -> Self {
+        SetupError::Transient(err.into())
+    }
+}
+
 // TODO: This is protocol and should be moved to another crate (probably swap-machine, swap-core or swap)
 async fn run_swap_setup(
     mut substream: &mut libp2p::swarm::Stream,
     new_swap_request: NewSwap,
     env_config: env::Config,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
-) -> Result<State2> {
+) -> Result<State2, SetupError> {
     // Here we request the spot price from Alice
     write_cbor_message(
         &mut substream,
@@ -533,14 +571,11 @@ async fn run_swap_setup(
     .await
     .context("Failed to send spot price request to Alice")?;
 
-    // Here we read the spot price response from Alice
-    // The outer ? checks if Alice responded with an error (SpotPriceError)
     let xmr = Result::from(
-        // The inner ? is for the read_cbor_message function
-        // It will return an error if the deserialization fails
         read_cbor_message::<SpotPriceResponse>(&mut substream)
             .await
-            .context("Failed to read spot price response from Alice")?,
+            .context("Failed to read spot price response from Alice")?
+            .context("Peer sent an error instead of spot price response")?,
     )?;
 
     tracing::trace!(
@@ -557,8 +592,12 @@ async fn run_swap_setup(
         xmr,
         env_config.bitcoin_cancel_timelock.into(),
         env_config.bitcoin_punish_timelock.into(),
+        env_config.bitcoin_remaining_refund_timelock.into(),
         new_swap_request.bitcoin_refund_address.clone(),
         env_config.monero_finality_confirmations,
+        new_swap_request.tx_partial_refund_fee,
+        new_swap_request.tx_reclaim_fee,
+        new_swap_request.tx_mercy_fee,
         new_swap_request.tx_refund_fee,
         new_swap_request.tx_cancel_fee,
         new_swap_request.tx_lock_fee,
@@ -569,12 +608,34 @@ async fn run_swap_setup(
         "Transitioned into state0 during swap setup",
     );
 
-    write_cbor_message(&mut substream, state0.next_message())
+    write_cbor_message(
+        &mut substream,
+        state0
+            .next_message()
+            .context("Couldn't generate Message0")?,
+    )
+    .await
+    .context("Failed to send state0 message to Alice")?;
+    let message1 = match read_cbor_message::<Message1>(&mut substream)
         .await
-        .context("Failed to send state0 message to Alice")?;
-    let message1 = read_cbor_message::<Message1>(&mut substream)
-        .await
-        .context("Failed to read message1 from Alice")?;
+        .context("Failed to read message1 from Alice")?
+    {
+        Ok(msg) => msg,
+        Err(setup_err) => return Err(SetupError::Rejected(setup_err.to_string())),
+    };
+
+    if let Err(sanity_err) = swap_machine::common::sanity_check_amnesty_amount(
+        new_swap_request.btc,
+        message1.amnesty_amount,
+        new_swap_request.tx_partial_refund_fee,
+        new_swap_request.tx_reclaim_fee,
+        message1.tx_withhold_fee,
+        new_swap_request.tx_mercy_fee,
+    ) {
+        let _ = write_cbor_error(&mut substream, sanity_err.clone().into()).await;
+        return Err(SetupError::Rejected(sanity_err.to_string()));
+    }
+
     let state1 = state0
         .receive(bitcoin_wallet.as_ref(), message1)
         .await
@@ -588,9 +649,13 @@ async fn run_swap_setup(
     write_cbor_message(&mut substream, state1.next_message())
         .await
         .context("Failed to send state1 message")?;
-    let message3 = read_cbor_message::<Message3>(&mut substream)
+    let message3 = match read_cbor_message::<Message3>(&mut substream)
         .await
-        .context("Failed to read message3 from Alice")?;
+        .context("Failed to read message3 from Alice")?
+    {
+        Ok(msg) => msg,
+        Err(setup_err) => return Err(SetupError::Rejected(setup_err.to_string())),
+    };
     let state2 = state1
         .receive(message3)
         .context("Failed to receive state2")?;
@@ -600,9 +665,14 @@ async fn run_swap_setup(
         "Transitioned into state2 during swap setup",
     );
 
-    write_cbor_message(&mut substream, state2.next_message())
-        .await
-        .context("Failed to send state2 message")?;
+    write_cbor_message(
+        &mut substream,
+        state2
+            .next_message()
+            .context("Couldn't construct Message4")?,
+    )
+    .await
+    .context("Failed to send state2 message")?;
 
     substream
         .flush()
@@ -644,10 +714,14 @@ pub enum Error {
         max: bitcoin::Amount,
         buy: bitcoin::Amount,
     },
-    #[error("Seller's XMR balance is currently too low to fulfill the swap request to buy {buy}, please try again later")]
+    #[error(
+        "Seller's XMR balance is currently too low to fulfill the swap request to buy {buy}, please try again later"
+    )]
     BalanceTooLow { buy: bitcoin::Amount },
 
-    #[error("Seller blockchain network {asb:?} setup did not match your blockchain network setup {cli:?}")]
+    #[error(
+        "Seller blockchain network {asb:?} setup did not match your blockchain network setup {cli:?}"
+    )]
     BlockchainNetworkMismatch {
         cli: BlockchainNetwork,
         asb: BlockchainNetwork,
@@ -660,6 +734,11 @@ pub enum Error {
     /// but where we have some context about the error
     #[error("Something went wrong during the swap setup protocol: {0}")]
     Protocol(String),
+
+    /// The peer explicitly rejected the swap setup (e.g. anti-spam deposit too small).
+    /// This is a permanent error that should not be retried.
+    #[error("Swap rejected: {0}")]
+    SwapRejected(String),
 
     /// To be used for errors that cannot be explained on the CLI side (e.g.
     /// rate update problems on the seller side)

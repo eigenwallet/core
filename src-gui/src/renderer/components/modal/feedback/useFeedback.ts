@@ -49,13 +49,12 @@ export function useFeedback() {
   });
   const [logsState, setLogsState] =
     useState<FeedbackLogsState>(initialLogsState);
-  const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const bodyTooLong = inputState.bodyText.length > MAX_FEEDBACK_LENGTH;
-
+  // Fetch swap logs when selection changes
   useEffect(() => {
     if (inputState.selectedSwap === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear when deselected
       setLogsState((prev) => ({ ...prev, swapLogs: [] }));
       return;
     }
@@ -76,41 +75,33 @@ export function useFeedback() {
       });
   }, [inputState.selectedSwap, inputState.isSwapLogsRedacted]);
 
+  // Fetch/process daemon logs when settings change
   useEffect(() => {
     if (!inputState.attachDaemonLogs) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear when detached
       setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
       return;
     }
 
-    try {
-      const hashedLogs = store.getState().logs?.state.logs ?? [];
+    const hashedLogs = store.getState().logs?.state.logs ?? [];
 
-      if (inputState.isDaemonLogsRedacted) {
-        const logs = hashedLogs.map((h) => h.log);
-        redactLogs(logs)
-          .then((redactedLogs) => {
-            setLogsState((prev) => ({
-              ...prev,
-              daemonLogs: hashLogs(redactedLogs),
-            }));
-            setError(null);
-          })
-          .catch((e) => {
-            logger.error(`Failed to redact daemon logs: ${e}`);
-            setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
-            setError(`Failed to redact daemon logs: ${e}`);
-          });
-      } else {
-        setLogsState((prev) => ({
-          ...prev,
-          daemonLogs: hashedLogs,
-        }));
-        setError(null);
-      }
-    } catch (e) {
-      logger.error(`Failed to fetch daemon logs: ${e}`);
-      setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
-      setError(`Failed to fetch daemon logs: ${e}`);
+    if (inputState.isDaemonLogsRedacted) {
+      const logs = hashedLogs.map((h) => h.log);
+      redactLogs(logs)
+        .then((redactedLogs) => {
+          setLogsState((prev) => ({
+            ...prev,
+            daemonLogs: hashLogs(redactedLogs),
+          }));
+          setError(null);
+        })
+        .catch((e) => {
+          logger.error(`Failed to redact daemon logs: ${e}`);
+          setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
+          setError(`Failed to redact daemon logs: ${e}`);
+        });
+    } else {
+      setLogsState((prev) => ({ ...prev, daemonLogs: hashedLogs }));
     }
   }, [inputState.attachDaemonLogs, inputState.isDaemonLogsRedacted]);
 

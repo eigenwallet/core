@@ -1,7 +1,7 @@
-use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
-use anyhow::{bail, Result};
-use bitcoin_wallet::{parse_rpc_error_code, BitcoinWallet, RpcErrorCode, Txid};
+use crate::protocol::alice::AliceState;
+use anyhow::{Result, bail};
+use bitcoin_wallet::{BitcoinWallet, RpcErrorCode, Txid, parse_rpc_error_code};
 use std::convert::TryInto;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -30,6 +30,8 @@ pub async fn cancel(
         | AliceState::CancelTimelockExpired { monero_wallet_restore_blockheight, transfer_proof, state3}
         | AliceState::BtcCancelled { monero_wallet_restore_blockheight, transfer_proof, state3 }
         | AliceState::BtcRefunded { monero_wallet_restore_blockheight, transfer_proof,  state3 ,.. }
+        | AliceState::BtcPartiallyRefunded { monero_wallet_restore_blockheight, transfer_proof,  state3 ,.. }
+        | AliceState::XmrRefundable { monero_wallet_restore_blockheight, transfer_proof,  state3 ,.. }
         | AliceState::BtcPunishable { monero_wallet_restore_blockheight, transfer_proof, state3 }  => {
             (monero_wallet_restore_blockheight, transfer_proof, state3)
         }
@@ -39,7 +41,14 @@ pub async fn cancel(
 
         // Alice already in final state
         | AliceState::BtcRedeemed
-        | AliceState::XmrRefunded
+        | AliceState::XmrRefundTxConstructed { .. }
+        | AliceState::XmrRefundTxPublished { .. }
+        | AliceState::XmrRefunded { .. }
+        | AliceState::BtcWithholdPublished { .. }
+        | AliceState::BtcWithholdConfirmed { .. }
+        | AliceState::BtcMercyGranted { .. }
+        | AliceState::BtcMercyPublished { .. }
+        | AliceState::BtcMercyConfirmed { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)
         | AliceState::BtcPunished { .. }

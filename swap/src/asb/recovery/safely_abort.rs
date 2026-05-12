@@ -1,6 +1,6 @@
-use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
-use anyhow::{bail, Result};
+use crate::protocol::alice::AliceState;
+use anyhow::{Result, bail};
 use std::convert::TryInto;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -29,9 +29,18 @@ pub async fn safely_abort(swap_id: Uuid, db: Arc<dyn Database>) -> Result<AliceS
         | AliceState::CancelTimelockExpired { .. }
         | AliceState::BtcCancelled { .. }
         | AliceState::BtcRefunded { .. }
+        | AliceState::BtcPartiallyRefunded { .. }
+        | AliceState::XmrRefundable { .. }
         | AliceState::BtcPunishable { .. }
         | AliceState::BtcRedeemed
-        | AliceState::XmrRefunded
+        | AliceState::XmrRefundTxConstructed { .. }
+        | AliceState::XmrRefundTxPublished { .. }
+        | AliceState::XmrRefunded { .. }
+        | AliceState::BtcWithholdPublished { .. }
+        | AliceState::BtcWithholdConfirmed { .. }
+        | AliceState::BtcMercyGranted { .. }
+        | AliceState::BtcMercyPublished { .. }
+        | AliceState::BtcMercyConfirmed { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)
         | AliceState::BtcPunished { .. }

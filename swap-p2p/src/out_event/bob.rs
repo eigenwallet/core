@@ -1,10 +1,10 @@
-use libp2p::{identify, ping};
 use libp2p::{
+    Multiaddr, PeerId,
     request_response::{
         InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
     },
-    Multiaddr, PeerId,
 };
+use libp2p::{identify, ping};
 
 use crate::observe;
 use crate::protocols::{
@@ -110,6 +110,12 @@ impl From<rendezvous::discovery::Event> for OutEvent {
 impl From<observe::Event> for OutEvent {
     fn from(event: observe::Event) -> Self {
         OutEvent::Observe(event)
+    }
+}
+
+impl From<void::Void> for OutEvent {
+    fn from(event: void::Void) -> Self {
+        void::unreachable(event)
     }
 }
 

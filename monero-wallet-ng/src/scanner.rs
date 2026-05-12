@@ -111,7 +111,7 @@ mod fetcher {
 
     use monero_interface::{ProvidesBlockchainMeta, ProvidesScannableBlocks, ScannableBlock};
 
-    use super::{BlockAtHeight, BLOCKS_PER_BATCH};
+    use super::{BLOCKS_PER_BATCH, BlockAtHeight};
     use crate::retry::Backoff;
 
     pub(super) async fn run<P>(
@@ -228,7 +228,7 @@ mod fetcher {
 mod scanner {
     use monero_oxide_wallet::{Scanner, ViewPair, WalletOutput};
 
-    use super::{BlockAtHeight, BLOCKS_PER_BATCH};
+    use super::{BLOCKS_PER_BATCH, BlockAtHeight};
 
     pub(super) async fn run(
         view_pair: ViewPair,

@@ -17,6 +17,7 @@ export const NEGATIVE_NODES_MAINNET = [
   "tcp://electrum.coinucopia.io:50001",
   "tcp://se-mma-crypto-payments-001.mullvad.net:50001",
   "tcp://electrum2.bluewallet.io:50777",
+  "tcp://electrum.eigenwallet.org:22293",
 ];
 
 export const NEGATIVE_NODES_TESTNET = [
@@ -26,6 +27,8 @@ export const NEGATIVE_NODES_TESTNET = [
   "ssl://testnet.qtornado.com:50002",
   "ssl://testnet.qtornado.com:51002",
   "tcp://testnet.qtornado.com:51001",
+  "ssl://bitcoin.devmole.eu:5010",
+  "tcp://bitcoin.devmole.eu:5000",
 ];
 
 export const DEFAULT_NODES: Record<Network, Record<Blockchain, string[]>> = {
@@ -38,14 +41,11 @@ export const DEFAULT_NODES: Record<Network, Record<Blockchain, string[]>> = {
       "ssl://blockstream.info:993",
       "tcp://testnet.aranguren.org:51001",
       "ssl://testnet.aranguren.org:51002",
-      "ssl://bitcoin.devmole.eu:5010",
-      "tcp://bitcoin.devmole.eu:5000",
     ],
     [Blockchain.Monero]: [],
   },
   [Network.Mainnet]: {
     [Blockchain.Bitcoin]: [
-      "tcp://electrum.eigenwallet.org:22293",
       "ssl://electrum.blockstream.info:50002",
       "ssl://bitcoin.stackwallet.com:50002",
       "ssl://b.1209k.com:50002",

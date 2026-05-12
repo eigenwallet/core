@@ -1,8 +1,8 @@
 [package]
 name = "swap-feed"
-version = "0.1.0"
+version = "4.0.0"
 authors = ["The COMIT guys <hello@comit.network>"]
-edition = "2021"
+edition = "2024"
 description = "Price feed functionality for XMR/BTC atomic swaps"
 
 [lib]
@@ -13,7 +13,7 @@ anyhow = { workspace = true }
 backoff = { workspace = true }
 bitcoin = { workspace = true }
 futures = { workspace = true }
-monero = { workspace = true }
+monero-oxide-ext = { path = "../monero-oxide-ext" }
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

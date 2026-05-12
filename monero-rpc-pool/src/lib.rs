@@ -3,8 +3,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use arti_client::TorClient;
 use axum::{
-    routing::{any, get},
     Router,
+    routing::{any, get},
 };
 
 use tokio::task::JoinHandle;

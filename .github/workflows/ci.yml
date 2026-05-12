@@ -87,14 +87,14 @@ jobs:
           - target: x86_64-pc-windows-gnu
             os: ubuntu-22.04
 
-    runs-on: ${{ matrix.host }}
+    runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ${{ matrix.host }}
+          host: ${{ matrix.os }}
           target: ${{ matrix.target }}
 
       - name: Build binary
@@ -117,21 +117,21 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-15]
-    runs-on: ${{ matrix.host }}
+    runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ${{ matrix.host }}
+          host: ${{ matrix.os }}
 
       - name: Run monero-harness tests
-        if: matrix.host == 'ubuntu-22.04'
+        if: matrix.os == 'ubuntu-22.04'
         run: cargo test --package monero-harness --all-features
 
-      - name: Run library tests for swap
-        run: cargo test --package swap --lib
+      - name: Run library tests
+        run: cargo test  --lib
 
   docker_tests:
     strategy:
@@ -144,6 +144,10 @@ jobs:
             test_name: happy_path_alice_developer_tip
           - package: swap
             test_name: happy_path_alice_developer_tip_subaddress
+          - package: swap
+            test_name: happy_path_bob_donates_to_developer
+          - package: swap
+            test_name: happy_path_bob_donates_to_developer_subaddress
           - package: swap
             test_name: happy_path_restart_bob_after_xmr_locked
           - package: swap
@@ -182,6 +186,24 @@ jobs:
             test_name: alice_broken_wallet_rpc_after_started_btc_early_refund
           - package: swap
             test_name: happy_path_alice_does_not_send_transfer_proof
+          - package: swap
+            test_name: partial_refund_bob_claims_amnesty
+          - package: swap
+            test_name: partial_refund_alice_burns
+          - package: swap
+            test_name: partial_refund_alice_grants_final_amnesty
+          - package: swap
+            test_name: swap_rejected_deposit_too_small
+          - package: swap
+            test_name: partial_refund_bob_restart_detects_withhold
+          - package: swap
+            test_name: alice_and_bob_refund_using_cancel_and_refund_command_partial_refund
+          - package: swap
+            test_name: alice_and_bob_refund_using_cancel_and_refund_command_partial_refund_withheld
+          - package: swap
+            test_name: bob_refunds_when_xmr_amount_is_not_exact
+          - package: monero-sys
+            test_name: restore_wallet
           - package: monero-tests
             test_name: reserve_proof
           - package: monero-tests
@@ -190,6 +212,8 @@ jobs:
             test_name: transfers
           - package: monero-tests
             test_name: transfers_wrong_key
+          - package: monero-tests
+            test_name: sweep
 
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft

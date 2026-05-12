@@ -1,8 +1,8 @@
 pub mod harness;
 
+use harness::FastPunishConfig;
 use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::bob_run_until::is_btc_locked;
-use harness::FastPunishConfig;
 use swap::asb;
 use swap::asb::FixedRate;
 use swap::cli;
@@ -14,7 +14,7 @@ use swap::protocol::{alice, bob};
 /// punish command. Then Bob tries to refund.
 #[tokio::test]
 async fn alice_manually_punishes_after_bob_dead_and_bob_cancels() {
-    harness::setup_test(FastPunishConfig, None, |mut ctx| async move {
+    harness::setup_test(FastPunishConfig, None, None, |mut ctx| async move {
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
         let bob_swap_id = bob_swap.id;
         let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_btc_locked));
@@ -77,20 +77,20 @@ async fn alice_manually_punishes_after_bob_dead_and_bob_cancels() {
         bob_join_handle.abort();
 
         let (_, state) = cli::cancel(bob_swap_id, bob_swap.bitcoin_wallet, bob_swap.db).await?;
-        // Bob should be in BtcCancelled state now.
-        assert!(matches!(state, BobState::BtcCancelled { .. }));
+        // Bob should be in BtcCancelPublished state now.
+        assert!(matches!(state, BobState::BtcCancelPublished { .. }));
 
         let (bob_swap, _) = ctx
             .stop_and_resume_bob_from_db(bob_join_handle, bob_swap_id)
             .await;
-        assert!(matches!(bob_swap.state, BobState::BtcCancelled { .. }));
+        assert!(matches!(bob_swap.state, BobState::BtcCancelPublished { .. }));
         // Alice punished Bob, so he should be in the BtcPunished state.
         let error = cli::refund(bob_swap_id, bob_swap.bitcoin_wallet, bob_swap.db)
             .await
             .unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Cannot refund swap because we have already been punished"
+            "Cannot refund swap because we have already been punished. Resume the swap to attempt cooperative redeem."
         );
         Ok(())
     })

@@ -106,12 +106,59 @@ impl PartialEq<PunishTimelock> for u32 {
     }
 }
 
+/// How long a taker has to wait to refund the remaining Bitcoin after publishing
+/// TxPartialRefund.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(transparent)]
+#[typeshare]
+pub struct RemainingRefundTimelock(pub u32);
+
+impl From<RemainingRefundTimelock> for u32 {
+    fn from(remainin_refund_timelock: RemainingRefundTimelock) -> Self {
+        remainin_refund_timelock.0
+    }
+}
+
+impl From<u32> for RemainingRefundTimelock {
+    fn from(number_of_blocks: u32) -> Self {
+        Self(number_of_blocks)
+    }
+}
+
+impl RemainingRefundTimelock {
+    pub const fn new(number_of_blocks: u32) -> Self {
+        Self(number_of_blocks)
+    }
+}
+
+impl Add<RemainingRefundTimelock> for BlockHeight {
+    type Output = BlockHeight;
+
+    fn add(self, rhs: RemainingRefundTimelock) -> Self::Output {
+        self + rhs.0
+    }
+}
+
+impl PartialOrd<RemainingRefundTimelock> for u32 {
+    fn partial_cmp(&self, other: &RemainingRefundTimelock) -> Option<Ordering> {
+        self.partial_cmp(&other.0)
+    }
+}
+
+impl PartialEq<RemainingRefundTimelock> for u32 {
+    fn eq(&self, other: &RemainingRefundTimelock) -> bool {
+        self.eq(&other.0)
+    }
+}
+
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(tag = "type", content = "content")]
 pub enum ExpiredTimelocks {
     None { blocks_left: u32 },
     Cancel { blocks_left: u32 },
+    WaitingForRemainingRefund { blocks_left: u32 },
+    RemainingRefund,
     Punish,
 }
 
@@ -130,8 +177,8 @@ mod tests {
     use crate::bitcoin::*;
     use bitcoin::secp256k1;
     use bitcoin_wallet::*;
-    use ecdsa_fun::fun::marker::{NonZero, Public};
     use ecdsa_fun::fun::Point;
+    use ecdsa_fun::fun::marker::{NonZero, Public};
     use rand::rngs::OsRng;
 
     #[test]
@@ -142,8 +189,10 @@ mod tests {
         let expired_timelock = current_epoch(
             CancelTimelock::new(5),
             PunishTimelock::new(5),
+            None,
             tx_lock_status,
             tx_cancel_status,
+            None,
         );
 
         assert!(matches!(expired_timelock, ExpiredTimelocks::None { .. }));
@@ -157,8 +206,10 @@ mod tests {
         let expired_timelock = current_epoch(
             CancelTimelock::new(5),
             PunishTimelock::new(5),
+            None,
             tx_lock_status,
             tx_cancel_status,
+            None,
         );
 
         assert!(matches!(expired_timelock, ExpiredTimelocks::Cancel { .. }));
@@ -172,11 +223,52 @@ mod tests {
         let expired_timelock = current_epoch(
             CancelTimelock::new(5),
             PunishTimelock::new(5),
+            None,
             tx_lock_status,
             tx_cancel_status,
+            None,
         );
 
         assert_eq!(expired_timelock, ExpiredTimelocks::Punish)
+    }
+
+    #[test]
+    fn partial_refund_confirmed_waiting_for_remaining_refund_timelock() {
+        let tx_lock_status = ScriptStatus::from_confirmations(10);
+        let tx_cancel_status = ScriptStatus::from_confirmations(5);
+        let tx_partial_refund_status = ScriptStatus::from_confirmations(2);
+
+        let expired_timelock = current_epoch(
+            CancelTimelock::new(5),
+            PunishTimelock::new(10),
+            Some(RemainingRefundTimelock::new(5)),
+            tx_lock_status,
+            tx_cancel_status,
+            Some(tx_partial_refund_status),
+        );
+
+        assert!(matches!(
+            expired_timelock,
+            ExpiredTimelocks::WaitingForRemainingRefund { .. }
+        ));
+    }
+
+    #[test]
+    fn partial_refund_remaining_timelock_expired() {
+        let tx_lock_status = ScriptStatus::from_confirmations(10);
+        let tx_cancel_status = ScriptStatus::from_confirmations(5);
+        let tx_partial_refund_status = ScriptStatus::from_confirmations(5);
+
+        let expired_timelock = current_epoch(
+            CancelTimelock::new(5),
+            PunishTimelock::new(10),
+            Some(RemainingRefundTimelock::new(5)),
+            tx_lock_status,
+            tx_cancel_status,
+            Some(tx_partial_refund_status),
+        );
+
+        assert_eq!(expired_timelock, ExpiredTimelocks::RemainingRefund);
     }
 
     #[test]
@@ -186,7 +278,10 @@ mod tests {
 
         // It should be the same as TxRedeem and TxRefund weights since they have similar structure
         assert_eq!(TxEarlyRefund::weight() as u64, TxRedeem::weight().to_wu());
-        assert_eq!(TxEarlyRefund::weight() as u64, TxRefund::weight().to_wu());
+        assert_eq!(
+            TxEarlyRefund::weight() as u64,
+            TxFullRefund::weight().to_wu()
+        );
     }
 
     #[test]

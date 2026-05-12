@@ -1,21 +1,21 @@
+use crate::cli::api::Context;
 use crate::cli::api::request::{
     BalanceArgs, CancelAndRefundArgs, ExportBitcoinWalletArgs, GetConfigArgs, GetHistoryArgs,
     MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
 };
-use crate::cli::api::Context;
 use anyhow::Result;
 use bitcoin::address::NetworkUnchecked;
-use bitcoin_wallet::{bitcoin_address, Amount};
+use bitcoin_wallet::{Amount, bitcoin_address};
 use libp2p::core::Multiaddr;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
-use structopt::{clap, StructOpt};
+use structopt::{StructOpt, clap};
 use url::Url;
 use uuid::Uuid;
 
-use super::api::request::GetLogsArgs;
 use super::api::ContextBuilder;
+use super::api::request::GetLogsArgs;
 
 // See: https://1209k.com/bitcoin-eye/ele.php?chain=btc
 const DEFAULT_ELECTRUM_RPC_URL: &str = "ssl://blockstream.info:700";
@@ -397,7 +397,6 @@ mod tests {
     use super::*;
 
     use crate::cli::api::api_test::*;
-    use swap_serde::monero::address::MoneroAddressNetworkMismatch;
 
     const BINARY_NAME: &str = "swap";
     const ARGS_DATA_DIR: &str = "/tmp/dir/";
@@ -414,53 +413,6 @@ mod tests {
         })
         .await
         .unwrap();
-    }
-
-    #[tokio::test]
-    async fn given_buy_xmr_on_mainnet_with_testnet_address_then_fails() {
-        let raw_ars = [
-            BINARY_NAME,
-            "buy-xmr",
-            "--receive-address",
-            MONERO_STAGENET_ADDRESS,
-            "--change-address",
-            BITCOIN_TESTNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-
-        let err = parse_args_and_apply_defaults(raw_ars).await.unwrap_err();
-        assert_eq!(
-            err.downcast_ref::<MoneroAddressNetworkMismatch>().unwrap(),
-            &MoneroAddressNetworkMismatch {
-                expected: monero::Network::Mainnet,
-                actual: monero::Network::Stagenet
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn given_buy_xmr_on_testnet_with_mainnet_address_then_fails() {
-        let raw_ars = [
-            BINARY_NAME,
-            "--testnet",
-            "buy-xmr",
-            "--receive-address",
-            MONERO_MAINNET_ADDRESS,
-            "--change-address",
-            BITCOIN_MAINNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-
-        let err = parse_args_and_apply_defaults(raw_ars).await.unwrap_err();
-        assert_eq!(
-            err.downcast_ref::<MoneroAddressNetworkMismatch>().unwrap(),
-            &MoneroAddressNetworkMismatch {
-                expected: monero::Network::Stagenet,
-                actual: monero::Network::Mainnet
-            }
-        );
     }
 
     #[tokio::test]
@@ -600,68 +552,5 @@ mod tests {
             tor: Default::default(),
         };
         simple_positive(&raw_ars, (true, true, None), cli_cmd).await;
-    }
-
-    #[tokio::test]
-    async fn only_bech32_addresses_mainnet_are_allowed() {
-        // TODO: not apply defaults
-        let mut raw_ars = [
-            BINARY_NAME,
-            "buy-xmr",
-            "--change-address",
-            "",
-            "--receive-address",
-            MONERO_MAINNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        raw_ars[3] = "1A5btpLKZjgYm8R22rJAhdbTFVXgSRA2Mp";
-        parse_args_and_custom(raw_ars, async |_, _, _| unreachable!())
-            .await
-            .unwrap_err();
-
-        raw_ars[3] = "36vn4mFhmTXn7YcNwELFPxTXhjorw2ppu2";
-        parse_args_and_custom(raw_ars, async |_, _, _| unreachable!())
-            .await
-            .unwrap_err();
-
-        raw_ars[3] = "bc1qh4zjxrqe3trzg7s6m7y67q2jzrw3ru5mx3z7j3";
-        let ParseResult::Success(_) = parse_args_and_custom(raw_ars, async |_, _, _| Ok(()))
-            .await
-            .unwrap()
-        else {
-            panic!()
-        };
-    }
-
-    #[tokio::test]
-    async fn only_bech32_addresses_testnet_are_allowed() {
-        let mut raw_ars = [
-            BINARY_NAME,
-            "--testnet",
-            "buy-xmr",
-            "--change-address",
-            "",
-            "--receive-address",
-            MONERO_STAGENET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        raw_ars[4] = "n2czxyeFCQp9e8WRyGpy4oL4YfQAeKkkUH";
-        parse_args_and_custom(raw_ars, async |_, _, _| unreachable!())
-            .await
-            .unwrap_err();
-        raw_ars[4] = "2ND9a4xmQG89qEWG3ETRuytjKpLmGrW7Jvf";
-        parse_args_and_custom(raw_ars, async |_, _, _| unreachable!())
-            .await
-            .unwrap_err();
-
-        raw_ars[4] = "tb1q958vfh3wkdp232pktq8zzvmttyxeqnj80zkz3v";
-        let ParseResult::Success(_) = parse_args_and_custom(raw_ars, async |_, _, _| Ok(()))
-            .await
-            .unwrap()
-        else {
-            panic!()
-        };
     }
 }

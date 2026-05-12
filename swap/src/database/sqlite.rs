@@ -5,11 +5,11 @@ use crate::monero::LabeledMoneroAddress;
 use crate::monero::MoneroAddressPool;
 use crate::monero::TransferProof;
 use crate::protocol::{Database, State};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use sqlx::sqlite::{Sqlite, SqliteConnectOptions};
 use sqlx::{ConnectOptions, Pool, SqlitePool};
 use std::path::Path;
@@ -163,10 +163,12 @@ impl Database for SqliteDatabase {
         let addresses = row
             .iter()
             .map(|row| -> Result<LabeledMoneroAddress> {
-                let address: Option<monero::Address> = row
+                let address = row
                     .address
-                    .clone()
-                    .map(|address| address.parse())
+                    .as_ref()
+                    .map(|address| {
+                        monero_address::MoneroAddress::from_str_with_unchecked_network(&address)
+                    })
                     .transpose()?;
                 let percentage = Decimal::from_f64(row.percentage).expect("Invalid percentage");
                 let label = row.label.clone();
@@ -183,7 +185,7 @@ impl Database for SqliteDatabase {
         Ok(MoneroAddressPool::new(addresses))
     }
 
-    async fn get_monero_addresses(&self) -> Result<Vec<monero::Address>> {
+    async fn get_monero_addresses(&self) -> Result<Vec<monero_address::MoneroAddress>> {
         let rows =
             sqlx::query!("SELECT DISTINCT address FROM monero_addresses WHERE address IS NOT NULL")
                 .fetch_all(&self.pool)
@@ -191,7 +193,7 @@ impl Database for SqliteDatabase {
 
         let addresses = rows
             .iter()
-            .filter_map(|row| row.address.as_ref().and_then(|address| address.parse().inspect_err(|e| tracing::error!(%address, error = ?e, "Failed to parse monero address")).ok()))
+            .filter_map(|row| row.address.as_ref().and_then(|address| monero_address::MoneroAddress::from_str_with_unchecked_network(address).inspect_err(|e| tracing::error!(%address, error = ?e, "Failed to parse monero address")).ok()))
             .collect::<Vec<_>>();
 
         Ok(addresses)
@@ -349,15 +351,16 @@ impl Database for SqliteDatabase {
         Ok(swap.into())
     }
 
-    async fn all(&self) -> Result<Vec<(Uuid, State)>> {
+    async fn all(&self) -> Result<Vec<(PeerId, Uuid, State)>> {
         let rows = sqlx::query!(
             r#"
-            SELECT swap_id, state
+            SELECT s.swap_id, s.state, p.peer_id
             FROM (
                 SELECT max(id), swap_id, state
                 FROM swap_states
                 GROUP BY swap_id
-            )
+            ) s
+            INNER JOIN peers p ON s.swap_id = p.swap_id
         "#
         )
         .fetch_all(&self.pool)
@@ -366,19 +369,21 @@ impl Database for SqliteDatabase {
         let result = rows
             .iter()
             .filter_map(|row| {
-                let (Some(swap_id), Some(state)) = (&row.swap_id, &row.state) else {
-                    tracing::error!("Row didn't contain state or swap_id when it should have");
-                    return None;
-                };
-
-                let swap_id = match Uuid::from_str(swap_id) {
+                let swap_id = match Uuid::from_str(&row.swap_id) {
                     Ok(id) => id,
                     Err(e) => {
-                        tracing::error!(%swap_id, error = ?e, "Failed to parse UUID");
+                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Failed to parse UUID");
                         return None;
                     }
                 };
-                let state = match serde_json::from_str::<Swap>(state) {
+                let peer_id = match PeerId::from_str(&row.peer_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to parse PeerId");
+                        return None;
+                    }
+                };
+                let state = match serde_json::from_str::<Swap>(&row.state) {
                     Ok(a) => State::from(a),
                     Err(e) => {
                         tracing::error!(%swap_id, error = ?e, "Failed to deserialize state");
@@ -386,9 +391,90 @@ impl Database for SqliteDatabase {
                     }
                 };
 
-                Some((swap_id, state))
+                Some((peer_id, swap_id, state))
             })
-            .collect::<Vec<(Uuid, State)>>();
+            .collect();
+
+        Ok(result)
+    }
+
+    /// Same as [`all`] except paginated, and returns both the first and last
+    /// recorded state per swap. Swaps that never progressed past
+    /// `SafelyAborted` are filtered out. `limit` and `offset` must each fit
+    /// into `i32`.
+    async fn all_paginated(
+        &self,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<(PeerId, Uuid, State, State)>> {
+        // sqlite only accepts signed integers, but we want to expose a
+        // sensible api
+        let limit = i32::try_from(limit)?;
+        let offset = i32::try_from(offset)?;
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                peers.peer_id,
+                oldest.swap_id,
+                oldest.state       AS "first_state!: String",
+                newest.state       AS "last_state!: String",
+                oldest.entered_at  AS start_date
+            FROM (SELECT swap_id, state, MIN(entered_at) AS entered_at
+                  FROM swap_states GROUP BY swap_id) oldest
+            JOIN (SELECT swap_id, state, MAX(entered_at) AS entered_at
+                  FROM swap_states GROUP BY swap_id) newest
+                ON newest.swap_id = oldest.swap_id
+            JOIN peers ON peers.swap_id = oldest.swap_id
+            WHERE NOT (
+                json_extract(oldest.state, '$.Alice.Done') IS 'SafelyAborted'
+                AND json_extract(newest.state, '$.Alice.Done') IS 'SafelyAborted'
+            )
+            ORDER BY oldest.entered_at
+            LIMIT ?
+            OFFSET ?
+        "#,
+            limit,
+            offset
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let result = rows
+            .iter()
+            .filter_map(|row| {
+                let swap_id = match Uuid::from_str(&row.swap_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Failed to parse UUID");
+                        return None;
+                    }
+                };
+                let peer_id = match PeerId::from_str(&row.peer_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to parse PeerId");
+                        return None;
+                    }
+                };
+                let first_state = match serde_json::from_str::<Swap>(&row.first_state) {
+                    Ok(a) => State::from(a),
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to deserialize first state");
+                        return None;
+                    }
+                };
+                let last_state = match serde_json::from_str::<Swap>(&row.last_state) {
+                    Ok(a) => State::from(a),
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to deserialize last state");
+                        return None;
+                    }
+                };
+
+                Some((peer_id, swap_id, first_state, last_state))
+            })
+            .collect();
 
         Ok(result)
     }
@@ -403,6 +489,7 @@ impl Database for SqliteDatabase {
            SELECT state
            FROM swap_states
            WHERE swap_id = ?
+           ORDER BY id ASC
         "#,
             swap_id
         )
@@ -492,13 +579,166 @@ impl Database for SqliteDatabase {
     }
 }
 
+impl SqliteDatabase {
+    /// Like [`Database::all`] but only returns swaps whose latest state
+    /// update happened within the last `freshness_hours`.
+    ///
+    /// `entered_at` is stored as a Rust-formatted string
+    /// (`YYYY-MM-DD HH:MM:SS.fff +00:00:00`). SQLite's date functions don't
+    /// accept the offset trailer, so we `substr` down to the first 19
+    /// characters before parsing with `strftime('%s', ...)`. All writes use
+    /// `OffsetDateTime::now_utc()`, so dropping the offset is safe.
+    pub async fn all_fresh(&self, freshness_hours: u64) -> Result<Vec<(PeerId, Uuid, State)>> {
+        let freshness_seconds = (freshness_hours as i64).saturating_mul(3600);
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT s.swap_id, s.state, p.peer_id
+            FROM (
+                SELECT max(id) as id, swap_id, state, entered_at
+                FROM swap_states
+                GROUP BY swap_id
+            ) s
+            INNER JOIN peers p ON s.swap_id = p.swap_id
+            WHERE CAST(strftime('%s', substr(s.entered_at, 1, 19)) AS INTEGER)
+                  >= CAST(strftime('%s', 'now') AS INTEGER) - ?
+            "#,
+            freshness_seconds,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let result = rows
+            .iter()
+            .filter_map(|row| {
+                let swap_id = match Uuid::from_str(&row.swap_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Failed to parse UUID");
+                        return None;
+                    }
+                };
+                let peer_id = match PeerId::from_str(&row.peer_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to parse PeerId");
+                        return None;
+                    }
+                };
+                let state = match serde_json::from_str::<Swap>(&row.state) {
+                    Ok(a) => State::from(a),
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to deserialize state");
+                        return None;
+                    }
+                };
+
+                Some((peer_id, swap_id, state))
+            })
+            .collect();
+
+        Ok(result)
+    }
+}
+
+#[async_trait]
+impl crate::network::wormhole::PeerTrust for SqliteDatabase {
+    async fn peers_with_financially_relevant_swap(
+        &self,
+        freshness_hours: u64,
+    ) -> Result<Vec<PeerId>> {
+        use std::collections::HashSet;
+
+        let swaps = self.all_fresh(freshness_hours).await?;
+        let peers = swaps
+            .into_iter()
+            .filter_map(|(peer_id, _, state)| {
+                let State::Alice(alice_state) = state else {
+                    return None;
+                };
+                alice_state.is_at_or_past_btc_locked().then_some(peer_id)
+            })
+            .collect::<HashSet<_>>();
+
+        Ok(peers.into_iter().collect())
+    }
+}
+
+#[async_trait]
+impl crate::network::wormhole::WormholeStore for SqliteDatabase {
+    async fn store_wormhole(&self, peer: PeerId, address: Multiaddr, active: bool) -> Result<()> {
+        let peer_id = peer.to_string();
+        let address = address.to_string();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO wormholes (peer_id, address, active)
+            VALUES (?, ?, ?)
+            ON CONFLICT (peer_id) DO UPDATE SET address = excluded.address, active = excluded.active
+            "#,
+            peer_id,
+            address,
+            active,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_wormhole(&self, peer: PeerId) -> Result<Option<(Multiaddr, bool)>> {
+        let peer_id = peer.to_string();
+
+        let row = sqlx::query!(
+            r#"
+            SELECT address, active
+            FROM wormholes
+            WHERE peer_id = ?
+            "#,
+            peer_id,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        let address = Multiaddr::from_str(&row.address)
+            .map_err(|e| anyhow::anyhow!("Invalid multiaddr in wormholes table: {e}"))?;
+
+        Ok(Some((address, row.active)))
+    }
+
+    async fn get_all_wormholes(&self) -> Result<Vec<(PeerId, Multiaddr)>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT peer_id, address
+            FROM wormholes
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.iter()
+            .map(|row| {
+                let peer_id = PeerId::from_str(&row.peer_id)
+                    .map_err(|e| anyhow::anyhow!("Invalid peer_id in wormholes table: {e}"))?;
+                let address = Multiaddr::from_str(&row.address)
+                    .map_err(|e| anyhow::anyhow!("Invalid multiaddr in wormholes table: {e}"))?;
+                Ok((peer_id, address))
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::protocol::alice::AliceState;
     use crate::protocol::bob::BobState;
     use std::fs::File;
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
 
     #[tokio::test]
     async fn test_insert_and_load_state() {
@@ -524,11 +764,16 @@ mod tests {
     async fn test_retrieve_all_latest_states() {
         let db = setup_test_db().await.unwrap();
 
+        let peer_id_1 = PeerId::random();
+        let peer_id_2 = PeerId::random();
         let state_1 = State::Alice(AliceState::BtcRedeemed);
         let state_2 = State::Alice(AliceState::SafelyAborted);
         let state_3 = State::Bob(BobState::SafelyAborted);
         let swap_id_1 = Uuid::new_v4();
         let swap_id_2 = Uuid::new_v4();
+
+        db.insert_peer_id(swap_id_1, peer_id_1).await.unwrap();
+        db.insert_peer_id(swap_id_2, peer_id_2).await.unwrap();
 
         db.insert_latest_state(swap_id_1, state_1.clone())
             .await
@@ -544,10 +789,10 @@ mod tests {
 
         assert_eq!(latest_loaded.len(), 2);
 
-        assert!(latest_loaded.contains(&(swap_id_1, state_2)));
-        assert!(latest_loaded.contains(&(swap_id_2, state_3)));
+        assert!(latest_loaded.contains(&(peer_id_1, swap_id_1, state_2)));
+        assert!(latest_loaded.contains(&(peer_id_2, swap_id_2, state_3)));
 
-        assert!(!latest_loaded.contains(&(swap_id_1, state_1)));
+        assert!(!latest_loaded.contains(&(peer_id_1, swap_id_1, state_1)));
     }
 
     #[tokio::test]
@@ -560,9 +805,15 @@ mod tests {
         let swap_id = Uuid::new_v4();
 
         // Create multiple labeled addresses with valid percentages that sum to 1
-        let address1 = "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a".parse()?; // Stagenet address
-        let address2 = "44Ato7HveWidJYUAVw5QffEcEtSH1DwzSP3FPPkHxNAS4LX9CqgucphTisH978FLHE34YNEx7FcbBfQLQUU8m3NUC4VqsRa".parse()?; // Mainnet address
-        let address3 = "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a".parse()?; // Same as address1 for simplicity
+        let address1 = monero_address::MoneroAddress::from_str_with_unchecked_network(
+            "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a",
+        )?; // Stagenet address
+        let address2 = monero_address::MoneroAddress::from_str_with_unchecked_network(
+            "44Ato7HveWidJYUAVw5QffEcEtSH1DwzSP3FPPkHxNAS4LX9CqgucphTisH978FLHE34YNEx7FcbBfQLQUU8m3NUC4VqsRa",
+        )?; // Mainnet address
+        let address3 = monero_address::MoneroAddress::from_str_with_unchecked_network(
+            "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a",
+        )?; // Same as address1 for simplicity
 
         let labeled_addresses = vec![
             LabeledMoneroAddress::with_address(address1, Decimal::new(5, 1), "Primary".to_string())

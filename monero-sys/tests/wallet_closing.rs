@@ -16,7 +16,7 @@ async fn main() {
         let wallet = WalletHandle::open_or_create(
             temp_dir.path().join("test_wallet").display().to_string(),
             daemon.clone(),
-            monero::Network::Stagenet,
+            monero_address::Network::Stagenet,
             true,
         )
         .await
@@ -36,7 +36,7 @@ async fn main() {
         let wallet = WalletHandle::open_or_create(
             temp_dir.path().join("test_wallet").display().to_string(),
             daemon.clone(),
-            monero::Network::Stagenet,
+            monero_address::Network::Stagenet,
             true,
         )
         .await

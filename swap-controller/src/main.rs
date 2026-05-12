@@ -35,9 +35,9 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         }
         Cmd::MoneroBalance => {
             let response = client.monero_balance().await?;
-            let amount = monero::Amount::from_pico(response.balance);
+            let amount = monero_oxide_ext::Amount::from_pico(response.balance);
 
-            println!("Current Monero balance is {:.12} XMR", amount.as_xmr());
+            println!("Current Monero balance is {}", amount);
         }
         Cmd::MoneroAddress => {
             let response = client.monero_address().await?;
@@ -66,7 +66,9 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         Cmd::PeerId => {
             let response = client.peer_id().await?;
             println!("Peer IDs are used to identify peers within the P2P network.");
-            println!("They are effectively the hash of your public key and are used for end-to-end encryption of network traffic.");
+            println!(
+                "They are effectively the hash of your public key and are used for end-to-end encryption of network traffic."
+            );
             println!();
             println!("Your Peer ID is: {}", response.peer_id);
         }
@@ -75,18 +77,53 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             println!("Connected to {} peers", response.connections);
         }
         Cmd::GetSwaps => {
-            let swaps = client.get_swaps().await?;
+            let swaps = client.get_swaps(None, None).await?;
+
+            let mut table = comfy_table::Table::new();
+            table.set_header([
+                "ID",
+                "Started",
+                "State",
+                "BTC Lock TxID",
+                "BTC",
+                "XMR",
+                "Rate (BTC/XMR)",
+                "BTC Redeem Fee",
+                "BTC Redeem TxID",
+                "Peer ID",
+                "Completed",
+            ]);
+
             if swaps.is_empty() {
-                println!("No swaps found");
+                table.add_row(["No swaps found"]);
             } else {
-                for swap in swaps {
-                    println!("{}: {}", swap.id, swap.state);
+                for swap in &swaps {
+                    let xmr = monero_oxide_ext::Amount::from_pico(swap.xmr_amount);
+                    table.add_row([
+                        &swap.swap_id,
+                        &swap.start_date,
+                        &swap.state,
+                        &swap.btc_lock_txid,
+                        &swap.btc_amount.to_string(),
+                        // Floating point may introduce very small inaccuracies here
+                        &format!("{:.12} XMR", xmr.as_xmr()),
+                        &swap.exchange_rate.to_string(),
+                        &swap.btc_redeem_fee.to_string(),
+                        &swap.btc_redeem_txid,
+                        &swap.peer_id,
+                        &swap.completed.to_string(),
+                    ]);
                 }
             }
+
+            println!("{table}");
         }
         Cmd::BitcoinSeed => {
             let response = client.bitcoin_seed().await?;
-            println!("Descriptor (BIP-0382) containing the private keys of the internal Bitcoin wallet: \n{}", response.descriptor);
+            println!(
+                "Descriptor (BIP-0382) containing the private keys of the internal Bitcoin wallet: \n{}",
+                response.descriptor
+            );
         }
         Cmd::RegistrationStatus => {
             let response = client.registration_status().await?;
@@ -95,13 +132,83 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 println!("No rendezvous points configured");
             } else {
                 for item in response.registrations {
-                    let address = item.address.as_deref().unwrap_or("?");
+                    let address = item.address.as_ref().map(String::as_str).unwrap_or("?");
                     println!(
                         "Connection status to rendezvous point at \"{}\" is \"{:?}\". Registration status is \"{:?}\"",
                         address, item.connection, item.registration
                     );
                 }
             }
+        }
+        Cmd::SetWithholdDeposit {
+            swap_id,
+            withhold: burn,
+        } => {
+            client.set_withhold_deposit(swap_id, burn).await?;
+            if burn {
+                println!("Withholding deposit should the taker refund for swap {swap_id}");
+            } else {
+                println!("Not withholding deposit should the taker refund for swap {swap_id}");
+            }
+        }
+        Cmd::GrantMercy { swap_id } => {
+            client.grant_mercy(swap_id).await?;
+            println!("Mercy granted for swap {swap_id}");
+        }
+        Cmd::WithdrawBtc { address, amount } => {
+            let response = client
+                .withdraw_btc(address, amount.map(|a| a.to_sat()))
+                .await?;
+            println!(
+                "Withdrew {} in transaction {}",
+                response.amount, response.txid
+            );
+        }
+        Cmd::RefreshBitcoinWallet => {
+            client.refresh_bitcoin_wallet().await?;
+            println!("Bitcoin wallet refreshed");
+        }
+        Cmd::WormholeServices => {
+            println!(
+                "Wormholes are dedicated onion services spawned for peers that have committed funds to a swap.\n"
+            );
+            let response = client.wormhole_services().await?;
+            if response.services.is_empty() {
+                println!("No active wormhole services");
+            } else {
+                for (i, svc) in response.services.iter().enumerate() {
+                    if i > 0 {
+                        println!();
+                    }
+                    let state = svc.state.as_deref().unwrap_or("?");
+                    println!("Peer:      {}", svc.peer_id);
+                    println!("Address:   {}", svc.address);
+                    println!("State:     {state}");
+                    println!("Reachable: {}", svc.reachable);
+                    if let Some(problem) = &svc.problem {
+                        println!("Problem:   {problem}");
+                    }
+                }
+            }
+        }
+        Cmd::OnionServiceStatus => {
+            let response = client.onion_service_status().await?;
+            match response.state {
+                Some(state) => {
+                    println!("State:     {state}");
+                    println!("Reachable: {}", response.reachable);
+                    if let Some(problem) = response.problem {
+                        println!("Problem:   {problem}");
+                    }
+                }
+                None => println!("No primary onion service registered"),
+            }
+        }
+        Cmd::GetCurrentQuote => {
+            let response = client.get_current_quote().await?;
+            println!("Price (per 1 XMR): {}", response.price);
+            println!("Min quantity:      {}", response.min_quantity);
+            println!("Max quantity:      {}", response.max_quantity);
         }
     }
     Ok(())

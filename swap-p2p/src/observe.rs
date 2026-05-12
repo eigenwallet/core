@@ -1,8 +1,8 @@
 //! A network behaviour that observes our connections to peers and emits events which can
 //! then be used to be (among other things) emitted to the UI to display which peers we are connected to.
 use libp2p::{
-    swarm::{NetworkBehaviour, ToSwarm},
     Multiaddr, PeerId,
+    swarm::{NetworkBehaviour, ToSwarm},
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, task::Poll};

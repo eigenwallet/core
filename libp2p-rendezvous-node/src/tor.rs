@@ -1,7 +1,7 @@
 // TODO: This is essentially vendored from swap/src/common/tor.rs
 // TODO: Consider extracting this into a common swap-tor crate
 use anyhow::{Context, Result};
-use arti_client::{config::TorClientConfigBuilder, TorClient};
+use arti_client::{TorClient, config::TorClientConfigBuilder};
 use std::path::Path;
 use std::sync::Arc;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
@@ -12,6 +12,11 @@ pub async fn create_tor_client(data_dir: &Path) -> Result<Arc<TorClient<TokioRus
     let tor_data_dir = data_dir.join("tor");
     let state_dir = tor_data_dir.join("state");
     let cache_dir = tor_data_dir.join("cache");
+
+    // Workaround for when the machine is running in a managed work-environment.
+    // Arti will otherwise fail if the home directory is writable by another group.
+    // SAFETY: Called early in startup before any threads are spawned.
+    unsafe { std::env::set_var("ARTI_FS_DISABLE_PERMISSION_CHECKS", "1") };
 
     // Workaround for https://gitlab.torproject.org/tpo/core/arti/-/issues/2224
     // We delete guards.json (if it exists) on startup to prevent an issue where arti will not find any guards to connect to

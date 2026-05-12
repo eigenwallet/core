@@ -1,8 +1,8 @@
 [package]
 name = "swap-asb"
-version = "3.6.3"
+version = "4.5.3"
 authors = ["The eigenwallet guys <hello@eigenwallet.org>", "The COMIT guys <hello@comit.network>"]
-edition = "2021"
+edition = "2024"
 description = "ASB (Automated Swap Backend) binary for XMR/BTC atomic swaps."
 
 [[bin]]
@@ -13,6 +13,7 @@ path = "src/main.rs"
 # Core
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
+monero-address = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
@@ -33,7 +34,7 @@ tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "
 tracing = { workspace = true }
 
 comfy-table = "7.1"
-libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
+libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa", "websocket"] }
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { workspace = true, features = ["serde-float"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }

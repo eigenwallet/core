@@ -1,6 +1,6 @@
 use crate::out_event;
 use libp2p::request_response::ProtocolSupport;
-use libp2p::{request_response, PeerId, StreamProtocol};
+use libp2p::{PeerId, StreamProtocol, request_response};
 use serde::{Deserialize, Serialize};
 use swap_core::monero::{Scalar, TransferProof};
 use uuid::Uuid;
@@ -39,6 +39,7 @@ pub struct Request {
 pub enum Response {
     Fullfilled {
         swap_id: Uuid,
+        #[serde(with = "swap_serde::monero::scalar")]
         s_a: Scalar,
         lock_transfer_proof: TransferProof,
     },

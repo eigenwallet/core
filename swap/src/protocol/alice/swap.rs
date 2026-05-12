@@ -9,8 +9,10 @@ use crate::monero;
 use crate::monero::TransferProof;
 use crate::protocol::alice::{AliceState, Swap, TipConfig};
 use ::bitcoin::consensus::encode::serialize_hex;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use bitcoin_wallet::BitcoinWallet;
+use monero_interface::PublishTransaction;
+use monero_oxide_wallet::transaction::{NotPruned, Transaction};
 use rust_decimal::Decimal;
 use swap_core::bitcoin::ExpiredTimelocks;
 use swap_core::monero::BlockHeight;
@@ -186,7 +188,7 @@ where
                         )));
                     };
 
-                    let tx_key = receipt.tx_keys.get(&lock_address).expect("monero-sys guarantees that the address has a valid tx key or the tx isn't published");
+                    let tx_key = receipt.tx_keys.get(&lock_address.to_string()).expect("monero-sys guarantees that the address has a valid tx key or the tx isn't published");
 
                     Ok(Some((
                         monero_wallet_restore_blockheight,
@@ -272,7 +274,7 @@ where
                     // Retry repeatedly to broadcast tx_early_refund
                     result = async {
                         backoff::future::retry_notify(backoff, || async {
-                            bitcoin_wallet.broadcast(tx_early_refund.clone(), "early_refund").await.map_err(backoff::Error::transient)
+                            bitcoin_wallet.ensure_broadcasted(tx_early_refund.clone(), "early_refund").await.map_err(backoff::Error::transient)
                         }, |e, wait_time: Duration| {
                             tracing::warn!(
                                 %tx_early_refund_txid,
@@ -425,6 +427,17 @@ where
                         state3,
                     }
                 }
+                burn_instruction = event_loop_handle.wait_for_burn_on_refund_instruction() => {
+                    let burn = burn_instruction.context("Failed to receive burn instruction")?;
+                    let mut updated_state3 = (*state3).clone();
+                    updated_state3.should_publish_tx_withhold = Some(burn);
+
+                    AliceState::XmrLockTransferProofSent {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3: Box::new(updated_state3),
+                    }
+                }
             }
         }
         AliceState::EncSigLearned {
@@ -439,7 +452,10 @@ where
                 // If we cannot sign the transaction there must be something wrong
                 // We just wait for the cancel timelock to expire and then refund
                 Err(error) => {
-                    tracing::error!("Failed to construct redeem transaction: {:#}, we will wait for the cancel timelock expiration to refund", error);
+                    tracing::error!(
+                        "Failed to construct redeem transaction: {:#}, we will wait for the cancel timelock expiration to refund",
+                        error
+                    );
 
                     return Ok(AliceState::WaitingForCancelTimelockExpiration {
                         monero_wallet_restore_blockheight,
@@ -480,7 +496,7 @@ where
                 }
 
                 bitcoin_wallet
-                    .broadcast(tx_redeem.clone(), "redeem")
+                    .ensure_broadcasted(tx_redeem.clone(), "redeem")
                     .await
                     .map(Some)
                     .map_err(backoff::Error::transient)
@@ -530,7 +546,10 @@ where
             match subscription.wait_until_final().await {
                 Ok(_) => AliceState::BtcRedeemed,
                 Err(e) => {
-                    bail!("The Bitcoin redeem transaction was seen in mempool, but waiting for finality timed out with {}. Manual investigation might be needed to ensure that the transaction was included.", e)
+                    bail!(
+                        "The Bitcoin redeem transaction was seen in mempool, but waiting for finality timed out with {}. Manual investigation might be needed to ensure that the transaction was included.",
+                        e
+                    )
                 }
             }
         }
@@ -543,15 +562,26 @@ where
                 .subscribe_to(Box::new(state3.tx_lock.clone()))
                 .await;
 
-            // TODO: Retry here
-            tx_lock_status_subscription
-                .wait_until_confirmed_with(state3.cancel_timelock)
-                .await?;
+            select! {
+                result = tx_lock_status_subscription.wait_until_confirmed_with(state3.cancel_timelock) => {
+                    result?;
+                    AliceState::CancelTimelockExpired {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3,
+                    }
+                }
+                burn_instruction = event_loop_handle.wait_for_burn_on_refund_instruction() => {
+                    let burn = burn_instruction.context("Failed to receive burn instruction")?;
+                    let mut updated_state3 = (*state3).clone();
+                    updated_state3.should_publish_tx_withhold = Some(burn);
 
-            AliceState::CancelTimelockExpired {
-                monero_wallet_restore_blockheight,
-                transfer_proof,
-                state3,
+                    AliceState::WaitingForCancelTimelockExpiration {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3: Box::new(updated_state3),
+                    }
+                }
             }
         }
         AliceState::CancelTimelockExpired {
@@ -613,8 +643,22 @@ where
                 .subscribe_to(Box::new(state3.tx_cancel()))
                 .await;
 
+            // We wait for either TxFullRefund or TxPartialRefund to be published
+            // - both allow us to extract the Monero refund key.
+            // Otherwise we punish, once that timelock expired.
+
             select! {
-                spend_key = state3.watch_for_btc_tx_refund(&*bitcoin_wallet) => {
+                spend_key = state3.watch_for_btc_tx_full_refund(&*bitcoin_wallet) => {
+                    let spend_key = spend_key?;
+
+                    AliceState::BtcRefunded {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        spend_key,
+                        state3,
+                    }
+                }
+                spend_key = state3.watch_for_btc_tx_partial_refund(&*bitcoin_wallet), if state3.btc_amnesty_amount.is_some() => {
                     let spend_key = spend_key?;
 
                     AliceState::BtcRefunded {
@@ -633,19 +677,54 @@ where
                         state3,
                     }
                 }
+                burn_instruction = event_loop_handle.wait_for_burn_on_refund_instruction() => {
+                    let burn = burn_instruction.context("Failed to receive burn instruction")?;
+                    let mut updated_state3 = (*state3).clone();
+                    updated_state3.should_publish_tx_withhold = Some(burn);
+
+                    tracing::info!(withhold=%burn, "Received withhold decision");
+
+                    AliceState::BtcCancelled {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3: Box::new(updated_state3),
+                    }
+                }
             }
         }
         AliceState::BtcRefunded {
             transfer_proof,
             spend_key,
             state3,
-            ..
+            monero_wallet_restore_blockheight,
+        } => AliceState::XmrRefundable {
+            monero_wallet_restore_blockheight,
+            transfer_proof,
+            spend_key,
+            state3,
+        },
+        AliceState::BtcPartiallyRefunded {
+            transfer_proof,
+            spend_key,
+            state3,
+            monero_wallet_restore_blockheight,
+        } => AliceState::XmrRefundable {
+            monero_wallet_restore_blockheight,
+            transfer_proof,
+            spend_key,
+            state3,
+        },
+        AliceState::XmrRefundable {
+            monero_wallet_restore_blockheight: _,
+            transfer_proof,
+            spend_key,
+            state3,
         } => {
-            retry(
+            let xmr_refund_tx = retry(
                 "Refund Monero",
                 || async {
                     state3
-                        .refund_xmr(
+                        .construct_xmr_refund_transaction(
                             monero_wallet.clone(),
                             swap_id,
                             spend_key,
@@ -660,7 +739,59 @@ where
             .await
             .expect("We should never run out of retries while refunding Monero");
 
-            AliceState::XmrRefunded
+            AliceState::XmrRefundTxConstructed {
+                state3,
+                xmr_refund_tx,
+            }
+        }
+        AliceState::XmrRefundTxConstructed {
+            state3,
+            xmr_refund_tx,
+        } => {
+            let xmr_refund_tx_hash = monero::TxHash::from_tx(&xmr_refund_tx);
+
+            retry(
+                "Publishing Monero refund transaction",
+                || async {
+                    monero_wallet
+                        .rpc_client()
+                        .await
+                        .publish_transaction(&xmr_refund_tx)
+                        .await
+                        .context("Failed to publish Monero refund transaction")
+                        .map_err(backoff::Error::transient)
+                },
+                None,
+                None,
+            )
+            .await
+            .context("Failed to publish Monero refund transaction")?;
+
+            tracing::info!(%swap_id, %xmr_refund_tx_hash, "Published Monero refund transaction");
+
+            AliceState::XmrRefundTxPublished {
+                state3,
+                xmr_refund_tx,
+            }
+        }
+        AliceState::XmrRefundTxPublished {
+            state3,
+            xmr_refund_tx,
+        } => {
+            let xmr_refund_tx_hash = monero::TxHash::from_tx(&xmr_refund_tx);
+
+            monero_wallet
+                .wait_until_confirmed(
+                    &xmr_refund_tx_hash,
+                    1,
+                    None::<fn((monero::TxHash, u64, u64))>,
+                )
+                .await
+                .context("Failed to wait for Monero refund transaction confirmation")?;
+
+            AliceState::XmrRefunded {
+                state3: Some(state3),
+            }
         }
         AliceState::BtcPunishable {
             monero_wallet_restore_blockheight,
@@ -697,7 +828,139 @@ where
             .await
             .expect("We should never run out of retries while publishing the punish transaction")
         }
-        AliceState::XmrRefunded => AliceState::XmrRefunded,
+        AliceState::XmrRefunded { state3 } => {
+            // Only publish TxWithhold for swaps which have an anti-spam deposit.
+            let Some(mut state3) = state3 else {
+                tracing::info!(
+                    "Running a pre-partial refund swap, there is no anti-spam deposit to withhold"
+                );
+                return Ok(AliceState::XmrRefunded { state3: None });
+            };
+
+            // Fetch the burn decision again, incase it was udpated via the controller
+            if let Some(burn_decision) = event_loop_handle.get_burn_on_refund_instruction().await {
+                state3.should_publish_tx_withhold = Some(burn_decision);
+            }
+
+            // Skip publishing TxWithhold unless we were specifically instructed
+            if !state3.should_publish_tx_withhold.unwrap_or(false) {
+                tracing::info!("Not instructed to withhold the anti-spam deposit. Finishing");
+                return Ok(AliceState::XmrRefunded {
+                    state3: Some(state3),
+                });
+            }
+
+            retry("Publish TxWithhold", || {
+                let state3 = state3.clone();
+                let bitcoin_wallet = bitcoin_wallet.clone();
+
+                async move {
+                    let signed_tx = state3.signed_withhold_transaction()
+                        .context("Can't withhold the anti-spam deposit after Bob refunded because we couldn't construct the transaction")
+                        .map_err(backoff::Error::transient)?;
+
+                    bitcoin_wallet
+                        .ensure_broadcasted(signed_tx, "withhold")
+                        .await
+                        .context("Couldn't publish TxWithhold")
+                        .map_err(backoff::Error::transient)?;
+
+                    Ok(AliceState::BtcWithholdPublished { state3 })
+                }
+            }, None, None).await?
+        }
+        AliceState::BtcWithholdPublished { state3 } => {
+            retry(
+                "Wait for TxWithhold confirmation",
+                || {
+                    let state3 = state3.clone();
+                    let bitcoin_wallet = bitcoin_wallet.clone();
+
+                    async move {
+                        let tx_withhold = state3
+                            .tx_withhold()
+                            .context("Can't construct TxWithhold even though we published it")
+                            .map_err(backoff::Error::transient)?;
+
+                        let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_withhold)).await;
+
+                        subscription
+                            .wait_until_final()
+                            .await
+                            .context("Failed to wait for TxWithhold to be confirmed")
+                            .map_err(backoff::Error::transient)?;
+
+                        Ok(AliceState::BtcWithholdConfirmed { state3 })
+                    }
+                },
+                None,
+                None,
+            )
+            .await?
+        }
+        AliceState::BtcWithholdConfirmed { state3 } => {
+            // Nothing to do here. Mercy is triggered manually.
+            AliceState::BtcWithholdConfirmed { state3 }
+        }
+        AliceState::BtcMercyGranted { state3 } => {
+            retry(
+                "Publish TxMercy",
+                || {
+                    let state3 = state3.clone();
+                    let bitcoin_wallet = bitcoin_wallet.clone();
+
+                    async move {
+                        let signed_tx = state3
+                            .signed_mercy_transaction()
+                            .context("Failed to construct signed TxMercy")
+                            .map_err(backoff::Error::transient)?;
+
+                        bitcoin_wallet
+                            .ensure_broadcasted(signed_tx, "mercy")
+                            .await
+                            .context("Failed to publish TxMercy")
+                            .map_err(backoff::Error::transient)?;
+
+                        tracing::info!("TxMercy published successfully");
+
+                        Ok(AliceState::BtcMercyPublished { state3 })
+                    }
+                },
+                None,
+                None,
+            )
+            .await?
+        }
+        AliceState::BtcMercyPublished { state3 } => {
+            retry(
+                "Wait for TxMercy confirmation",
+                || {
+                    let state3 = state3.clone();
+                    let bitcoin_wallet = bitcoin_wallet.clone();
+
+                    async move {
+                        let tx_mercy = state3
+                            .tx_mercy()
+                            .context("Couldn't construct TxMercy even though we have published it")
+                            .map_err(backoff::Error::transient)?;
+
+                        let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_mercy)).await;
+
+                        subscription
+                            .wait_until_final()
+                            .await
+                            .context("Failed to wait for TxMercy to be confirmed")
+                            .map_err(backoff::Error::transient)?;
+
+                        Ok(AliceState::BtcMercyConfirmed { state3 })
+                    }
+                },
+                None,
+                None,
+            )
+            .await?
+        }
+        AliceState::BtcMercyConfirmed { state3 } => AliceState::BtcMercyConfirmed { state3 },
         AliceState::BtcRedeemed => AliceState::BtcRedeemed,
         AliceState::BtcPunished {
             state3,
@@ -713,23 +976,23 @@ where
 
 #[allow(async_fn_in_trait)]
 pub trait XmrRefundable {
-    async fn refund_xmr(
+    async fn construct_xmr_refund_transaction(
         &self,
         monero_wallet: Arc<monero::Wallets>,
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
         transfer_proof: TransferProof,
-    ) -> Result<()>;
+    ) -> Result<Transaction<NotPruned>>;
 }
 
 impl XmrRefundable for State3 {
-    async fn refund_xmr(
+    async fn construct_xmr_refund_transaction(
         &self,
         monero_wallet: Arc<monero::Wallets>,
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
         transfer_proof: TransferProof,
-    ) -> Result<()> {
+    ) -> Result<Transaction<NotPruned>> {
         let view_key = self.v;
 
         // Ensure that the XMR to be refunded are spendable by awaiting 10 confirmations
@@ -754,37 +1017,31 @@ impl XmrRefundable for State3 {
             .await
             .context("Failed to wait for Monero lock transaction to be confirmed")?;
 
-        tracing::debug!(%swap_id, "Opening temporary Monero wallet from keys for refunding");
-
-        let swap_wallet = monero_wallet
-            .swap_wallet_spendable(swap_id, spend_key, view_key, transfer_proof.tx_hash())
-            .await
-            .context(format!("Failed to open/create swap wallet `{}`", swap_id))?;
-
-        tracing::debug!(%swap_id, "Sweeping Monero to redeem address");
         let main_address = monero_wallet.main_wallet().await.main_address().await?;
 
-        swap_wallet.refresh_blocking().await?;
+        tracing::debug!(%swap_id, %main_address, "Sweeping lock output to redeem address");
 
-        swap_wallet
-            .sweep(&main_address)
+        let tx = monero_wallet
+            .construct_sweep_to_single(&transfer_proof.tx_hash(), spend_key, view_key, main_address)
             .await
-            .context("Failed to sweep Monero to redeem address")?;
+            .context("Failed to construct Monero refund transaction")?;
 
-        Ok(())
+        tracing::info!(%swap_id, tx_hash = %monero::TxHash::from_tx(&tx), "Constructed Monero refund transaction");
+
+        Ok(tx)
     }
 }
 
 impl XmrRefundable for Box<State3> {
-    async fn refund_xmr(
+    async fn construct_xmr_refund_transaction(
         &self,
         monero_wallet: Arc<monero::Wallets>,
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
         transfer_proof: TransferProof,
-    ) -> Result<()> {
+    ) -> Result<Transaction<NotPruned>> {
         (**self)
-            .refund_xmr(monero_wallet, swap_id, spend_key, transfer_proof)
+            .construct_xmr_refund_transaction(monero_wallet, swap_id, spend_key, transfer_proof)
             .await
     }
 }
@@ -797,10 +1054,10 @@ impl XmrRefundable for Box<State3> {
 /// Otherwise:
 ///     returns one destination: for the lock output
 fn build_transfer_destinations(
-    lock_address: ::monero::Address,
-    lock_amount: ::monero::Amount,
+    lock_address: monero_address::MoneroAddress,
+    lock_amount: monero_oxide_ext::Amount,
     tip: TipConfig,
-) -> anyhow::Result<Vec<(::monero::Address, ::monero::Amount)>> {
+) -> anyhow::Result<Vec<(monero_address::MoneroAddress, monero_oxide_ext::Amount)>> {
     use rust_decimal::prelude::ToPrimitive;
 
     // If the effective tip is less than this amount, we do not include the tip output
@@ -818,7 +1075,7 @@ fn build_transfer_destinations(
         .context("Developer tip amount should not overflow")?;
 
     if tip_amount_piconero >= MIN_USEFUL_TIP_AMOUNT_PICONERO {
-        let tip_amount = ::monero::Amount::from_pico(tip_amount_piconero);
+        let tip_amount = monero_oxide_ext::Amount::from_pico(tip_amount_piconero);
 
         Ok(vec![(lock_address, lock_amount), (tip.address, tip_amount)])
     } else {
@@ -840,28 +1097,97 @@ pub(crate) fn has_already_processed_enc_sig(state: &AliceState) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::build_transfer_destinations;
+    use crate::protocol::alice::TipConfig;
+    use rust_decimal::Decimal;
+
+    const TEST_ADDRESS_STR: &str = "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a";
+
+    fn test_address() -> monero_address::MoneroAddress {
+        monero_address::MoneroAddress::from_str_with_unchecked_network(TEST_ADDRESS_STR).unwrap()
+    }
+
     #[test]
     fn test_build_transfer_destinations_without_tip() {
-        todo!("implement once unit tests compile again")
+        let lock_amount = monero_oxide_ext::Amount::from_pico(1_000_000_000_000); // 1 XMR
+        let tip = TipConfig {
+            ratio: Decimal::ZERO,
+            address: test_address(),
+        };
+
+        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1, lock_amount);
     }
 
     #[test]
     fn test_build_transfer_destinations_with_tip() {
-        todo!("implement once unit tests compile again")
+        let lock_amount = monero_oxide_ext::Amount::from_pico(10_000_000_000_000); // 10 XMR
+        let tip = TipConfig {
+            ratio: Decimal::new(1, 2), // 0.01 = 1%
+            address: test_address(),
+        };
+
+        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+
+        // Tip = 10 XMR * 0.01 = 0.1 XMR = 100_000_000_000 pico >> 30_000_000 threshold
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1, lock_amount);
+        assert_eq!(
+            result[1].1,
+            monero_oxide_ext::Amount::from_pico(100_000_000_000)
+        );
     }
 
     #[test]
     fn test_build_transfer_destinations_with_small_tip() {
-        todo!("implement once unit tests compile again")
+        // ratio * amount < 30_000_000 piconero threshold
+        let lock_amount = monero_oxide_ext::Amount::from_pico(2_000_000_000); // 0.002 XMR
+        let tip = TipConfig {
+            ratio: Decimal::new(1, 2), // 0.01
+            address: test_address(),
+        };
+
+        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+
+        // Tip = 0.002 XMR * 0.01 = 20_000_000 piconero < 30_000_000 threshold
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1, lock_amount);
     }
 
     #[test]
     fn test_build_transfer_destinations_with_zero_tip() {
-        todo!("implement once unit tests compile again")
+        // Nonzero ratio but tiny lock amount -> effective tip rounds to near-zero
+        let lock_amount = monero_oxide_ext::Amount::from_pico(100);
+        let tip = TipConfig {
+            ratio: Decimal::new(1, 1), // 0.1 = 10%
+            address: test_address(),
+        };
+
+        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+
+        // Tip = 100 * 0.1 = 10 piconero << 30_000_000 threshold
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1, lock_amount);
     }
 
     #[test]
     fn test_build_transfer_destinations_with_fractional_tip() {
-        todo!("implement once unit tests compile again")
+        let lock_amount = monero_oxide_ext::Amount::from_pico(1_000_000_000_000); // 1 XMR
+        let tip = TipConfig {
+            ratio: Decimal::new(5, 3), // 0.005 = 0.5%
+            address: test_address(),
+        };
+
+        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+
+        // Tip = 1 XMR * 0.005 = 0.005 XMR = 5_000_000_000 pico >> 30_000_000 threshold
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1, lock_amount);
+        assert_eq!(
+            result[1].1,
+            monero_oxide_ext::Amount::from_pico(5_000_000_000)
+        );
     }
 }

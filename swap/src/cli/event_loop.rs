@@ -6,10 +6,10 @@ use crate::network::cooperative_xmr_redeem_after_punish::{self, Request, Respons
 use crate::network::encrypted_signature;
 use crate::network::quote::BidQuote;
 use crate::network::swap_setup::bob::NewSwap;
+use crate::protocol::Database;
 use crate::protocol::bob::swap::has_already_processed_transfer_proof;
 use crate::protocol::bob::{BobState, State2};
-use crate::protocol::Database;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
@@ -710,7 +710,14 @@ impl EventLoopHandle {
                 }
                 // These are errors thrown by the swap_setup/bob behaviour
                 Ok(Err(err)) => {
-                    Err(backoff::Error::transient(err.context("A network error occurred while setting up the swap")))
+                    use swap_p2p::protocols::swap_setup::bob::Error as SetupError;
+                    if err.downcast_ref::<SetupError>()
+                        .is_some_and(|e| matches!(e, SetupError::SwapRejected(_)))
+                    {
+                        Err(backoff::Error::permanent(err))
+                    } else {
+                        Err(backoff::Error::transient(err.context("A network error occurred while setting up the swap")))
+                    }
                 }
                 // This will happen if we don't establish a connection to Alice within the timeout of the MPSC channel
                 // The protocol does not dial Alice it self

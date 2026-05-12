@@ -23,6 +23,22 @@
 
 set -e  # Exit on any error
 
+# Ensure sqlx-cli is installed and is at least version 0.8
+if ! command -v cargo-sqlx &> /dev/null; then
+    echo "❌ sqlx-cli is not installed. Install it with: cargo install sqlx-cli --version 0.8.6 --features sqlite --no-default-features"
+    exit 1
+fi
+
+SQLX_VERSION=$(cargo sqlx --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+SQLX_MAJOR=$(echo "$SQLX_VERSION" | cut -d. -f1)
+SQLX_MINOR=$(echo "$SQLX_VERSION" | cut -d. -f2)
+
+if [ "$SQLX_MAJOR" -lt 1 ] && [ "$SQLX_MINOR" -lt 8 ]; then
+    echo "❌ sqlx-cli version $SQLX_VERSION is too old. Version 0.8+ is required (--workspace flag)."
+    echo "   Upgrade with: cargo install sqlx-cli --version 0.8.6 --features sqlite --no-default-features"
+    exit 1
+fi
+
 echo "🔄 Regenerating SQLx query cache..."
 
 WORKSPACE_ROOT="$PWD"

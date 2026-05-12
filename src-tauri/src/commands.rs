@@ -3,30 +3,31 @@ use std::io::Write;
 use std::result::Result;
 use swap::cli::{
     api::{
-        data,
+        ContextBuilder, data,
         request::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
             CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
-            CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, DfxAuthenticateResponse,
-            ExportBitcoinWalletArgs, GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs,
-            GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
-            GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSeedArgs,
+            CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, CreateMoneroSubaddressArgs,
+            DeleteAllLogsArgs, DfxAuthenticateResponse, ExportBitcoinWalletArgs,
+            GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
+            GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
+            GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSubaddressesArgs,
             GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
             GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs,
             RedactArgs, RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroWalletPasswordArgs,
-            SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
+            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
+            SetMoneroWalletPasswordArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs,
+            WithdrawBtcArgs,
         },
         tauri_bindings::{ContextStatus, TauriSettings},
-        ContextBuilder,
     },
     command::Bitcoin,
 };
 use swap_p2p::libp2p_ext::MultiAddrVecExt;
 use tauri_plugin_dialog::DialogExt;
-use zip::{write::SimpleFileOptions, ZipWriter};
+use zip::{ZipWriter, write::SimpleFileOptions};
 
-use crate::{commands::util::ToStringResult, State};
+use crate::{State, commands::util::ToStringResult};
 
 /// This macro returns the list of all command handlers
 /// You can call this and insert the output into [`tauri::app::Builder::invoke_handler`]
@@ -59,6 +60,7 @@ macro_rules! generate_command_handlers {
             resolve_approval_request,
             redact,
             save_txt_files,
+            delete_all_logs,
             get_monero_history,
             get_monero_main_address,
             get_monero_balance,
@@ -74,6 +76,9 @@ macro_rules! generate_command_handlers {
             dfx_authenticate,
             change_monero_node,
             get_context_status,
+            get_monero_subaddresses,
+            create_monero_subaddress,
+            set_monero_subaddress_label,
             refresh_p2p
         ]
     };
@@ -294,6 +299,51 @@ pub async fn get_data_dir(
         .to_string())
 }
 
+#[tauri::command(rename = "deleteAllLogs")]
+pub async fn delete_all_logs(args: DeleteAllLogsArgs) -> Result<(), String> {
+    let data_dir = data::data_dir_from(None, args.is_testnet).to_string_result()?;
+    let logs_dir = data_dir.join("logs");
+
+    if !logs_dir.exists() {
+        tracing::info!(
+            logs_dir = %logs_dir.display(),
+            "Log directory does not exist; nothing to clear"
+        );
+        return Ok(());
+    }
+
+    let delete_result: Result<(), String> = async {
+        let mut entries = tokio::fs::read_dir(&logs_dir).await.to_string_result()?;
+        while let Some(entry) = entries.next_entry().await.to_string_result()? {
+            let path = entry.path();
+            let file_type = entry.file_type().await.to_string_result()?;
+
+            if file_type.is_dir() {
+                tokio::fs::remove_dir_all(&path).await.to_string_result()?;
+            } else {
+                tokio::fs::remove_file(&path).await.to_string_result()?;
+            }
+        }
+        Ok(())
+    }
+    .await;
+
+    match delete_result {
+        Ok(()) => {
+            tracing::info!(logs_dir = %logs_dir.display(), "Cleared all log files");
+            Ok(())
+        }
+        Err(err) => {
+            tracing::error!(
+                logs_dir = %logs_dir.display(),
+                error = %err,
+                "Failed to clear log files"
+            );
+            Err(err)
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn save_txt_files(
     app: tauri::AppHandle,
@@ -463,5 +513,8 @@ tauri_command!(set_monero_wallet_password, SetMoneroWalletPasswordArgs);
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
 tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
 tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);
+tauri_command!(get_monero_subaddresses, GetMoneroSubaddressesArgs);
+tauri_command!(create_monero_subaddress, CreateMoneroSubaddressArgs);
+tauri_command!(set_monero_subaddress_label, SetMoneroSubaddressLabelArgs);
 tauri_command!(get_monero_seed, GetMoneroSeedArgs, no_args);
 tauri_command!(refresh_p2p, RefreshP2PArgs, no_args);

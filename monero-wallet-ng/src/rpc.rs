@@ -77,7 +77,8 @@ impl<T: HttpTransport> ProvidesTransactionStatus for MoneroDaemon<T> {
                 .rpc_call(
                     "get_transactions",
                     Some(format!(r#"{{ "txs_hashes": ["{}"] }}"#, tx_hash_hex)),
-                    4096,
+                    // 64kb, fairly arbitrary, but should be enough
+                    65536,
                 )
                 .await?;
 

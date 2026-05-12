@@ -1,14 +1,14 @@
 pub mod harness;
 
-use harness::bob_run_until::is_xmr_locked;
 use harness::SlowCancelConfig;
+use harness::bob_run_until::is_xmr_locked;
 use swap::asb::FixedRate;
 use swap::protocol::bob::BobState;
 use swap::protocol::{alice, bob};
 
 #[tokio::test]
 async fn given_bob_restarts_after_xmr_is_locked_resume_swap() {
-    harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
+    harness::setup_test(SlowCancelConfig, None, None, |mut ctx| async move {
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
         let bob_swap_id = bob_swap.id;
         let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_xmr_locked));

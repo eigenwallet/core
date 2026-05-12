@@ -4,7 +4,7 @@ use monero_rpc_pool::{config::Config, database::parse_network, run_server};
 use tracing::info;
 use tracing_subscriber::{self, EnvFilter};
 
-use monero::Network;
+use monero_address::Network;
 
 #[derive(Parser)]
 #[command(name = "monero-rpc-pool")]
@@ -69,7 +69,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     info!("Tor client successfully bootstrapped");
                 }
                 Err(e) => {
-                    tracing::error!("Failed to bootstrap Tor client: {}. Tor functionality will be unavailable.", e);
+                    tracing::error!(
+                        "Failed to bootstrap Tor client: {}. Tor functionality will be unavailable.",
+                        e
+                    );
                 }
             }
         });

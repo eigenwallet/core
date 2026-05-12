@@ -1,7 +1,7 @@
 pub mod harness;
 
-use harness::alice_run_until::is_encsig_learned;
 use harness::SlowCancelConfig;
+use harness::alice_run_until::is_encsig_learned;
 use swap::asb;
 use swap::asb::{Finality, FixedRate};
 use swap::protocol::alice::AliceState;
@@ -11,7 +11,7 @@ use swap::protocol::{alice, bob};
 /// after learning encsig from Bob
 #[tokio::test]
 async fn alice_manually_redeems_after_enc_sig_learned() {
-    harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
+    harness::setup_test(SlowCancelConfig, None, None, |mut ctx| async move {
         let (bob_swap, _) = ctx.bob_swap().await;
         let bob_swap = tokio::spawn(bob::run(bob_swap));
 

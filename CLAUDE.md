@@ -1,1 +1,1 @@
-- When asked about libp2p, check if a rust-libp2p folder exists which contains the cloned rust libp2p codebase. Read through to figure out what the best response it. If its a question about best practice when implementing protocols read @rust-libp2p/protocols/ specificially.
+AGENTS.md

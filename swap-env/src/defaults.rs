@@ -1,3 +1,4 @@
+use crate::config::RefundPolicy;
 use crate::env::{Mainnet, Testnet};
 use anyhow::{Context, Result};
 use libp2p::Multiaddr;
@@ -41,6 +42,7 @@ pub const DEFAULT_SPREAD: f64 = 0.02f64;
 pub const KRAKEN_PRICE_TICKER_WS_URL: &str = "wss://ws.kraken.com";
 pub const BITFINEX_PRICE_TICKER_WS_URL: &str = "wss://api-pub.bitfinex.com/ws/2";
 pub const KUCOIN_PRICE_TICKER_REST_URL: &str = "https://api.kucoin.com/api/v1/bullet-public";
+pub const EXOLIX_PRICE_TICKER_REST_URL: &str = "https://exolix.com/api/v2/rate";
 
 pub fn default_rendezvous_points() -> Vec<Multiaddr> {
     vec![
@@ -56,8 +58,6 @@ pub fn default_rendezvous_points() -> Vec<Multiaddr> {
 
 pub fn default_electrum_servers_mainnet() -> Vec<Url> {
     vec![
-        Url::parse("tcp://electrum.eigenwallet.org:22293")
-            .expect("default electrum server url to be valid"),
         Url::parse("ssl://electrum.blockstream.info:50002")
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://bitcoin.stackwallet.com:50002")
@@ -96,10 +96,6 @@ pub fn default_electrum_servers_testnet() -> Vec<Url> {
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://testnet.aranguren.org:51002")
             .expect("default electrum server url to be valid"),
-        Url::parse("ssl://bitcoin.devmole.eu:5010")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://bitcoin.devmole.eu:5000")
-            .expect("default electrum server url to be valid"),
     ]
 }
 
@@ -115,9 +111,11 @@ pub struct Defaults {
     pub price_ticker_ws_url_kraken: Url,
     pub price_ticker_ws_url_bitfinex: Url,
     pub price_ticker_rest_url_kucoin: Url,
+    pub price_ticker_rest_url_exolix: Url,
     pub bitcoin_confirmation_target: u16,
     pub use_mempool_space_fee_estimation: bool,
     pub developer_tip: Decimal,
+    pub refund_policy: RefundPolicy,
 }
 
 impl GetDefaults for Mainnet {
@@ -132,9 +130,11 @@ impl GetDefaults for Mainnet {
             price_ticker_ws_url_kraken: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             price_ticker_ws_url_bitfinex: Url::parse(BITFINEX_PRICE_TICKER_WS_URL)?,
             price_ticker_rest_url_kucoin: Url::parse(KUCOIN_PRICE_TICKER_REST_URL)?,
+            price_ticker_rest_url_exolix: Url::parse(EXOLIX_PRICE_TICKER_REST_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,
+            refund_policy: RefundPolicy::default(),
         };
 
         Ok(defaults)
@@ -153,9 +153,11 @@ impl GetDefaults for Testnet {
             price_ticker_ws_url_kraken: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             price_ticker_ws_url_bitfinex: Url::parse(BITFINEX_PRICE_TICKER_WS_URL)?,
             price_ticker_rest_url_kucoin: Url::parse(KUCOIN_PRICE_TICKER_REST_URL)?,
+            price_ticker_rest_url_exolix: Url::parse(EXOLIX_PRICE_TICKER_REST_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,
+            refund_policy: RefundPolicy::default(),
         };
 
         Ok(defaults)

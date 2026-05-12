@@ -4,7 +4,7 @@ pub mod tracing_util;
 use anyhow::anyhow;
 use std::{collections::HashMap, future::Future, path::PathBuf, time::Duration};
 use tokio::{
-    fs::{read_dir, File},
+    fs::{File, read_dir},
     io::{AsyncBufReadExt, BufReader},
 };
 use uuid::Uuid;

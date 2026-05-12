@@ -22,6 +22,15 @@
         -webkit-app-region: no-drag;
       }
 
+      /* Older WKWebView builds can treat global user-select:none as non-editable form controls. */
+      input,
+      textarea,
+      [contenteditable]:not([contenteditable="false"]) {
+        -webkit-user-select: text;
+        -webkit-user-drag: auto;
+        user-select: text;
+      }
+
       html,
       body {
         height: 100%;

@@ -1,11 +1,12 @@
 use crate::common::retry;
 use crate::monero;
-use crate::protocol::alice::swap::XmrRefundable;
-use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
-use anyhow::{bail, Result};
+use crate::protocol::alice::AliceState;
+use crate::protocol::alice::swap::XmrRefundable;
+use anyhow::{Context, Result, bail};
 use bitcoin_wallet::BitcoinWallet;
 use libp2p::PeerId;
+use monero_interface::PublishTransaction;
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,7 +31,7 @@ pub async fn refund(
     swap_id: Uuid,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
-    db: Arc<dyn Database>,
+    db: Arc<dyn Database + Send + Sync>,
 ) -> Result<AliceState> {
     let state = db.get_state(swap_id).await?.try_into()?;
 
@@ -51,6 +52,8 @@ pub async fn refund(
         // Refund possible due to cancel transaction already being published
         | AliceState::BtcCancelled { transfer_proof, state3, .. }
         | AliceState::BtcRefunded { transfer_proof, state3, .. }
+        | AliceState::BtcPartiallyRefunded { transfer_proof, state3, .. }
+        | AliceState::XmrRefundable { transfer_proof, state3, .. }
         | AliceState::BtcPunishable { transfer_proof, state3, .. } => {
             (transfer_proof, state3)
         }
@@ -58,7 +61,14 @@ pub async fn refund(
         // Alice already in final state
         AliceState::BtcRedeemTransactionPublished { .. }
         | AliceState::BtcRedeemed
-        | AliceState::XmrRefunded
+        | AliceState::XmrRefundTxConstructed { .. }
+        | AliceState::XmrRefundTxPublished { .. }
+        | AliceState::XmrRefunded { .. }
+        | AliceState::BtcWithholdPublished { .. }
+        | AliceState::BtcWithholdConfirmed { .. }
+        | AliceState::BtcMercyGranted { .. }
+        | AliceState::BtcMercyPublished { .. }
+        | AliceState::BtcMercyConfirmed { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)
         | AliceState::BtcPunished { .. }
@@ -67,11 +77,9 @@ pub async fn refund(
 
     tracing::info!(%swap_id, "Trying to manually refund swap");
 
-    let spend_key = if let Some(published_refund_tx) =
-        state3.fetch_tx_refund(bitcoin_wallet.as_ref()).await?
-    {
+    let spend_key = if let Some(spend_key) = state3.refund_btc(bitcoin_wallet.as_ref()).await? {
         tracing::debug!(%swap_id, "Bitcoin refund transaction found, extracting key to refund Monero");
-        state3.extract_monero_private_key(published_refund_tx)?
+        spend_key
     } else {
         let bob_peer_id = db.get_peer_id(swap_id).await?;
         bail!(Error::RefundTransactionNotPublishedYet(bob_peer_id),);
@@ -80,14 +88,22 @@ pub async fn refund(
     retry(
         "Refund Monero",
         || async {
-            state3
-                .refund_xmr(
+            let xmr_refund_tx = state3
+                .construct_xmr_refund_transaction(
                     monero_wallet.clone(),
                     swap_id,
                     spend_key,
                     transfer_proof.clone(),
                 )
                 .await
+                .map_err(backoff::Error::transient)?;
+
+            monero_wallet
+                .rpc_client()
+                .await
+                .publish_transaction(&xmr_refund_tx)
+                .await
+                .context("Failed to publish Monero refund transaction")
                 .map_err(backoff::Error::transient)
         },
         None,
@@ -95,9 +111,49 @@ pub async fn refund(
     )
     .await?;
 
-    let state = AliceState::XmrRefunded;
+    let mut state = AliceState::XmrRefunded {
+        state3: Some(state3.clone()),
+    };
+
     db.insert_latest_state(swap_id, state.clone().into())
         .await?;
+
+    if state3.should_publish_tx_withhold.unwrap_or(false) {
+        let timelocks = state3.expired_timelocks(bitcoin_wallet.as_ref()).await?;
+
+        if matches!(
+            timelocks,
+            swap_core::bitcoin::ExpiredTimelocks::RemainingRefund
+        ) {
+            tracing::warn!(%swap_id, "Remaining refund timelock already expired, Bob may have already reclaimed. Attempting TxWithhold anyway");
+        }
+
+        tracing::info!(%swap_id, "Publishing TxWithhold to withhold anti-spam deposit");
+
+        let signed_tx = state3
+            .signed_withhold_transaction()
+            .context("Failed to construct signed TxWithhold")?;
+
+        let (_txid, subscription) = bitcoin_wallet
+            .ensure_broadcasted(signed_tx, "withhold")
+            .await
+            .context("Failed to broadcast TxWithhold")?;
+
+        state = AliceState::BtcWithholdPublished {
+            state3: state3.clone(),
+        };
+        db.insert_latest_state(swap_id, state.clone().into())
+            .await?;
+
+        subscription
+            .wait_until_final()
+            .await
+            .context("Failed to wait for TxWithhold confirmation")?;
+
+        state = AliceState::BtcWithholdConfirmed { state3 };
+        db.insert_latest_state(swap_id, state.clone().into())
+            .await?;
+    }
 
     Ok(state)
 }

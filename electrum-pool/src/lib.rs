@@ -1,6 +1,6 @@
 use backoff::{Error as BackoffError, ExponentialBackoff};
-use bdk_electrum::electrum_client::{Client, ConfigBuilder, ElectrumApi, Error};
 use bdk_electrum::BdkElectrumClient;
+use bdk_electrum::electrum_client::{Client, ConfigBuilder, ElectrumApi, Error};
 use bitcoin::Transaction;
 use futures::future::join_all;
 use once_cell::sync::OnceCell;
@@ -740,11 +740,11 @@ mod tests {
     use super::*;
     use bitcoin::hashes::Hash;
     use bitcoin::{
-        absolute::LockTime, transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, TxIn,
-        TxOut, Witness,
+        Amount, OutPoint, ScriptBuf, Sequence, TxIn, TxOut, Witness, absolute::LockTime,
+        transaction::Version,
     };
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex as StdMutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Mock client for testing
     #[derive(Debug)]

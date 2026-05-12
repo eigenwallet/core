@@ -75,6 +75,11 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "Adds txKeys() to PendingTransaction in wallet2_api.h",
         "patches/eigenwallet_0003_pending_transaction_tx_keys.patch"
     ),
+    embedded_patch!(
+        "eigenwallet_0004_wallet_impl_balance_per_subaddress.patch",
+        "Adds balancePerSubaddress() and unlockedBalancePerSubaddress() to wallet::WalletImpl in api/wallet.h",
+        "patches/eigenwallet_0004_wallet_impl_balance_per_subaddress.patch"
+    ),
 ];
 
 /// Find the workspace target directory from OUT_DIR
@@ -85,11 +90,15 @@ fn find_workspace_target_dir() -> std::path::PathBuf {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR to be set");
     let out_path = Path::new(&out_dir);
 
-    // Walk up from OUT_DIR to find "target" directory
+    // Walk up from OUT_DIR to find the target directory, then always resolve to the
+    // canonical "target/" so native deps are shared across all cargo target directories
+    // (e.g., target-check used by IDE/rust-analyzer).
     for ancestor in out_path.ancestors() {
-        // allow target dir and also target-check dir (latter one is for lsp to not interfere with cli build commands)
         if ancestor.ends_with("target") || ancestor.ends_with("target-check") {
-            return ancestor.to_path_buf();
+            return ancestor
+                .parent()
+                .expect("target dir to have a parent")
+                .join("target");
         }
     }
 
@@ -139,7 +148,7 @@ fn main() {
         .display()
         .to_string();
     config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file.clone());
-    println!("cargo:warning=Using toolchain file: {toolchain_file}");
+    println!("cargo:debug=Using toolchain file: {toolchain_file}");
 
     let depends_lib_dir = contrib_depends_dir.join(format!("{target}/lib"));
 
@@ -380,12 +389,14 @@ fn main() {
     // Link unbound statically
     println!("cargo:rustc-link-lib=static=unbound");
     println!("cargo:rustc-link-lib=static=expat"); // Expat is required by unbound
-                                                   // println!("cargo:rustc-link-lib=static=nghttp2");
-                                                   // println!("cargo:rustc-link-lib=static=event");
-                                                   // Android
+    // println!("cargo:rustc-link-lib=static=nghttp2");
+    // println!("cargo:rustc-link-lib=static=event");
+    // Android
     #[cfg(target_os = "android")]
     {
-        println!("cargo:rustc-link-search=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/");
+        println!(
+            "cargo:rustc-link-search=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/"
+        );
         // println!("cargo:rustc-link-lib=static=c++_static");
     }
 
@@ -411,6 +422,7 @@ fn main() {
         .include("src") // Include the bridge.h file
         .include("monero/src") // Includes the monero headers
         .include("monero/external/easylogging++") // Includes the easylogging++ headers
+        .include("monero/external")
         .include("monero/contrib/epee/include") // Includes the epee headers for net/http_client.h
         .include(
             contrib_depends_dir
@@ -419,7 +431,9 @@ fn main() {
                 .to_string(),
         )
         .include(output_directory)
-        .flag("-fPIC"); // Position independent code
+        .flag("-fPIC") // Position independent code
+        .flag("-Wno-unused-parameter") // Suppress warnings from upstream Monero C++ headers
+        .flag("-Wno-reorder-ctor"); // Suppress harmless ctor init order warning from wallet2.h
 
     build.compile("monero-sys");
 }
@@ -437,7 +451,7 @@ fn compile_dependencies(
         "aarch64-apple-ios-sim" => "aarch64-apple-iossimulator".to_string(),
         _ => target,
     };
-    println!("cargo:warning=Building for target: {target}");
+    println!("cargo:debug=Building for target: {target}");
 
     match target.as_str() {
         "x86_64-apple-darwin"
@@ -453,7 +467,7 @@ fn compile_dependencies(
         _ => panic!("target unsupported: {target}"),
     }
 
-    println!("cargo:warning=Running make HOST={target} in contrib/depends",);
+    println!("cargo:debug=Running make HOST={target} in contrib/depends",);
 
     // Copy monero-depends to out_dir/depends in order to build the dependencies there
     match fs_extra::copy_items(
@@ -548,7 +562,7 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
 
     for embedded in EMBEDDED_PATCHES {
         println!(
-            "cargo:warning=Processing embedded patch: {} ({})",
+            "cargo:debug=Processing embedded patch: {} ({})",
             embedded.name, embedded.description
         );
 
@@ -561,14 +575,14 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         println!(
-            "cargo:warning=Found {} file(s) in patch {}",
+            "cargo:debug=Found {} file(s) in patch {}",
             file_patches.len(),
             embedded.name
         );
 
         // Apply each file patch individually
         for (file_path, patch_content) in file_patches {
-            println!("cargo:warning=Applying patch to file: {file_path}");
+            println!("cargo:debug=Applying patch to file: {file_path}");
 
             // Parse the individual file patch
             let patch = diffy::Patch::from_str(&patch_content)
@@ -585,7 +599,7 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
 
             // Check if patch is already applied by trying to reverse it
             if diffy::apply(&current, &patch.reverse()).is_ok() {
-                println!("cargo:warning=Patch for {file_path} already applied – skipping",);
+                println!("cargo:debug=Patch for {file_path} already applied – skipping",);
                 continue;
             }
 
@@ -595,11 +609,11 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
             fs::write(&target_path, patched)
                 .map_err(|e| format!("Failed to write {file_path}: {e}"))?;
 
-            println!("cargo:warning=Successfully applied patch to: {file_path}");
+            println!("cargo:debug=Successfully applied patch to: {file_path}");
         }
 
         println!(
-            "cargo:warning=Successfully applied all file patches for: {} ({})",
+            "cargo:debug=Successfully applied all file patches for: {} ({})",
             embedded.name, embedded.description
         );
     }

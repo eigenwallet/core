@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO wormholes (peer_id, address, active)\n            VALUES (?, ?, ?)\n            ON CONFLICT (peer_id) DO UPDATE SET address = excluded.address, active = excluded.active\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "0604ad21339a323db5415daff94eef256729f7259006d1d9c9d78dda213fb212"
+}

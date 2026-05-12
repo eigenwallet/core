@@ -1,12 +1,12 @@
 #![allow(non_snake_case)]
 
-use crate::bitcoin::{build_shared_output_descriptor, Address, Amount, PublicKey, Transaction};
+use crate::bitcoin::{Address, Amount, PublicKey, Transaction, build_shared_output_descriptor};
 use ::bitcoin::psbt::Psbt as PartiallySignedTransaction;
 use ::bitcoin::{OutPoint, TxIn, TxOut, Txid};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use bdk_wallet::miniscript::Descriptor;
 use bdk_wallet::psbt::PsbtUtils;
-use bitcoin::{locktime::absolute::LockTime as PackedLockTime, ScriptBuf, Sequence};
+use bitcoin::{ScriptBuf, Sequence, locktime::absolute::LockTime as PackedLockTime};
 use bitcoin_wallet::primitives::Watchable;
 use serde::{Deserialize, Serialize};
 

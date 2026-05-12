@@ -3,8 +3,8 @@ use std::{sync::Arc, time::Duration};
 use monero_sys::WalletEventListener;
 
 use crate::Wallet;
-use swap_core::monero::Amount;
-use throttle::{throttle, Throttle};
+use monero_oxide_ext::Amount;
+use throttle::{Throttle, throttle};
 
 use crate::TauriHandle;
 

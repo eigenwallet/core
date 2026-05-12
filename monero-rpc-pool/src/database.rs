@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::types::{NodeAddress, NodeHealthStats, NodeMetadata, NodeRecord};
 use anyhow::Result;
-use monero::Network;
+use monero_address::Network;
 use sqlx::SqlitePool;
 use tracing::{info, warn};
 

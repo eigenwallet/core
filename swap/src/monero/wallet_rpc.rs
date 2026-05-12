@@ -1,5 +1,5 @@
-use ::monero::Network;
 use anyhow::{Context, Error, Result};
+use monero_address::Network;
 use serde::Deserialize;
 use std::fmt;
 use std::fmt::{Display, Formatter};

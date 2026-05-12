@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::harness::bitcoind;
 use bitcoin::Network;
-use testcontainers::{core::WaitFor, Image, ImageArgs};
+use testcontainers::{Image, ImageArgs, core::WaitFor};
 
 pub const HTTP_PORT: u16 = 60401;
 pub const RPC_PORT: u16 = 3002;

@@ -30,6 +30,7 @@ export interface SettingsState {
   /// Whether to use the Monero RPC pool for load balancing (true) or custom nodes (false)
   useMoneroRpcPool: boolean;
   userHasSeenIntroduction: boolean;
+  userHasSeenAntiSpamInfo: boolean;
   /// List of rendezvous points
   rendezvousPoints: string[];
   /// Does the user want to donate parts of his swaps to funding the development
@@ -47,6 +48,8 @@ export interface SettingsState {
   externalBitcoinRefundAddress: string;
   /// UTC timestamp (in milliseconds) when default nodes were last applied
   lastAppliedDefaultNodesV2?: number | null;
+  /// Whether we have already cleared logs after upgrading
+  hasClearedLogsOnUpgrade: boolean;
 }
 
 export enum RedeemPolicy {
@@ -118,6 +121,7 @@ const initialState: SettingsState = {
   enableMoneroTor: false, // Default to not routing Monero traffic through Tor
   useMoneroRpcPool: true, // Default to using RPC pool
   userHasSeenIntroduction: false,
+  userHasSeenAntiSpamInfo: false,
   // TODO: Apply these regularly (like the default nodes)
   rendezvousPoints: DEFAULT_RENDEZVOUS_POINTS,
   donateToDevelopment: false, // Default to no donation
@@ -126,6 +130,7 @@ const initialState: SettingsState = {
   externalMoneroRedeemAddress: "",
   externalBitcoinRefundAddress: "",
   lastAppliedDefaultNodesV2: null,
+  hasClearedLogsOnUpgrade: false,
 };
 
 const alertsSlice = createSlice({
@@ -204,6 +209,12 @@ const alertsSlice = createSlice({
     },
     setUserHasSeenIntroduction(slice, action: PayloadAction<boolean>) {
       slice.userHasSeenIntroduction = action.payload;
+    },
+    setUserHasSeenAntiSpamInfo(slice, action: PayloadAction<boolean>) {
+      slice.userHasSeenAntiSpamInfo = action.payload;
+    },
+    setHasClearedLogsOnUpgrade(slice, action: PayloadAction<boolean>) {
+      slice.hasClearedLogsOnUpgrade = action.payload;
     },
     resetSettings(_) {
       return initialState;
@@ -330,6 +341,8 @@ export const {
   setEnableMoneroTor,
   setUseMoneroRpcPool,
   setUserHasSeenIntroduction,
+  setUserHasSeenAntiSpamInfo,
+  setHasClearedLogsOnUpgrade,
   addRendezvousPoint,
   removeRendezvousPoint,
   setDonateToDevelopment,

@@ -1,14 +1,13 @@
 [package]
 name = "monero-sys"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 anyhow = { workspace = true }
 backoff = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
 cxx = "1.0.137"
-monero = { workspace = true }
 serde = { workspace = true }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "macros", "chrono"] }
 thiserror = "2.0.17"
@@ -18,7 +17,11 @@ typeshare = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
 
+monero-address = { workspace = true }
+
 # Our crates
+monero-oxide-ext = { path = "../monero-oxide-ext" }
+swap-serde = { path = "../swap-serde" }
 throttle = { path = "../throttle" }
 
 [build-dependencies]
@@ -31,8 +34,6 @@ fs_extra = "1.3.0"
 [dev-dependencies]
 anyhow = { workspace = true }
 futures = { workspace = true }
-quickcheck = "1.0"
-quickcheck_macros = "1.0"
 tempfile = "3.19.1"
 tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = { workspace = true }

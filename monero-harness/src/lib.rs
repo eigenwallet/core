@@ -22,15 +22,18 @@
 //! Also provides standalone JSON RPC clients for monerod and monero-wallet-rpc.
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 pub use testcontainers::clients::Cli;
 use testcontainers::{Container, RunnableImage};
 use tokio::time;
 
-use monero::{Address, Amount};
+use monero_address::MoneroAddress;
 use monero_daemon_rpc::MoneroDaemon;
+use monero_oxide_ext::Amount;
 use monero_simple_request_rpc::SimpleRequestTransport;
-use monero_sys::{no_listener, Daemon, SyncProgress, TxReceipt, TxStatus, WalletHandle};
+use monero_sys::SubaddressSummary;
+use monero_sys::{Daemon, SyncProgress, TxReceipt, TxStatus, WalletHandle, no_listener};
+use std::collections::HashMap;
 
 use crate::image::{MONEROD_DAEMON_CONTAINER_NAME, MONEROD_DEFAULT_NETWORK, RPC_PORT};
 
@@ -297,7 +300,8 @@ impl<'c> Monero {
         Ok(())
     }
 
-    pub async fn generate_block(&self) -> Result<()> {
+    /// Generates 15 blocks
+    pub async fn generate_blocks(&self) -> Result<()> {
         let miner_wallet = self.wallet("miner")?;
         let miner_address = miner_wallet.address().await?.to_string();
         self.monerod().generate_blocks(15, &miner_address).await?;
@@ -438,7 +442,7 @@ impl MoneroWallet {
         let wallet = WalletHandle::open_or_create(
             wallet_path.display().to_string(),
             daemon,
-            monero::Network::Mainnet,
+            monero_address::Network::Mainnet,
             background_sync,
         )
         .await
@@ -459,8 +463,17 @@ impl MoneroWallet {
         &self.name
     }
 
-    pub async fn address(&self) -> Result<Address> {
+    pub async fn address(&self) -> Result<MoneroAddress> {
         Ok(self.wallet.main_address().await?)
+    }
+
+    /// Get address at a given account and subaddress index.
+    pub async fn address_at(
+        &self,
+        account_index: u32,
+        address_index: u32,
+    ) -> Result<MoneroAddress> {
+        Ok(self.wallet.address(account_index, address_index).await?)
     }
 
     pub async fn balance(&self) -> Result<u64> {
@@ -480,7 +493,11 @@ impl MoneroWallet {
         Ok(total)
     }
 
-    pub async fn check_tx_key(&self, txid: String, txkey: monero::PrivateKey) -> Result<TxStatus> {
+    pub async fn check_tx_key(
+        &self,
+        txid: String,
+        txkey: monero_oxide_ext::PrivateKey,
+    ) -> Result<TxStatus> {
         let status = self
             .wallet
             .check_tx_status(txid.clone(), txkey, &self.address().await?)
@@ -493,6 +510,28 @@ impl MoneroWallet {
 
     pub async fn unlocked_balance(&self) -> Result<u64> {
         Ok(self.wallet.unlocked_balance().await?.as_pico())
+    }
+
+    /// Create a new subaddress for the given account with the provided label.
+    pub async fn create_subaddress(
+        &self,
+        account_index: u32,
+        label: impl Into<String>,
+    ) -> Result<()> {
+        self.wallet
+            .create_subaddress(account_index, label.into())
+            .await?;
+        Ok(())
+    }
+
+    /// Get summaries for subaddresses within a given account.
+    pub async fn subaddress_summaries(&self, account_index: u32) -> Result<Vec<SubaddressSummary>> {
+        Ok(self.wallet.subaddress_summaries(account_index).await?)
+    }
+
+    /// Get non-strict balance per subaddress for main account (index 0).
+    pub async fn balance_per_subaddress(&self) -> Result<HashMap<u32, u64>> {
+        Ok(self.wallet.balance_per_subaddress().await)
     }
 
     pub async fn refresh(&self) -> Result<()> {
@@ -511,7 +550,7 @@ impl MoneroWallet {
         Ok(())
     }
 
-    pub async fn transfer(&self, address: &Address, amount_pico: u64) -> Result<TxReceipt> {
+    pub async fn transfer(&self, address: &MoneroAddress, amount_pico: u64) -> Result<TxReceipt> {
         tracing::info!(
             "`{}` transferring {}",
             self.name,
@@ -524,7 +563,7 @@ impl MoneroWallet {
             .context("Failed to perform transfer")
     }
 
-    pub async fn sweep(&self, address: &Address) -> Result<TxReceipt> {
+    pub async fn sweep(&self, address: &MoneroAddress) -> Result<TxReceipt> {
         tracing::info!("`{}` sweeping", self.name);
 
         self.wallet
@@ -533,17 +572,22 @@ impl MoneroWallet {
             .context("Failed to perform sweep")
     }
 
-    /// Sweep multiple addresses with different ratios
-    /// If the address is `None`, the address will be set to the primary address of the
-    /// main wallet.
-    pub async fn sweep_multi(&self, addresses: &[Address], ratios: &[f64]) -> Result<TxReceipt> {
-        tracing::info!("`{}` sweeping multi ({:?})", self.name, ratios);
-        self.balance().await?;
+    pub async fn transfer_multi(&self, destinations: &[(MoneroAddress, u64)]) -> Result<TxReceipt> {
+        tracing::info!(
+            "`{}` transferring to {} destinations",
+            self.name,
+            destinations.len()
+        );
+
+        let destinations: Vec<(MoneroAddress, Amount)> = destinations
+            .iter()
+            .map(|(addr, pico)| (*addr, Amount::from_pico(*pico)))
+            .collect();
 
         self.wallet
-            .sweep_multi_destination(addresses, ratios)
+            .transfer_multi_destination(&destinations)
             .await
-            .context("Failed to perform sweep")
+            .context("Failed to perform multi-destination transfer")
     }
 
     pub async fn blockchain_height(&self) -> Result<u64> {

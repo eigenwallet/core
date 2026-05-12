@@ -12,8 +12,8 @@ concurrency:
 
 jobs:
   draft-cb-release:
-    # don't do it for PR's
-    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
+    # don't do it for PR's, preview releases, or developer testing releases
+    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && !startsWith(github.ref_name, 'test-') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -159,14 +159,14 @@ jobs:
           done
 
       - name: Clean up Rust build cache before building Flatpak
-        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && matrix.target == 'x86_64-unknown-linux-gnu' }}
+        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && !startsWith(github.ref_name, 'test-') && matrix.target == 'x86_64-unknown-linux-gnu' }}
         shell: bash
         run: |
           rm -rf target/*/release/{deps,build,incremental}
           df -h .
 
       - name: Upload flatpak release
-        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && matrix.target == 'x86_64-unknown-linux-gnu' }}
+        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && !startsWith(github.ref_name, 'test-') && matrix.target == 'x86_64-unknown-linux-gnu' }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -204,8 +204,8 @@ jobs:
           git fetch -f "$outdir" HEAD:gh-pages
           git push -f origin gh-pages
 
-      - name: Upload to crabnebula release (not for previews)
-        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
+      - name: Upload to crabnebula release (not for previews or test releases)
+        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && !startsWith(github.ref_name, 'test-') }}
         uses: crabnebula-dev/cloud-release@v0
         with:
           command: release upload ${{ env.CN_APPLICATION }} --framework tauri
@@ -213,6 +213,8 @@ jobs:
           args: --target ${{ matrix.target }}
 
   generate-homebrew-formula:
+    # don't do it for developer testing releases
+    if: ${{ !startsWith(github.ref_name, 'test-') }}
     needs: [build_gui]
     runs-on: ubuntu-24.04
     steps:
@@ -264,8 +266,8 @@ jobs:
             --clobber
 
   publish:
-    # don't publish previews to crabnebula
-    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
+    # don't publish previews or developer testing releases to crabnebula
+    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && !startsWith(github.ref_name, 'test-') }}
     needs: [draft-cb-release, build_gui]
     runs-on: ubuntu-24.04
     steps:

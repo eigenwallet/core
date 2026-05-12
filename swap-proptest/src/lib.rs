@@ -2,7 +2,7 @@ use proptest::prelude::*;
 
 pub mod ecdsa_fun {
     use super::*;
-    use ::ecdsa_fun::fun::{Point, Scalar, G};
+    use ::ecdsa_fun::fun::{G, Point, Scalar};
 
     pub fn point() -> impl Strategy<Value = Point> {
         scalar().prop_map(|mut scalar| Point::even_y_from_scalar_mul(G, &mut scalar).normalize())
@@ -17,8 +17,8 @@ pub mod ecdsa_fun {
 
 pub mod bitcoin {
     use super::*;
-    use ::bitcoin::bip32::Xpriv as ExtendedPrivKey;
     use ::bitcoin::Network;
+    use ::bitcoin::bip32::Xpriv as ExtendedPrivKey;
 
     pub fn extended_priv_key() -> impl Strategy<Value = ExtendedPrivKey> {
         prop::array::uniform8(0..255u8).prop_filter_map("invalid secret key generated", |bytes| {

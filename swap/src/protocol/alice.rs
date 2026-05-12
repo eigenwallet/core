@@ -1,7 +1,7 @@
 //! Run an XMR/BTC swap in the role of Alice.
 //! Alice holds XMR and wishes receive BTC.
-pub use crate::protocol::alice::swap::*;
 use crate::protocol::Database;
+pub use crate::protocol::alice::swap::*;
 use crate::{asb, monero};
 use bitcoin_wallet::BitcoinWallet;
 use rust_decimal::Decimal;
@@ -32,5 +32,5 @@ pub struct Swap {
 #[derive(Clone)]
 pub struct TipConfig {
     pub ratio: Decimal,
-    pub address: ::monero::Address,
+    pub address: monero_address::MoneroAddress,
 }

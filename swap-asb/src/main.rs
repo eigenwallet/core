@@ -12,34 +12,36 @@
 #![forbid(unsafe_code)]
 #![allow(non_snake_case)]
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use comfy_table::Table;
 use libp2p::Swarm;
 use monero_sys::Daemon;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use std::convert::TryInto;
 use std::env;
-use std::str::FromStr;
 use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
 mod command;
-use command::{parse_args, Arguments, Command};
+use command::{Arguments, Command, parse_args};
 use swap::asb::rpc::RpcServer;
-use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
+use swap::asb::{
+    EventLoop, ExchangeRate, Finality, cancel, grant_mercy, punish, redeem, refund, safely_abort,
+};
 use swap::common::tor::{bootstrap_tor_client, create_tor_client};
 use swap::common::tracing_util::Format;
 use swap::common::{self, get_logs, warn_if_outdated};
-use swap::database::{open_db, AccessMode};
+use swap::database::{AccessMode, open_db};
 use swap::monero;
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
-use swap::protocol::alice::{run, AliceState, TipConfig};
+use swap::protocol::alice::{AliceState, TipConfig, run};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;
 use swap_env::config::{
-    initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
+    Config, ConfigNotInitialized, initial_setup, query_user_for_initial_config, read_config,
+    validate_config,
 };
 use swap_feed;
 use swap_machine::alice::is_complete;
@@ -141,19 +143,7 @@ pub async fn main() -> Result<()> {
     // Initialize tracing
     initialize_tracing(json, &config, trace)?;
 
-    // Check for conflicting env / config values
-    if config.monero.network != env_config.monero_network {
-        bail!(format!(
-            "Expected monero network in config file to be {:?} but was {:?}",
-            env_config.monero_network, config.monero.network
-        ));
-    }
-    if config.bitcoin.network != env_config.bitcoin_network {
-        bail!(format!(
-            "Expected bitcoin network in config file to be {:?} but was {:?}",
-            env_config.bitcoin_network, config.bitcoin.network
-        ));
-    }
+    validate_config(&config, env_config)?;
 
     let seed = Seed::from_file_or_generate(&config.data.dir)
         .await
@@ -197,15 +187,15 @@ pub async fn main() -> Result<()> {
                     )
                 }
                 (total, 0) => {
-                    let total = monero::Amount::from_piconero(total);
+                    let total = monero::Amount::from_pico(total);
                     tracing::warn!(
                         %total,
                         "Unlocked Monero balance is 0, total balance is",
                     )
                 }
                 (total, unlocked) => {
-                    let total = monero::Amount::from_piconero(total);
-                    let unlocked = monero::Amount::from_piconero(unlocked);
+                    let total = monero::Amount::from_pico(total);
+                    let unlocked = monero::Amount::from_pico(unlocked);
                     tracing::info!(%total, %unlocked, "Monero wallet balance");
                 }
             }
@@ -215,22 +205,66 @@ pub async fn main() -> Result<()> {
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
-            // Connect to Kraken, Bitfinex, and KuCoin
-            let kraken_price_updates =
-                swap_feed::connect_kraken(config.maker.price_ticker_ws_url_kraken.clone())?;
-            let bitfinex_price_updates =
-                swap_feed::connect_bitfinex(config.maker.price_ticker_ws_url_bitfinex.clone())?;
-            let kucoin_price_updates = swap_feed::connect_kucoin(
-                config.maker.price_ticker_rest_url_kucoin.clone(),
-                reqwest::Client::new(),
-            )?;
+            // Connect to each enabled price feed. Each source is
+            // independently toggleable via config; Exolix additionally
+            // requires an API key.
+            let kraken_price_updates = if config.maker.price_ticker_source_kraken_enabled {
+                Some(swap_feed::connect_kraken(
+                    config.maker.price_ticker_ws_url_kraken.clone(),
+                )?)
+            } else {
+                None
+            };
+            let bitfinex_price_updates = if config.maker.price_ticker_source_bitfinex_enabled {
+                Some(swap_feed::connect_bitfinex(
+                    config.maker.price_ticker_ws_url_bitfinex.clone(),
+                )?)
+            } else {
+                None
+            };
+            let kucoin_price_updates = if config.maker.price_ticker_source_kucoin_enabled {
+                Some(swap_feed::connect_kucoin(
+                    config.maker.price_ticker_rest_url_kucoin.clone(),
+                    reqwest::Client::new(),
+                )?)
+            } else {
+                None
+            };
+            let exolix_poll_interval = std::time::Duration::from_secs(
+                config.maker.price_ticker_rest_poll_interval_exolix_secs,
+            );
+            let exolix_price_updates = config
+                .maker
+                .price_ticker_source_exolix_api_key
+                .as_ref()
+                .map(|api_key| {
+                    swap_feed::connect_exolix(
+                        config.maker.price_ticker_rest_url_exolix.clone(),
+                        api_key.clone(),
+                        exolix_poll_interval,
+                        reqwest::Client::new(),
+                    )
+                })
+                .transpose()?;
+            tracing::info!(
+                kraken = kraken_price_updates.is_some(),
+                bitfinex = bitfinex_price_updates.is_some(),
+                kucoin = kucoin_price_updates.is_some(),
+                exolix = exolix_price_updates.is_some(),
+                "Price feed sources",
+            );
 
+            let price_validity_duration =
+                std::time::Duration::from_secs(config.maker.price_ticker_validity_duration_secs);
             let kraken_rate = ExchangeRate::new(
                 config.maker.ask_spread,
                 kraken_price_updates,
                 bitfinex_price_updates,
                 kucoin_price_updates,
-            );
+                exolix_price_updates,
+                price_validity_duration,
+            )
+            .context("Invalid price feed configuration")?;
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 
             // Initialize and bootstrap Tor client
@@ -238,7 +272,7 @@ pub async fn main() -> Result<()> {
             bootstrap_tor_client(tor_client.clone(), None).await?;
             let tor_client = tor_client.into();
 
-            let (mut swarm, onion_addresses) = swarm::asb(
+            let (mut swarm, onion_addresses, onion_service_handle) = swarm::asb(
                 &seed,
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
@@ -250,11 +284,21 @@ pub async fn main() -> Result<()> {
                 tor_client,
                 config.tor.register_hidden_service,
                 config.tor.hidden_service_num_intro_points,
+                config.tor.max_concurrent_rend_requests,
+                config.tor.wormhole_enabled,
+                config.tor.wormhole_max_concurrent_rend_requests,
+                config.tor.wormhole_num_intro_points,
+                config.tor.wormhole_swap_freshness_hours,
+                db.clone(),
             )?;
 
             for listen in config.network.listen.clone() {
                 if let Err(e) = Swarm::listen_on(&mut swarm, listen.clone()) {
-                    tracing::warn!("Failed to listen on network interface {}: {}. Consider removing it from the config.", listen, e);
+                    tracing::warn!(
+                        "Failed to listen on network interface {}: {}. Consider removing it from the config.",
+                        listen,
+                        e
+                    );
                 }
             }
 
@@ -280,19 +324,22 @@ pub async fn main() -> Result<()> {
             }
 
             let tip_config = {
-                let tip_address = monero::Address::from_str(match env_config.monero_network {
-                    monero::Network::Mainnet => {
-                        swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET
-                    }
-                    monero::Network::Stagenet => {
-                        swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET
-                    }
-                    monero::Network::Testnet => panic!("Testnet is not supported"),
-                })
+                let tip_address = monero_address::MoneroAddress::from_str_with_unchecked_network(
+                    match env_config.monero_network {
+                        monero::Network::Mainnet => {
+                            swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET
+                        }
+                        monero::Network::Stagenet => {
+                            swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET
+                        }
+                        monero::Network::Testnet => panic!("Testnet is not supported"),
+                    },
+                )
                 .expect("Hardcoded developer tip address to be valid");
 
                 assert_eq!(
-                    tip_address.network, env_config.monero_network,
+                    tip_address.network(),
+                    env_config.monero_network,
                     "Developer tip address must be on the correct Monero network"
                 );
 
@@ -313,7 +360,10 @@ pub async fn main() -> Result<()> {
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
+                config.maker.btc_redeem_fee_multiplier,
                 tip_config,
+                config.maker.refund_policy,
+                onion_service_handle,
             )
             .unwrap();
 
@@ -354,7 +404,8 @@ pub async fn main() -> Result<()> {
             event_loop.run().await;
         }
         Command::History { only_unfinished } => {
-            let db = open_db(db_file, AccessMode::ReadOnly, None).await?;
+            let db: Arc<dyn Database + Send + Sync> =
+                open_db(db_file, AccessMode::ReadOnly, None).await?;
             let mut table = Table::new();
 
             table.set_header(vec![
@@ -370,7 +421,7 @@ pub async fn main() -> Result<()> {
             ]);
 
             let all_swaps = db.all().await?;
-            for (swap_id, state) in all_swaps {
+            for (_, swap_id, state) in all_swaps {
                 let state: AliceState = state
                     .try_into()
                     .expect("Alice database only has Alice states");
@@ -481,6 +532,13 @@ pub async fn main() -> Result<()> {
 
             tracing::info!("Swap safely aborted");
         }
+        Command::GrantMercy { swap_id } => {
+            let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
+
+            grant_mercy(swap_id, db).await?;
+
+            tracing::info!("Mercy granted for swap {}", swap_id);
+        }
         Command::Redeem {
             swap_id,
             do_not_await_finality,
@@ -542,7 +600,8 @@ pub async fn main() -> Result<()> {
                 .next()
                 .context("Couldn't find state Started for this swap")?;
 
-            let secret_spend_key = match state3.watch_for_btc_tx_refund(&bitcoin_wallet).await {
+            let secret_spend_key = match state3.watch_for_btc_tx_full_refund(&bitcoin_wallet).await
+            {
                 Ok(secret) => secret,
                 Err(error) => {
                     tracing::error!(
@@ -557,7 +616,12 @@ pub async fn main() -> Result<()> {
                 let public_spend_key = monero::PublicKey::from_private_key(&secret_spend_key);
                 let public_view_key = monero::PublicKey::from_private_key(&secret_view_key.into());
 
-                monero::Address::standard(config.monero.network, public_spend_key, public_view_key)
+                monero_address::MoneroAddress::new(
+                    config.monero.network,
+                    monero_address::AddressType::Subaddress,
+                    public_spend_key.decompress(),
+                    public_view_key.decompress(),
+                )
             };
 
             println!("Retrieved the refund secret from taker's refund transaction. Below are the keys to the Monero lock wallet:
@@ -714,8 +778,7 @@ impl SwapDetails {
     fn calculate_exchange_rate(btc: bitcoin::Amount, xmr: monero::Amount) -> Result<String> {
         let btc_decimal = Decimal::from_f64(btc.to_btc())
             .ok_or_else(|| anyhow::anyhow!("Failed to convert BTC amount to Decimal"))?;
-        let xmr_decimal = Decimal::from_f64(xmr.as_xmr())
-            .ok_or_else(|| anyhow::anyhow!("Failed to convert XMR amount to Decimal"))?;
+        let xmr_decimal = Decimal::new(xmr.as_pico().try_into()?, monero::Amount::XMR_SCALE);
 
         let rate = btc_decimal
             .checked_div(xmr_decimal)

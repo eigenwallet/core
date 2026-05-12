@@ -1,5 +1,5 @@
 use anyhow::Result;
-use bitcoin::{FeeRate, ScriptBuf, Txid};
+use bitcoin::{FeeRate, ScriptBuf, Transaction, Txid};
 
 /// An object that can estimate fee rates and minimum relay fees.
 pub trait EstimateFeeRate {
@@ -192,6 +192,20 @@ impl Watchable for (Txid, ScriptBuf) {
     }
 }
 
+// Watching a transaction by watching it's first output
+// (because Electrum expects a script hash). This works
+// because all outputs of a transaction have the same status.
+impl Watchable for Transaction {
+    fn id(&self) -> Txid {
+        self.compute_txid()
+    }
+
+    fn script(&self) -> ScriptBuf {
+        debug_assert!(!self.output.is_empty(), "Transaction has no outputs");
+        self.output[0].script_pubkey.clone()
+    }
+}
+
 impl Watchable for &dyn Watchable {
     fn id(&self) -> Txid {
         (*self).id()
@@ -251,5 +265,14 @@ impl ScriptStatus {
 
     pub fn has_been_seen(&self) -> bool {
         matches!(self, ScriptStatus::InMempool | ScriptStatus::Confirmed(_))
+    }
+
+    pub fn confirmations(&self) -> u32 {
+        match self {
+            ScriptStatus::Unseen => 0,
+            ScriptStatus::InMempool => 0,
+            ScriptStatus::Retrying => 0,
+            ScriptStatus::Confirmed(confirmed) => confirmed.confirmations(),
+        }
     }
 }

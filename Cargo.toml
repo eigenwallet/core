@@ -5,6 +5,7 @@ members = [
   "electrum-pool",
   "libp2p-rendezvous-node",
   "libp2p-tor",
+  "monero-oxide-ext",
   "monero-rpc-pool",
   "monero-sys",
   "monero-tests",
@@ -39,12 +40,12 @@ bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
 
 # monero-oxide
-monero-address = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-daemon-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-interface = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-oxide = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-oxide-wallet = { git = "https://github.com/kayabaNerve/monero-oxide.git", package = "monero-wallet", branch = "rpc-rewrite" }
-monero-simple-request-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+monero-address = { git = "https://github.com/kayabaNerve/monero-oxide.git" }
+monero-daemon-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git" }
+monero-interface = { git = "https://github.com/kayabaNerve/monero-oxide.git" }
+monero-oxide = { git = "https://github.com/kayabaNerve/monero-oxide.git" }
+monero-oxide-wallet = { git = "https://github.com/kayabaNerve/monero-oxide.git", package = "monero-wallet" }
+monero-simple-request-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git" }
 
 # Cryptography
 curve25519-dalek = { version = "4", package = "curve25519-dalek", features = ["rand_core", "serde"] }
@@ -72,7 +73,6 @@ bmrng = "0.5.2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.25", default-features = false }
 libp2p = { version = "0.53.2" }
-monero = { version = "0.12", features = ["serde_support"] }
 once_cell = "1.19"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
@@ -95,12 +95,15 @@ tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"
 tokio-util = { version = "0.7", features = ["io", "codec", "rt"] }
 
 # Tor/Arti crates
-arti-client = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0", default-features = false }
-safelog = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-cell = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-hsservice = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-proto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-rtcompat = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
+arti-client = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0", default-features = false }
+libp2p-tor = { path = "./libp2p-tor" }
+safelog = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-cell = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-hscrypto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-hsservice = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-llcrypto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-proto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-rtcompat = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
 
 # Terminal Utilities
 console = "0.16"
@@ -116,13 +119,14 @@ vergen-git2 = { version = "1", features = ["build"] }
 [patch.crates-io]
 # patch until new release https://github.com/thomaseizinger/rust-jsonrpc-client/pull/51
 jsonrpc_client = { git = "https://github.com/delta1/rust-jsonrpc-client.git", rev = "3b6081697cd616c952acb9c2f02d546357d35506" }
-monero = { git = "https://github.com/comit-network/monero-rs", rev = "818f38b" }
 
 # Force up to date version of crunchy that fixes linux->windows cross compilation
 crunchy = { git = "https://github.com/eira-fransham/crunchy", rev = "ba7b86cea6ba89ccfc72ccb24cc4a4ac6d9c6272" }
 
 [workspace.lints]
 rust.unused_crate_dependencies = "warn"
+# prevents accidental infinite recursion when implementing a trait method by calling a method with the same name
+rust.unconditional_recursion = "deny"
 
 [profile.release]
 codegen-units = 1
