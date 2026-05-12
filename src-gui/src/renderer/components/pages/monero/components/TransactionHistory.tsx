@@ -1,4 +1,5 @@
-import { Typography, Box, Paper } from "@mui/material";
+import { useMemo } from "react";
+import { Typography, Box } from "@mui/material";
 import { TransactionInfo } from "models/tauriModel";
 import _ from "lodash";
 import dayjs from "dayjs";
@@ -16,26 +17,32 @@ interface TransactionGroup {
   transactions: TransactionInfo[];
 }
 
+const EMPTY_TRANSACTIONS: TransactionInfo[] = [];
+
 // Component for displaying transaction history
 export default function TransactionHistory({
   history,
 }: TransactionHistoryProps) {
-  if (!history || !history.transactions || history.transactions.length === 0) {
-    return <Typography variant="h5">Transactions</Typography>;
-  }
-
-  const transactions = history.transactions;
+  const transactions = history?.transactions ?? EMPTY_TRANSACTIONS;
 
   // Group transactions by date using dayjs and lodash
-  const transactionGroups: TransactionGroup[] = _(transactions)
-    .groupBy((tx) => dayjs(tx.timestamp * 1000).format("YYYY-MM-DD")) // Convert Unix timestamp to date string
-    .map((txs, dateKey) => ({
-      date: dateKey,
-      displayDate: dayjs(dateKey).format("MMMM D, YYYY"), // Human-readable format
-      transactions: _.orderBy(txs, ["timestamp"], ["desc"]), // Sort transactions within group by newest first
-    }))
-    .orderBy(["date"], ["desc"]) // Sort groups by newest date first
-    .value();
+  const transactionGroups: TransactionGroup[] = useMemo(
+    () =>
+      _(transactions)
+        .groupBy((tx) => dayjs(tx.timestamp * 1000).format("YYYY-MM-DD")) // Convert Unix timestamp to date string
+        .map((txs, dateKey) => ({
+          date: dateKey,
+          displayDate: dayjs(dateKey).format("MMMM D, YYYY"), // Human-readable format
+          transactions: _.orderBy(txs, ["timestamp"], ["desc"]), // Sort transactions within group by newest first
+        }))
+        .orderBy(["date"], ["desc"]) // Sort groups by newest date first
+        .value(),
+    [transactions],
+  );
+
+  if (transactions.length === 0) {
+    return <Typography variant="h5">Transactions</Typography>;
+  }
 
   return (
     <Box>
