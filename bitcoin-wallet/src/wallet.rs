@@ -1655,7 +1655,7 @@ where
         );
 
         let fee = child_only_fee.max(required_child_fee);
-        Ok(Self::clamp_cpfp_fee(fee, transfer_amount))
+        Ok(clamp_cpfp_fee(fee, transfer_amount))
     }
 
     /// Walks all unconfirmed ancestors of every input in `psbt` and returns the total fee already paid by those ancestors + their total weight.
@@ -1664,9 +1664,16 @@ where
         &self,
         psbt: &Psbt,
     ) -> Result<(Amount, Weight)> {
-        const MAX_ANCESTOR_DEPTH: usize = 3;
+        // Included:
+        //   depth 0 = parent
+        //   depth 1 = grandparent
+        //
+        // Excluded:
+        //   depth 2 = great-grandparent and beyond
+        const MAX_ANCESTOR_DEPTH: usize = 1;
 
         let mut seen = HashSet::<Txid>::new();
+
         let mut stack: Vec<(Txid, usize)> = psbt
             .unsigned_tx
             .input
@@ -1674,11 +1681,13 @@ where
             .map(|input| (input.previous_output.txid, 0))
             .collect();
 
-        let mut ancestor_fee = Amount::ZERO;
-        let mut ancestor_weight = Weight::from_wu(0);
+        let mut total_fee = Amount::ZERO;
+        let mut total_weight = Weight::ZERO;
+
+        let wallet = self.wallet.lock().await;
 
         while let Some((txid, depth)) = stack.pop() {
-            if depth >= MAX_ANCESTOR_DEPTH {
+            if depth > MAX_ANCESTOR_DEPTH {
                 continue;
             }
 
@@ -1686,96 +1695,96 @@ where
                 continue;
             }
 
-            let (parent_tx, parent_fee) = {
-                let wallet = self.wallet.lock().await;
-
-                // Local wallet lookup only. This reads from the synced tx graph and doesn't hit the network.
-                let Some(wallet_tx) = wallet.get_tx(txid) else {
-                    continue;
-                };
-
-                if matches!(wallet_tx.chain_position, ChainPosition::Confirmed { .. }) {
-                    continue;
-                }
-
-                let parent_tx = wallet_tx.tx_node.tx.clone();
-
-                let parent_fee = match wallet.calculate_fee(&parent_tx) {
-                    Ok(fee) => fee,
-                    Err(err) => {
-                        tracing::debug!(
-                            %txid,
-                            error = %err,
-                            "Cannot compute fee for unconfirmed ancestor; skipping it"
-                        );
-                        continue;
-                    }
-                };
-
-                (parent_tx, parent_fee)
+            // // Local wallet lookup only. This reads from the synced tx graph and doesn't hit the network.
+            let Some(wallet_tx) = wallet.get_tx(txid) else {
+                continue;
             };
 
-            ancestor_fee = Amount::from_sat(
-                ancestor_fee.to_sat().saturating_add(parent_fee.to_sat()),
+            if matches!(wallet_tx.chain_position, ChainPosition::Confirmed { .. }) {
+                continue;
+            }
+
+            let tx = wallet_tx.tx_node.tx.clone();
+
+            let fee = match wallet.calculate_fee(&tx) {
+                Ok(fee) => fee,
+                Err(err) => {
+                    tracing::debug!(
+                        %txid,
+                        error = %err,
+                        "Cannot compute fee for unconfirmed ancestor; skipping it."
+                    );
+
+                    continue;
+                }
+            };
+
+            total_fee = Amount::from_sat(
+                total_fee.to_sat().saturating_add(fee.to_sat()),
             );
-            ancestor_weight = Weight::from_wu(
-                ancestor_weight.to_wu().saturating_add(parent_tx.weight().to_wu()),
+
+            total_weight = Weight::from_wu(
+                total_weight
+                    .to_wu()
+                    .saturating_add(tx.weight().to_wu()),
             );
 
             stack.extend(
-                parent_tx
-                    .input
+                tx.input
                     .iter()
                     .map(|input| (input.previous_output.txid, depth + 1)),
             );
         }
 
-        Ok((ancestor_fee, ancestor_weight))
+        Ok((total_fee, total_weight))
+    }
+}
+
+/// Clamps a CPFP fee to the allowed range (relative cap -> min absolute -> hard cap)
+fn clamp_cpfp_fee(fee: Amount, transfer_amount: Option<Amount>) -> Amount {
+    let mut final_fee = fee;
+
+    if let Some(transfer_amount) = transfer_amount {
+        let relative_max = Amount::from_sat(
+            MAX_RELATIVE_TX_FEE
+                .saturating_mul(Decimal::from(transfer_amount.to_sat()))
+                .ceil()
+                .to_u64()
+                .expect("MAX_RELATIVE_TX_FEE * transfer_amount fits in u64"),
+        );
+
+        if final_fee > relative_max {
+            tracing::warn!(
+                "CPFP fee {} exceeds relative cap {}. Clamping.",
+                final_fee.to_sat(),
+                relative_max.to_sat(),
+            );
+
+            final_fee = relative_max;
+        }
     }
 
-    /// Clamps a CPFP fee to the allowed range (relative cap -> min absolute -> hard cap)
-    fn clamp_cpfp_fee(fee: Amount, transfer_amount: Option<Amount>) -> Amount {
-        let mut final_fee = fee;
+    if final_fee < MIN_ABSOLUTE_TX_FEE {
+        tracing::warn!(
+            "CPFP fee {} below minimum {}. Raising.",
+            final_fee.to_sat(),
+            MIN_ABSOLUTE_TX_FEE.to_sat(),
+        );
 
-        if let Some(transfer_amount) = transfer_amount {
-            let relative_max = Amount::from_sat(
-                MAX_RELATIVE_TX_FEE
-                    .saturating_mul(Decimal::from(transfer_amount.to_sat()))
-                    .ceil()
-                    .to_u64()
-                    .expect("MAX_RELATIVE_TX_FEE * transfer_amount fits in u64"),
-            );
-            if final_fee > relative_max {
-                tracing::warn!(
-                    "CPFP fee {} exceeds relative cap {} ({}% of transfer amount). Clamping.",
-                    final_fee.to_sat(),
-                    relative_max.to_sat(),
-                    MAX_RELATIVE_TX_FEE.saturating_mul(Decimal::from(100)).ceil().to_u64().unwrap(),
-                );
-                final_fee = relative_max;
-            }
-        }
-
-        if final_fee < MIN_ABSOLUTE_TX_FEE {
-            tracing::warn!(
-                "CPFP fee {} below absolute minimum {}. Setting to minimum.",
-                final_fee.to_sat(),
-                MIN_ABSOLUTE_TX_FEE.to_sat(),
-            );
-            final_fee = MIN_ABSOLUTE_TX_FEE;
-        }
-
-        if final_fee > MAX_ABSOLUTE_TX_FEE {
-            tracing::warn!(
-                "CPFP fee {} exceeds absolute hard cap {}. Capping.",
-                final_fee.to_sat(),
-                MAX_ABSOLUTE_TX_FEE.to_sat(),
-            );
-            final_fee = MAX_ABSOLUTE_TX_FEE;
-        }
-
-        final_fee
+        final_fee = MIN_ABSOLUTE_TX_FEE;
     }
+
+    if final_fee > MAX_ABSOLUTE_TX_FEE {
+        tracing::warn!(
+            "CPFP fee {} exceeds absolute hard cap {}. Capping.",
+            final_fee.to_sat(),
+            MAX_ABSOLUTE_TX_FEE.to_sat(),
+        );
+
+        final_fee = MAX_ABSOLUTE_TX_FEE;
+    }
+
+    final_fee
 }
 
 impl Client {
@@ -3186,5 +3195,48 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
 
     async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
         unimplemented!("stub method called erroneously")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cpfp_fee_clamps_to_absolute_max() {
+        let fee = Amount::from_sat(MAX_ABSOLUTE_TX_FEE.to_sat() * 100);
+
+        let actual = clamp_cpfp_fee(fee, None);
+
+        assert_eq!(actual, MAX_ABSOLUTE_TX_FEE);
+    }
+
+    #[test]
+    fn cpfp_fee_clamps_to_absolute_minimum() {
+        let actual = clamp_cpfp_fee(Amount::from_sat(1), None);
+
+        assert_eq!(actual, MIN_ABSOLUTE_TX_FEE);
+    }
+
+    #[test]
+    fn cpfp_fee_enforces_minimum_even_when_fee_is_zero() {
+        let actual = clamp_cpfp_fee(
+            Amount::from_sat(0),
+            Some(Amount::from_sat(1_000)),
+        );
+
+        assert_eq!(actual, MIN_ABSOLUTE_TX_FEE);
+    }
+
+    #[test]
+    fn cpfp_fee_is_capped() {
+        let absurd_fee = Amount::from_sat(u64::MAX / 2);
+
+        let actual = clamp_cpfp_fee(
+            absurd_fee,
+            Some(Amount::from_sat(1_000_000)),
+        );
+
+        assert!(actual <= MAX_ABSOLUTE_TX_FEE);
     }
 }
