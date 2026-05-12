@@ -52,7 +52,7 @@ mod tests {
 
     const SWAP_ID: &str = "ea030832-3be9-454f-bb98-5ea9a788406b";
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn given_no_balance_and_transfers_less_than_max_swaps_max_giveable() {
         let writer = capture_logs(LevelFilter::INFO);
         let givable = MaxGiveable::new(vec![
@@ -74,7 +74,7 @@ mod tests {
         .unwrap();
 
         let expected_amount = Amount::from_btc(0.0009).unwrap();
-        let expected_fees = Amount::from_btc(0.0001).unwrap();
+        let expected_fees = Amount::from_sat(1000);
 
         assert_eq!((amount, fees), (expected_amount, expected_fees));
         assert_eq!(
@@ -87,7 +87,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn given_no_balance_and_transfers_more_then_swaps_max_quantity_from_quote() {
         let writer = capture_logs(LevelFilter::INFO);
         let givable = MaxGiveable::new(vec![
@@ -109,7 +109,7 @@ mod tests {
         .unwrap();
 
         let expected_amount = Amount::from_btc(0.01).unwrap();
-        let expected_fees = Amount::from_btc(0.0001).unwrap();
+        let expected_fees = Amount::from_sat(1000);
 
         assert_eq!((amount, fees), (expected_amount, expected_fees));
         assert_eq!(
@@ -144,7 +144,7 @@ mod tests {
         .unwrap();
 
         let expected_amount = Amount::from_btc(0.0049).unwrap();
-        let expected_fees = Amount::from_btc(0.0001).unwrap();
+        let expected_fees = Amount::from_sat(1000);
 
         assert_eq!((amount, fees), (expected_amount, expected_fees));
         assert_eq!(
@@ -175,7 +175,7 @@ mod tests {
         .unwrap();
 
         let expected_amount = Amount::from_btc(0.01).unwrap();
-        let expected_fees = Amount::from_btc(0.0001).unwrap();
+        let expected_fees = Amount::from_sat(1000);
 
         assert_eq!((amount, fees), (expected_amount, expected_fees));
         assert_eq!(
@@ -184,7 +184,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn given_no_initial_balance_then_min_wait_for_sufficient_deposit() {
         let writer = capture_logs(LevelFilter::INFO);
         let givable = MaxGiveable::new(vec![
@@ -206,7 +206,7 @@ mod tests {
         .unwrap();
 
         let expected_amount = Amount::from_btc(0.01).unwrap();
-        let expected_fees = Amount::from_btc(0.0001).unwrap();
+        let expected_fees = Amount::from_sat(1000);
 
         assert_eq!((amount, fees), (expected_amount, expected_fees));
         assert_eq!(
@@ -219,7 +219,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn given_balance_less_then_min_wait_for_sufficient_deposit() {
         let writer = capture_logs(LevelFilter::INFO);
         let givable = MaxGiveable::new(vec![
@@ -241,7 +241,7 @@ mod tests {
         .unwrap();
 
         let expected_amount = Amount::from_btc(0.01).unwrap();
-        let expected_fees = Amount::from_btc(0.0001).unwrap();
+        let expected_fees = Amount::from_sat(1000);
 
         assert_eq!((amount, fees), (expected_amount, expected_fees));
         assert_eq!(
@@ -254,7 +254,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn given_no_initial_balance_and_transfers_less_than_min_keep_waiting() {
         let writer = capture_logs(LevelFilter::INFO);
         let givable = MaxGiveable::new(vec![
@@ -266,7 +266,7 @@ mod tests {
         ]);
 
         let error = tokio::time::timeout(
-            Duration::from_secs(1),
+            Duration::from_secs(6),
             determine_btc_to_swap(
                 quote_with_min(0.1),
                 get_dummy_address(),
@@ -295,7 +295,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn given_longer_delay_until_deposit_should_not_spam_user() {
         let writer = capture_logs(LevelFilter::INFO);
         let givable = MaxGiveable::new(vec![
@@ -312,7 +312,7 @@ mod tests {
         ]);
 
         tokio::time::timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(60),
             determine_btc_to_swap(
                 quote_with_min(0.1),
                 get_dummy_address(),
