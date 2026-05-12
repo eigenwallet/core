@@ -112,7 +112,7 @@ pub(crate) mod connection {
             .get(params.rest_url.clone())
             .query(&request_body)
             .header("Accept", "application/json")
-            .header("Authorization", &params.api_key);
+            .header("api-key", &params.api_key);
 
         let response = request.send().await.map_err(FetchError::Request)?;
         let status = response.status();
