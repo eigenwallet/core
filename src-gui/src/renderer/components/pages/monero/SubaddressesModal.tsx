@@ -8,7 +8,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TableFooter,
@@ -18,7 +17,7 @@ import {
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import { useSnackbar } from "notistack";
 import type { SubaddressSummary } from "models/tauriModel";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import { PiconeroAmount } from "renderer/components/other/Units";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
@@ -33,6 +32,54 @@ interface Props {
   open: boolean;
   onClose: () => void;
 }
+
+interface SubaddressRowProps {
+  subaddress: SubaddressSummary;
+  labelDraft: string;
+  onLabelChange: (addressIndex: number, value: string) => void;
+}
+
+const SubaddressRow = memo(function SubaddressRow({
+  subaddress,
+  labelDraft,
+  onLabelChange,
+}: SubaddressRowProps) {
+  return (
+    <TableRow hover>
+      <TableCell align="center" sx={{ verticalAlign: "middle !important" }}>
+        <Typography variant="body2" color="text.secondary">
+          #{subaddress.address_index}
+        </Typography>
+      </TableCell>
+      <TableCell
+        align="center"
+        sx={{
+          verticalAlign: "middle !important",
+          maxWidth: "20rem",
+        }}
+      >
+        <ActionableMonospaceTextBox content={subaddress.address} truncate />
+      </TableCell>
+      <TableCell align="center" sx={{ verticalAlign: "middle !important" }}>
+        <TextField
+          size="small"
+          fullWidth
+          label="Label"
+          value={labelDraft}
+          onChange={(e) =>
+            onLabelChange(subaddress.address_index, e.target.value)
+          }
+        />
+      </TableCell>
+
+      <TableCell align="center" sx={{ verticalAlign: "middle !important" }}>
+        <Typography variant="body2" color="text.secondary">
+          <PiconeroAmount amount={subaddress.unlocked_balance} />
+        </Typography>
+      </TableCell>
+    </TableRow>
+  );
+});
 
 export default function SubaddressesModal({ open, onClose }: Props) {
   const subaddresses = useMoneroSubaddresses();
@@ -95,6 +142,13 @@ export default function SubaddressesModal({ open, onClose }: Props) {
     [subaddresses],
   );
 
+  const handleLabelChange = useCallback(
+    (addressIndex: number, value: string) => {
+      setLabelEdits((prev) => ({ ...prev, [addressIndex]: value }));
+    },
+    [],
+  );
+
   const createAddress = async () => {
     setIsCreating(true);
     try {
@@ -110,10 +164,6 @@ export default function SubaddressesModal({ open, onClose }: Props) {
     } finally {
       setIsCreating(false);
     }
-  };
-
-  const handleLabelChange = (addressIndex: number, value: string) => {
-    setLabelEdits((prev) => ({ ...prev, [addressIndex]: value }));
   };
 
   return (
@@ -160,57 +210,15 @@ export default function SubaddressesModal({ open, onClose }: Props) {
               </TableRow>
             ) : (
               subaddresses.map((s) => {
-                const labelDraft =
-                  labelEdits[s.address_index] ??
-                  subaddressesByIndex[s.address_index]?.label ??
-                  "";
+                const labelDraft = labelEdits[s.address_index] ?? s.label ?? "";
 
                 return (
-                  <TableRow key={s.address_index} hover>
-                    <TableCell
-                      align="center"
-                      sx={{ verticalAlign: "middle !important" }}
-                    >
-                      <Typography variant="body2" color="text.secondary">
-                        #{s.address_index}
-                      </Typography>
-                    </TableCell>
-                    <TableCell
-                      align="center"
-                      sx={{
-                        verticalAlign: "middle !important",
-                        maxWidth: "20rem",
-                      }}
-                    >
-                      <ActionableMonospaceTextBox
-                        content={s.address}
-                        truncate
-                      />
-                    </TableCell>
-                    <TableCell
-                      align="center"
-                      sx={{ verticalAlign: "middle !important" }}
-                    >
-                      <TextField
-                        size="small"
-                        fullWidth
-                        label="Label"
-                        value={labelDraft}
-                        onChange={(e) =>
-                          handleLabelChange(s.address_index, e.target.value)
-                        }
-                      />
-                    </TableCell>
-
-                    <TableCell
-                      align="center"
-                      sx={{ verticalAlign: "middle !important" }}
-                    >
-                      <Typography variant="body2" color="text.secondary">
-                        <PiconeroAmount amount={s.unlocked_balance} />
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
+                  <SubaddressRow
+                    key={s.address_index}
+                    subaddress={s}
+                    labelDraft={labelDraft}
+                    onLabelChange={handleLabelChange}
+                  />
                 );
               })
             )}
