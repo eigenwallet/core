@@ -506,10 +506,7 @@ mod tests {
     fn parse_monero_overflows() {
         let overflow_pics = "18446744.073709551616";
         let error = Amount::parse_monero(overflow_pics).unwrap_err();
-        assert_eq!(
-            error.downcast_ref::<OverflowError>().unwrap(),
-            &OverflowError(overflow_pics.to_owned())
-        );
+        assert_eq!(error.to_string(), format!("{} too big", overflow_pics));
     }
 
     #[test]
