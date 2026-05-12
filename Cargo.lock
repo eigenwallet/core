@@ -1113,6 +1113,7 @@ dependencies = [
  "bdk_electrum",
  "bdk_wallet",
  "bitcoin 0.32.8",
+ "bitcoin-harness",
  "derive_builder",
  "electrum-pool",
  "futures",
@@ -1125,9 +1126,12 @@ dependencies = [
  "swap-env",
  "swap-proptest",
  "swap-serde",
+ "testcontainers",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
