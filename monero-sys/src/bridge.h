@@ -242,6 +242,11 @@ namespace Monero
         return std::make_unique<std::string>(signature);
     }
 
+    inline bool verifySignedMessage(const Wallet &wallet, const std::string &message, const std::string &address, const std::string &signature)
+    {
+        return wallet.verifySignedMessage(message, address, signature);
+    }
+
     /**
      * Get a reserve proof that proves the wallet has a certain amount of Monero.
      * If `all` is true, proves the entire balance; otherwise proves at least `amount` piconero.

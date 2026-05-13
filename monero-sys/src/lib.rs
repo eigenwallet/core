@@ -1114,6 +1114,21 @@ impl WalletHandle {
         .await?
     }
 
+    /// Verify a message signature against a wallet address.
+    pub async fn verify_signed_message(
+        &self,
+        message: &str,
+        address: &str,
+        signature: &str,
+    ) -> anyhow::Result<bool> {
+        let message = message.to_string();
+        let address = address.to_string();
+        let signature = signature.to_string();
+
+        self.call(move |wallet| wallet.verify_signed_message(&message, &address, &signature))
+            .await?
+    }
+
     /// Get a reserve proof that proves the wallet has a certain amount of XMR.
     ///
     /// # Arguments
@@ -2723,6 +2738,21 @@ impl FfiWallet {
         }
 
         Ok(signature)
+    }
+
+    /// Verify a message signature against a wallet address.
+    pub fn verify_signed_message(
+        &self,
+        message: &str,
+        address: &str,
+        signature: &str,
+    ) -> anyhow::Result<bool> {
+        let_cxx_string!(message_cxx = message);
+        let_cxx_string!(address_cxx = address);
+        let_cxx_string!(signature_cxx = signature);
+
+        ffi::verifySignedMessage(&self.inner, &message_cxx, &address_cxx, &signature_cxx)
+            .context("Failed to verify signed message: FFI call failed with exception")
     }
 
     /// Get a reserve proof that proves the wallet has a certain amount of XMR.

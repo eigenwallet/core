@@ -43,6 +43,12 @@ async fn test_sign_message() -> anyhow::Result<()> {
         signature_spend.len() > 10,
         "Signature should be reasonably long"
     );
+    assert!(
+        wallet
+            .verify_signed_message(test_message, &main_address.to_string(), &signature_spend)
+            .await?,
+        "Spend key signature should verify against the main address"
+    );
 
     tracing::info!("Testing message signing with view key (default address)");
     let signature_view = wallet
@@ -55,6 +61,22 @@ async fn test_sign_message() -> anyhow::Result<()> {
     assert!(
         signature_view.len() > 10,
         "Signature should be reasonably long"
+    );
+    assert!(
+        wallet
+            .verify_signed_message(test_message, &main_address.to_string(), &signature_view)
+            .await?,
+        "View key signature should verify against the main address"
+    );
+    assert!(
+        !wallet
+            .verify_signed_message(
+                "tampered message",
+                &main_address.to_string(),
+                &signature_view
+            )
+            .await?,
+        "Signature should not verify for a different message"
     );
 
     // Signatures should be different when using different keys
@@ -75,10 +97,11 @@ async fn test_sign_message() -> anyhow::Result<()> {
         "Signature should not be empty"
     );
 
-    // When using the same key and same address (main address), signatures should be the same
-    assert_eq!(
-        signature_spend, signature_explicit,
-        "Signatures should be the same when using same key and address"
+    assert!(
+        wallet
+            .verify_signed_message(test_message, &main_address.to_string(), &signature_explicit)
+            .await?,
+        "Explicit address signature should verify against the main address"
     );
 
     tracing::info!("Testing empty message signing");
@@ -94,6 +117,9 @@ async fn test_sign_message() -> anyhow::Result<()> {
     );
 
     tracing::info!("All message signing tests passed!");
+
+    drop(wallet);
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     Ok(())
 }

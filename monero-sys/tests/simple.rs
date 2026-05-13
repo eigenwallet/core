@@ -53,11 +53,17 @@ async fn main() -> anyhow::Result<()> {
     assert!(balance > Amount::ZERO);
     assert!(unlocked_balance > Amount::ZERO);
 
+    let subaddress_index = wallet.subaddress_summaries(0).await?.len() as u32;
+    wallet
+        .create_subaddress(0, "simple self-transfer target".to_string())
+        .await?;
+    let transfer_address = wallet.address(0, subaddress_index).await?;
+
     let transfer_amount = Amount::ONE_XMR;
-    tracing::info!("Transferring 1 XMR to ourselves");
+    tracing::info!(%transfer_address, "Transferring 1 XMR to a wallet subaddress");
 
     wallet
-        .transfer_single_destination(&wallet.main_address().await?, transfer_amount)
+        .transfer_single_destination(&transfer_address, transfer_amount)
         .await
         .unwrap();
 
@@ -75,6 +81,9 @@ async fn main() -> anyhow::Result<()> {
     assert!(new_balance > Amount::ZERO);
     assert!(new_balance <= balance);
     assert!(new_unlocked_balance <= balance - transfer_amount);
+
+    drop(wallet);
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     Ok(())
 }
