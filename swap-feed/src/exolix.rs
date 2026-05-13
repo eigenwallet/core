@@ -105,7 +105,7 @@ pub(crate) mod connection {
     }
 
     async fn fetch_rate(params: &ExolixParams) -> Result<wire::PriceUpdate, FetchError> {
-        let request_body = wire::RateRequest::xmr_to_btc();
+        let request_body = wire::RateRequest::btc_to_xmr();
 
         let request = params
             .client
@@ -158,7 +158,7 @@ pub mod wire {
         pub network_from: String,
         pub coin_to: String,
         pub network_to: String,
-        pub amount: Decimal,
+        pub withdrawal_amount: Decimal,
         pub rate_type: RateType,
     }
 
@@ -171,14 +171,20 @@ pub mod wire {
     }
 
     impl RateRequest {
-        /// Request the XMR -> BTC fixed rate for a 1 XMR send amount.
-        pub fn xmr_to_btc() -> Self {
+        /// Request the BTC -> XMR fixed rate for a 1 XMR withdrawal amount.
+        ///
+        /// We pin the destination side (XMR) at 1 so the response's
+        /// `fromAmount` is exactly the BTC required to receive 1 XMR.
+        /// Quoting in the opposite direction (XMR -> BTC with a send
+        /// amount) yields a different rate because Exolix prices each
+        /// direction independently.
+        pub fn btc_to_xmr() -> Self {
             Self {
-                coin_from: "XMR".to_string(),
-                network_from: "XMR".to_string(),
-                coin_to: "BTC".to_string(),
-                network_to: "BTC".to_string(),
-                amount: Decimal::ONE,
+                coin_from: "BTC".to_string(),
+                network_from: "BTC".to_string(),
+                coin_to: "XMR".to_string(),
+                network_to: "XMR".to_string(),
+                withdrawal_amount: Decimal::ONE,
                 rate_type: RateType::Fixed,
             }
         }
@@ -188,9 +194,10 @@ pub mod wire {
     ///
     /// Only the fields we care about are captured.
     #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
     pub struct RateResponse {
-        /// Rate as BTC received per 1 XMR sent (we query `amount=1`).
-        pub rate: Decimal,
+        /// BTC required to receive 1 XMR (we query `withdrawalAmount=1`).
+        pub from_amount: Decimal,
     }
 
     #[derive(Clone, Debug, PartialEq)]
@@ -214,16 +221,16 @@ pub mod wire {
         type Error = Error;
 
         fn try_from(value: RateResponse) -> Result<Self, Error> {
-            if value.rate <= Decimal::ZERO {
-                return Err(Error::NonPositive(value.rate));
+            if value.from_amount <= Decimal::ZERO {
+                return Err(Error::NonPositive(value.from_amount));
             }
             // Route through the decimal string representation to avoid
             // binary-float drift. This matches how kraken/kucoin parse
             // their wire values.
-            let rendered = value.rate.to_string();
+            let rendered = value.from_amount.to_string();
             let ask = bitcoin::Amount::from_str_in(&rendered, bitcoin::Denomination::Bitcoin)
                 .map_err(|source| Error::AmountParse {
-                    rate: value.rate,
+                    rate: value.from_amount,
                     source,
                 })?;
             Ok(PriceUpdate { ask })
@@ -236,31 +243,31 @@ pub mod wire {
 
         #[test]
         fn parses_rate_response() {
-            let body = r#"{"fromAmount":1,"toAmount":0.00468629,"rate":0.00468629,"message":null,"minAmount":0.14233428,"withdrawMin":0.00000624,"maxAmount":2000,"priceImpact":"0"}"#;
+            let body = r#"{"fromAmount":0.00529839,"toAmount":1,"rate":188.73657847,"message":null,"minAmount":0.00060321,"withdrawMin":0.11384779,"maxAmount":10,"priceImpact":"0","withdrawMax":1887.3657847}"#;
             let response: RateResponse = serde_json::from_str(body).unwrap();
             let update: PriceUpdate = response.try_into().unwrap();
-            assert_eq!(update.ask.to_sat(), 468_629);
+            assert_eq!(update.ask.to_sat(), 529_839);
         }
 
         #[test]
         fn parses_rate_response_with_high_precision() {
             // More than 8 decimal places of BTC would not fit in sats and
             // must fail cleanly rather than being silently rounded.
-            let body = r#"{"rate":0.123456789}"#;
+            let body = r#"{"fromAmount":0.123456789}"#;
             let response: RateResponse = serde_json::from_str(body).unwrap();
             assert!(PriceUpdate::try_from(response).is_err());
         }
 
         #[test]
         fn rejects_zero_rate() {
-            let body = r#"{"rate":0}"#;
+            let body = r#"{"fromAmount":0}"#;
             let response: RateResponse = serde_json::from_str(body).unwrap();
             assert!(PriceUpdate::try_from(response).is_err());
         }
 
         #[test]
         fn rejects_negative_rate() {
-            let body = r#"{"rate":-0.00468629}"#;
+            let body = r#"{"fromAmount":-0.00468629}"#;
             let response: RateResponse = serde_json::from_str(body).unwrap();
             assert!(PriceUpdate::try_from(response).is_err());
         }
