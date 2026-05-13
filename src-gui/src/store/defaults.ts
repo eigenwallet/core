@@ -12,6 +12,9 @@ export const DEFAULT_RENDEZVOUS_POINTS = [
   "/dns4/atomic.exolix.com/tcp/443/wss/p2p/12D3KooWBk6GbgkZaeTAUByD1tJX6SdFHtzrVj3jTmurPMRvtGoY",
 ];
 
+// Known broken rendezvous points to remove when applying defaults
+export const NEGATIVE_RENDEZVOUS_POINTS: string[] = [];
+
 // Known broken nodes to remove when applying defaults
 export const NEGATIVE_NODES_MAINNET = [
   "tcp://electrum.blockstream.info:50001",
