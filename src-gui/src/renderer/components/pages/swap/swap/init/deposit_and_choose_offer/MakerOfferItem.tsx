@@ -13,10 +13,12 @@ import {
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { resolveApproval } from "renderer/rpc";
 import WarningIcon from "@mui/icons-material/Warning";
+import FavoriteIcon from "@mui/icons-material/Favorite";
 import { isMakerVersionOld, isMakerVersionTooOld } from "utils/multiAddrUtils";
 import { RefundPolicy } from "store/features/settingsSlice";
 import { useAppSelector } from "store/hooks";
 import { BobStateName } from "models/tauriModelExt";
+import { getPriorityMaker } from "utils/priorityMakers";
 
 const FULL_WARNING_ANTI_SPAM_DEPOSIT_RATIO = 0.1;
 
@@ -37,18 +39,31 @@ export default function MakerOfferItem({
   const { multiaddr, peer_id, quote, version } = quoteWithAddress;
   const isOutOfLiquidity = quote.max_quantity == 0;
   const isTooOld = isMakerVersionTooOld(version);
+  const priorityMaker = getPriorityMaker(peer_id);
 
   return (
     <Paper
       variant="outlined"
-      sx={{
+      sx={(theme) => ({
         position: "relative",
         display: "flex",
         flexDirection: "column",
         borderRadius: 2,
         padding: 2,
         width: "100%",
-      }}
+        ...(priorityMaker && {
+          borderColor: theme.palette.primary.main,
+          animation: "priorityMakerGlow 2.5s ease-in-out infinite",
+          "@keyframes priorityMakerGlow": {
+            "0%, 100%": {
+              boxShadow: `0 0 4px ${theme.palette.primary.main}55, 0 0 8px ${theme.palette.primary.main}22`,
+            },
+            "50%": {
+              boxShadow: `0 0 8px ${theme.palette.primary.main}aa, 0 0 16px ${theme.palette.primary.main}44`,
+            },
+          },
+        }),
+      })}
     >
       {/* Top section: Avatar, peer info, and select button */}
       <Box
@@ -70,7 +85,22 @@ export default function MakerOfferItem({
             minWidth: 0,
           }}
         >
-          <Jdenticon value={peer_id} size={40} />
+          {priorityMaker ? (
+            <Box
+              component="img"
+              src={priorityMaker.avatar}
+              alt={priorityMaker.label}
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                objectFit: "cover",
+                flexShrink: 0,
+              }}
+            />
+          ) : (
+            <Jdenticon value={peer_id} size={40} />
+          )}
           <Box
             sx={{
               display: "flex",
@@ -80,11 +110,26 @@ export default function MakerOfferItem({
               flex: 1,
             }}
           >
-            <Typography variant="body1" noWrap>
-              {multiaddr}
-            </Typography>
+            {priorityMaker ? (
+              <Typography variant="body1" noWrap>
+                <Box
+                  component="span"
+                  sx={{ fontWeight: 700, color: "primary.main" }}
+                >
+                  {priorityMaker.label}
+                </Box>
+                <Box component="span" sx={{ color: "text.secondary" }}>
+                  {" / "}
+                  {peer_id}
+                </Box>
+              </Typography>
+            ) : (
+              <Typography variant="body1" color="text.secondary" noWrap>
+                {peer_id}
+              </Typography>
+            )}
             <Typography variant="body2" color="text.secondary" noWrap>
-              {peer_id}
+              {multiaddr}
             </Typography>
           </Box>
         </Box>
@@ -147,6 +192,7 @@ export default function MakerOfferItem({
             size="small"
           />
         </Tooltip>
+        {priorityMaker && <CommunitySupporterChip />}
         {AntiSpamDepositChip(quote)}
         {ReputationChip(peer_id)}
         {version !== undefined && <VersionChip version={version} />}
@@ -290,6 +336,28 @@ function ReputationChip(peer_id: string) {
         </Box>
       }
     />
+  );
+}
+
+function CommunitySupporterChip() {
+  return (
+    <Tooltip
+      title="This maker actively supports the eigenwallet community"
+      arrow
+    >
+      <Chip
+        size="small"
+        icon={<FavoriteIcon sx={{ fontSize: "1rem" }} />}
+        label="Community Supporter"
+        sx={(theme) => ({
+          backgroundColor: `color-mix(in srgb, ${theme.palette.primary.main} 18%, ${theme.palette.background.paper})`,
+          borderColor: `color-mix(in srgb, ${theme.palette.primary.main} 45%, ${theme.palette.divider})`,
+          color: theme.palette.primary.main,
+          "& .MuiChip-icon": { color: theme.palette.primary.main },
+        })}
+        variant="outlined"
+      />
+    </Tooltip>
   );
 }
 
