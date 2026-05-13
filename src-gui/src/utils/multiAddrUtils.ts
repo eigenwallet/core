@@ -29,3 +29,12 @@ export function isMakerVersionTooOld(version: string | undefined): boolean {
   if (version === undefined) return false;
   return semver.compare(version, VERSION_FLOOR_HARD) === -1;
 }
+
+/** Check whether a maker is running at or above the GUI's bundled version. */
+export function isMakerVersionLatest(
+  version: string | undefined,
+  guiVersion: string | undefined,
+): boolean {
+  if (version === undefined || guiVersion === undefined) return false;
+  return semver.compare(version, guiVersion) >= 0;
+}

@@ -34,7 +34,7 @@ export default function DepositAndChooseOfferPage({
 }: TauriSwapProgressEventContent<"WaitingForBtcDeposit">) {
   const pendingSelectMakerApprovals = usePendingSelectMakerApproval();
   const [currentPage, setCurrentPage] = useState(1);
-  const [sortMode, setSortMode] = useState<OfferSortMode>("large");
+  const [sortMode, setSortMode] = useState<OfferSortMode>("small");
   const [sortAnchorEl, setSortAnchorEl] = useState<null | HTMLElement>(null);
   const offersPerPage = 3;
 
@@ -42,6 +42,7 @@ export default function DepositAndChooseOfferPage({
     pendingSelectMakerApprovals,
     known_quotes,
     sortMode,
+    offersPerPage,
   );
 
   const currentSortLabel =
@@ -204,11 +205,13 @@ export default function DepositAndChooseOfferPage({
               </Box>
               <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                 {paginatedOffers.map((quote) => {
+                  const peerId = quote.quote_with_address.peer_id;
                   return (
                     <MakerOfferItem
-                      key={quote.quote_with_address.peer_id}
+                      key={quote.isDuplicate ? `${peerId}-dup` : peerId}
                       quoteWithAddress={quote.quote_with_address}
                       requestId={quote.approval?.request_id}
+                      showAsPriority={!quote.isDuplicate}
                     />
                   );
                 })}
