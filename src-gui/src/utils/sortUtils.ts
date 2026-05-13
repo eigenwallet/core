@@ -4,6 +4,7 @@ import {
 } from "models/tauriModelExt";
 import { QuoteWithAddress } from "models/tauriModel";
 import { isMakerVersionOld, isMakerVersionTooOld } from "./multiAddrUtils";
+import { isPriorityMaker } from "./priorityMakers";
 import _ from "lodash";
 
 export type OfferSortMode = "large" | "small" | "cheapest";
@@ -50,6 +51,12 @@ export function sortApprovalsAndKnownQuotes(
     _(sortableQuotes)
       .orderBy(
         [
+          // Priority makers come first, but only if they have liquidity
+          (m) =>
+            isPriorityMaker(m.quote_with_address.peer_id) &&
+            m.quote_with_address.quote.max_quantity > 0
+              ? 0
+              : 1,
           // Prefer makers that have a 'version' attribute
           // If we don't have a version, we cannot clarify if it's outdated or not
           (m) => (m.quote_with_address.version ? 0 : 1),
@@ -69,7 +76,7 @@ export function sortApprovalsAndKnownQuotes(
           // User-selected sort criterion
           primaryIteratee,
         ],
-        ["asc", "asc", "asc", "asc", "asc", "asc"],
+        ["asc", "asc", "asc", "asc", "asc", "asc", "asc"],
       )
       // Remove duplicate makers
       .uniqBy((m) => m.quote_with_address.peer_id)
