@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - ASB: New `maker.btc_redeem_fee_multiplier` config option (default `1.0`) that scales the estimated BTC redeem fee. Setting it higher (e.g. `2.0`) acts as a safety margin so the redeem still confirms when fee estimation undershoots actual mempool conditions.
+- GUI: Exolix has become a community supporter. They support development and provide a reliable market maker. They are visually highlighted in the UI.
 
 ## [4.5.2] - 2026-05-07
 
