@@ -190,6 +190,11 @@ pub trait AsbApi {
         address: String,
         amount: Option<u64>,
     ) -> Result<WithdrawBtcResponse, ErrorObjectOwned>;
+    #[method(name = "set_external_bitcoin_redeem_address")]
+    async fn set_external_bitcoin_redeem_address(
+        &self,
+        address: Option<String>,
+    ) -> Result<(), ErrorObjectOwned>;
     #[method(name = "refresh_bitcoin_wallet")]
     async fn refresh_bitcoin_wallet(&self) -> Result<(), ErrorObjectOwned>;
     #[method(name = "get_current_quote")]

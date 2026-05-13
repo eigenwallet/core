@@ -364,6 +364,7 @@ pub async fn main() -> Result<()> {
                 tip_config,
                 config.maker.refund_policy,
                 onion_service_handle,
+                config_path.clone(),
             )
             .unwrap();
 

@@ -398,6 +398,7 @@ async fn start_alice(
         developer_tip,
         refund_policy,
         None,
+        db_path.with_file_name("config.toml"),
     )
     .unwrap();
 
