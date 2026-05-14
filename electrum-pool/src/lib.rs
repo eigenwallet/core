@@ -694,14 +694,16 @@ impl MultiError {
         self.errors.iter().all(predicate)
     }
 
-    /// Convert to a single Error (uses the last error, or creates a generic one)
+    /// Convert to a single Error while preserving the full failure context.
     pub fn into_single_error(self) -> Error {
-        self.errors.into_iter().next_back().unwrap_or_else(|| {
-            Error::IOError(std::io::Error::other(format!(
+        if self.errors.is_empty() {
+            return Error::IOError(std::io::Error::other(format!(
                 "All operations failed: {}",
                 self.context
-            )))
-        })
+            )));
+        }
+
+        Error::IOError(std::io::Error::other(self.to_string()))
     }
 }
 
@@ -1086,6 +1088,44 @@ mod tests {
         // Both clients should have been tried multiple times due to min_retries
         assert!(factory.get_client(0).unwrap().call_count() > 1);
         assert!(factory.get_client(1).unwrap().call_count() > 1);
+    }
+
+    #[tokio::test]
+    async fn test_call_preserves_all_errors_in_public_error() {
+        let urls = vec![
+            "tcp://localhost:50001".to_string(),
+            "tcp://localhost:50002".to_string(),
+        ];
+
+        let factory = Arc::new(MockElectrumClientFactory::new());
+        factory.add_client(
+            MockElectrumClient::new(urls[0].clone()).with_failure(MockErrorType::IOError),
+        );
+        factory.add_client(
+            MockElectrumClient::new(urls[1].clone()).with_failure(MockErrorType::IOError),
+        );
+
+        let config = ElectrumBalancerConfig {
+            request_timeout: 5,
+            min_retries: 0,
+        };
+
+        let balancer = ElectrumBalancer::new_with_config_and_factory(urls, config, factory)
+            .await
+            .unwrap();
+
+        let error = balancer
+            .call("test", |client| {
+                client.transaction_broadcast(&create_dummy_transaction())
+            })
+            .await
+            .unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("All 2 Electrum clients failed"));
+        assert!(message.contains("2 errors occurred"));
+        assert!(message.contains("tcp://localhost:50001"));
+        assert!(message.contains("tcp://localhost:50002"));
     }
 
     #[tokio::test]
