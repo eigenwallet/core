@@ -151,6 +151,20 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 println!("Not withholding deposit should the taker refund for swap {swap_id}");
             }
         }
+        Cmd::SetExternalBitcoinRedeemAddress { address } => {
+            client
+                .set_external_bitcoin_redeem_address(address.clone())
+                .await?;
+            println!(
+                "Updated external Bitcoin redeem address. Future swaps will be redeemed to `{address}`."
+            );
+        }
+        Cmd::ClearExternalBitcoinRedeemAddress => {
+            client.clear_external_bitcoin_redeem_address().await?;
+            println!(
+                "Cleared external Bitcoin redeem address. Future swaps will be redeemed into the internal Bitcoin wallet."
+            );
+        }
         Cmd::GrantMercy { swap_id } => {
             client.grant_mercy(swap_id).await?;
             println!("Mercy granted for swap {swap_id}");

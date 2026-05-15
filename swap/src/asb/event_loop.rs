@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use swap_core::bitcoin;
@@ -57,6 +58,8 @@ where
     btc_redeem_fee_multiplier: Decimal,
     developer_tip: TipConfig,
     refund_policy: RefundPolicy,
+
+    config_path: PathBuf,
 
     /// Cache for quotes
     quote_cache: Cache<QuoteCacheKey, Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
@@ -188,6 +191,7 @@ where
         developer_tip: TipConfig,
         refund_policy: RefundPolicy,
         onion_service_handle: Option<Arc<RunningOnionService>>,
+        config_path: PathBuf,
     ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
@@ -210,6 +214,7 @@ where
             btc_redeem_fee_multiplier,
             developer_tip,
             refund_policy,
+            config_path,
             quote_cache,
             recv_encrypted_signature: Default::default(),
             recv_burn_on_refund_instruction: Default::default(),
@@ -609,6 +614,10 @@ where
                             self.pending_quote_controller_responders.push(respond_to);
                             self.ensure_quote_computation_is_inflight();
                         }
+                        EventLoopRequest::SetExternalBitcoinRedeemAddress { address, respond_to } => {
+                            let result = self.handle_set_external_bitcoin_redeem_address(address).await;
+                            let _ = respond_to.send(result);
+                        }
                     }
                 }
             }
@@ -941,6 +950,68 @@ where
         Ok(())
     }
 
+    /// Change `maker.external_bitcoin_redeem_address` both in-memory and
+    /// on disk. Applies only to swaps started _afterwards_.
+    ///
+    /// Uses `toml_edit` so the on-disk edit is minimal: comments,
+    /// key order and formatting of every other field are preserved.
+    // TODO: lock file for the whole thing
+    async fn handle_set_external_bitcoin_redeem_address(
+        &mut self,
+        address: Option<bitcoin::Address>,
+    ) -> Result<()> {
+        let current = tokio::fs::read_to_string(&self.config_path)
+            .await
+            .context("Failed to read config.toml")?;
+        let mut doc: toml_edit::DocumentMut =
+            current.parse().context("Failed to parse config.toml")?;
+
+        let maker = doc["maker"]
+            .as_table_mut()
+            .context("config.toml is missing the [maker] table")?;
+        match &address {
+            Some(address) => {
+                maker["external_bitcoin_redeem_address"] = toml_edit::value(address.to_string());
+            }
+            None => {
+                maker.remove("external_bitcoin_redeem_address");
+            }
+        }
+
+        tokio::fs::write(&self.config_path, doc.to_string())
+            .await
+            .context("Failed to write config.toml")?;
+
+        let reloaded = swap_env::config::Config::read(&self.config_path)
+            .context("Failed to re-read config.toml after edit")?;
+
+        // Sanity check the address we loaded from the file
+        if &reloaded.maker.external_bitcoin_redeem_address != &address {
+            bail!(
+                "Reloaded config has different address than the one we want to set! Found: {}. Expected: {}",
+                reloaded
+                    .maker
+                    .external_bitcoin_redeem_address
+                    .as_ref()
+                    .map(bitcoin::Address::to_string)
+                    .unwrap_or("None".into()),
+                address
+                    .as_ref()
+                    .map(bitcoin::Address::to_string)
+                    .unwrap_or("None".into()),
+            );
+        }
+
+        self.external_redeem_address = reloaded.maker.external_bitcoin_redeem_address;
+
+        tracing::info!(
+            address = ?self.external_redeem_address.as_ref().map(|a| a.to_string()),
+            "Updated external_bitcoin_redeem_address",
+        );
+
+        Ok(())
+    }
+
     /// Check whether we are currently executing a specific swap.
     fn is_swap_running(&self, swap_id: Uuid) -> bool {
         // Check whether the channels between event loop and event loop handle
@@ -1266,6 +1337,10 @@ mod service {
         GetCurrentQuote {
             respond_to: oneshot::Sender<Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
         },
+        SetExternalBitcoinRedeemAddress {
+            address: Option<bitcoin::Address>,
+            respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+        },
     }
 
     /// Tower service for communicating with the EventLoop
@@ -1377,6 +1452,33 @@ mod service {
             self.sender
                 .send(EventLoopRequest::GrantMercy {
                     swap_id,
+                    respond_to: tx,
+                })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+        }
+
+        pub async fn set_external_bitcoin_redeem_address(
+            &self,
+            address: bitcoin::Address,
+        ) -> anyhow::Result<()> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::SetExternalBitcoinRedeemAddress {
+                    address: Some(address),
+                    respond_to: tx,
+                })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+        }
+
+        pub async fn clear_external_bitcoin_redeem_address(&self) -> anyhow::Result<()> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::SetExternalBitcoinRedeemAddress {
+                    address: None,
                     respond_to: tx,
                 })
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;

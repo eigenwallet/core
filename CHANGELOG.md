@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+ - ASB+CONTROLLER: New `set-external-bitcoin-redeem-address` command with parameter `address` (string) allows you to udpate the external bitcoin redeem address at runtime.
+   The change is persisted to the config file. Go back to using the internal Bitcoin wallet by using `clear-external-bitcoin-redeem-address`.
+
 ## [4.6.0] - 2026-05-13
 
 - GUI: Exolix has become a community supporter. They support development and provide a reliable market maker. They are visually highlighted in the UI.

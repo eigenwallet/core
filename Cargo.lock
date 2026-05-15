@@ -10658,6 +10658,8 @@ dependencies = [
  "time",
  "tokio",
  "tokio-util",
+ "toml 0.9.12+spec-1.1.0",
+ "toml_edit 0.25.8+spec-1.1.0",
  "tor-hscrypto",
  "tor-hsservice",
  "tor-llcrypto",
@@ -11971,6 +11973,7 @@ dependencies = [
  "indexmap 2.13.0",
  "toml_datetime 1.1.0+spec-1.1.0",
  "toml_parser",
+ "toml_writer",
  "winnow 1.0.0",
 ]
 
