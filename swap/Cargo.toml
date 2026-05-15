@@ -1,6 +1,6 @@
 [package]
 name = "swap"
-version = "4.6.0"
+version = "4.6.1"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2024"
 description = "XMR/BTC trustless atomic swaps."
@@ -79,12 +79,12 @@ swap-proptest = { path = "../swap-proptest" }
 swap-serde = { path = "../swap-serde" }
 tauri = { version = "2.0", features = ["config-json5"], optional = true, default-features = false }
 time = "0.3"
+toml = { workspace = true }
+toml_edit = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 void = "1"
 zeroize = { workspace = true }
-toml = { workspace = true }
-toml_edit = { workspace = true }
 
 # Tokio
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }
