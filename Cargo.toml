@@ -9,7 +9,7 @@ members = [
   "monero-rpc-pool",
   "monero-sys",
   "monero-tests",
-  "monero-wallet",
+  "monero_wallet",
   "monero-wallet-ng",
   "src-tauri",
   "swap",
