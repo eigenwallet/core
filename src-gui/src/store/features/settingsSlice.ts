@@ -14,6 +14,7 @@ export const DONATE_TO_DEVELOPMENT_OPTIONS: Exclude<
 >[] = [0, 0.005, 0.012, 0.02];
 
 const MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY = 7 * 24 * 60 * 60 * 1000; // 7 days
+const MIN_TIME_BETWEEN_DEFAULT_RENDEZVOUS_APPLY = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export interface SettingsState {
   /// This is an ordered list of node urls for each network and blockchain
@@ -48,6 +49,8 @@ export interface SettingsState {
   externalBitcoinRefundAddress: string;
   /// UTC timestamp (in milliseconds) when default nodes were last applied
   lastAppliedDefaultNodesV2?: number | null;
+  /// UTC timestamp (in milliseconds) when default rendezvous points were last applied
+  lastAppliedDefaultRendezvousPointsV1?: number | null;
   /// Whether we have already cleared logs after upgrading
   hasClearedLogsOnUpgrade: boolean;
 }
@@ -122,7 +125,6 @@ const initialState: SettingsState = {
   useMoneroRpcPool: true, // Default to using RPC pool
   userHasSeenIntroduction: false,
   userHasSeenAntiSpamInfo: false,
-  // TODO: Apply these regularly (like the default nodes)
   rendezvousPoints: DEFAULT_RENDEZVOUS_POINTS,
   donateToDevelopment: false, // Default to no donation
   moneroRedeemPolicy: RedeemPolicy.Internal,
@@ -130,6 +132,7 @@ const initialState: SettingsState = {
   externalMoneroRedeemAddress: "",
   externalBitcoinRefundAddress: "",
   lastAppliedDefaultNodesV2: null,
+  lastAppliedDefaultRendezvousPointsV1: null,
   hasClearedLogsOnUpgrade: false,
 };
 
@@ -302,6 +305,37 @@ const alertsSlice = createSlice({
         slice.lastAppliedDefaultNodesV2 = now;
       }
     },
+    applyDefaultRendezvousPoints(
+      slice,
+      action: PayloadAction<{
+        defaultRendezvousPoints: string[];
+        negativeRendezvousPoints: string[];
+      }>,
+    ) {
+      const now = Date.now();
+
+      // Check if we should apply defaults (first time or more than 7 days)
+      if (
+        slice.lastAppliedDefaultRendezvousPointsV1 == null ||
+        now - slice.lastAppliedDefaultRendezvousPointsV1 >
+          MIN_TIME_BETWEEN_DEFAULT_RENDEZVOUS_APPLY
+      ) {
+        // Remove known-broken rendezvous points
+        slice.rendezvousPoints = slice.rendezvousPoints.filter(
+          (point) => !action.payload.negativeRendezvousPoints.includes(point),
+        );
+
+        // Add new default rendezvous points if they don't exist
+        action.payload.defaultRendezvousPoints.forEach((point) => {
+          if (!slice.rendezvousPoints.includes(point)) {
+            slice.rendezvousPoints.unshift(point);
+          }
+        });
+
+        // Update the timestamp
+        slice.lastAppliedDefaultRendezvousPointsV1 = now;
+      }
+    },
     /// Validates the donate to development tip setting.
     /// If the current tip is not in the valid options array, it will be replaced
     /// with the closest smaller valid option.
@@ -351,6 +385,7 @@ export const {
   setMoneroRedeemAddress,
   setBitcoinRefundAddress,
   applyDefaultNodes,
+  applyDefaultRendezvousPoints,
   validateDonateToDevelopmentTip,
 } = alertsSlice.actions;
 
