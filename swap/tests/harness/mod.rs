@@ -129,7 +129,7 @@ pub async fn setup_test<T, F, C>(
         StartingBalances::new(bitcoin::Amount::ZERO, xmr_amount, Some(10));
     let alice_seed = Seed::random().unwrap();
     let alice_db_path = NamedTempFile::new().unwrap().path().to_path_buf();
-    let alice_config_path = alice_db_path.with_file_name("config.toml");
+    let alice_config_path = alice_db_path.with_extension("config.toml");
     // The `set_external_bitcoin_redeem_address` RPC handler reads, mutates,
     // and rewrites this file. The values are placeholders — the running ASB
     // never re-consumes most of them (the wallet, swarm and DB were
@@ -436,7 +436,7 @@ async fn start_alice(
         developer_tip,
         refund_policy,
         None,
-        db_path.with_file_name("config.toml"),
+        db_path.with_extension("config.toml"),
     )
     .unwrap();
 

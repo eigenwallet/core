@@ -22,9 +22,8 @@ async fn set_external_bitcoin_redeem_address() {
         ctx.restart_alice().await;
 
         let config_path = ctx.alice_config_path.clone();
-        let read_addr = || async {
-            let raw = tokio::fs::read_to_string(&config_path).await.unwrap();
-            let config: Config = toml::from_str(&raw).unwrap();
+        let read_addr = || {
+            let config = Config::read(&config_path).unwrap();
             config
                 .maker
                 .external_bitcoin_redeem_address
@@ -33,7 +32,7 @@ async fn set_external_bitcoin_redeem_address() {
         };
 
         // 1. Before the RPC: no external redeem address configured.
-        assert_eq!(read_addr().await, None);
+        assert_eq!(read_addr(), None);
 
         // 2. Set via RPC.
         let addr_1 = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080";
@@ -43,13 +42,13 @@ async fn set_external_bitcoin_redeem_address() {
 
         // 3+4. config.toml on disk reflects the new address (and by the
         // disk-then-reload contract, so does Alice's in-memory value).
-        assert_eq!(read_addr().await, Some(addr_1.to_string()));
+        assert_eq!(read_addr(), Some(addr_1.to_string()));
 
         // Clearing path: dedicated `clear_*` RPC removes the address again.
         ctx.alice_rpc_client
             .clear_external_bitcoin_redeem_address()
             .await?;
-        assert_eq!(read_addr().await, None);
+        assert_eq!(read_addr(), None);
 
         Ok(())
     })

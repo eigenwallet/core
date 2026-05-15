@@ -983,11 +983,8 @@ where
             .await
             .context("Failed to write config.toml")?;
 
-        let reloaded = tokio::fs::read_to_string(&self.config_path)
-            .await
-            .context("Failed to re-read config.toml")?;
-        let reloaded: swap_env::config::Config = toml::from_str(&reloaded)
-            .context("Failed to deserialize config.toml after edit")?;
+        let reloaded = swap_env::config::Config::read(&self.config_path)
+            .context("Failed to re-read config.toml after edit")?;
         self.external_redeem_address = reloaded.maker.external_bitcoin_redeem_address;
 
         tracing::info!(
