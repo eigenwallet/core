@@ -963,9 +963,8 @@ where
         let current = tokio::fs::read_to_string(&self.config_path)
             .await
             .context("Failed to read config.toml")?;
-        let mut doc: toml_edit::DocumentMut = current
-            .parse()
-            .context("Failed to parse config.toml")?;
+        let mut doc: toml_edit::DocumentMut =
+            current.parse().context("Failed to parse config.toml")?;
 
         let maker = doc["maker"]
             .as_table_mut()
@@ -985,6 +984,24 @@ where
 
         let reloaded = swap_env::config::Config::read(&self.config_path)
             .context("Failed to re-read config.toml after edit")?;
+
+        // Sanity check the address we loaded from the file
+        if &reloaded.maker.external_bitcoin_redeem_address != &address {
+            bail!(
+                "Reloaded config has different address than the one we want to set! Found: {}. Expected: {}",
+                reloaded
+                    .maker
+                    .external_bitcoin_redeem_address
+                    .as_ref()
+                    .map(bitcoin::Address::to_string)
+                    .unwrap_or("None".into()),
+                address
+                    .as_ref()
+                    .map(bitcoin::Address::to_string)
+                    .unwrap_or("None".into()),
+            );
+        }
+
         self.external_redeem_address = reloaded.maker.external_bitcoin_redeem_address;
 
         tracing::info!(
