@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
- - ASB+CONTROLLER: New `set-external-bitcoin-redeem-address` command with parameter `address` (string) allows you to udpate the external bitcoin redeem address at runtime.
-   The change is persisted to the config file. Go back to using the internal Bitcoin wallet by using `clear-external-bitcoin-redeem-address`.
+## [4.6.1] - 2026-05-15
+
+- ASB+CONTROLLER: New `set-external-bitcoin-redeem-address` command with parameter `address` (string) allows you to udpate the external bitcoin redeem address at runtime.
+  The change is persisted to the config file. Go back to using the internal Bitcoin wallet by using `clear-external-bitcoin-redeem-address`.
 
 ## [4.6.0] - 2026-05-13
 
@@ -946,7 +948,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.6.0...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.6.1...HEAD
+[4.6.1]: https://github.com/eigenwallet/core/compare/4.6.0...4.6.1
 [4.6.0]: https://github.com/eigenwallet/core/compare/4.5.5...4.6.0
 [4.5.5]: https://github.com/eigenwallet/core/compare/4.5.4...4.5.5
 [4.5.4]: https://github.com/eigenwallet/core/compare/4.5.3...4.5.4
