@@ -347,16 +347,23 @@ impl AsbApiServer for RpcImpl {
 
     async fn set_external_bitcoin_redeem_address(
         &self,
-        address: Option<String>,
+        address: String,
     ) -> Result<(), ErrorObjectOwned> {
         let network = self.bitcoin_wallet.network();
-        let address = address
-            .map(|s| bitcoin_wallet::bitcoin_address::parse_and_validate_network(&s, network))
-            .transpose()
+        let address = bitcoin_wallet::bitcoin_address::parse_and_validate_network(&address, network)
             .into_json_rpc_result()?;
 
         self.event_loop_service
             .set_external_bitcoin_redeem_address(address)
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(())
+    }
+
+    async fn clear_external_bitcoin_redeem_address(&self) -> Result<(), ErrorObjectOwned> {
+        self.event_loop_service
+            .clear_external_bitcoin_redeem_address()
             .await
             .into_json_rpc_result()?;
 

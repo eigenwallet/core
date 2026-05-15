@@ -46,6 +46,13 @@ pub enum Cmd {
         #[arg(action = clap::ArgAction::Set)]
         withhold: bool,
     },
+    /// Update the external bitcoin redeem address at runtime. Also updates config.toml.
+    SetExternalBitcoinRedeemAddress {
+        address: String,
+    },
+    /// Clear the external bitcoin redeem address. Future swaps will be redeemed into
+    /// the internal Bitcoin wallet. Also updates config.toml.
+    ClearExternalBitcoinRedeemAddress,
     /// Grant mercy (release the anti-spam deposit) for a swap in BtcWithheld state
     GrantMercy {
         /// The swap ID

@@ -129,6 +129,43 @@ pub async fn setup_test<T, F, C>(
         StartingBalances::new(bitcoin::Amount::ZERO, xmr_amount, Some(10));
     let alice_seed = Seed::random().unwrap();
     let alice_db_path = NamedTempFile::new().unwrap().path().to_path_buf();
+    let alice_config_path = alice_db_path.with_file_name("config.toml");
+    // The `set_external_bitcoin_redeem_address` RPC handler reads, mutates,
+    // and rewrites this file. The values are placeholders — the running ASB
+    // never re-consumes most of them (the wallet, swarm and DB were
+    // constructed via the test harness, not from this file).
+    std::fs::write(
+        &alice_config_path,
+        r#"[data]
+dir = "/tmp/alice"
+
+[network]
+listen = []
+rendezvous_point = []
+external_addresses = []
+
+[bitcoin]
+electrum_rpc_urls = ["tcp://localhost:50001"]
+target_block = 1
+finality_confirmations = 1
+network = "Regtest"
+use_mempool_space_fee_estimation = false
+
+[monero]
+finality_confirmations = 1
+network = "Mainnet"
+
+[tor]
+register_hidden_service = false
+hidden_service_num_intro_points = 1
+
+[maker]
+min_buy_btc = 0.0
+max_buy_btc = 1000.0
+ask_spread = "0"
+"#,
+    )
+    .unwrap();
     let alice_monero_dir = TempDir::new().unwrap().path().join("alice-monero-wallets");
     let (alice_bitcoin_wallet, alice_monero_wallet) = init_test_wallets(
         MONERO_WALLET_NAME_ALICE,
@@ -229,6 +266,7 @@ pub async fn setup_test<T, F, C>(
         xmr_amount,
         alice_seed,
         alice_db_path,
+        alice_config_path,
         alice_listen_address,
         alice_rpc_port,
         alice_rpc_server_handle,
@@ -758,6 +796,7 @@ pub struct TestContext {
 
     alice_seed: Seed,
     alice_db_path: PathBuf,
+    pub alice_config_path: PathBuf,
     alice_listen_address: Multiaddr,
     alice_rpc_port: u16,
     #[allow(dead_code)]

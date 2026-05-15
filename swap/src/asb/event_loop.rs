@@ -952,18 +952,42 @@ where
 
     /// Change `maker.external_bitcoin_redeem_address` both in-memory and
     /// on disk. Applies only to swaps started _afterwards_.
+    ///
+    /// Uses `toml_edit` so the on-disk edit is minimal: comments,
+    /// key order and formatting of every other field are preserved.
     // TODO: lock file for the whole thing
     async fn handle_set_external_bitcoin_redeem_address(
         &mut self,
         address: Option<bitcoin::Address>,
     ) -> Result<()> {
-        let current = tokio::fs::read_to_string(&self.config_path).await?;
-        let mut config: swap_env::config::Config = toml::from_str(&current)?;
-        config.maker.external_bitcoin_redeem_address = address;
-        tokio::fs::write(&self.config_path, toml::to_string(&config)?).await?;
+        let current = tokio::fs::read_to_string(&self.config_path)
+            .await
+            .context("Failed to read config.toml")?;
+        let mut doc: toml_edit::DocumentMut = current
+            .parse()
+            .context("Failed to parse config.toml")?;
 
-        let reloaded = tokio::fs::read_to_string(&self.config_path).await?;
-        let reloaded: swap_env::config::Config = toml::from_str(&reloaded)?;
+        let maker = doc["maker"]
+            .as_table_mut()
+            .context("config.toml is missing the [maker] table")?;
+        match &address {
+            Some(address) => {
+                maker["external_bitcoin_redeem_address"] = toml_edit::value(address.to_string());
+            }
+            None => {
+                maker.remove("external_bitcoin_redeem_address");
+            }
+        }
+
+        tokio::fs::write(&self.config_path, doc.to_string())
+            .await
+            .context("Failed to write config.toml")?;
+
+        let reloaded = tokio::fs::read_to_string(&self.config_path)
+            .await
+            .context("Failed to re-read config.toml")?;
+        let reloaded: swap_env::config::Config = toml::from_str(&reloaded)
+            .context("Failed to deserialize config.toml after edit")?;
         self.external_redeem_address = reloaded.maker.external_bitcoin_redeem_address;
 
         tracing::info!(
@@ -1423,12 +1447,24 @@ mod service {
 
         pub async fn set_external_bitcoin_redeem_address(
             &self,
-            address: Option<bitcoin::Address>,
+            address: bitcoin::Address,
         ) -> anyhow::Result<()> {
             let (tx, rx) = oneshot::channel();
             self.sender
                 .send(EventLoopRequest::SetExternalBitcoinRedeemAddress {
-                    address,
+                    address: Some(address),
+                    respond_to: tx,
+                })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+        }
+
+        pub async fn clear_external_bitcoin_redeem_address(&self) -> anyhow::Result<()> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::SetExternalBitcoinRedeemAddress {
+                    address: None,
                     respond_to: tx,
                 })
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;

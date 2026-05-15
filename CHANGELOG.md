@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
- - ASB+CONTROLLER: New `set_external_bitcoin_redeem_address` with parameter `address` (string) allows you to udpate the external bitcoin redeem address at runtime.
-   The change is persisted to the config file. 
+ - ASB+CONTROLLER: New `set-external-bitcoin-redeem-address` command with parameter `address` (string) allows you to udpate the external bitcoin redeem address at runtime.
+   The change is persisted to the config file. Go back to using the internal Bitcoin wallet by using `clear-external-bitcoin-redeem-address`.
 
 ## [4.5.5] - 2026-05-13
 

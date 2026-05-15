@@ -83,6 +83,7 @@ thiserror = "1"
 data-encoding = "2.6.0"
 hex = "0.4"
 toml = "0.9.5"
+toml_edit = "0.25"
 tracing = { version = "0.1", features = ["attributes"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
 typeshare = "1.0"
