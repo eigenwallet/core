@@ -391,6 +391,14 @@ pub mod ffi {
             sign_with_view_key: bool,
         ) -> Result<UniquePtr<CxxString>>;
 
+        /// Verify that a signed message matches an address.
+        fn verifySignedMessage(
+            wallet: &Wallet,
+            message: &CxxString,
+            address: &CxxString,
+            signature: &CxxString,
+        ) -> Result<bool>;
+
         /// Get the number of subaddresses for a given account index.
         fn numSubaddresses(wallet: &Wallet, account_index: u32) -> usize;
 
