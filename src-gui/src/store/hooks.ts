@@ -1,24 +1,22 @@
-import { sortBy, sum, throttle } from "lodash";
+import { sortBy, throttle } from "lodash";
 import {
   BobStateName,
   GetSwapInfoResponseExt,
-  isBitcoinSyncProgress,
-  isPendingBackgroundProcess,
-  isPendingLockBitcoinApprovalEvent,
-  isPendingSeedSelectionApprovalEvent,
   PendingApprovalRequest,
   PendingLockBitcoinApprovalRequest,
   PendingSelectMakerApprovalRequest,
-  isPendingSelectMakerApprovalEvent,
   haveFundsBeenLocked,
   PendingSeedSelectionApprovalRequest,
   PendingSendMoneroApprovalRequest,
-  isPendingSendMoneroApprovalEvent,
   PendingPasswordApprovalRequest,
-  isPendingPasswordApprovalEvent,
   isContextFullyInitialized,
 } from "models/tauriModelExt";
-import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
+import {
+  shallowEqual,
+  TypedUseSelectorHook,
+  useDispatch,
+  useSelector,
+} from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
 import { parseDateString } from "utils/parseUtils";
 import { useEffect, useMemo, useState } from "react";
@@ -35,7 +33,15 @@ import { Alert } from "models/apiModel";
 import { fnv1a } from "utils/hash";
 import {
   selectAllSwapInfos,
+  selectBitcoinSyncProgress,
+  selectConservativeBitcoinSyncProgress,
+  selectPendingBackgroundProcesses,
   selectPendingApprovals,
+  selectPendingLockBitcoinApprovals,
+  selectPendingPasswordApprovals,
+  selectPendingSeedSelectionApprovals,
+  selectPendingSelectMakerApprovals,
+  selectPendingSendMoneroApprovals,
   selectSwapInfoWithTimelock,
   selectSwapInfosRaw,
 } from "./selectors";
@@ -191,13 +197,11 @@ export function useAreSwapInfosLoaded(): boolean {
 }
 
 export function useSettings<T>(selector: (settings: SettingsState) => T): T {
-  const settings = useAppSelector((state) => state.settings);
-  return selector(settings);
+  return useAppSelector((state) => selector(state.settings), shallowEqual);
 }
 
 export function useNodes<T>(selector: (nodes: NodesSlice) => T): T {
-  const nodes = useAppSelector((state) => state.nodes);
-  return selector(nodes);
+  return useAppSelector((state) => selector(state.nodes), shallowEqual);
 }
 
 export function usePendingApprovals(): PendingApprovalRequest[] {
@@ -205,8 +209,7 @@ export function usePendingApprovals(): PendingApprovalRequest[] {
 }
 
 export function usePendingLockBitcoinApproval(): PendingLockBitcoinApprovalRequest[] {
-  const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingLockBitcoinApprovalEvent(c));
+  return useAppSelector(selectPendingLockBitcoinApprovals);
 }
 
 export function useMoneroMainAddress(): string | null {
@@ -218,23 +221,19 @@ export function useMoneroSubaddresses(): SubaddressSummary[] {
 }
 
 export function usePendingSendMoneroApproval(): PendingSendMoneroApprovalRequest[] {
-  const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingSendMoneroApprovalEvent(c));
+  return useAppSelector(selectPendingSendMoneroApprovals);
 }
 
 export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalRequest[] {
-  const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingSelectMakerApprovalEvent(c));
+  return useAppSelector(selectPendingSelectMakerApprovals);
 }
 
 export function usePendingSeedSelectionApproval(): PendingSeedSelectionApprovalRequest[] {
-  const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingSeedSelectionApprovalEvent(c));
+  return useAppSelector(selectPendingSeedSelectionApprovals);
 }
 
 export function usePendingPasswordApproval(): PendingPasswordApprovalRequest[] {
-  const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingPasswordApprovalEvent(c));
+  return useAppSelector(selectPendingPasswordApprovals);
 }
 
 /// Returns all the pending background processes
@@ -243,22 +242,11 @@ export function usePendingBackgroundProcesses(): [
   string,
   TauriBackgroundProgress,
 ][] {
-  const background = useAppSelector((state) => state.rpc.state.background);
-  return Object.entries(background).filter(([_, c]) =>
-    isPendingBackgroundProcess(c),
-  );
+  return useAppSelector(selectPendingBackgroundProcesses);
 }
 
 export function useBitcoinSyncProgress(): TauriBitcoinSyncProgress[] {
-  const pendingProcesses = usePendingBackgroundProcesses();
-  const syncingProcesses = pendingProcesses
-    .map(([_, c]) => c)
-    .filter(isBitcoinSyncProgress);
-  return syncingProcesses
-    .map((c) => c.progress.content)
-    .filter(
-      (content): content is TauriBitcoinSyncProgress => content !== undefined,
-    );
+  return useAppSelector(selectBitcoinSyncProgress);
 }
 
 export function useIsSyncingBitcoin(): boolean {
@@ -271,27 +259,7 @@ export function useIsSyncingBitcoin(): boolean {
 /// If at least one sync is known, it returns {type: "Known", content: {consumed, total}}
 /// where consumed and total are the sum of all the consumed and total values of the syncs
 export function useConservativeBitcoinSyncProgress(): TauriBitcoinSyncProgress | null {
-  const syncingProcesses = useBitcoinSyncProgress();
-  const progressValues = syncingProcesses.map((c) => c.content?.consumed ?? 0);
-  const totalValues = syncingProcesses.map((c) => c.content?.total ?? 0);
-
-  const progress = sum(progressValues);
-  const total = sum(totalValues);
-
-  // If either the progress or the total is 0, we consider the sync to be unknown
-  if (progress === 0 || total === 0) {
-    return {
-      type: "Unknown",
-    };
-  }
-
-  return {
-    type: "Known",
-    content: {
-      consumed: progress,
-      total: total,
-    },
-  };
+  return useAppSelector(selectConservativeBitcoinSyncProgress);
 }
 
 /**
