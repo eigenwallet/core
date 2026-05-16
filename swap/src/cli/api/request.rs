@@ -8,7 +8,7 @@ use crate::cli::list_sellers::QuoteWithAddress;
 use crate::common::{get_logs, redact};
 use crate::monero::MoneroAddressPool;
 use crate::monero::wallet_rpc::MoneroDaemon;
-use crate::network::quote::BidQuote;
+use crate::network::quote::{BidQuote, ZeroQuoteReceived};
 use crate::protocol::State;
 use crate::protocol::bob::{self, BobState, Swap};
 use crate::{cli, monero};
@@ -1497,7 +1497,7 @@ pub async fn refresh_wallet_task<FMG, TMG, FB, TB, FS, TS>(
     sync_fn: FS,
 ) -> Result<(
     tokio::task::JoinHandle<()>,
-    ::tokio::sync::watch::Receiver<(bitcoin::Amount, bitcoin::Amount)>,
+    ::tokio::sync::watch::Receiver<(bitcoin::Amount, bitcoin::Amount, bitcoin::Amount)>,
 )>
 where
     TMG: Future<Output = Result<(bitcoin::Amount, bitcoin::Amount)>> + Send + 'static,
@@ -1507,7 +1507,11 @@ where
     TS: Future<Output = Result<()>> + Send + 'static,
     FS: Fn() -> TS + Send + 'static,
 {
-    let (tx, rx) = ::tokio::sync::watch::channel((bitcoin::Amount::ZERO, bitcoin::Amount::ZERO));
+    let (tx, rx) = ::tokio::sync::watch::channel((
+        bitcoin::Amount::ZERO,
+        bitcoin::Amount::ZERO,
+        bitcoin::Amount::ZERO,
+    ));
 
     let handle = tokio::task::spawn(async move {
         loop {
@@ -1519,8 +1523,8 @@ where
             let max_giveable_result = max_giveable_fn().await;
 
             match (&balance_result, &max_giveable_result) {
-                (Ok(balance), Ok((max_giveable, _fee))) => {
-                    let _ = tx.send((*balance, *max_giveable));
+                (Ok(balance), Ok((max_giveable, fee))) => {
+                    let _ = tx.send((*balance, *max_giveable, *fee));
                 }
                 (Err(e), _) => {
                     tracing::warn!(?e, "Failed to fetch Bitcoin balance in refresh_wallet_task");
@@ -1566,31 +1570,62 @@ where
     // Start background tasks with watch channels
     let (wallet_refresh_handle, mut balance_rx): (
         _,
-        ::tokio::sync::watch::Receiver<(bitcoin::Amount, bitcoin::Amount)>,
+        ::tokio::sync::watch::Receiver<(bitcoin::Amount, bitcoin::Amount, bitcoin::Amount)>,
     ) = refresh_wallet_task(max_giveable_fn, balance, sync).await?;
 
     // Get the abort handles to kill the background tasks when we exit the function
     let wallet_refresh_abort_handle = AbortOnDropHandle::new(wallet_refresh_handle);
 
     let mut pending_approvals = FuturesUnordered::new();
+    let mut logged_quotes = Vec::new();
+    let mut last_wallet_state = None;
+    let mut last_waiting_state = None;
+    let mut deposit_address = None;
+    let mut get_new_address = Some(get_new_address);
 
-    let deposit_address = get_new_address.await?;
+    balance_rx
+        .changed()
+        .await
+        .context("Bitcoin wallet refresh task ended before reporting a balance")?;
 
     loop {
         // Get the latest quotes, balance and max_giveable
         let quotes = quotes_rx.borrow().clone();
-        let (balance, max_giveable) = *balance_rx.borrow();
+        let (balance, max_giveable, min_bitcoin_lock_tx_fee) = *balance_rx.borrow();
+        let wallet_state = (balance, max_giveable);
+        let wallet_state_changed = last_wallet_state
+            .map(|last_wallet_state| last_wallet_state != wallet_state)
+            .unwrap_or(false);
 
-        // Emit a Tauri event
-        event_emitter.emit_swap_progress_event(
-            swap_id,
-            TauriSwapProgressEvent::WaitingForBtcDeposit {
-                deposit_address: deposit_address.clone(),
-                max_giveable: max_giveable,
-                min_bitcoin_lock_tx_fee: balance - max_giveable,
-                known_quotes: quotes.clone(),
-            },
-        );
+        if wallet_state_changed {
+            tracing::info!(
+                new_balance = %balance,
+                max_giveable = %max_giveable,
+                "Received Bitcoin"
+            );
+        }
+
+        last_wallet_state = Some(wallet_state);
+
+        for quote_with_address in &quotes {
+            let quote = &quote_with_address.quote;
+
+            if quote.max_quantity == bitcoin::Amount::ZERO {
+                bail!(ZeroQuoteReceived);
+            }
+
+            if !logged_quotes.contains(quote) {
+                tracing::info!(
+                    price = %quote.price,
+                    minimum_amount = %quote.min_quantity,
+                    maximum_amount = %quote.max_quantity,
+                    "Received quote"
+                );
+                logged_quotes.push(quote.clone());
+            }
+        }
+
+        let wait_quote = quotes.first();
 
         // Iterate through quotes and find ones that match the balance and max_giveable
         let matching_quotes = quotes
@@ -1598,17 +1633,87 @@ where
             .filter_map(|quote_with_address| {
                 let quote = &quote_with_address.quote;
 
-                if quote.min_quantity <= max_giveable && quote.max_quantity > bitcoin::Amount::ZERO
-                {
-                    let tx_lock_fee = balance - max_giveable;
+                if max_giveable > bitcoin::Amount::ZERO && quote.min_quantity <= max_giveable {
                     let tx_lock_amount = std::cmp::min(max_giveable, quote.max_quantity);
 
-                    Some((quote_with_address.clone(), tx_lock_amount, tx_lock_fee))
+                    Some((
+                        quote_with_address.clone(),
+                        tx_lock_amount,
+                        min_bitcoin_lock_tx_fee,
+                    ))
                 } else {
                     None
                 }
             })
             .collect::<Vec<_>>();
+
+        if matching_quotes.is_empty() {
+            if let Some(wait_quote) = wait_quote {
+                let quote = &wait_quote.quote;
+                let min_deposit_until_swap_will_start =
+                    quote.min_quantity - max_giveable + min_bitcoin_lock_tx_fee;
+                let max_deposit_until_maximum_amount_is_reached =
+                    quote.max_quantity - max_giveable + min_bitcoin_lock_tx_fee;
+
+                if wallet_state_changed
+                    && max_giveable > bitcoin::Amount::ZERO
+                    && quote.min_quantity > max_giveable
+                {
+                    tracing::info!(
+                        "Deposited amount is not enough to cover `min_quantity` when accounting for network fees"
+                    );
+                }
+
+                let waiting_state = (
+                    quote.clone(),
+                    max_giveable,
+                    min_deposit_until_swap_will_start,
+                    max_deposit_until_maximum_amount_is_reached,
+                );
+
+                if last_waiting_state.as_ref() != Some(&waiting_state) {
+                    if deposit_address.is_none() {
+                        let get_new_address = get_new_address
+                            .take()
+                            .context("Deposit address was requested more than once")?;
+                        deposit_address = Some(get_new_address.await?);
+                    }
+
+                    let deposit_address = deposit_address
+                        .as_ref()
+                        .context("Deposit address should be available while waiting")?;
+
+                    tracing::info!(
+                        "Deposit at least {} to cover the min quantity with fee!",
+                        min_deposit_until_swap_will_start
+                    );
+
+                    tracing::info!(
+                        deposit_address = %deposit_address,
+                        min_deposit_until_swap_will_start = %min_deposit_until_swap_will_start,
+                        max_deposit_until_maximum_amount_is_reached = %max_deposit_until_maximum_amount_is_reached,
+                        max_giveable = %max_giveable,
+                        minimum_amount = %quote.min_quantity,
+                        maximum_amount = %quote.max_quantity,
+                        min_bitcoin_lock_tx_fee = %min_bitcoin_lock_tx_fee,
+                        price = %quote.price,
+                        "Waiting for Bitcoin deposit"
+                    );
+
+                    event_emitter.emit_swap_progress_event(
+                        swap_id,
+                        TauriSwapProgressEvent::WaitingForBtcDeposit {
+                            deposit_address: deposit_address.clone(),
+                            max_giveable,
+                            min_bitcoin_lock_tx_fee,
+                            known_quotes: quotes.clone(),
+                        },
+                    );
+
+                    last_waiting_state = Some(waiting_state);
+                }
+            }
+        }
 
         // Put approval requests into FuturesUnordered
         for (quote, tx_lock_amount, tx_lock_fee) in matching_quotes {
