@@ -5,6 +5,7 @@ pub mod scanner;
 pub mod sweep;
 pub mod util;
 pub mod verify;
+pub mod hermes;
 
 pub const HARDFORK_VERSION: u8 = 16;
 
