@@ -13,6 +13,9 @@ use tracing_subscriber::{fmt, EnvFilter, Layer};
 
 use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriLogEvent};
 
+const MONERO_SYS_LOG_MAX_FILES: usize = 1;
+const MONERO_SYS_LOG_ROTATION: Rotation = Rotation::HOURLY;
+
 /// Creates a tracing layer that writes to a rolling file appender.
 macro_rules! json_rolling_layer {
     ($dir:expr, $prefix:expr, $env_filter:expr, $max_files:expr) => {
@@ -117,7 +120,8 @@ pub fn init(
     );
 
     // Write monero-sys and its C++ bridge logs to a verbose log file
-    // (tracing-monero-sys*.log).
+    // (tracing-monero-sys*.log). Keep only the current hourly file because
+    // these TRACE logs are meant for recent crash diagnosis and can be noisy.
     let monero_sys_file_layer = json_rolling_layer!(
         &dir,
         "tracing-monero-sys",
@@ -125,7 +129,8 @@ pub fn init(
             crates::MONERO_SYS_CRATES.to_vec(),
             LevelFilter::TRACE
         )]),
-        24
+        MONERO_SYS_LOG_MAX_FILES,
+        MONERO_SYS_LOG_ROTATION
     );
 
     // Layer for writing to the terminal
@@ -305,6 +310,12 @@ mod tests {
 
         assert!(filter.contains("monero_sys=trace"));
         assert!(filter.contains("monero_cpp=trace"));
+    }
+
+    #[test]
+    fn monero_sys_log_keeps_only_one_hourly_file() {
+        assert_eq!(MONERO_SYS_LOG_MAX_FILES, 1);
+        assert_eq!(MONERO_SYS_LOG_ROTATION, Rotation::HOURLY);
     }
 }
 
