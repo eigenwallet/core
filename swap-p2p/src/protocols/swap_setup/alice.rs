@@ -579,7 +579,7 @@ async fn run_swap_setup(
         &mut substream,
         state1
             .next_message()
-            .context("Couldn't construct Mesage1")?,
+            .context("Couldn't construct Message1")?,
     )
     .await
     .context("Failed to send message1")?;
