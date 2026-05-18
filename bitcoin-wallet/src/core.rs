@@ -80,11 +80,11 @@ pub mod bitcoin_address {
         address: &str,
         expected_network: bitcoin::Network,
     ) -> Result<bitcoin::Address> {
-        let addres = bitcoin::Address::from_str(address)?;
-        let addres = addres.require_network(expected_network).with_context(|| {
+        let address = bitcoin::Address::from_str(address)?;
+        let address = address.require_network(expected_network).with_context(|| {
             format!("Bitcoin address network mismatch, expected `{expected_network:?}`")
         })?;
-        Ok(addres)
+        Ok(address)
     }
 
     /// Parse the address and validate the network.
