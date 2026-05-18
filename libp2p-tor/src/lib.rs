@@ -85,9 +85,15 @@ use tor_hsservice::{
 use tor_proto::client::stream::IncomingStreamRequest;
 
 mod address;
+mod dial_limiter;
 mod provider;
 
 use address::{dangerous_extract, safe_extract};
+use dial_limiter::extract_peer_id;
+pub use dial_limiter::{
+    TorDialLimiter, TorDialLimiterError, TorDialPermit, TorDialPriority, TorDialPriorityConfig,
+    TorDialPriorityTracker,
+};
 pub use provider::TokioTorStream;
 
 pub type TorError = arti_client::Error;
@@ -133,6 +139,9 @@ pub struct TorTransport {
 
     /// The Tor client.
     client: Arc<TorClient<TokioRustlsRuntime>>,
+
+    /// Limiter for outbound Tor dials.
+    dial_limiter: Option<TorDialLimiter>,
 
     /// Onion services we are listening on.
     #[cfg(feature = "listen-onion-service")]
@@ -201,6 +210,7 @@ impl TorTransport {
         Self {
             conversion_mode,
             client,
+            dial_limiter: None,
             #[cfg(feature = "listen-onion-service")]
             listeners: HashMap::new(),
             #[cfg(feature = "listen-onion-service")]
@@ -220,6 +230,13 @@ impl TorTransport {
     #[must_use]
     pub fn with_address_conversion(mut self, conversion_mode: AddressConversion) -> Self {
         self.conversion_mode = conversion_mode;
+        self
+    }
+
+    /// Set a shared outbound Tor dial limiter.
+    #[must_use]
+    pub fn with_dial_limiter(mut self, dial_limiter: TorDialLimiter) -> Self {
+        self.dial_limiter = Some(dial_limiter);
         self
     }
 
@@ -328,6 +345,8 @@ impl TorTransport {
 pub enum TorTransportError {
     #[error(transparent)]
     Client(#[from] TorError),
+    #[error(transparent)]
+    DialLimiter(#[from] TorDialLimiterError),
     #[cfg(feature = "listen-onion-service")]
     #[error(transparent)]
     Service(#[from] tor_hsservice::ClientError),
@@ -451,8 +470,18 @@ impl Transport for TorTransport {
         let tor_address =
             maybe_tor_addr.ok_or(TransportError::MultiaddrNotSupported(addr.clone()))?;
         let onion_client = self.client.clone();
+        let dial_limiter = self.dial_limiter.clone();
+        let peer_id = extract_peer_id(&addr);
 
         Ok(Box::pin(async move {
+            // Hold the dial permit for the entire duration of the dial: the slot
+            // is only freed once `_dial_permit` is dropped at the end of this
+            // scope (whether the connect succeeded or failed).
+            let _dial_permit = match dial_limiter {
+                Some(dial_limiter) => Some(dial_limiter.wait(peer_id).await?),
+                None => None,
+            };
+
             let stream = onion_client.connect(tor_address).await?;
 
             tracing::debug!(%addr, "Established connection to peer through Tor");
