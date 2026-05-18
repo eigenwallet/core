@@ -12,7 +12,7 @@ async fn monero_transfers_wrong_key() {
     let cli = Cli::default();
     let wallets = vec!["alice"];
     // Disable background sync for this wallet -- this way we _have_ to use the transfer proof to discover the transactions.
-    let (monero, _container, _wallet_conainers) =
+    let (monero, _container, _wallet_containers) =
         monero_harness::Monero::new_with_sync_specified(&cli, wallets, false)
             .await
             .unwrap();
