@@ -133,7 +133,16 @@ impl Watcher {
                         BackgroundRefundProgress { swap_id },
                     );
 
-                match cancel_and_refund(swap_id, self.wallet.clone(), self.database.clone()).await {
+                match self
+                    .swap_manager
+                    .cancel_and_refund(
+                        swap_id,
+                        self.wallet.clone(),
+                        self.database.clone(),
+                        self.tauri.clone(),
+                    )
+                    .await
+                {
                     Err(e) => {
                         tracing::error!(%e, %swap_id, "Watcher failed to refund a swap in the background");
 
