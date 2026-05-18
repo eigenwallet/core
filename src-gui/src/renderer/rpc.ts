@@ -7,9 +7,12 @@ import {
   GetLogsResponse,
   GetSwapInfoResponse,
   MoneroRecoveryArgs,
+  ResumeAllSwapsArgs,
+  ResumeAllSwapsResponse,
   ResumeSwapArgs,
   ResumeSwapResponse,
-  SuspendCurrentSwapResponse,
+  SuspendSwapArgs,
+  SuspendSwapResponse,
   WithdrawBtcArgs,
   WithdrawBtcResponse,
   GetSwapInfoArgs,
@@ -29,7 +32,6 @@ import {
   ResolveApprovalResponse,
   RedactArgs,
   RedactResponse,
-  GetCurrentSwapResponse,
   LabeledMoneroAddress,
   GetMoneroHistoryResponse,
   GetMoneroMainAddressResponse,
@@ -386,12 +388,21 @@ export async function resumeSwap(swapId: string) {
   });
 }
 
-export async function suspendCurrentSwap() {
-  await invokeNoArgs<SuspendCurrentSwapResponse>("suspend_current_swap");
+export async function resumeAllSwaps(): Promise<ResumeAllSwapsResponse> {
+  return await invoke<ResumeAllSwapsArgs, ResumeAllSwapsResponse>(
+    "resume_all_swaps",
+    {},
+  );
 }
 
-export async function getCurrentSwapId() {
-  return await invokeNoArgs<GetCurrentSwapResponse>("get_current_swap");
+export async function suspendSwap(
+  swapId: string,
+  disableAutoResume: boolean = false,
+) {
+  await invoke<SuspendSwapArgs, SuspendSwapResponse>("suspend_swap", {
+    swap_id: swapId,
+    disable_auto_resume: disableAutoResume,
+  });
 }
 
 export async function getMoneroRecoveryKeys(

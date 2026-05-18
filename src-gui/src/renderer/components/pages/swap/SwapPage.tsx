@@ -1,9 +1,9 @@
 import { Box } from "@mui/material";
 import ApiAlertsBox from "./ApiAlertsBox";
-import SwapWidget from "./swap/SwapWidget";
+import SwapWidget, { SwapWidgetMode } from "./swap/SwapWidget";
 import AntiSpamInfoModal from "../../modal/anti-spam-info/AntiSpamInfoModal";
 
-export default function SwapPage() {
+export default function SwapPage({ mode }: { mode: SwapWidgetMode }) {
   return (
     <Box
       sx={{
@@ -17,7 +17,7 @@ export default function SwapPage() {
     >
       <AntiSpamInfoModal />
       <ApiAlertsBox />
-      <SwapWidget />
+      <SwapWidget mode={mode} />
     </Box>
   );
 }

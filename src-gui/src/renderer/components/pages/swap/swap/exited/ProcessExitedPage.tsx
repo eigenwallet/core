@@ -1,7 +1,7 @@
 import { Box, DialogContentText } from "@mui/material";
 import { TauriSwapProgressEvent } from "models/tauriModel";
 import CliLogsBox from "renderer/components/other/RenderedCliLog";
-import { useActiveSwapInfo, useActiveSwapLogs } from "store/hooks";
+import { useSwapInfo, useSwapLogs } from "store/hooks";
 import SwapStatePage from "renderer/components/pages/swap/swap/SwapStatePage";
 
 export default function ProcessExitedPage({
@@ -11,8 +11,8 @@ export default function ProcessExitedPage({
   prevState: TauriSwapProgressEvent | null;
   swapId: string;
 }) {
-  const swap = useActiveSwapInfo();
-  const logs = useActiveSwapLogs();
+  const swap = useSwapInfo(swapId);
+  const logs = useSwapLogs(swapId);
 
   // If we have a previous state, we can show the user the last state of the swap
   // We only show the last state if its a final state (XmrRedeemed, BtcRefunded, BtcPunished, CooperativeRedeemRejected)

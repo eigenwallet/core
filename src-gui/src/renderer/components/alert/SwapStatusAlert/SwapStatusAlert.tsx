@@ -17,6 +17,7 @@ import { TimelockTimeline } from "./TimelockTimeline";
 import { useIsSpecificSwapRunning, useAppSelector } from "store/hooks";
 import { selectSwapTimelock } from "store/selectors";
 import { ExpiredTimelocks } from "models/tauriModel";
+import { swapIdColor } from "utils/swapColor";
 
 /**
  * Component for displaying a list of messages.
@@ -123,15 +124,19 @@ function BitcoinLockedNoTimelockExpiredStateAlert({
 function BitcoinPossiblyCancelledAlert({
   swap,
   timelock,
+  isRunning,
 }: {
   swap: GetSwapInfoResponseExt;
   timelock: TimelockCancel;
+  isRunning: boolean;
 }) {
   return (
     <MessageList
       messages={[
         "The swap is being cancelled because it was not completed in time",
-        "To refund your Bitcoin, resume the swap",
+        isRunning
+          ? "We will refund the Bitcoin automatically"
+          : "To refund your Bitcoin, resume the swap",
         <>
           If we haven't refunded in{" "}
           <HumanizedBitcoinBlockDuration
@@ -149,13 +154,13 @@ function BitcoinPossiblyCancelledAlert({
  * Sub-component for displaying alerts requiring immediate action.
  * @returns JSX.Element
  */
-function PunishTimelockExpiredAlert() {
+function PunishTimelockExpiredAlert({ isRunning }: { isRunning: boolean }) {
   return (
     <MessageList
       messages={[
         "We couldn't refund within the refund period",
         "We might still be able to redeem the Monero. However, this will require cooperation from the other party",
-        "Resume the swap as soon as possible",
+        isRunning ? null : "Resume the swap as soon as possible",
       ]}
     />
   );
@@ -167,8 +172,10 @@ function PunishTimelockExpiredAlert() {
  */
 function WaitingForRemainingRefundTimelockAlert({
   blocksLeft,
+  isRunning,
 }: {
   blocksLeft: number;
+  isRunning: boolean;
 }) {
   return (
     <MessageList
@@ -181,7 +188,9 @@ function WaitingForRemainingRefundTimelockAlert({
         </>,
         "The maker can withhold the Bitcoin anti-spam deposit before the timelock expires",
         "We will refund the Bitcoin anti-spam deposit once the timelock expires",
-        "Keep the app running or resume the swap once the timelock expires",
+        isRunning
+          ? null
+          : "Keep the app running or resume the swap once the timelock expires",
       ]}
     />
   );
@@ -290,10 +299,14 @@ export function StateAlert({
             );
           case "Cancel":
             return (
-              <BitcoinPossiblyCancelledAlert timelock={timelock} swap={swap} />
+              <BitcoinPossiblyCancelledAlert
+                timelock={timelock}
+                swap={swap}
+                isRunning={isRunning}
+              />
             );
           case "Punish":
-            return <PunishTimelockExpiredAlert />;
+            return <PunishTimelockExpiredAlert isRunning={isRunning} />;
           // These two timelock types only exist once the partial refund tx has been confirmed
           // They shouldn't occur for these states, so return null
           case "WaitingForRemainingRefund":
@@ -303,7 +316,7 @@ export function StateAlert({
             exhaustiveGuard(timelock);
         }
       }
-      return <PunishTimelockExpiredAlert />;
+      return <PunishTimelockExpiredAlert isRunning={isRunning} />;
 
     case BobStateName.BtcPartiallyRefunded:
       // Reuse existing timelock alerts for the amnesty waiting period
@@ -313,6 +326,7 @@ export function StateAlert({
             return (
               <WaitingForRemainingRefundTimelockAlert
                 blocksLeft={timelock.content.blocks_left}
+                isRunning={isRunning}
               />
             );
           case "RemainingRefund":
@@ -403,18 +417,26 @@ export default function SwapStatusAlert({
         },
       }}
     >
-      <AlertTitle>
-        {isRunning ? (
-          hasUnusualAmountOfTimePassed ? (
-            "Swap has been running for a while"
-          ) : (
-            "Swap is running"
-          )
-        ) : (
-          <>
-            Swap <TruncatedText>{swap.swap_id}</TruncatedText> is not running
-          </>
-        )}
+      <AlertTitle
+        sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}
+      >
+        <Box
+          component="span"
+          sx={{
+            fontFamily: "monospace",
+            borderBottom: `2px solid ${swapIdColor(swap.swap_id)}`,
+            paddingBottom: "2px",
+          }}
+        >
+          <TruncatedText>{swap.swap_id}</TruncatedText>
+        </Box>
+        <span>
+          {isRunning
+            ? hasUnusualAmountOfTimePassed
+              ? "has been running for a while"
+              : "is running"
+            : "is not running"}
+        </span>
       </AlertTitle>
       <Box
         sx={{

@@ -350,8 +350,9 @@ impl AsbApiServer for RpcImpl {
         address: String,
     ) -> Result<(), ErrorObjectOwned> {
         let network = self.bitcoin_wallet.network();
-        let address = bitcoin_wallet::bitcoin_address::parse_and_validate_network(&address, network)
-            .into_json_rpc_result()?;
+        let address =
+            bitcoin_wallet::bitcoin_address::parse_and_validate_network(&address, network)
+                .into_json_rpc_result()?;
 
         self.event_loop_service
             .set_external_bitcoin_redeem_address(address)

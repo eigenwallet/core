@@ -1,0 +1,18 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT auto_resume\n            FROM auto_resume\n            WHERE swap_id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "auto_resume",
+        "ordinal": 0,
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [false]
+  },
+  "hash": "7637297399da38450867ae8383431f0016086a70ef07895dfd9c24179dfe65de"
+}

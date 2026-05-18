@@ -47,9 +47,7 @@ pub enum Cmd {
         withhold: bool,
     },
     /// Update the external bitcoin redeem address at runtime. Also updates config.toml.
-    SetExternalBitcoinRedeemAddress {
-        address: String,
-    },
+    SetExternalBitcoinRedeemAddress { address: String },
     /// Clear the external bitcoin redeem address. Future swaps will be redeemed into
     /// the internal Bitcoin wallet. Also updates config.toml.
     ClearExternalBitcoinRedeemAddress,

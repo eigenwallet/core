@@ -1,9 +1,9 @@
 import { Box, DialogContentText } from "@mui/material";
-import { useActiveSwapLogs } from "store/hooks";
+import { useSwapLogs } from "store/hooks";
 import CliLogsBox from "../../../other/RenderedCliLog";
 
-export default function DebugPage() {
-  const logs = useActiveSwapLogs();
+export default function DebugPage({ swapId }: { swapId: string }) {
+  const logs = useSwapLogs(swapId);
 
   return (
     <Box sx={{ padding: 2, display: "flex", flexDirection: "column", gap: 2 }}>

@@ -3,6 +3,7 @@ import {
   BobStateName,
   GetSwapInfoResponseExt,
   isBitcoinSyncProgress,
+  isBobStateNameRunningSwap,
   isPendingBackgroundProcess,
   isPendingLockBitcoinApprovalEvent,
   isPendingSeedSelectionApprovalEvent,
@@ -10,13 +11,13 @@ import {
   PendingLockBitcoinApprovalRequest,
   PendingSelectMakerApprovalRequest,
   isPendingSelectMakerApprovalEvent,
-  haveFundsBeenLocked,
   PendingSeedSelectionApprovalRequest,
   PendingSendMoneroApprovalRequest,
   isPendingSendMoneroApprovalEvent,
   PendingPasswordApprovalRequest,
   isPendingPasswordApprovalEvent,
   isContextFullyInitialized,
+  isOfferPhase,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
@@ -71,49 +72,80 @@ export function useResumeableSwapsCountExcludingPunished() {
   );
 }
 
+// A swap entry counts as "still in flight" while its current event is anything
+// other than a *terminal* Released. A Released event carrying
+// `next_auto_resume_at_unix_ms` is a retry signal — the swap manager will
+// auto-resume — so the GUI should keep treating those swaps as active.
+function isSwapInFlight(swap: import("models/storeModel").SwapState) {
+  if (swap.curr.type !== "Released") return true;
+  return swap.curr.content.next_auto_resume_at_unix_ms != null;
+}
+
+// For "in flight, past the offer phase" we look at the previous event when the
+// current is Released — `prev` carries the actual swap-machine state.
+function effectivePhaseEvent(swap: import("models/storeModel").SwapState) {
+  if (swap.curr.type !== "Released") return swap.curr;
+  return swap.prev;
+}
+
 /// Returns true if we have any swap that is running
 export function useIsSwapRunning() {
-  return useAppSelector(
-    (state) =>
-      state.swap.state !== null && state.swap.state.curr.type !== "Released",
+  return useAppSelector((state) =>
+    Object.values(state.swap.swaps).some(isSwapInFlight),
   );
 }
 
-/// Returns true if we have a swap that is running and
-/// that swap has any funds locked
-export function useIsSwapRunningAndHasFundsLocked() {
-  const swapInfo = useActiveSwapInfo();
-  const swapTauriState = useAppSelector(
-    (state) => state.swap.state?.curr ?? null,
+/// Returns the number of swaps that are currently running
+export function useRunningSwapsCount() {
+  return useAppSelector((state) =>
+    state ? Object.values(state.swap.swaps).filter(isSwapInFlight).length : 0,
   );
+}
 
-  // If the swap is in the Released state, we return false
-  if (swapTauriState?.type === "Released") {
-    return false;
-  }
+/// Returns true if we have a swap that is still in the offer/setup phase
+export function useHasOfferPhaseSwap() {
+  return useAppSelector((state) =>
+    Object.values(state.swap.swaps).some((swap) => {
+      if (!isSwapInFlight(swap)) return false;
+      const phase = effectivePhaseEvent(swap);
+      return phase != null && isOfferPhase(phase);
+    }),
+  );
+}
 
-  // If the tauri state tells us that funds have been locked, we return true
-  if (haveFundsBeenLocked(swapTauriState)) {
-    return true;
-  }
+/// Returns true if we have a swap that has progressed past the offer phase
+export function useHasSwapPhaseSwap() {
+  return useAppSelector((state) =>
+    Object.values(state.swap.swaps).some((swap) => {
+      if (!isSwapInFlight(swap)) return false;
+      const phase = effectivePhaseEvent(swap);
+      return phase != null && !isOfferPhase(phase);
+    }),
+  );
+}
 
-  // If we have a database entry (swapInfo) for this swap, we return true
-  if (swapInfo != null) {
-    return true;
-  }
-
-  return false;
+/// Returns the number of swaps that have progressed past the offer phase
+export function useSwapPhaseSwapsCount() {
+  return useAppSelector(
+    (state) =>
+      Object.values(state.swap.swaps).filter((swap) => {
+        if (!isSwapInFlight(swap)) return false;
+        const phase = effectivePhaseEvent(swap);
+        return phase != null && !isOfferPhase(phase);
+      }).length,
+  );
 }
 
 /// Returns true if we have a swap that is running
 export function useIsSpecificSwapRunning(swapId: string | null) {
-  return useAppSelector(
-    (state) =>
-      swapId != null &&
-      state.swap.state !== null &&
-      state.swap.state.swapId === swapId &&
-      state.swap.state.curr.type !== "Released",
-  );
+  return useAppSelector((state) => {
+    if (swapId == null) {
+      return false;
+    }
+
+    const swap = state.swap.swaps[swapId];
+    return swap != null && swap.curr.type !== "Released";
+  });
 }
 
 export function useIsContextAvailable() {
@@ -130,17 +162,7 @@ export function useSwapInfo(
   );
 }
 
-export function useActiveSwapId(): string | null {
-  return useAppSelector((s) => s.swap.state?.swapId ?? null);
-}
-
-export function useActiveSwapInfo(): GetSwapInfoResponseExt | null {
-  const swapId = useActiveSwapId();
-  return useSwapInfo(swapId);
-}
-
-export function useActiveSwapLogs() {
-  const swapId = useActiveSwapId();
+export function useSwapLogs(swapId: string | null) {
   const logs = useAppSelector((s) => s.logs.state.logs);
 
   return useMemo(() => {
@@ -181,6 +203,21 @@ export function useSwapInfosSortedByDate() {
   const swapInfos = useSaneSwapInfos();
 
   return sortBy(swapInfos, (swap) => -parseDateString(swap.start_date));
+}
+
+/// Swaps that are resumable per the on-disk state (`isBobStateNameRunningSwap`)
+/// but have no entry in the redux swap slice — i.e. no state-machine task in
+/// this session has touched them. The Swaps page surfaces these so the user
+/// can resume them without leaving the page. Swaps that *do* have a redux
+/// entry (running, retry-backoff, or terminally released) are left to their
+/// existing in-flight panel.
+export function useIdleResumableSwapInfos(): GetSwapInfoResponseExt[] {
+  const saneSwapInfos = useSaneSwapInfos();
+  const swaps = useAppSelector((state) => state.swap.swaps);
+  return saneSwapInfos.filter(
+    (info) =>
+      isBobStateNameRunningSwap(info.state_name) && swaps[info.swap_id] == null,
+  );
 }
 
 /// Returns true if swapInfos has been loaded

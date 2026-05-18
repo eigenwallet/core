@@ -215,7 +215,7 @@ const happyPath: TauriSwapProgressEvent[] = [
       xmr_receive_pool: MOCK_RECEIVE_POOL,
     },
   },
-  { type: "Released" },
+  { type: "Released", content: {} },
 ];
 
 const cooperativeRedeem: TauriSwapProgressEvent[] = [
@@ -238,7 +238,7 @@ const cooperativeRedeem: TauriSwapProgressEvent[] = [
       xmr_receive_pool: MOCK_RECEIVE_POOL,
     },
   },
-  { type: "Released" },
+  { type: "Released", content: {} },
 ];
 
 const cooperativeRedeemRejected: TauriSwapProgressEvent[] = [
@@ -261,7 +261,7 @@ const cooperativeRedeemRejected: TauriSwapProgressEvent[] = [
     content: { btc_refund_txid: MOCK_BTC_REFUND_TXID },
   },
   { type: "BtcRefunded", content: { btc_refund_txid: MOCK_BTC_REFUND_TXID } },
-  { type: "Released" },
+  { type: "Released", content: {} },
 ];
 
 const earlyRefund: TauriSwapProgressEvent[] = [
@@ -274,7 +274,7 @@ const earlyRefund: TauriSwapProgressEvent[] = [
     type: "BtcEarlyRefunded",
     content: { btc_early_refund_txid: MOCK_BTC_EARLY_REFUND_TXID },
   },
-  { type: "Released" },
+  { type: "Released", content: {} },
 ];
 
 const partialRefundWithAmnesty: TauriSwapProgressEvent[] = [
@@ -333,7 +333,7 @@ const partialRefundWithAmnesty: TauriSwapProgressEvent[] = [
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
   },
-  { type: "Released" },
+  { type: "Released", content: {} },
 ];
 
 const partialRefundWithBurn: TauriSwapProgressEvent[] = [
@@ -392,7 +392,7 @@ const partialRefundWithBurn: TauriSwapProgressEvent[] = [
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
   },
-  { type: "Released" },
+  { type: "Released", content: {} },
 ];
 
 const partialRefundWithWithholdAndMercy: TauriSwapProgressEvent[] = [
@@ -467,7 +467,7 @@ const partialRefundWithWithholdAndMercy: TauriSwapProgressEvent[] = [
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
   },
-  { type: "Released" },
+  { type: "Released", content: {} },
 ];
 
 export const scenarios: Record<string, TauriSwapProgressEvent[]> = {

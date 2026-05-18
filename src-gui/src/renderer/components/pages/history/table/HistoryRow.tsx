@@ -12,6 +12,7 @@ import {
   bobStateNameToHumanReadable,
   GetSwapInfoResponseExt,
 } from "models/tauriModelExt";
+import { swapIdColor } from "utils/swapColor";
 
 function AmountTransfer({
   btcAmount,
@@ -47,7 +48,16 @@ export default function HistoryRow(swap: GetSwapInfoResponseExt) {
           </IconButton>
         </TableCell>
         <TableCell>
-          <TruncatedText>{swap.swap_id}</TruncatedText>
+          <Box
+            component="span"
+            sx={{
+              fontFamily: "monospace",
+              borderBottom: `2px solid ${swapIdColor(swap.swap_id)}`,
+              paddingBottom: "2px",
+            }}
+          >
+            <TruncatedText>{swap.swap_id}</TruncatedText>
+          </Box>
         </TableCell>
         <TableCell>
           <AmountTransfer

@@ -24,6 +24,7 @@ import {
   getSwapTimelock,
   initializeContext,
   refreshApprovals,
+  resumeAllSwaps,
   updateAllNodeStatuses,
 } from "./rpc";
 import { store } from "./store/storeRenderer";
@@ -65,6 +66,28 @@ const FETCH_PENDING_APPROVALS_INTERVAL = 2 * 1_000;
 // Check context status every 2 seconds
 const CHECK_CONTEXT_STATUS_INTERVAL = 2 * 1_000;
 
+// Retry resume_all_swaps every 3 seconds until it succeeds once
+const RESUME_ALL_SWAPS_RETRY_INTERVAL = 3 * 1_000;
+
+async function resumeAllSwapsUntilSuccess(): Promise<void> {
+  while (true) {
+    try {
+      const response = await resumeAllSwaps();
+      logger.info(
+        `Resumed ${response.resumed_swap_ids.length} swap(s) on startup`,
+      );
+      return;
+    } catch (error) {
+      logger.debug(
+        `resume_all_swaps not ready yet, retrying in ${RESUME_ALL_SWAPS_RETRY_INTERVAL}ms: ${error}`,
+      );
+      await new Promise((resolve) =>
+        setTimeout(resolve, RESUME_ALL_SWAPS_RETRY_INTERVAL),
+      );
+    }
+  }
+}
+
 function setIntervalImmediate(callback: () => void, interval: number): void {
   callback();
   setInterval(callback, interval);
@@ -99,6 +122,9 @@ export async function setupBackgroundTasks(): Promise<void> {
 
   // Fetch all alerts
   updateAlerts();
+
+  // Kick off resume-all-swaps; it will retry itself until the context is ready
+  resumeAllSwapsUntilSuccess();
 
   // Setup Tauri event listeners
   // Check if the context is already available. This is to prevent unnecessary re-initialization

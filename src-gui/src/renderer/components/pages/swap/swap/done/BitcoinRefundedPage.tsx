@@ -1,14 +1,16 @@
 import { Box, DialogContentText } from "@mui/material";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
-import { useActiveSwapInfo } from "store/hooks";
+import { useSwapInfo } from "store/hooks";
 import FeedbackInfoBox from "renderer/components/pages/help/FeedbackInfoBox";
 import BitcoinTransactionInfoBox from "renderer/components/pages/swap/swap/components/BitcoinTransactionInfoBox";
 
 export function BitcoinRefundPublishedPage({
+  swapId,
   btc_refund_txid,
-}: TauriSwapProgressEventContent<"BtcRefundPublished">) {
+}: { swapId: string } & TauriSwapProgressEventContent<"BtcRefundPublished">) {
   return (
     <MultiBitcoinRefundedPage
+      swapId={swapId}
       btc_refund_txid={btc_refund_txid}
       btc_refund_finalized={false}
     />
@@ -16,10 +18,14 @@ export function BitcoinRefundPublishedPage({
 }
 
 export function BitcoinEarlyRefundPublishedPage({
+  swapId,
   btc_early_refund_txid,
-}: TauriSwapProgressEventContent<"BtcEarlyRefundPublished">) {
+}: {
+  swapId: string;
+} & TauriSwapProgressEventContent<"BtcEarlyRefundPublished">) {
   return (
     <MultiBitcoinRefundedPage
+      swapId={swapId}
       btc_refund_txid={btc_early_refund_txid}
       btc_refund_finalized={false}
     />
@@ -27,10 +33,12 @@ export function BitcoinEarlyRefundPublishedPage({
 }
 
 export function BitcoinRefundedPage({
+  swapId,
   btc_refund_txid,
-}: TauriSwapProgressEventContent<"BtcRefunded">) {
+}: { swapId: string } & TauriSwapProgressEventContent<"BtcRefunded">) {
   return (
     <MultiBitcoinRefundedPage
+      swapId={swapId}
       btc_refund_txid={btc_refund_txid}
       btc_refund_finalized={true}
     />
@@ -38,10 +46,12 @@ export function BitcoinRefundedPage({
 }
 
 export function BitcoinEarlyRefundedPage({
+  swapId,
   btc_early_refund_txid,
-}: TauriSwapProgressEventContent<"BtcEarlyRefunded">) {
+}: { swapId: string } & TauriSwapProgressEventContent<"BtcEarlyRefunded">) {
   return (
     <MultiBitcoinRefundedPage
+      swapId={swapId}
       btc_refund_txid={btc_early_refund_txid}
       btc_refund_finalized={true}
     />
@@ -49,13 +59,15 @@ export function BitcoinEarlyRefundedPage({
 }
 
 function MultiBitcoinRefundedPage({
+  swapId,
   btc_refund_txid,
   btc_refund_finalized,
 }: {
+  swapId: string;
   btc_refund_txid: string;
   btc_refund_finalized: boolean;
 }) {
-  const swap = useActiveSwapInfo();
+  const swap = useSwapInfo(swapId);
   const additionalContent = swap ? (
     <>
       {!btc_refund_finalized &&

@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { store } from "renderer/store/storeRenderer";
-import { useActiveSwapInfo } from "store/hooks";
 import { logsToRawString } from "utils/parseUtils";
 import { getLogsOfSwap, redactLogs } from "renderer/rpc";
 import { parseCliLogString } from "models/cliModel";
@@ -40,13 +39,10 @@ const initialLogsState: FeedbackLogsState = {
 };
 
 export function useFeedback() {
-  const currentSwapId = useActiveSwapInfo();
   const { enqueueSnackbar } = useSnackbar();
 
-  const [inputState, setInputState] = useState<FeedbackInputState>({
-    ...initialInputState,
-    selectedSwap: currentSwapId?.swap_id || null,
-  });
+  const [inputState, setInputState] =
+    useState<FeedbackInputState>(initialInputState);
   const [logsState, setLogsState] =
     useState<FeedbackLogsState>(initialLogsState);
   const [error, setError] = useState<string | null>(null);

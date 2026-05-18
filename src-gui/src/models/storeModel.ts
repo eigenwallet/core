@@ -8,7 +8,7 @@ export type SwapState = {
 };
 
 export interface SwapSlice {
-  state: SwapState | null;
+  swaps: Record<string, SwapState>;
   logs: CliLog[];
   spawnType: SwapSpawnType | null;
   /** DEV ONLY: When true, prevents Tauri calls in the swap progress listener */

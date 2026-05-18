@@ -3,8 +3,10 @@ import { formatConfirmations } from "utils/formatUtils";
 import BitcoinTransactionInfoBox from "renderer/components/pages/swap/swap/components/BitcoinTransactionInfoBox";
 import { Box, DialogContentText } from "@mui/material";
 
-// This is the number of blocks after which we consider the swap to be at risk of being unsuccessful
-const BITCOIN_CONFIRMATIONS_WARNING_THRESHOLD = 2;
+// Once the lock has this many confirmations the swap is essentially safe
+// from being orphaned, so we suppress the descriptive paragraph above the
+// transaction box to keep the page compact.
+const BITCOIN_CONFIRMATIONS_HIDE_DESCRIPTION_THRESHOLD = 3;
 
 export default function BitcoinLockTxInMempoolPage({
   btc_lock_confirmations,
@@ -18,10 +20,13 @@ export default function BitcoinLockTxInMempoolPage({
     return "We have locked our Bitcoin. We are waiting for the transaction to be confirmed.";
   }
 
+  const showDescription =
+    btc_lock_confirmations == null ||
+    btc_lock_confirmations < BITCOIN_CONFIRMATIONS_HIDE_DESCRIPTION_THRESHOLD;
+
   return (
     <>
-      {(btc_lock_confirmations === undefined ||
-        btc_lock_confirmations < BITCOIN_CONFIRMATIONS_WARNING_THRESHOLD) && (
+      {showDescription && (
         <DialogContentText>{description()}</DialogContentText>
       )}
       <Box
@@ -35,15 +40,7 @@ export default function BitcoinLockTxInMempoolPage({
           title="Bitcoin Lock Transaction"
           txId={btc_lock_txid}
           loading
-          additionalContent={
-            <>
-              Most makers require one confirmation before locking their Monero.
-              After they lock their funds and the Monero transaction receives
-              one confirmation, the swap will proceed to the next step.
-              <br />
-              Confirmations: {formatConfirmations(btc_lock_confirmations)}
-            </>
-          }
+          additionalContent={<>{formatConfirmations(btc_lock_confirmations)}</>}
         />
       </Box>
     </>
