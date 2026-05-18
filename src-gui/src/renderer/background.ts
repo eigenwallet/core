@@ -36,13 +36,16 @@ import {
 } from "store/features/walletSlice";
 import {
   applyDefaultNodes,
+  applyDefaultRendezvousPoints,
   setHasClearedLogsOnUpgrade,
   validateDonateToDevelopmentTip,
 } from "store/features/settingsSlice";
 import {
   DEFAULT_NODES,
+  DEFAULT_RENDEZVOUS_POINTS,
   NEGATIVE_NODES_MAINNET,
   NEGATIVE_NODES_TESTNET,
+  NEGATIVE_RENDEZVOUS_POINTS,
 } from "store/defaults";
 import { setSubaddresses } from "store/features/walletSlice";
 
@@ -97,6 +100,14 @@ export async function setupBackgroundTasks(): Promise<void> {
       defaultNodes: DEFAULT_NODES,
       negativeNodesMainnet: NEGATIVE_NODES_MAINNET,
       negativeNodesTestnet: NEGATIVE_NODES_TESTNET,
+    }),
+  );
+
+  // Apply default rendezvous points on startup (same pattern as nodes)
+  store.dispatch(
+    applyDefaultRendezvousPoints({
+      defaultRendezvousPoints: DEFAULT_RENDEZVOUS_POINTS,
+      negativeRendezvousPoints: NEGATIVE_RENDEZVOUS_POINTS,
     }),
   );
 

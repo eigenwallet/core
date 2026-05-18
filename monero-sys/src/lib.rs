@@ -20,7 +20,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex};
 use std::{
     any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
-    path::PathBuf, pin::Pin, time::Duration,
+    pin::Pin, time::Duration,
 };
 use throttle::Throttle;
 
@@ -1246,6 +1246,19 @@ impl WalletManager {
     /// For now we don't support custom difficulty
     const DEFAULT_KDF_ROUNDS: u64 = 1;
 
+    fn ensure_wallet_parent_directory_exists(path: &str) -> Result<()> {
+        let Some(directory) = std::path::Path::new(path).parent() else {
+            return Ok(());
+        };
+
+        std::fs::create_dir_all(directory).with_context(|| {
+            format!(
+                "failed to create wallet directory `{}`",
+                directory.display()
+            )
+        })
+    }
+
     /// Get the wallet manager instance.
     /// You can optionally pass a daemon with which the wallet manager and
     /// all wallets opened by the manager will connect.
@@ -1296,12 +1309,7 @@ impl WalletManager {
 
         tracing::debug!(%path, "Wallet doesn't exist, creating it");
 
-        // Ensure the parent directory exists so the Monero library can write the wallet files
-        if let Some(dir) = std::path::Path::new(path).parent() {
-            std::fs::create_dir_all(dir).with_context(|| {
-                format!("failed to create wallet directory `{}`", dir.display())
-            })?;
-        }
+        Self::ensure_wallet_parent_directory_exists(path)?;
 
         // Otherwise, create (and open) a new wallet.
         let kdf_rounds = Self::DEFAULT_KDF_ROUNDS;
@@ -1358,19 +1366,7 @@ impl WalletManager {
                 .context(format!("Failed to open wallet `{}`", &path));
         }
 
-        let pathbuf = PathBuf::from(path);
-        if let Some(directory) = pathbuf.parent() {
-            tracing::debug!(
-                "Making sure to create wallet directory `{}`",
-                directory.display()
-            );
-            std::fs::create_dir_all(directory).context(format!(
-                "failed to create wallet directory `{}`",
-                directory.display()
-            ))?;
-        }
-
-        let path = pathbuf.display().to_string();
+        Self::ensure_wallet_parent_directory_exists(path)?;
 
         tracing::debug!(restore_height, %address, "Creating wallet from keys");
 
@@ -1424,6 +1420,8 @@ impl WalletManager {
         daemon: Daemon,
     ) -> anyhow::Result<FfiWallet> {
         tracing::debug!(%path, "Recovering wallet from seed");
+
+        Self::ensure_wallet_parent_directory_exists(path)?;
 
         let_cxx_string!(path = path);
         let_cxx_string!(password = password.unwrap_or(""));

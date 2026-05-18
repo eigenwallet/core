@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-05-13
+
+- GUI: Exolix has become a community supporter. They support development and provide a reliable market maker. They are visually highlighted in the UI.
+
+## [4.5.5] - 2026-05-13
+
+## [4.5.4] - 2026-05-12
+
+## [4.5.3] - 2026-05-08
+
+- ASB: New `maker.btc_redeem_fee_multiplier` config option (default `1.0`) that scales the estimated BTC redeem fee. Setting it higher (e.g. `2.0`) acts as a safety margin so the redeem still confirms when fee estimation undershoots actual mempool conditions.
+
+## [4.5.2] - 2026-05-07
+
+- ASB+CONTROLLER: `get-swaps` now includes the `btc_redeem_txid` per swap: the Bitcoin redeem transaction id. This is deterministic from the swap's locked state, so it is set even before the redeem transaction is published.
+
 ## [4.5.1] - 2026-05-05
 
 - ASB+CONTROLLER: `get-swaps` now accepts optional `limit` and `offset` parameters which can be used for pagination.
@@ -927,7 +943,12 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.5.1...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.6.0...HEAD
+[4.6.0]: https://github.com/eigenwallet/core/compare/4.5.5...4.6.0
+[4.5.5]: https://github.com/eigenwallet/core/compare/4.5.4...4.5.5
+[4.5.4]: https://github.com/eigenwallet/core/compare/4.5.3...4.5.4
+[4.5.3]: https://github.com/eigenwallet/core/compare/4.5.2...4.5.3
+[4.5.2]: https://github.com/eigenwallet/core/compare/4.5.1...4.5.2
 [4.5.1]: https://github.com/eigenwallet/core/compare/4.5.0...4.5.1
 [4.5.0]: https://github.com/eigenwallet/core/compare/4.4.1...4.5.0
 [4.4.1]: https://github.com/eigenwallet/core/compare/4.4.0...4.4.1

@@ -181,6 +181,11 @@ pub struct Maker {
     /// If specified, Bitcoin received from successful swaps will be sent to this address.
     #[serde(default, with = "swap_serde::bitcoin::address_serde::option")]
     pub external_bitcoin_redeem_address: Option<bitcoin::Address>,
+    /// Multiplier applied to the estimated BTC redeem fee. Defaults to 1.0;
+    /// set higher (e.g. 2.0) to overpay for faster confirmation as a safety
+    /// margin against fee estimation undershooting actual mempool conditions.
+    #[serde(default = "default_btc_redeem_fee_multiplier")]
+    pub btc_redeem_fee_multiplier: Decimal,
     /// Percentage (between 0.0 and 1.0) of the swap amount
     /// that will be donated to the devepment fund as part of the Monero lock transaction.
     #[serde(default = "default_developer_tip")]
@@ -243,6 +248,10 @@ fn default_developer_tip() -> Decimal {
     Decimal::ZERO
 }
 
+pub fn default_btc_redeem_fee_multiplier() -> Decimal {
+    Decimal::ONE
+}
+
 fn default_anti_spam_deposit_ratio() -> Decimal {
     Decimal::ZERO
 }
@@ -299,6 +308,15 @@ pub fn read_config(config_path: PathBuf) -> Result<Result<Config, ConfigNotIniti
 /// and likely indicate a misconfiguration (e.g. deposit exceeding fees).
 pub const MAX_ANTI_SPAM_DEPOSIT_RATIO: Decimal = Decimal::from_parts(2, 0, 0, false, 1); // 0.2
 
+/// Minimum allowed BTC redeem fee multiplier. Values below this would scale
+/// the estimated fee down so far that the redeem transaction is unlikely to
+/// confirm, and likely indicate a misconfiguration.
+pub const MIN_BTC_REDEEM_FEE_MULTIPLIER: Decimal = Decimal::from_parts(1, 0, 0, false, 1); // 0.1
+
+/// Maximum allowed BTC redeem fee multiplier. Values above this are implausible
+/// (10x the estimated fee) and likely indicate a misconfiguration.
+pub const MAX_BTC_REDEEM_FEE_MULTIPLIER: Decimal = Decimal::from_parts(10, 0, 0, false, 0); // 10
+
 pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Result<()> {
     if config.monero.network != env_config.monero_network {
         bail!(
@@ -323,6 +341,23 @@ pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Resul
         bail!(
             "anti_spam_deposit_ratio of {ratio} exceeds maximum of {MAX_ANTI_SPAM_DEPOSIT_RATIO}. \
              Such a high deposit ratio is implausible and likely a misconfiguration."
+        );
+    }
+
+    let multiplier = config.maker.btc_redeem_fee_multiplier;
+    if multiplier < MIN_BTC_REDEEM_FEE_MULTIPLIER {
+        bail!(
+            "btc_redeem_fee_multiplier of {multiplier} is below minimum of \
+             {MIN_BTC_REDEEM_FEE_MULTIPLIER}. A multiplier this low scales the \
+             redeem fee down so far that the transaction is unlikely to confirm \
+             (a non-positive multiplier would also fail at runtime in scale_fee)."
+        );
+    }
+    if multiplier > MAX_BTC_REDEEM_FEE_MULTIPLIER {
+        bail!(
+            "btc_redeem_fee_multiplier of {multiplier} exceeds maximum of \
+             {MAX_BTC_REDEEM_FEE_MULTIPLIER}. Such a high multiplier is implausible \
+             and likely a misconfiguration."
         );
     }
 
@@ -405,6 +440,7 @@ pub fn query_user_for_initial_config_with_network(
             price_ticker_source_bitfinex_enabled: default_price_ticker_source_enabled(),
             price_ticker_source_kucoin_enabled: default_price_ticker_source_enabled(),
             external_bitcoin_redeem_address: None,
+            btc_redeem_fee_multiplier: default_btc_redeem_fee_multiplier(),
             developer_tip,
             refund_policy: defaults.refund_policy,
         },

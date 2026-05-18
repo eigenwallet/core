@@ -125,6 +125,8 @@ If the option is not set, a new address from the internal wallet is used for eve
 
 `developer_tip` allows configuring your maker to donate a small part of swaps to funding further development of the project. This is disabled by default. You can manually enable it if you choose to do so. Set it to a number between 0 and 1. Setting it to 0.02 will donate 2% of each swap to the donation address of the project. The tip is sent by adding an additional output to the Monero lock transaction of a swap. This means this will not impact the availability of your UTXOs (unlocked funds) as it does not require an additonal transaction.
 
+`btc_redeem_fee_multiplier` scales the estimated BTC redeem fee. Defaults to `1.0`. Set higher (e.g. `2.0`) as a safety margin so the redeem still confirms when fee estimation undershoots actual mempool conditions. The fee is deducted from the BTC Alice receives, so a higher value reduces her net redeem amount.
+
 In order to be able to trade, the ASB must define a price to be able to agree on the amounts to be swapped with a CLI.
 The `XMR<>BTC` price is currently determined by the price from the central exchange Kraken.
 Upon startup the ASB connects to the Kraken price websocket and listens on the stream for price updates.
