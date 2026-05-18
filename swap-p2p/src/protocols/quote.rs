@@ -97,7 +97,7 @@ pub struct ReserveProofWithAddress {
     #[typeshare(serialized_as = "string")]
     pub address: monero_address::MoneroAddress,
     pub proof: String,
-    // TOOD: Technically redundant as convention tells us its the peer id but it'd be nice to be able to verify reserve proofs isolatedly
+    // TODO: Technically redundant as convention tells us its the peer id but it'd be nice to be able to verify reserve proofs isolatedly
     pub message: String,
 }
 

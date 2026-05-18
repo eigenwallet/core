@@ -13,7 +13,7 @@ use crate::libp2p_ext::MultiAddrExt;
 /// 1. privacy (by avoiding to share local addresses with other peers)
 /// 2. preventing the Swarm from trying to dial addresses that we probably cannot reach anyway
 ///
-/// TODO: Add a clipply rule to forbid the normal identify behaviour from being used in the codebase
+/// TODO: Add a clippy rule to forbid the normal identify behaviour from being used in the codebase
 pub struct Behaviour {
     inner: identify::Behaviour,
 }

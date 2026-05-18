@@ -8,7 +8,7 @@ use libp2p::{PeerId, Transport, identity, yamux};
 use std::time::Duration;
 
 const AUTH_AND_MULTIPLEX_TIMEOUT: Duration = Duration::from_secs(15);
-// We have 5 protcols, not more than 2 of which should be active at the same time.
+// We have 5 protocols, not more than 2 of which should be active at the same time.
 const MAX_NUM_STREAMS: usize = 5;
 
 /// "Completes" a transport by applying the authentication and multiplexing

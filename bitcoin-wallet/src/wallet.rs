@@ -759,7 +759,7 @@ impl Wallet {
     }
 
     /// Broadcast a transaction, but only if it's not already in the mempool/blockchain.
-    /// Return txid and a subcription to it's status in either case.
+    /// Return txid and a subscription to it's status in either case.
     pub async fn ensure_broadcasted(
         &self,
         tx: Transaction,
@@ -1465,7 +1465,7 @@ where
         // because we are draining the wallet (using all inputs) and
         // always have one output of constant size
         //
-        // The only changable part is the amount of the output.
+        // The only changeable part is the amount of the output.
         // If we increase the fee, the output amount simply will decrease
         //
         // The inputs are constant, so only the output amount changes.
@@ -1565,11 +1565,11 @@ where
             Some(max_giveable) if max_giveable < DUST_AMOUNT => (Amount::ZERO, fee),
             Some(max_giveable) => {
                 // If we have enough funds, we subtract the fee from the max giveable
-                // and return the resul
+                // and return the result
                 match max_giveable.checked_sub(fee) {
                     Some(max_giveable) => (max_giveable, fee),
                     // Let's say we have 2000 sats in the wallet
-                    // The dummy script choses 0 sats as a fee
+                    // The dummy script chooses 0 sats as a fee
                     // and drains the 2000 sats
                     //
                     // Our smart fee estimation says we need 2500 sats to get the transaction confirmed
@@ -2683,7 +2683,7 @@ pub mod pre_1_0_0_bdk {
     const SLED_TREE_NAME: &str = "default_tree";
 
     /// The is the old bdk wallet before the migration.
-    /// We need to contruct it before migration to get the keys and revelation indeces.
+    /// We need to construct it before migration to get the keys and revelation indices.
     pub struct OldWallet<D = Tree> {
         wallet: Arc<TokioMutex<bdk::Wallet<D>>>,
         network: Network,

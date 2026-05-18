@@ -195,7 +195,7 @@ impl NetworkBehaviour for Behaviour {
             // Check if we discovered a new address for some peer
             // TODO: Use the AddressTracker here instead
             FromSwarm::NewExternalAddrOfPeer(event) => {
-                // TOOD: Ensure that if the address contains a peer id it matches the peer id in the event
+                // TODO: Ensure that if the address contains a peer id it matches the peer id in the event
                 if self.insert_address(&event.peer_id, event.addr.clone()) {
                     tracing::trace!(peer = %event.peer_id, address = %event.addr, "Cached an address for a peer");
                 }

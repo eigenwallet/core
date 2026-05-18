@@ -38,7 +38,7 @@ pub struct Wallets {
     /// Keep the main wallet open and synced.
     main_wallet: Arc<Wallet>,
     /// Since Network::Regtest isn't a thing we have to use an extra flag.
-    /// When we're in regtest mode, we need to unplug some safty nets to make the wallet work.
+    /// When we're in regtest mode, we need to unplug some safety nets to make the wallet work.
     regtest: bool,
     /// A handle we use to send status updates to the UI i.e. when
     /// waiting for a transaction to be confirmed.

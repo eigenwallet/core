@@ -373,11 +373,11 @@ where
                        state3,
                    }
                 },
-                // If we send Bob the transfer proof, but for whatever reason we do not receive an acknoledgement from him
+                // If we send Bob the transfer proof, but for whatever reason we do not receive an acknowledgement from him
                 // we would be stuck in this state forever until the timelock expires.
                 //
                 // By listening for the encrypted signature here we can still proceed to the next state
-                // even if Bob does not respond with an acknoledgement but sends us the encrypted signature immediately.
+                // even if Bob does not respond with an acknowledgement but sends us the encrypted signature immediately.
                 enc_sig = event_loop_handle.recv_encrypted_signature() => {
                     tracing::info!("Received encrypted signature");
 
@@ -591,7 +591,7 @@ where
         } => {
             let backoff = backoff::ExponentialBackoffBuilder::new()
                 .with_max_elapsed_time(None)
-                // No need to be super agressive here
+                // No need to be super aggressive here
                 .with_max_interval(Duration::from_secs(60 * 10))
                 .build();
 
@@ -837,7 +837,7 @@ where
                 return Ok(AliceState::XmrRefunded { state3: None });
             };
 
-            // Fetch the burn decision again, incase it was udpated via the controller
+            // Fetch the burn decision again, incase it was updated via the controller
             if let Some(burn_decision) = event_loop_handle.get_burn_on_refund_instruction().await {
                 state3.should_publish_tx_withhold = Some(burn_decision);
             }

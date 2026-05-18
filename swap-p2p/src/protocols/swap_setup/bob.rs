@@ -779,4 +779,4 @@ impl From<SwapSetupResult> for out_event::bob::OutEvent {
 // - Case where Alice does not support the protocol at all
 // - Case where Connection dies before the swap setup is started
 // - Case where Connection dies during the swap setup protocol
-// TODO: Extract actualy protocol logic into a callback of sorts or some type of event/state system
+// TODO: Extract actual protocol logic into a callback of sorts or some type of event/state system

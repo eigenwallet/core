@@ -2971,7 +2971,7 @@ impl SyncProgress {
         }
     }
 
-    /// Create a new sync progress object with zero progess.
+    /// Create a new sync progress object with zero progress.
     fn zero() -> Self {
         Self {
             current_block: 0,

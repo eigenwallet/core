@@ -436,7 +436,7 @@ mod builder {
     use super::*;
     use crate::cli::api::context::EventLoopState;
 
-    /// A conveniant builder struct for [`Context`].
+    /// A convenient builder struct for [`Context`].
     #[must_use = "ContextBuilder must be built to be useful"]
     pub struct ContextBuilder {
         monero_config: Option<MoneroNodeConfig>,
