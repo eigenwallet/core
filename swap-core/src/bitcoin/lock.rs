@@ -127,7 +127,7 @@ impl TxLock {
         self.output_descriptor.script_pubkey()
     }
 
-    /// Retreive the index of the locked output in the transaction outputs
+    /// Retrieve the index of the locked output in the transaction outputs
     /// vector
     fn lock_output_vout(&self) -> usize {
         self.inner

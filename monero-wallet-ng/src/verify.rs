@@ -35,7 +35,7 @@ pub enum VerifyError {
 /// * `Ok(false)` if the amounts don't match or no outputs were found
 /// * `Err(...)` if there was an error fetching or scanning the transaction
 ///
-/// Note: This doesn't register any subaddresses which means it will only detect outputs that are sent to the primary addres of the wallet.
+/// Note: This doesn't register any subaddresses which means it will only detect outputs that are sent to the primary address of the wallet.
 pub async fn verify_transfer<P: ProvidesTransactions>(
     provider: &P,
     tx_id: [u8; 32],

@@ -29,7 +29,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 libp2p = { workspace = true, features = ["tokio", "noise", "yamux", "ping", "macros", "tcp", "tls"] }
-tokio = { workspace = true, features = ["macros"] }
+tokio = { workspace = true, features = ["macros", "test-util"] }
 tokio-test = "0.4.4"
 tracing-subscriber = { workspace = true }
 

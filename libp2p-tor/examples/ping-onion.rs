@@ -22,7 +22,7 @@
 //!
 //! See ../src/tutorial.rs for a step-by-step guide building the example below.
 //!
-//! This example requires two seperate computers, one of which has to be reachable from the
+//! This example requires two separate computers, one of which has to be reachable from the
 //! internet.
 //!
 //! On the first computer run:

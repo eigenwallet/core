@@ -16,6 +16,7 @@ use futures::{FutureExt, StreamExt};
 use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
+use libp2p_tor::TorDialPriorityTracker;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -146,6 +147,8 @@ pub struct EventLoop {
     /// Channel for triggering a refresh of most backoffs. It will do things like redial disconnected peers,
     /// re-fetching quotes, rediscovering peers at rendezvous nodes, etc.
     refresh_requests: bmrng::unbounded::UnboundedRequestReceiverStream<(), ()>,
+
+    tor_priority_tracker: Option<TorDialPriorityTracker>,
 }
 
 impl EventLoop {
@@ -153,6 +156,7 @@ impl EventLoop {
         swarm: Swarm<Behaviour>,
         db: Arc<dyn Database + Send + Sync>,
         tauri_handle: Option<TauriHandle>,
+        tor_priority_tracker: Option<TorDialPriorityTracker>,
     ) -> Result<(Self, EventLoopHandle)> {
         // We still use a timeout here because we trust our own implementation of the swap setup protocol less than the libp2p library
         let (execution_setup_sender, execution_setup_receiver) =
@@ -191,6 +195,7 @@ impl EventLoop {
             cached_quotes_sender,
             tauri_handle,
             refresh_requests: refresh_receiver.into(),
+            tor_priority_tracker,
         };
 
         let handle = EventLoopHandle {
@@ -540,9 +545,12 @@ impl EventLoop {
                     // This registers the swap_id -> peer_id and swap_id -> transfer_proof_sender
                     self.registered_swap_handlers.insert(swap_id, (peer_id, sender, span.clone()));
 
-                    // Instruct the swarm to contineously redial the peer
+                    // Instruct the swarm to continuously redial the peer
                     // TODO: We must remove it again once the swap is complete, otherwise we will redial indefinitely
                     self.swarm.behaviour_mut().redial.add_peer(peer_id);
+                    if let Some(tor_priority_tracker) = &self.tor_priority_tracker {
+                        tor_priority_tracker.mark_high_priority(peer_id);
+                    }
 
                     // Acknowledge the registration
                     let _ = responder.respond(());

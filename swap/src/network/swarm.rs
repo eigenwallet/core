@@ -8,6 +8,7 @@ use libp2p::connection_limits::ConnectionLimits;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{Multiaddr, Swarm, identity};
 use libp2p::{PeerId, SwarmBuilder};
+use libp2p_tor::TorDialPriorityTracker;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
@@ -116,11 +117,11 @@ pub async fn cli<T>(
     identity: identity::Keypair,
     maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
     behaviour: T,
-) -> Result<Swarm<T>>
+) -> Result<(Swarm<T>, Option<TorDialPriorityTracker>)>
 where
     T: NetworkBehaviour,
 {
-    let transport = cli::transport::new(&identity, maybe_tor_client)?;
+    let (transport, tor_priority_tracker) = cli::transport::new(&identity, maybe_tor_client)?;
 
     let swarm = SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
@@ -129,5 +130,5 @@ where
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build();
 
-    Ok(swarm)
+    Ok((swarm, tor_priority_tracker))
 }

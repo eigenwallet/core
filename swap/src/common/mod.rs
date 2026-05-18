@@ -218,14 +218,14 @@ pub fn redact(input: &str) -> String {
     redact_with(input, &mut replacements)
 }
 
-/// Same as [`redact`] but retrieves palceholders from and stores them
+/// Same as [`redact`] but retrieves placeholders from and stores them
 /// in a specified hashmap.
 pub fn redact_with(input: &str, replacements: &mut HashMap<String, String>) -> String {
     // TODO: verify regex patterns
     const MONERO_ADDR_REGEX: &str = r#"[48][1-9A-HJ-NP-Za-km-z]{94}"#;
     const BITCOIN_ADDR_REGEX: &str = r#"\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b"#;
     // Both XMR and BTC transactions have
-    // a 64 bit hex id so they aren't distinguishible
+    // a 64 bit hex id so they aren't distinguishable
     const TX_ID_REGEX: &str = r#"\b[a-fA-F0-9]{64}\b"#;
     const SWAP_ID_REGEX: &str =
         r#"\b[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}\b"#;
@@ -260,7 +260,7 @@ pub fn redact_with(input: &str, replacements: &mut HashMap<String, String>) -> S
     // allocate string variable to operate on
     let mut redacted = input.to_owned();
 
-    // Finally we go through the input string and replace each occurance of an
+    // Finally we go through the input string and replace each occurrence of an
     // address we want to redact with the corresponding placeholder
     for (address, placeholder) in replacements.iter() {
         redacted = redacted.replace(address, placeholder);

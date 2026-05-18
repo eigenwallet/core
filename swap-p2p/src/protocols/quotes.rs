@@ -32,7 +32,7 @@ pub struct Behaviour {
     /// Track connected peers
     connection_tracker: ConnectionTracker,
 
-    /// Peers which have explictly told us that they do not support our protocol
+    /// Peers which have explicitly told us that they do not support our protocol
     does_not_support: HashSet<PeerId>,
 
     /// Peers to dispatch a quote request to as soon as we are connected to them

@@ -296,7 +296,7 @@ mod builder {
     use super::*;
     use crate::cli::api::context::EventLoopState;
 
-    /// A conveniant builder struct for [`Context`].
+    /// A convenient builder struct for [`Context`].
     #[must_use = "ContextBuilder must be built to be useful"]
     pub struct ContextBuilder {
         monero_config: Option<MoneroNodeConfig>,
@@ -693,16 +693,22 @@ mod builder {
                     wallet.clone(),
                     seed.derive_libp2p_identity(),
                     namespace,
-                    rendezvous_peer_ids,
+                    rendezvous_peer_ids.clone(),
                     db.clone(),
                 );
 
-                let mut swarm = crate::network::swarm::cli(
+                let (mut swarm, tor_priority_tracker) = crate::network::swarm::cli(
                     seed.derive_libp2p_identity(),
                     tor_client_for_swarm,
                     behaviour,
                 )
                 .await?;
+
+                if let Some(tor_priority_tracker) = &tor_priority_tracker {
+                    for peer_id in &rendezvous_peer_ids {
+                        tor_priority_tracker.mark_high_priority(*peer_id);
+                    }
+                }
 
                 // Add addresses of rendezvous points to the swarm
                 for (peer_id, addrs) in rendezvous_points {
@@ -720,8 +726,12 @@ mod builder {
                     }
                 }
 
-                let (event_loop, event_loop_handle) =
-                    crate::cli::EventLoop::new(swarm, db_for_swarm, self.tauri_handle.clone())?;
+                let (event_loop, event_loop_handle) = crate::cli::EventLoop::new(
+                    swarm,
+                    db_for_swarm,
+                    self.tauri_handle.clone(),
+                    tor_priority_tracker,
+                )?;
 
                 let event_loop_task = tokio::spawn(event_loop.run());
 
