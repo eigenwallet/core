@@ -1,10 +1,12 @@
 import {
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
+  FormControlLabel,
   List,
   ListItem,
   ListItemIcon,
@@ -12,12 +14,13 @@ import {
   Typography,
 } from "@mui/material";
 import CircleIcon from "@mui/icons-material/Circle";
+import { useState } from "react";
 import PromiseInvokeButton from "../PromiseInvokeButton";
 
 type SwapCancelAlertProps = {
   open: boolean;
   onClose: () => void;
-  onSuspend: () => Promise<void>;
+  onSuspend: (disableAutoResume: boolean) => Promise<void>;
 };
 
 export default function SwapSuspendAlert({
@@ -25,6 +28,8 @@ export default function SwapSuspendAlert({
   onClose,
   onSuspend,
 }: SwapCancelAlertProps) {
+  const [disableAutoResume, setDisableAutoResume] = useState(false);
+
   return (
     <Dialog open={open} onClose={onClose}>
       <DialogTitle>Suspend running swap?</DialogTitle>
@@ -64,6 +69,15 @@ export default function SwapSuspendAlert({
             </ListItem>
           </List>
         </DialogContentText>
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={disableAutoResume}
+              onChange={(event) => setDisableAutoResume(event.target.checked)}
+            />
+          }
+          label="Don't auto resume on startup"
+        />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} color="primary">
@@ -72,7 +86,7 @@ export default function SwapSuspendAlert({
         <PromiseInvokeButton
           color="primary"
           onSuccess={onClose}
-          onInvoke={onSuspend}
+          onInvoke={() => onSuspend(disableAutoResume)}
           contextRequirement={false}
         >
           Suspend

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO auto_resume (swap_id, auto_resume)\n            VALUES (?, ?)\n            ON CONFLICT(swap_id) DO UPDATE SET auto_resume = excluded.auto_resume\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "e0b5609b178f534f12177583c22907f8bd8c7fab92d4de5cb76e318b1fdaeeb2"
+}

@@ -23,8 +23,8 @@ export default function CancelButton({ swapState }: { swapState: SwapState }) {
       : swapState.curr;
   const hasFundsBeenLocked = haveFundsBeenLocked(effectiveCurr);
 
-  async function suspend() {
-    await suspendSwap(swapState.swapId);
+  async function suspend(disableAutoResume: boolean = false) {
+    await suspendSwap(swapState.swapId, disableAutoResume);
   }
 
   async function onCancel() {

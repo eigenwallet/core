@@ -338,6 +338,7 @@ pub struct AliceAddress {
 pub struct SuspendSwapArgs {
     #[typeshare(serialized_as = "string")]
     pub swap_id: Uuid,
+    pub disable_auto_resume: bool,
 }
 
 #[typeshare]
@@ -896,7 +897,18 @@ pub async fn suspend_swap(
     args: SuspendSwapArgs,
     context: Arc<Context>,
 ) -> Result<SuspendSwapResponse> {
-    let SuspendSwapArgs { swap_id } = args;
+    let SuspendSwapArgs {
+        swap_id,
+        disable_auto_resume,
+    } = args;
+
+    if disable_auto_resume {
+        context
+            .try_get_db()
+            .await?
+            .set_auto_resume(swap_id, false)
+            .await?;
+    }
 
     context.swap_manager.suspend(swap_id).await?;
 
@@ -1175,6 +1187,8 @@ pub async fn resume_swap(
     let monero_manager = context.try_get_monero_manager().await?;
     let event_loop_handle = context.try_get_event_loop_handle().await?;
     let tauri_handle = context.tauri_handle.clone();
+
+    db.set_auto_resume(swap_id, true).await?;
 
     context
         .swap_manager
