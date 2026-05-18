@@ -160,7 +160,7 @@ pub async fn initialize_context(
     testnet: bool,
     state: tauri::State<'_, State>,
 ) -> Result<(), String> {
-    // We want to prevent multiple initalizations at the same time
+    // We want to prevent multiple initializations at the same time
     let _context_lock = state
         .context_lock
         .try_lock()

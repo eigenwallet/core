@@ -110,7 +110,7 @@ pub async fn setup_test<T, F, C>(
     let developer_tip_monero_wallet_subaddress = developer_tip_monero_wallet
         .main_wallet()
         .await
-        // explicitly use a suabddress here to test the addtional tx key logic
+        // explicitly use a suabddress here to test the additional tx key logic
         .address(0, 2)
         .await
         .unwrap()
@@ -820,7 +820,7 @@ pub struct TestContext {
     // Store the container ID as String instead of reference
     monerod_container_id: String,
 
-    // Handle for the Monero deamon. This allows us to skip waiting times by generating
+    // Handle for the Monero daemon. This allows us to skip waiting times by generating
     // blocks instantly
     pub monero: Monero,
 }

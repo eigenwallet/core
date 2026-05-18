@@ -16,7 +16,7 @@ struct State {
     /// [`Context`] uses RwLock internally which means we do not need write access to the context
     /// to modify its internal state.
     ///
-    /// However, we want to avoid multiple processes intializing the context at the same time.
+    /// However, we want to avoid multiple processes initializing the context at the same time.
     pub context_lock: Mutex<()>,
     pub handle: TauriHandle,
 }

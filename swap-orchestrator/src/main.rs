@@ -108,7 +108,7 @@ fn main() {
             bitcoin: bitcoin_network,
         },
         images: OrchestratorImages {
-            // TODO: These containers should be conditonally removed / disabled,
+            // TODO: These containers should be conditionally removed / disabled,
             // depending on if they are used by the asb
             monerod: OrchestratorImage::Registry(images::MONEROD_IMAGE.to_string()),
             electrs: OrchestratorImage::Registry(images::ELECTRS_IMAGE.to_string()),

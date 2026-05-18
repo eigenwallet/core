@@ -25,7 +25,7 @@ const MAX_REDIAL_INTERVAL: Duration = Duration::from_secs(30);
 #[behaviour(to_swarm = "OutEvent")]
 #[allow(missing_debug_implementations)]
 pub struct Behaviour {
-    /// Fetch a quote from a specifc peer, usually before starting a swap
+    /// Fetch a quote from a specific peer, usually before starting a swap
     pub direct_quote: quote::Behaviour,
     /// Periodically request quotes from any peers that might offer them
     pub quotes: quotes_cached::Behaviour,

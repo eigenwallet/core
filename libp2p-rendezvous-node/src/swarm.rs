@@ -205,7 +205,7 @@ where
 
 pub struct Addresses<'a>(pub &'a [Multiaddr]);
 
-// Prints an array of multiaddresses as a comma seperated string
+// Prints an array of multiaddresses as a comma separated string
 impl fmt::Display for Addresses<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let display = self
