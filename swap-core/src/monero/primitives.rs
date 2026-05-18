@@ -589,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn geting_max_bitcoin_to_trade_with_balance_smaller_than_locking_fee() {
+    fn getting_max_bitcoin_to_trade_with_balance_smaller_than_locking_fee() {
         let ask = bitcoin::Amount::from_sat(382_900);
         let xmr = Amount::parse_monero("0.00001").unwrap();
         let btc = xmr.max_bitcoin_for_price(ask).unwrap();

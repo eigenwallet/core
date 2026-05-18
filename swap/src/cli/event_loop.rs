@@ -33,7 +33,7 @@ static EXECUTION_SETUP_MAX_ELAPSED_TIME: Duration = Duration::from_secs(120);
 // This is used for:
 // - Requesting quotes
 // - Requesting cooperative XMR redeem
-static REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELASPED_TIME: Duration = Duration::from_secs(60);
+static REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELAPSED_TIME: Duration = Duration::from_secs(60);
 
 // Used for deciding how long to wait at most between retries.
 static RETRY_MAX_INTERVAL: Duration = Duration::from_secs(5);
@@ -749,7 +749,7 @@ impl EventLoopHandle {
         // We want to give up eventually here
         let backoff = retry::give_up_eventually(
             RETRY_MAX_INTERVAL,
-            REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELASPED_TIME,
+            REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELAPSED_TIME,
         );
 
         let span = tracing::Span::current();
@@ -788,7 +788,7 @@ impl EventLoopHandle {
         // We want to give up eventually here
         let backoff = retry::give_up_eventually(
             RETRY_MAX_INTERVAL,
-            REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELASPED_TIME,
+            REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELAPSED_TIME,
         );
 
         backoff::future::retry_notify(backoff, || async {

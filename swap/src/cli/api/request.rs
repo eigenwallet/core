@@ -939,7 +939,7 @@ pub async fn get_swap_info(
     let addresses = db
         .get_addresses(peer_id)
         .await
-        .with_context(|| "Could not get addressess")?;
+        .with_context(|| "Could not get addresses")?;
 
     let start_date = db.get_swap_start_date(args.swap_id).await?;
 

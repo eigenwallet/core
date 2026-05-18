@@ -13,7 +13,7 @@ async fn subaddress_methods_and_balances() -> anyhow::Result<()> {
     let cli = Cli::default();
     let wallets = vec!["alice"];
     // Disable background sync so we rely on tx proofs / explicit scanning
-    let (monero, _container, _wallet_conainers) =
+    let (monero, _container, _wallet_containers) =
         monero_harness::Monero::new_with_sync_specified(&cli, wallets, false).await?;
 
     tracing::info!("Starting miner");
