@@ -213,7 +213,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn given_bob_sends_good_psbt_when_reconstructing_then_succeeeds() {
+    async fn given_bob_sends_good_psbt_when_reconstructing_then_succeeds() {
         let (A, B, wallet) = setup().await;
         let agreed_amount = Amount::from_sat(10000);
         let spending_fee = Amount::from_sat(1000);

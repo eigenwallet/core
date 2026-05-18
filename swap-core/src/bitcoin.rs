@@ -340,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn given_inclusion_after_lastest_known_block_at_least_depth_0() {
+    fn given_inclusion_after_latest_known_block_at_least_depth_0() {
         let included_in = 10;
         let latest_block = 9;
 

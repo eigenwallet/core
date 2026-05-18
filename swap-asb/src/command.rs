@@ -602,7 +602,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_refund_command_mappin_mainnet() {
+    fn ensure_refund_command_mapping_mainnet() {
         let default_mainnet_conf_path = env::Mainnet::get_config_file_defaults()
             .unwrap()
             .config_path;

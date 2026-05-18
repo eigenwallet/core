@@ -318,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn given_spread_of_two_percent_when_caluclating_sell_quote_factor_between_should_be_two_percent()
+    fn given_spread_of_two_percent_when_calculating_sell_quote_factor_between_should_be_two_percent()
      {
         let asking_price = bitcoin::Amount::from_btc(0.004).unwrap();
 
