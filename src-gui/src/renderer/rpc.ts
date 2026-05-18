@@ -395,9 +395,13 @@ export async function resumeAllSwaps(): Promise<ResumeAllSwapsResponse> {
   );
 }
 
-export async function suspendSwap(swapId: string) {
+export async function suspendSwap(
+  swapId: string,
+  disableAutoResume: boolean = false,
+) {
   await invoke<SuspendSwapArgs, SuspendSwapResponse>("suspend_swap", {
     swap_id: swapId,
+    disable_auto_resume: disableAutoResume,
   });
 }
 

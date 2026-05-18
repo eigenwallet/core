@@ -97,8 +97,8 @@ export function useIsSwapRunning() {
 
 /// Returns the number of swaps that are currently running
 export function useRunningSwapsCount() {
-  return useAppSelector(
-    (state) => state ? Object.values(state.swap.swaps).filter(isSwapInFlight).length : 0
+  return useAppSelector((state) =>
+    state ? Object.values(state.swap.swaps).filter(isSwapInFlight).length : 0,
   );
 }
 

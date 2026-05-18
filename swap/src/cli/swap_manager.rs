@@ -333,6 +333,13 @@ impl SwapManager {
             if self.is_running(swap_id).await {
                 continue;
             }
+            if !db
+                .get_auto_resume(swap_id)
+                .await
+                .context("Failed to read auto-resume preference")?
+            {
+                continue;
+            }
 
             // Match the per-swap span that `request()` attaches for a
             // single `resume_swap` call so the spawned state-machine task

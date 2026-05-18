@@ -295,6 +295,10 @@ pub trait Database {
         swap_id: Uuid,
     ) -> Result<Option<monero::TransferProof>>;
     async fn has_swap(&self, swap_id: Uuid) -> Result<bool>;
+    /// Whether this swap should be resumed automatically on startup.
+    /// Defaults to `true` for swaps with no explicit preference stored.
+    async fn get_auto_resume(&self, swap_id: Uuid) -> Result<bool>;
+    async fn set_auto_resume(&self, swap_id: Uuid, auto_resume: bool) -> Result<()>;
 }
 
 #[cfg(test)]

@@ -577,6 +577,41 @@ impl Database for SqliteDatabase {
 
         Ok(row.is_some())
     }
+
+    async fn get_auto_resume(&self, swap_id: Uuid) -> Result<bool> {
+        let swap_id = swap_id.to_string();
+
+        let row = sqlx::query!(
+            r#"
+            SELECT auto_resume
+            FROM auto_resume
+            WHERE swap_id = ?
+            "#,
+            swap_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|row| row.auto_resume).unwrap_or(true))
+    }
+
+    async fn set_auto_resume(&self, swap_id: Uuid, auto_resume: bool) -> Result<()> {
+        let swap_id = swap_id.to_string();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO auto_resume (swap_id, auto_resume)
+            VALUES (?, ?)
+            ON CONFLICT(swap_id) DO UPDATE SET auto_resume = excluded.auto_resume
+            "#,
+            swap_id,
+            auto_resume
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
 }
 
 impl SqliteDatabase {
@@ -899,6 +934,22 @@ mod tests {
         assert!(loaded_multiaddr.contains(&multiaddr1));
         assert!(loaded_multiaddr.contains(&multiaddr2));
         assert_eq!(loaded_multiaddr.len(), 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_auto_resume_defaults_true_and_toggles() -> Result<()> {
+        let db = setup_test_db().await?;
+        let swap_id = Uuid::new_v4();
+
+        assert!(db.get_auto_resume(swap_id).await?);
+
+        db.set_auto_resume(swap_id, false).await?;
+        assert!(!db.get_auto_resume(swap_id).await?);
+
+        db.set_auto_resume(swap_id, true).await?;
+        assert!(db.get_auto_resume(swap_id).await?);
 
         Ok(())
     }
