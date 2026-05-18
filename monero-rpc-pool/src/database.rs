@@ -179,12 +179,12 @@ impl Database {
 
     /// Get node statistics for a network
     pub async fn get_node_stats(&self, network: &str) -> Result<(i64, i64, i64)> {
-        let row = sqlx::query!(
+        let row = sqlx::query_as::<_, (i64, i64, i64)>(
             r#"
             SELECT 
                 COUNT(*) as total,
-                CAST(SUM(CASE WHEN stats.success_count > 0 THEN 1 ELSE 0 END) AS INTEGER) as "reachable!: i64",
-                CAST(SUM(CASE WHEN stats.success_count > stats.failure_count AND stats.success_count > 0 THEN 1 ELSE 0 END) AS INTEGER) as "reliable!: i64"
+                COALESCE(CAST(SUM(CASE WHEN stats.success_count > 0 THEN 1 ELSE 0 END) AS INTEGER), 0) as reachable,
+                COALESCE(CAST(SUM(CASE WHEN stats.success_count > stats.failure_count AND stats.success_count > 0 THEN 1 ELSE 0 END) AS INTEGER), 0) as reliable
             FROM monero_nodes n
             LEFT JOIN (
                 SELECT 
@@ -195,22 +195,22 @@ impl Database {
                 GROUP BY node_id
             ) stats ON n.id = stats.node_id
             WHERE n.network = ?
-            "#,
-            network
+            "#
         )
+        .bind(network)
         .fetch_one(&self.pool)
         .await?;
 
-        Ok((row.total, row.reachable, row.reliable))
+        Ok(row)
     }
 
     /// Get health check statistics for a network
     pub async fn get_health_check_stats(&self, network: &str) -> Result<(u64, u64)> {
-        let row = sqlx::query!(
+        let row = sqlx::query_as::<_, (i64, i64)>(
             r#"
             SELECT 
-                CAST(SUM(CASE WHEN hc.was_successful THEN 1 ELSE 0 END) AS INTEGER) as "successful!: i64",
-                CAST(SUM(CASE WHEN NOT hc.was_successful THEN 1 ELSE 0 END) AS INTEGER) as "unsuccessful!: i64"
+                COALESCE(CAST(SUM(CASE WHEN hc.was_successful THEN 1 ELSE 0 END) AS INTEGER), 0) as successful,
+                COALESCE(CAST(SUM(CASE WHEN NOT hc.was_successful THEN 1 ELSE 0 END) AS INTEGER), 0) as unsuccessful
             FROM (
                 SELECT hc.was_successful
                 FROM health_checks hc
@@ -219,14 +219,14 @@ impl Database {
                 ORDER BY hc.timestamp DESC
                 LIMIT 100
             ) hc
-            "#,
-            network
+            "#
         )
+        .bind(network)
         .fetch_one(&self.pool)
         .await?;
 
-        let successful = row.successful as u64;
-        let unsuccessful = row.unsuccessful as u64;
+        let successful = row.0 as u64;
+        let unsuccessful = row.1 as u64;
 
         Ok((successful, unsuccessful))
     }
@@ -292,5 +292,31 @@ impl Database {
             .collect();
 
         Ok(addresses)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_network_accepts_supported_values_case_insensitively() {
+        assert_eq!(parse_network("mainnet").unwrap(), Network::Mainnet);
+        assert_eq!(parse_network("STAGENET").unwrap(), Network::Stagenet);
+        assert_eq!(parse_network("TestNet").unwrap(), Network::Testnet);
+    }
+
+    #[test]
+    fn parse_network_rejects_invalid_values() {
+        let error = parse_network("regtest").unwrap_err();
+
+        assert!(error.to_string().contains("Invalid network: regtest"));
+    }
+
+    #[test]
+    fn network_to_string_matches_database_values() {
+        assert_eq!(network_to_string(&Network::Mainnet), "mainnet");
+        assert_eq!(network_to_string(&Network::Stagenet), "stagenet");
+        assert_eq!(network_to_string(&Network::Testnet), "testnet");
     }
 }
