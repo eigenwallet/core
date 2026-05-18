@@ -38,7 +38,8 @@ jobs:
             target: "aarch64-apple-darwin"
           - host: "macos-15-intel" # for Intel based macs.
             target: "x86_64-apple-darwin"
-          - host: "ubuntu-24.04"
+          # Build Linux bundles on Jammy to keep GLIBC requirements compatible with stable distros.
+          - host: "ubuntu-22.04"
             target: "x86_64-unknown-linux-gnu"
           - host: "ubuntu-24.04" # cross build windows from ubuntu
             target: "x86_64-pc-windows-gnu"
@@ -65,6 +66,9 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Bundled Wayland libraries can conflict with the host graphics stack on Fedora.
+          LINUXDEPLOY_EXCLUDED_LIBRARIES: >-
+            libwayland-client.so.0*;libwayland-cursor.so.0*;libwayland-egl.so.1*;libwayland-server.so.0*
         with:
           # Empty releaseId for PRs prevents uploading to GitHub releases
           # Empty strings are treated as an omitted argument: https://github.com/actions/runner/issues/924
@@ -73,6 +77,73 @@ jobs:
           projectPath: src-tauri
           tauriScript: yarn tauri
           args: --target ${{ matrix.target }}
+
+      - name: Check Linux AppImage compatibility
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          appimage_dir="target/${{ matrix.target }}/release/bundle/appimage"
+          if [[ ! -d "$appimage_dir" ]]; then
+            echo "No AppImage artifact directory found at $appimage_dir." >&2
+            exit 1
+          fi
+
+          appimage="$(find "$appimage_dir" -maxdepth 1 -type f -name "*.AppImage" -print -quit)"
+          if [[ -z "$appimage" ]]; then
+            echo "No AppImage artifact found." >&2
+            exit 1
+          fi
+
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+
+          cp "$appimage" "$workdir/eigenwallet.AppImage"
+          chmod +x "$workdir/eigenwallet.AppImage"
+          (
+            cd "$workdir"
+            ./eigenwallet.AppImage --appimage-extract >/dev/null
+          )
+
+          wayland_violations="$(
+            find "$workdir/squashfs-root/usr/lib" \
+              \( -type f -o -type l \) \
+              \( -name 'libwayland-client.so.0*' \
+                -o -name 'libwayland-cursor.so.0*' \
+                -o -name 'libwayland-egl.so.1*' \
+                -o -name 'libwayland-server.so.0*' \) \
+              -print 2>/dev/null || true
+          )"
+          if [[ -n "$wayland_violations" ]]; then
+            echo "The AppImage still bundles host graphics-stack Wayland libraries:" >&2
+            printf '%s\n' "$wayland_violations" >&2
+            exit 1
+          fi
+
+          find "$workdir/squashfs-root" -type f -print0 \
+            | xargs -0 grep -aohE 'GLIBC_[0-9]+\.[0-9]+|GLIBCXX_3\.4\.[0-9]+' \
+            > "$workdir/symbol-versions.txt" || true
+
+          glibc_violations="$(
+            sed -n 's/^GLIBC_//p' "$workdir/symbol-versions.txt" \
+              | sort -Vu \
+              | awk -F. '($1 > 2 || ($1 == 2 && $2 > 36)) { print "GLIBC_" $0 }'
+          )"
+          glibcxx_violations="$(
+            sed -n 's/^GLIBCXX_3\.4\.//p' "$workdir/symbol-versions.txt" \
+              | sort -n -u \
+              | awk '($1 > 30) { print "GLIBCXX_3.4." $1 }'
+          )"
+
+          if [[ -n "$glibc_violations$glibcxx_violations" ]]; then
+            echo "The AppImage still requires symbols newer than Debian 12 provides:" >&2
+            printf '%s\n%s\n' "$glibc_violations" "$glibcxx_violations" | sed '/^$/d' >&2
+            exit 1
+          fi
+
+          echo "AppImage GLIBC/GLIBCXX requirements are compatible with Debian 12."
+          echo "AppImage does not bundle the Wayland libraries known to break Fedora."
 
       # TODO: Remove this duplication of the steps in build-release-binaries.yml
       - name: Install GnuPG (macOS)
