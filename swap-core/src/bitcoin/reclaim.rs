@@ -15,7 +15,7 @@ use super::timelocks::RemainingRefundTimelock;
 pub struct TxReclaim {
     inner: Transaction,
     digest: Sighash,
-    amensty_output_descriptor: Descriptor<::bitcoin::PublicKey>,
+    amnesty_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     watch_script: ScriptBuf,
 }
 
@@ -45,7 +45,7 @@ impl TxReclaim {
         Ok(Self {
             inner: tx_reclaim,
             digest,
-            amensty_output_descriptor: tx_refund.amnesty_output_descriptor.clone(),
+            amnesty_output_descriptor: tx_refund.amnesty_output_descriptor.clone(),
             watch_script: refund_address.script_pubkey(),
         })
     }
@@ -112,7 +112,7 @@ impl TxReclaim {
         };
 
         let mut tx_refund = self.inner;
-        self.amensty_output_descriptor
+        self.amnesty_output_descriptor
             .satisfy(&mut tx_refund.input[0], satisfier)?;
 
         Ok(tx_refund)
