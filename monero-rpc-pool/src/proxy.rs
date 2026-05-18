@@ -229,7 +229,7 @@ async fn proxy_to_multiple_nodes(
                         push_error(
                             &mut collected_errors,
                             failed_node,
-                            HandlerError::PhyiscalError(error),
+                            HandlerError::PhysicalError(error),
                         );
                     }
                     continue;
@@ -247,7 +247,7 @@ async fn proxy_to_multiple_nodes(
             {
                 Ok(response) => response,
                 Err(e) => {
-                    push_error(&mut collected_errors, node, HandlerError::PhyiscalError(e));
+                    push_error(&mut collected_errors, node, HandlerError::PhysicalError(e));
                     continue;
                 }
             }
@@ -691,7 +691,7 @@ impl HandlerError {
         let (status_code, error_message) = match self {
             HandlerError::NoNodes => (StatusCode::SERVICE_UNAVAILABLE, "No nodes available"),
             HandlerError::PoolError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Pool error"),
-            HandlerError::PhyiscalError(_) => (StatusCode::BAD_GATEWAY, "Connection error"),
+            HandlerError::PhysicalError(_) => (StatusCode::BAD_GATEWAY, "Connection error"),
             HandlerError::HttpError(status) => (*status, "HTTP error"),
             HandlerError::JsonRpcError(_) => (StatusCode::BAD_GATEWAY, "JSON-RPC error"),
             HandlerError::AllRequestsFailed(_) => (StatusCode::BAD_GATEWAY, "All requests failed"),
@@ -721,7 +721,7 @@ impl HandlerError {
 enum HandlerError {
     NoNodes,
     PoolError(String),
-    PhyiscalError(SingleRequestError),
+    PhysicalError(SingleRequestError),
     HttpError(axum::http::StatusCode),
     JsonRpcError(String),
     AllRequestsFailed(Vec<((String, String, u16), HandlerError)>),
@@ -740,7 +740,7 @@ impl std::fmt::Display for HandlerError {
         match self {
             HandlerError::NoNodes => write!(f, "No nodes available"),
             HandlerError::PoolError(msg) => write!(f, "Pool error: {msg}"),
-            HandlerError::PhyiscalError(msg) => write!(f, "Request error: {msg}"),
+            HandlerError::PhysicalError(msg) => write!(f, "Request error: {msg}"),
             HandlerError::JsonRpcError(msg) => write!(f, "JSON-RPC error: {msg}"),
             HandlerError::AllRequestsFailed(errors) => {
                 write!(f, "All requests failed: [")?;
