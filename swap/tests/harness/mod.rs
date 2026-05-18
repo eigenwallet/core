@@ -760,10 +760,11 @@ impl BobParams {
             Vec::new(),
             db.clone(),
         );
-        let mut swarm = swarm::cli(identity.clone(), None, behaviour).await?;
+        let (mut swarm, tor_priority_tracker) =
+            swarm::cli(identity.clone(), None, behaviour).await?;
         swarm.add_peer_address(self.alice_peer_id, self.alice_address.clone());
 
-        cli::EventLoop::new(swarm, db.clone(), None)
+        cli::EventLoop::new(swarm, db.clone(), None, tor_priority_tracker)
     }
 }
 
