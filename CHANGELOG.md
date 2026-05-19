@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Users can now run multiple swaps concurrently, where as previously they could only run one at a time.
+
 ## [4.9.1] - 2026-06-12
 
 ## [4.9.0] - 2026-06-10
