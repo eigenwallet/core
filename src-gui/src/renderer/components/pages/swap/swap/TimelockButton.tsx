@@ -48,7 +48,7 @@ export default function TimelockButton({ swapId }: { swapId: string }) {
           "& .MuiAlert-action": { py: 0, mr: 0 },
         }}
       >
-        Swap has been running for a while...
+        Swap has taken quite a while...
       </Alert>
       <Dialog
         open={open}

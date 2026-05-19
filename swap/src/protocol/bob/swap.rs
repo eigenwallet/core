@@ -117,8 +117,6 @@ async fn next_state(
 ) -> Result<BobState> {
     tracing::debug!(%state, "Advancing state");
 
-    // anyhow::bail!("test");
-
     Ok(match state {
         BobState::Started {
             btc_amount,
