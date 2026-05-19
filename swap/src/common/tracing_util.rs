@@ -5,13 +5,16 @@ use std::str::FromStr;
 use anyhow::Result;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::filter::{Directive, LevelFilter};
-use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::fmt::time::UtcTime;
+use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{EnvFilter, Layer, fmt};
+use tracing_subscriber::{fmt, EnvFilter, Layer};
 
 use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriLogEvent};
+
+const MONERO_SYS_LOG_MAX_FILES: usize = 1;
+const MONERO_SYS_LOG_ROTATION: Rotation = Rotation::HOURLY;
 
 /// Creates a tracing layer that writes to a rolling file appender.
 macro_rules! json_rolling_layer {
@@ -116,6 +119,20 @@ pub fn init(
         24
     );
 
+    // Write monero-sys and its C++ bridge logs to a verbose log file
+    // (tracing-monero-sys*.log). Keep only the current hourly file because
+    // these TRACE logs are meant for recent crash diagnosis and can be noisy.
+    let monero_sys_file_layer = json_rolling_layer!(
+        &dir,
+        "tracing-monero-sys",
+        env_filter_with_all_crates(vec![(
+            crates::MONERO_SYS_CRATES.to_vec(),
+            LevelFilter::TRACE
+        )]),
+        MONERO_SYS_LOG_MAX_FILES,
+        MONERO_SYS_LOG_ROTATION
+    );
+
     // Layer for writing to the terminal
     let terminal_layer = fmt::layer()
         .with_writer(std::io::stderr)
@@ -173,6 +190,7 @@ pub fn init(
         .with(tor_file_layer)
         .with(libp2p_file_layer)
         .with(monero_wallet_file_layer)
+        .with(monero_sys_file_layer)
         .with(final_terminal_layer)
         .with(tauri_layer);
 
@@ -181,7 +199,7 @@ pub fn init(
     // Now we can use the tracing macros to log messages
     tracing::info!(
         logs_dir = %dir.as_ref().display(),
-        "Initialized tracing. General logs go to swap-all.log; verbose logs: tracing*.log (ours), tracing-tor*.log (tor), tracing-libp2p*.log (libp2p)"
+        "Initialized tracing. General logs go to swap-all.log; verbose logs: tracing*.log (ours), tracing-tor*.log (tor), tracing-libp2p*.log (libp2p), tracing-monero-wallet*.log (monero wallet), tracing-monero-sys*.log (monero-sys)"
     );
 
     Ok(())
@@ -267,12 +285,38 @@ mod crates {
     ];
 
     pub const MONERO_WALLET_CRATES: &[&str] = &["monero_cpp", "monero_rpc_pool"];
+
+    pub const MONERO_SYS_CRATES: &[&str] = &["monero_sys", "monero_cpp"];
 }
 
 /// A writer that forwards tracing log messages to the tauri guest.
 #[derive(Clone)]
 pub struct TauriWriter {
     tauri_handle: Option<TauriHandle>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn monero_sys_filter_includes_rust_and_cpp_targets() {
+        let filter = env_filter_with_all_crates(vec![(
+            crates::MONERO_SYS_CRATES.to_vec(),
+            LevelFilter::TRACE,
+        )])
+        .unwrap()
+        .to_string();
+
+        assert!(filter.contains("monero_sys=trace"));
+        assert!(filter.contains("monero_cpp=trace"));
+    }
+
+    #[test]
+    fn monero_sys_log_keeps_only_one_hourly_file() {
+        assert_eq!(MONERO_SYS_LOG_MAX_FILES, 1);
+        assert_eq!(MONERO_SYS_LOG_ROTATION, Rotation::HOURLY);
+    }
 }
 
 impl TauriWriter {
