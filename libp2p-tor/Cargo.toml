@@ -22,7 +22,6 @@ safelog = { workspace = true }
 tor-cell = { workspace = true, optional = true }
 tor-hscrypto = { workspace = true, optional = true }
 tor-hsservice = { workspace = true, optional = true }
-tor-llcrypto = { workspace = true, optional = true }
 tor-proto = { workspace = true, optional = true }
 tor-rtcompat = { workspace = true, features = ["tokio", "rustls"] }
 tracing = { workspace = true }
@@ -39,7 +38,6 @@ listen-onion-service = [
   "arti-client/experimental-api",
   "dep:tor-hscrypto",
   "dep:tor-hsservice",
-  "dep:tor-llcrypto",
   "dep:tor-cell",
   "dep:tor-proto",
 ]

@@ -5895,7 +5895,6 @@ dependencies = [
  "tor-cell",
  "tor-hscrypto",
  "tor-hsservice",
- "tor-llcrypto",
  "tor-proto",
  "tor-rtcompat",
  "tracing",
