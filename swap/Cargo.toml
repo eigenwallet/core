@@ -40,7 +40,6 @@ thiserror = { workspace = true }
 # Crypto / Decoding / Encoding
 curve25519-dalek = { workspace = true, features = ["rand_core"] }
 data-encoding = { workspace = true }
-ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 # Randomness
@@ -49,7 +48,6 @@ rand = { workspace = true }
 # Other stuff
 bmrng = { workspace = true }
 config = { version = "0.14", default-features = false, features = ["toml"] }
-electrum-pool = { path = "../electrum-pool" }
 jsonrpsee = { workspace = true, features = ["server"] }
 moka = { version = "0.12", features = ["sync", "future"] }
 monero-address = { workspace = true }
@@ -60,7 +58,6 @@ monero-rpc-pool = { path = "../monero-rpc-pool" }
 monero-seed = { git = "https://github.com/monero-oxide/monero-wallet-util.git", package = "monero-seed" }
 monero-sys = { path = "../monero-sys" }
 pem = "3.0"
-proptest = "1"
 regex = "1.10"
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
@@ -75,11 +72,9 @@ swap-feed = { path = "../swap-feed" }
 swap-fs = { path = "../swap-fs" }
 swap-machine = { path = "../swap-machine" }
 swap-p2p = { path = "../swap-p2p" }
-swap-proptest = { path = "../swap-proptest" }
 swap-serde = { path = "../swap-serde" }
 tauri = { version = "2.0", features = ["config-json5"], optional = true, default-features = false }
 time = "0.3"
-toml = { workspace = true }
 toml_edit = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
@@ -114,7 +109,6 @@ bitcoin-harness = { git = "https://github.com/eigenwallet/bitcoin-harness-rs", b
 data-encoding = { workspace = true }
 mockito = "1.4"
 monero-harness = { path = "../monero-harness" }
-proptest = "1"
 swap-p2p = { path = "../swap-p2p", features = ["test-support"] }
 tempfile = "3"
 testcontainers = "0.15"
