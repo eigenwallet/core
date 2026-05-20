@@ -14,8 +14,6 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
 monero-address = { workspace = true }
-serde = { workspace = true }
-thiserror = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 
@@ -27,7 +25,6 @@ swap = { path = "../swap" }
 swap-env = { path = "../swap-env" }
 swap-feed = { path = "../swap-feed" }
 swap-machine = { path = "../swap-machine" }
-swap-serde = { path = "../swap-serde" }
 
 # Async
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }
