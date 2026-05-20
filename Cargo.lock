@@ -6619,8 +6619,6 @@ name = "monero-wallet"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "backoff",
- "curve25519-dalek",
  "hex",
  "monero-address",
  "monero-daemon-rpc",
@@ -6633,7 +6631,6 @@ dependencies = [
  "throttle",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "uuid",
  "zeroize",
 ]

@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 # Error handling
 anyhow = { workspace = true }
-backoff = { workspace = true }
 
 # Other stuff
 monero-address = { workspace = true }
@@ -21,7 +20,6 @@ tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "
 
 # Tracing
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 # monero-oxide
 monero-daemon-rpc = { workspace = true }
@@ -30,6 +28,5 @@ monero-simple-request-rpc = { workspace = true }
 monero-wallet-ng = { path = "../monero-wallet-ng" }
 
 # Cryptography
-curve25519-dalek = { workspace = true }
 hex = { workspace = true }
 zeroize = { workspace = true }
