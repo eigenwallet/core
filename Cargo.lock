@@ -6663,14 +6663,12 @@ dependencies = [
 name = "monero-wallet-ng"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "backoff",
  "curve25519-dalek",
  "hex",
  "monero-daemon-rpc",
  "monero-interface",
  "monero-oxide",
- "monero-simple-request-rpc",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
  "rand 0.8.5",
  "serde",

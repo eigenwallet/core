@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# Error handling
-anyhow = { workspace = true }
 backoff = { workspace = true }
 thiserror = { workspace = true }
 
@@ -28,7 +26,6 @@ monero-daemon-rpc = { workspace = true }
 monero-interface = { workspace = true }
 monero-oxide = { workspace = true }
 monero-oxide-wallet = { workspace = true }
-monero-simple-request-rpc = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
