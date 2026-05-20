@@ -6594,14 +6594,11 @@ name = "monero-tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "curve25519-dalek",
  "hex",
  "monero-address",
- "monero-daemon-rpc",
  "monero-harness",
  "monero-interface",
  "monero-oxide-ext",
- "monero-simple-request-rpc",
  "monero-sys",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
  "monero-wallet-ng",
@@ -6610,7 +6607,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "uuid",
  "zeroize",
 ]
 
