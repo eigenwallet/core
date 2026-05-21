@@ -749,6 +749,63 @@ impl BobParams {
         Ok((swap, event_loop))
     }
 
+    /// Build two `bob::Swap` instances that share a single event loop.
+    ///
+    /// This is the setup used to exercise truly-concurrent swaps against the
+    /// same Alice: both swaps drive their networking through the same swarm
+    /// and the same on-disk database.
+    pub async fn new_two_concurrent_swaps(
+        &self,
+        btc_amount: bitcoin::Amount,
+    ) -> Result<(bob::Swap, bob::Swap, cli::EventLoop)> {
+        if let Some(parent_dir) = self.db_path.parent() {
+            ensure_directory_exists(parent_dir)?;
+        }
+        if !self.db_path.exists() {
+            tokio::fs::File::create(&self.db_path).await?;
+        }
+        let db = Arc::new(SqliteDatabase::open(&self.db_path, AccessMode::ReadWrite).await?);
+
+        let (event_loop, mut handle) = self.new_eventloop(db.clone()).await?;
+
+        let monero_receive_pool: MoneroAddressPool = self
+            .monero_wallet
+            .main_wallet()
+            .await
+            .main_address()
+            .await
+            .unwrap()
+            .into();
+
+        let mut swaps = Vec::with_capacity(2);
+        for _ in 0..2 {
+            let swap_id = Uuid::new_v4();
+            db.insert_peer_id(swap_id, self.alice_peer_id).await?;
+
+            let swap_handle = handle.swap_handle(self.alice_peer_id, swap_id).await?;
+
+            let swap = bob::Swap::new(
+                db.clone(),
+                swap_id,
+                self.bitcoin_wallet.clone(),
+                self.monero_wallet.clone(),
+                self.env_config,
+                swap_handle,
+                monero_receive_pool.clone(),
+                self.bitcoin_wallet.new_address().await?,
+                btc_amount,
+                bitcoin::Amount::from_sat(1000),
+            );
+
+            swaps.push(swap);
+        }
+
+        let bob_swap_2 = swaps.pop().unwrap();
+        let bob_swap_1 = swaps.pop().unwrap();
+
+        Ok((bob_swap_1, bob_swap_2, event_loop))
+    }
+
     pub async fn new_eventloop(
         &self,
         db: Arc<SqliteDatabase>,
@@ -929,6 +986,24 @@ impl TestContext {
         let join_handle = tokio::spawn(event_loop.run());
 
         (swap, BobApplicationHandle(join_handle))
+    }
+
+    /// Spin up two Bob swaps backed by a single shared event loop and database.
+    /// Both swaps must be driven to completion in parallel by the caller.
+    pub async fn bob_two_concurrent_swaps(
+        &mut self,
+    ) -> (bob::Swap, bob::Swap, BobApplicationHandle) {
+        let (bob_swap_1, bob_swap_2, event_loop) = self
+            .bob_params
+            .new_two_concurrent_swaps(self.btc_amount)
+            .await
+            .unwrap();
+
+        bob_swap_1.bitcoin_wallet.sync().await.unwrap();
+
+        let join_handle = tokio::spawn(event_loop.run());
+
+        (bob_swap_1, bob_swap_2, BobApplicationHandle(join_handle))
     }
 
     pub async fn stop_and_resume_bob_from_db(
