@@ -8,6 +8,7 @@ use swap_orchestrator as _;
 use crate::compose::{
     ASB_DATA_DIR, CloudflaredConfig, DOCKER_COMPOSE_FILE, IntoSpec, OrchestratorDirectories,
     OrchestratorImage, OrchestratorImages, OrchestratorInput, OrchestratorNetworks,
+    PROMTAIL_CONFIG_FILE, PromtailConfig, build_promtail_yml,
 };
 use libp2p::Multiaddr;
 use libp2p::multiaddr::Protocol;
@@ -30,6 +31,15 @@ const CLOUDFLARE_ENV_VARS: [&str; 4] = [
     "CLOUDFLARE_TUNNEL_EXTERNAL_HOST",
     "CLOUDFLARE_TUNNEL_EXTERNAL_PORT",
     "CLOUDFLARE_TUNNEL_INTERNAL_PORT",
+];
+
+/// Environment variables that together configure the Promtail log shipper.
+/// Either all of them must be set, or none — a partial set is a hard error
+/// so half-configured log shipping cannot ship silently.
+const PROMTAIL_ENV_VARS: [&str; 3] = [
+    "PROMTAIL_LOKI_PUSH_URL",
+    "PROMTAIL_LOKI_PUSH_TOKEN",
+    "PROMTAIL_INSTANCE",
 ];
 
 /// Reads the Cloudflare Tunnel configuration from the environment.
@@ -79,10 +89,65 @@ fn read_cloudflared_config_from_env() -> Option<CloudflaredConfig> {
     })
 }
 
+/// Reads the Promtail log-shipper configuration from the environment.
+///
+/// Returns `None` if none of the variables are set. Returns `Some(..)` if
+/// all of them are set. Panics if the set is partially populated or if the
+/// instance label is empty — a half-configured shipper would silently fail
+/// to deliver logs.
+fn read_promtail_config_from_env() -> Option<PromtailConfig> {
+    let present: Vec<&str> = PROMTAIL_ENV_VARS
+        .iter()
+        .copied()
+        .filter(|name| std::env::var(name).is_ok())
+        .collect();
+
+    if present.is_empty() {
+        return None;
+    }
+
+    if present.len() != PROMTAIL_ENV_VARS.len() {
+        let missing: Vec<&str> = PROMTAIL_ENV_VARS
+            .iter()
+            .copied()
+            .filter(|name| std::env::var(name).is_err())
+            .collect();
+        panic!(
+            "Promtail log shipper is partially configured. The following variables are set: {:?}, but these are missing: {:?}. Set all three or none.",
+            present, missing
+        );
+    }
+
+    let loki_push_url = std::env::var("PROMTAIL_LOKI_PUSH_URL").expect("checked above");
+    let loki_push_token = std::env::var("PROMTAIL_LOKI_PUSH_TOKEN").expect("checked above");
+    let instance = std::env::var("PROMTAIL_INSTANCE").expect("checked above");
+
+    if instance.trim().is_empty() {
+        panic!(
+            "PROMTAIL_INSTANCE must be a non-empty short identifier for this host (e.g. asb-de-1)."
+        );
+    }
+    if loki_push_token.trim().is_empty() {
+        panic!("PROMTAIL_LOKI_PUSH_TOKEN must not be empty.");
+    }
+    if loki_push_url.trim().is_empty() {
+        panic!("PROMTAIL_LOKI_PUSH_URL must not be empty.");
+    }
+
+    Some(PromtailConfig {
+        loki_push_url,
+        loki_push_token,
+        instance,
+    })
+}
+
 fn main() {
     // Cloudflare Tunnel is opt-in via env vars so existing deployments
     // keep working unchanged.
     let cloudflared_config = read_cloudflared_config_from_env();
+    // Promtail log shipping is opt-in via env vars; same rationale as the
+    // Cloudflare integration above.
+    let promtail_config = read_promtail_config_from_env();
 
     let want_tor = prompt::tor_for_daemons();
     let (bitcoin_network, monero_network) = prompt::network();
@@ -127,12 +192,14 @@ fn main() {
                 images::RENDEZVOUS_NODE_IMAGE_FROM_SOURCE.clone(),
             ),
             cloudflared: OrchestratorImage::Registry(images::CLOUDFLARED_IMAGE.to_string()),
+            promtail: OrchestratorImage::Registry(images::PROMTAIL_IMAGE.to_string()),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),
         },
         want_tor,
         cloudflared: cloudflared_config.clone(),
+        promtail: promtail_config.clone(),
     };
 
     // If the config file already exists and be de-serialized,
@@ -304,6 +371,11 @@ fn main() {
         ensure_cloudflared_addresses_in_config(&recipe, cf);
     }
 
+    if let Some(promtail) = promtail_config.as_ref() {
+        std::fs::write(PROMTAIL_CONFIG_FILE, build_promtail_yml(promtail))
+            .expect("Failed to write promtail.yml");
+    }
+
     // Write the compose to ./docker-compose.yml
     let compose = recipe.to_spec();
     std::fs::write(DOCKER_COMPOSE_FILE, compose).expect("Failed to write docker-compose.yml");
@@ -313,6 +385,10 @@ fn main() {
 
     if let Some(cf) = cloudflared_config.as_ref() {
         print_cloudflared_instructions(cf);
+    }
+
+    if let Some(promtail) = promtail_config.as_ref() {
+        print_promtail_instructions(promtail);
     }
 }
 
@@ -395,6 +471,22 @@ fn print_cloudflared_instructions(cf: &CloudflaredConfig) {
     );
     println!(
         "  5. Do NOT put a Cloudflare Access policy in front of this hostname — libp2p clients cannot authenticate with it."
+    );
+}
+
+/// Prints the operator-facing summary for the Promtail log shipper so they
+/// can verify it landed and know which Grafana query selects this host.
+fn print_promtail_instructions(promtail: &PromtailConfig) {
+    println!();
+    println!("Promtail log shipping is enabled.");
+    println!("  - Instance label (host): {}", promtail.instance);
+    println!("  - Loki push URL:         {}", promtail.loki_push_url);
+    println!("  - Config written to:     {}", PROMTAIL_CONFIG_FILE);
+    println!("  - Verify after `docker compose up -d`:");
+    println!("      docker compose logs --tail 50 promtail");
+    println!(
+        "  - Grafana query to select this host: {{host=\"{}\"}}",
+        promtail.instance
     );
 }
 
