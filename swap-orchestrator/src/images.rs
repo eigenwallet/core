@@ -36,7 +36,6 @@ pub static ASB_TRACING_LOGGER_IMAGE: &str =
 pub static CLOUDFLARED_IMAGE: &str = "cloudflare/cloudflared@sha256:6b599ca3e974349ead3286d178da61d291961182ec3fe9c505e1dd02c8ac31b0";
 
 /// promtail 3.4.1 (https://hub.docker.com/r/grafana/promtail)
-/// Pinned by multi-arch index digest so amd64/arm64 hosts both pull the verified manifest.
 pub static PROMTAIL_IMAGE: &str = "grafana/promtail@sha256:8b2aa61745bc4a9343cc47bd391fb935a80e7da0793c7566d5985c75858ba3f8";
 
 /// These are built from source
