@@ -371,9 +371,6 @@ fn main() {
         ensure_cloudflared_addresses_in_config(&recipe, cf);
     }
 
-    // Write the promtail config to ./promtail.yml so the compose service
-    // can mount it. We do this before generating the compose file so the
-    // file exists by the time `docker compose up` runs.
     if let Some(promtail) = promtail_config.as_ref() {
         std::fs::write(PROMTAIL_CONFIG_FILE, build_promtail_yml(promtail))
             .expect("Failed to write promtail.yml");
