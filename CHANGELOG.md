@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.6.3] - 2026-05-21
+
 - CLI: Outbound Tor dials are now concurrency-limited and spaced out, with a separate higher-throughput lane for high-priority peers, so bursts of dials no longer overwhelm the embedded Tor client.
 - ASB+CONTROLLER: New `get-external-bitcoin-redeem-address` command returns the external Bitcoin redeem address currently used by the ASB (or `null` if the internal wallet is used).
 
@@ -951,7 +953,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.6.1...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.6.3...HEAD
+[4.6.3]: https://github.com/eigenwallet/core/compare/4.6.1...4.6.3
 [4.6.1]: https://github.com/eigenwallet/core/compare/4.6.0...4.6.1
 [4.6.0]: https://github.com/eigenwallet/core/compare/4.5.5...4.6.0
 [4.5.5]: https://github.com/eigenwallet/core/compare/4.5.4...4.5.5
