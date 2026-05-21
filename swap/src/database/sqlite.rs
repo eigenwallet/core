@@ -285,17 +285,18 @@ impl Database for SqliteDatabase {
 
         let row = sqlx::query!(
             r#"
-                SELECT min(entered_at) as start_date
+                SELECT entered_at as start_date
                 FROM swap_states
                 WHERE swap_id = ?
+                ORDER BY id ASC
+                LIMIT 1
                 "#,
             swap_id
         )
         .fetch_one(&self.pool)
         .await?;
 
-        row.start_date
-            .ok_or_else(|| anyhow!("Could not get swap start date"))
+        Ok(row.start_date)
     }
 
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()> {
@@ -420,9 +421,9 @@ impl Database for SqliteDatabase {
                 oldest.state       AS "first_state!: String",
                 newest.state       AS "last_state!: String",
                 oldest.entered_at  AS start_date
-            FROM (SELECT swap_id, state, MIN(entered_at) AS entered_at
+            FROM (SELECT swap_id, state, entered_at, MIN(id) AS id
                   FROM swap_states GROUP BY swap_id) oldest
-            JOIN (SELECT swap_id, state, MAX(entered_at) AS entered_at
+            JOIN (SELECT swap_id, state, MAX(id) AS id
                   FROM swap_states GROUP BY swap_id) newest
                 ON newest.swap_id = oldest.swap_id
             JOIN peers ON peers.swap_id = oldest.swap_id
@@ -430,7 +431,7 @@ impl Database for SqliteDatabase {
                 json_extract(oldest.state, '$.Alice.Done') IS 'SafelyAborted'
                 AND json_extract(newest.state, '$.Alice.Done') IS 'SafelyAborted'
             )
-            ORDER BY oldest.entered_at
+            ORDER BY oldest.id
             LIMIT ?
             OFFSET ?
         "#,
