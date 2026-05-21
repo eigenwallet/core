@@ -618,6 +618,9 @@ where
                             let result = self.handle_set_external_bitcoin_redeem_address(address).await;
                             let _ = respond_to.send(result);
                         }
+                        EventLoopRequest::GetExternalBitcoinRedeemAddress { respond_to } => {
+                            let _ = respond_to.send(self.external_redeem_address.clone());
+                        }
                     }
                 }
             }
@@ -1341,6 +1344,9 @@ mod service {
             address: Option<bitcoin::Address>,
             respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
         },
+        GetExternalBitcoinRedeemAddress {
+            respond_to: oneshot::Sender<Option<bitcoin::Address>>,
+        },
     }
 
     /// Tower service for communicating with the EventLoop
@@ -1472,6 +1478,17 @@ mod service {
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
             rx.await
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+        }
+
+        pub async fn get_external_bitcoin_redeem_address(
+            &self,
+        ) -> anyhow::Result<Option<bitcoin::Address>> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetExternalBitcoinRedeemAddress { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
         }
 
         pub async fn clear_external_bitcoin_redeem_address(&self) -> anyhow::Result<()> {

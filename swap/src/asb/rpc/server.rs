@@ -11,10 +11,11 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
-    MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
-    OnionServiceStatusResponse, PeerIdResponse, QuoteResponse, RegistrationStatusItem,
-    RegistrationStatusResponse, RendezvousConnectionStatus, RendezvousRegistrationStatus, Swap,
-    WithdrawBtcResponse, WormholeServiceItem, WormholeServicesResponse,
+    ExternalBitcoinRedeemAddressResponse, MoneroAddressResponse, MoneroBalanceResponse,
+    MoneroSeedResponse, MultiaddressesResponse, OnionServiceStatusResponse, PeerIdResponse,
+    QuoteResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
+    RendezvousRegistrationStatus, Swap, WithdrawBtcResponse, WormholeServiceItem,
+    WormholeServicesResponse,
 };
 use swap_core::monero::PICONERO_OFFSET;
 use tokio_util::task::AbortOnDropHandle;
@@ -368,6 +369,20 @@ impl AsbApiServer for RpcImpl {
             .into_json_rpc_result()?;
 
         Ok(())
+    }
+
+    async fn get_external_bitcoin_redeem_address(
+        &self,
+    ) -> Result<ExternalBitcoinRedeemAddressResponse, ErrorObjectOwned> {
+        let address = self
+            .event_loop_service
+            .get_external_bitcoin_redeem_address()
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(ExternalBitcoinRedeemAddressResponse {
+            address: address.map(|a| a.to_string()),
+        })
     }
 
     async fn get_current_quote(&self) -> Result<QuoteResponse, ErrorObjectOwned> {

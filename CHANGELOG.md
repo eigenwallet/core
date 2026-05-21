@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - CLI: Outbound Tor dials are now concurrency-limited and spaced out, with a separate higher-throughput lane for high-priority peers, so bursts of dials no longer overwhelm the embedded Tor client.
+- ASB+CONTROLLER: New `get-external-bitcoin-redeem-address` command returns the external Bitcoin redeem address currently used by the ASB (or `null` if the internal wallet is used).
 
 ## [4.6.1] - 2026-05-15
 

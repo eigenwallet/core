@@ -134,6 +134,11 @@ pub struct SetBurnOnRefundRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ExternalBitcoinRedeemAddressResponse {
+    pub address: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct QuoteResponse {
     /// Price offered per 1 XMR, in satoshis.
     #[serde(with = "bitcoin::amount::serde::as_sat")]
@@ -197,6 +202,10 @@ pub trait AsbApi {
     ) -> Result<(), ErrorObjectOwned>;
     #[method(name = "clear_external_bitcoin_redeem_address")]
     async fn clear_external_bitcoin_redeem_address(&self) -> Result<(), ErrorObjectOwned>;
+    #[method(name = "get_external_bitcoin_redeem_address")]
+    async fn get_external_bitcoin_redeem_address(
+        &self,
+    ) -> Result<ExternalBitcoinRedeemAddressResponse, ErrorObjectOwned>;
     #[method(name = "refresh_bitcoin_wallet")]
     async fn refresh_bitcoin_wallet(&self) -> Result<(), ErrorObjectOwned>;
     #[method(name = "get_current_quote")]
