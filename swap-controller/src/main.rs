@@ -165,6 +165,15 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 "Cleared external Bitcoin redeem address. Future swaps will be redeemed into the internal Bitcoin wallet."
             );
         }
+        Cmd::GetExternalBitcoinRedeemAddress => {
+            let response = client.get_external_bitcoin_redeem_address().await?;
+            match response.address {
+                Some(address) => println!("External Bitcoin redeem address: {address}"),
+                None => println!(
+                    "No external Bitcoin redeem address set. Swaps are redeemed into the internal Bitcoin wallet."
+                ),
+            }
+        }
         Cmd::GrantMercy { swap_id } => {
             client.grant_mercy(swap_id).await?;
             println!("Mercy granted for swap {swap_id}");
