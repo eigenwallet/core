@@ -1,14 +1,32 @@
 { pkgs ? import (builtins.fetchTarball {
     url = "https://github.com/NixOS/nixpkgs/archive/refs/heads/nixos-25.05.tar.gz";
-    # config.allowUnfree is required for the proprietary NVIDIA user-space
-    # driver that nixGLNvidia (below) builds against; falls back to mesa
-    # software rendering on hosts without the NVIDIA driver.
+    # allowUnfree lets nixGL build the proprietary NVIDIA user-space driver for
+    # the GPU path below. Harmless on hosts without NVIDIA: nothing unfree is
+    # pulled in unless that path is actually taken.
   }) { config.allowUnfree = true; }
-, # Override to match `cat /proc/driver/nvidia/version` when your host's
-  # NVIDIA kernel module differs from the default. nixpkgs fixed-output-
-  # fetches the matching user-space runfile, so a wrong value produces a
-  # clear hash-mismatch error rather than silent corruption.
-  nvidiaVersion ? "580.142"
+, # NVIDIA user-space driver version for GPU rendering in the Tauri webview.
+  # Defaults to auto-detecting the running kernel module from /proc, so it
+  # tracks the host across driver upgrades instead of pinning one version.
+  # Detection is impure (reads /proc, rebuilds each eval) which is fine under
+  # `nix-shell`; pure callers like the flake's `nix develop` must pass this
+  # explicitly (e.g. `nvidiaVersion = "580.159.03"`) or `null` to skip the GPU
+  # path and use mesa software rendering.
+  nvidiaVersion ?
+    let
+      # nix can't `readFile` /proc directly (zero-sized files, NixOS/nix#3539),
+      # so copy it out in an impure derivation first — same trick as nixGL's
+      # own `auto`. `|| touch` yields an empty file on non-NVIDIA hosts.
+      versionFile = pkgs.runCommand "impure-nvidia-version" {
+        time = builtins.currentTime; # rebuild every eval; the host driver can change
+        preferLocalBuild = true;
+        allowSubstitutes = false;
+      } ''cp /proc/driver/nvidia/version "$out" 2>/dev/null || touch "$out"'';
+      firstLine = builtins.head (pkgs.lib.splitString "\n" (builtins.readFile versionFile));
+      # Match both "...Kernel Module  <ver>  ..." (proprietary) and
+      # "...Open Kernel Module for x86_64  <ver>  ..." (open module). nixGL's
+      # built-in detector only handles the former, so we parse it ourselves.
+      m = builtins.match ".*Kernel Module( for [^ ]+)?  ([0-9.]+)  .*" firstLine;
+    in if m == null then null else builtins.elemAt m 1
 }:
 
 let
@@ -28,21 +46,61 @@ let
         [ "ar" "ranlib" "nm" "strip" "ld" "as" "objcopy" "objdump" "readelf" ];
   };
 
-  # nixGLNvidia is a thin wrapper script that sets `LD_LIBRARY_PATH` and
-  # `__EGL_VENDOR_LIBRARY_FILENAMES` to nix-managed copies of the host's
-  # proprietary NVIDIA driver, so nix-built libglvnd can dispatch into a
-  # working EGL/GLX vendor. We don't invoke the wrapper directly — its
-  # `export` statements are sourced into the shell below so `cargo tauri
-  # dev` picks up the right env without further wrapping.
+  # GPU rendering for the Tauri webview. WebKitGTK dispatches OpenGL/EGL through
+  # nix's libglvnd, which ships no vendor ICD, so on a non-NixOS host the
+  # WebProcess can't reach the GPU and either aborts with `EGL_BAD_PARAMETER`
+  # or silently drops to CPU rasterisation (single-digit fps even on a discrete
+  # GPU).
   #
-  # Without this, nix's libglvnd has no vendor ICD installed (NixOS
-  # populates /run/opengl-driver/lib; non-NixOS hosts have nothing), so
-  # WebKit's WebProcess can't initialise EGL and either aborts with
-  # `EGL_BAD_PARAMETER` or silently falls back to CPU rasterisation,
-  # capping the GUI at single-digit fps even on a discrete GPU.
+  # nixGL fixes this by building the NVIDIA user-space driver *as a nix
+  # derivation* and exposing it via LD_LIBRARY_PATH + a glvnd vendor ICD. The
+  # crucial property — versus copying the host's driver libs, e.g. nix-gl-host
+  # — is that the nix-built driver links nix's own libX11/libxcb/libffi, so it
+  # never drags mismatched host libraries into the nix process. Pulling host
+  # libxcb/libffi in alongside nix's copies crashes the WebProcess in their
+  # `_init`, which is exactly what a host-driver bridge does here.
+  #
+  # The driver must match the running kernel module *exactly* (a mismatch falls
+  # back to software or fails), which is why `nvidiaVersion` auto-detects rather
+  # than pins. This is built only when a driver is present: the shellHook
+  # references it solely inside the `nvidiaVersion != null` branch, and nix is
+  # lazy, so a host without NVIDIA never fetches nixGL or the driver runfile.
   nixGLNvidia = (import (builtins.fetchTarball {
     url = "https://github.com/nix-community/nixGL/archive/refs/heads/main.tar.gz";
   }) { inherit pkgs nvidiaVersion; }).nixGLNvidia;
+
+  # The GL environment, chosen at eval time so `just tauri-mainnet` runs
+  # unwrapped. NVIDIA: source the nixGL wrapper's env-setup — strip its trailing
+  # `exec "$@"` so sourcing doesn't exec an empty argv; the bash NVIDIA_JSON*
+  # arrays it defines are evaluated too. The wrapper *appends* to the existing
+  # LD_LIBRARY_PATH (the link-time libs set on the shell), so both survive.
+  # GDK_BACKEND=x11 is forced because NVIDIA + native Wayland + nix's webkitgtk
+  # hits a Wayland EPROTO during DMA-BUF setup; XWayland renders fine via the
+  # GLX/EGL paths the wrapper wires up.
+  gpuShellHook =
+    if nvidiaVersion != null then ''
+      eval "$(${pkgs.gnused}/bin/sed '/^[[:space:]]*exec /d' ${nixGLNvidia}/bin/nixGLNvidia-${nvidiaVersion})"
+      export GDK_BACKEND=x11
+
+      # Under GNOME fractional scaling + XWayland, app-set cursors (the hand
+      # over a button, the I-beam over a text box) render tiny because GTK
+      # ignores the X server's scaled Xcursor.size. Re-export that size as
+      # XCURSOR_SIZE so they match the correctly-sized default cursor. No-op
+      # when there's no X server or the resource is absent (non-HiDPI).
+      if [ -z "''${XCURSOR_SIZE:-}" ] && [ -n "''${DISPLAY:-}" ]; then
+        _xcursor_size=$(${pkgs.xorg.xrdb}/bin/xrdb -query 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/^Xcursor\.size:[[:space:]]*//p')
+        [ -n "$_xcursor_size" ] && export XCURSOR_SIZE="$_xcursor_size"
+        unset _xcursor_size
+      fi
+    '' else ''
+      # No NVIDIA driver detected: fall back to nixpkgs' mesa software
+      # rasteriser. Slow but portable; WEBKIT_DISABLE_DMABUF_RENDERER=1 stops
+      # the WebProcess from attempting a hardware path it can't satisfy.
+      export __EGL_VENDOR_LIBRARY_DIRS=${pkgs.mesa}/share/glvnd/egl_vendor.d
+      export LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri
+      export LIBGL_ALWAYS_SOFTWARE=1
+      export WEBKIT_DISABLE_DMABUF_RENDERER=1
+    '';
 
   # Link-time deps for src-tauri and upstream Rust crates. These are found
   # via pkg-config and the RPATH baked in by NIX_LDFLAGS (rewritten in
@@ -154,39 +212,24 @@ pkgs.mkShell {
       unset _rpath_real
     fi
 
-    # GPU rendering setup. WebKitGTK uses libglvnd for EGL/GLX dispatch;
-    # nix's libglvnd has no vendor ICD installed, so on a non-NixOS host
-    # WebKit can't reach the GPU. Two paths:
-    #
-    #   - host has the proprietary NVIDIA driver: source the env vars from
-    #     a pre-built nixGLNvidia wrapper, which points libglvnd at nix-
-    #     managed copies of the host's NVIDIA libs (avoids ABI-mixing
-    #     /usr/lib64 with the nix lib stack). We also force GDK_BACKEND=x11
-    #     because NVIDIA + native Wayland + nix's webkitgtk hits a Wayland
-    #     EPROTO during DMA-BUF setup; XWayland sidesteps that path.
-    #
-    #   - no NVIDIA: fall back to nixpkgs' mesa software rasteriser. Slow
-    #     (single-digit fps) but works on any host without ABI mixing, and
-    #     WEBKIT_DISABLE_DMABUF_RENDERER=1 keeps the WebProcess from
-    #     trying a hardware path it can't satisfy.
-    if [ -e /proc/driver/nvidia/version ]; then
-      _host_nv=$(awk '/Module/ { for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+/) { print $i; exit } }' /proc/driver/nvidia/version 2>/dev/null)
-      if [ -n "$_host_nv" ] && [ "$_host_nv" != "${nvidiaVersion}" ]; then
-        echo "[shell.nix] WARNING: nvidia kernel module is $_host_nv but shell.nix is pinned to ${nvidiaVersion}." >&2
-        echo "[shell.nix]          GPU rendering may break — pass --argstr nvidiaVersion $_host_nv or update shell.nix." >&2
-      fi
-      unset _host_nv
-
-      # Source the nixGLNvidia wrapper's env-var setup. The wrapper ends
-      # in `exec "$@"`; strip that line so sourcing doesn't try to exec
-      # an empty argv. Bash arrays (NVIDIA_JSON*=) are evaluated too.
-      eval "$(${pkgs.gnused}/bin/sed '/^[[:space:]]*exec /d' ${nixGLNvidia}/bin/nixGLNvidia-${nvidiaVersion})"
-      export GDK_BACKEND=x11
-    else
-      export __EGL_VENDOR_LIBRARY_DIRS=${pkgs.mesa}/share/glvnd/egl_vendor.d
-      export LIBGL_DRIVERS_PATH=${pkgs.mesa}/lib/dri
-      export LIBGL_ALWAYS_SOFTWARE=1
-      export WEBKIT_DISABLE_DMABUF_RENDERER=1
+    # GPU rendering setup (see the nixGL / nvidiaVersion bindings above): NVIDIA
+    # via a nix-built driver, otherwise mesa software rendering.
+    ${gpuShellHook}
+    # `just docker_test` runs the testcontainers-based integration tests, whose
+    # 0.15 Cli client shells out to a `docker` binary. On a host with rootless
+    # podman but no docker (e.g. Fedora), bridge `docker` -> `podman` so the
+    # tests run without a docker daemon or root. Guarded so a real docker
+    # install — or CI's preinstalled docker — is left untouched.
+    if ! command -v docker >/dev/null 2>&1 && command -v podman >/dev/null 2>&1; then
+      _docker_shim="$HOME/.cache/eigenwallet-docker-shim"
+      mkdir -p "$_docker_shim"
+      printf '#!/bin/sh\nexec podman "$@"\n' > "$_docker_shim/docker"
+      chmod +x "$_docker_shim/docker"
+      export PATH="$_docker_shim:$PATH"
+      # testcontainers 0.15's Cli client cleans up its own containers; Ryuk
+      # (its reaper container) isn't needed and trips on rootless podman.
+      export TESTCONTAINERS_RYUK_DISABLED=true
+      unset _docker_shim
     fi
 
     # Rustup-managed toolchain lives in ~/.cargo/bin; nix-shell resets PATH
