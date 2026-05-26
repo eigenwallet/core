@@ -38,6 +38,9 @@ pub static CLOUDFLARED_IMAGE: &str = "cloudflare/cloudflared@sha256:6b599ca3e974
 /// promtail 3.4.1 (https://hub.docker.com/r/grafana/promtail)
 pub static PROMTAIL_IMAGE: &str = "grafana/promtail@sha256:8b2aa61745bc4a9343cc47bd391fb935a80e7da0793c7566d5985c75858ba3f8";
 
+/// docker-socket-proxy 0.3.0 (https://hub.docker.com/r/tecnativa/docker-socket-proxy)
+pub static DOCKER_SOCKET_PROXY_IMAGE: &str = "tecnativa/docker-socket-proxy@sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2";
+
 /// These are built from source
 pub static ASB_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
     // The context is the root of the Cargo workspace

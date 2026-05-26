@@ -193,6 +193,9 @@ fn main() {
             ),
             cloudflared: OrchestratorImage::Registry(images::CLOUDFLARED_IMAGE.to_string()),
             promtail: OrchestratorImage::Registry(images::PROMTAIL_IMAGE.to_string()),
+            docker_socket_proxy: OrchestratorImage::Registry(
+                images::DOCKER_SOCKET_PROXY_IMAGE.to_string(),
+            ),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),
@@ -482,10 +485,15 @@ fn print_promtail_instructions(promtail: &PromtailConfig) {
     println!("  - Instance label (host): {}", promtail.instance);
     println!("  - Loki push URL:         {}", promtail.loki_push_url);
     println!("  - Config written to:     {}", PROMTAIL_CONFIG_FILE);
+    println!("  - Ships: asb tracing logs + bitcoind/monerod/electrs container logs");
     println!("  - Verify after `docker compose up -d`:");
     println!("      docker compose logs --tail 50 promtail");
     println!(
-        "  - Grafana query to select this host: {{host=\"{}\"}}",
+        "  - Grafana query (whole host):  {{host=\"{}\"}}",
+        promtail.instance
+    );
+    println!(
+        "  - Grafana query (node daemons): {{host=\"{}\", job=\"node\"}}",
         promtail.instance
     );
 }

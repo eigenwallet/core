@@ -44,6 +44,9 @@ fn make_input(
             ),
             cloudflared: OrchestratorImage::Registry(images::CLOUDFLARED_IMAGE.to_string()),
             promtail: OrchestratorImage::Registry(images::PROMTAIL_IMAGE.to_string()),
+            docker_socket_proxy: OrchestratorImage::Registry(
+                images::DOCKER_SOCKET_PROXY_IMAGE.to_string(),
+            ),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),
@@ -122,4 +125,40 @@ fn test_promtail_yml_escapes_single_quotes() {
     let yml = build_promtail_yml(&cfg);
     let parsed: serde_yaml::Value = serde_yaml::from_str(&yml).expect("must be valid YAML");
     assert_eq!(parsed["clients"][0]["bearer_token"].as_str(), Some("abc'def"));
+}
+
+#[test]
+fn test_promtail_yml_ships_node_container_logs() {
+    let yml = build_promtail_yml(&sample_promtail_config());
+    let parsed: serde_yaml::Value =
+        serde_yaml::from_str(&yml).expect("promtail.yml must be valid YAML");
+
+    let node_job = parsed["scrape_configs"]
+        .as_sequence()
+        .expect("scrape_configs must be a list")
+        .iter()
+        .find(|job| job["job_name"].as_str() == Some("node"))
+        .expect("a `node` scrape job must be present");
+
+    // The node logs are read through the docker-socket-proxy, not a file path.
+    assert_eq!(
+        node_job["docker_sd_configs"][0]["host"].as_str(),
+        Some("tcp://docker-socket-proxy:2375")
+    );
+
+    // Only the three daemon containers are shipped.
+    let keep = node_job["relabel_configs"][0]["regex"]
+        .as_str()
+        .expect("keep regex must be present");
+    assert!(keep.contains("bitcoind") && keep.contains("monerod") && keep.contains("electrs"));
+
+    // Node logs carry the same `host` label as the asb logs so a whole
+    // deployment selects with one query.
+    let host_relabel = node_job["relabel_configs"]
+        .as_sequence()
+        .expect("relabel_configs must be a list")
+        .iter()
+        .find(|rc| rc["target_label"].as_str() == Some("host"))
+        .expect("a host relabel must be present");
+    assert_eq!(host_relabel["replacement"].as_str(), Some("asb-test-1"));
 }
