@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.6.5] - 2026-05-26
+
 ## [4.6.4] - 2026-05-21
 
 ## [4.6.3] - 2026-05-21
@@ -955,7 +957,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.6.4...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.6.5...HEAD
+[4.6.5]: https://github.com/eigenwallet/core/compare/4.6.4...4.6.5
 [4.6.4]: https://github.com/eigenwallet/core/compare/4.6.3...4.6.4
 [4.6.3]: https://github.com/eigenwallet/core/compare/4.6.1...4.6.3
 [4.6.1]: https://github.com/eigenwallet/core/compare/4.6.0...4.6.1
