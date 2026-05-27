@@ -326,9 +326,11 @@ fn build(input: OrchestratorInput) -> String {
         // compose file, with the URL/token/instance values baked in.
         //
         // docker-socket-proxy is the only container that mounts the docker
-        // socket. It exposes just the read-only container API (CONTAINERS=1,
-        // no POST), so promtail can discover and tail the node containers'
-        // stdout without itself holding root-equivalent access to the host.
+        // socket. It exposes only the read-only container + network APIs
+        // (CONTAINERS=1, NETWORKS=1; POST stays disabled). promtail's docker
+        // service discovery needs /networks to compute the network labels in
+        // addition to listing containers, so both are required - but it still
+        // never holds write/root-equivalent access to the host.
         let promtail_segment = format!(
             "\
   docker-socket-proxy:
@@ -337,6 +339,7 @@ fn build(input: OrchestratorInput) -> String {
     restart: unless-stopped
     environment:
       - CONTAINERS=1
+      - NETWORKS=1
     volumes:
       - '/var/run/docker.sock:/var/run/docker.sock:ro'
     expose:

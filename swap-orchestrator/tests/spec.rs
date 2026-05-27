@@ -83,8 +83,12 @@ fn test_orchestrator_spec_generation() {
     let _ = make_input(true, None, None).to_spec();
     let _ = make_input(false, Some(sample_cloudflared_config()), None).to_spec();
     let _ = make_input(true, Some(sample_cloudflared_config()), None).to_spec();
-    let _ = make_input(false, None, Some(sample_promtail_config())).to_spec();
+    let compose = make_input(false, None, Some(sample_promtail_config())).to_spec();
     let _ = make_input(true, None, Some(sample_promtail_config())).to_spec();
+
+    // promtail's docker SD needs the networks API, not just containers, or
+    // discovery 403s on /networks and no node logs ship.
+    assert!(compose.contains("NETWORKS=1"));
     let _ = make_input(
         true,
         Some(sample_cloudflared_config()),
