@@ -51,6 +51,10 @@ impl TxPunish {
         self.digest
     }
 
+    pub fn txid(&self) -> Txid {
+        self.inner.compute_txid()
+    }
+
     pub fn complete(
         self,
         tx_punish_sig_bob: bitcoin::Signature,

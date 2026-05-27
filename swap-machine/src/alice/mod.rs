@@ -1051,7 +1051,7 @@ impl State3 {
         }
     }
 
-    fn tx_punish(&self) -> TxPunish {
+    pub fn tx_punish(&self) -> TxPunish {
         swap_core::bitcoin::TxPunish::new(
             &self.tx_cancel(),
             &self.punish_address,

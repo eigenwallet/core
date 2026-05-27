@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB+CONTROLLER: `get-swaps` now includes the `btc_punish_txid` per swap: the Bitcoin punish transaction id. This is deterministic from the swap's locked state, so it is set even before the punish transaction is published.
+
 ## [4.6.5] - 2026-05-26
 
 ## [4.6.4] - 2026-05-21

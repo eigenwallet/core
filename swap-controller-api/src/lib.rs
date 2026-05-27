@@ -85,6 +85,9 @@ pub struct Swap {
     /// Bitcoin redeem transaction id. Deterministic from the swap's locked state,
     /// so this is set even before the redeem transaction is published.
     pub btc_redeem_txid: String,
+    /// Bitcoin punish transaction id. Deterministic from the swap's locked state,
+    /// so this is set even before the punish transaction is published.
+    pub btc_punish_txid: String,
     pub peer_id: String,
     pub completed: bool,
 }
