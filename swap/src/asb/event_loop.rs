@@ -1294,8 +1294,8 @@ async fn capture_wallet_snapshot(
         unlocked_balance.into(),
         redeem_address,
         punish_address,
-        cancel_fee,
         redeem_fee,
+        cancel_fee,
         punish_fee,
         withhold_fee,
     ))
