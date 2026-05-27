@@ -1279,6 +1279,18 @@ async fn capture_wallet_snapshot(
     let cancel_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxCancel::weight(), Some(transfer_amount))
         .await?;
+    let refund_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxFullRefund::weight(), Some(transfer_amount))
+        .await?;
+    let partial_refund_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxPartialRefund::weight(), Some(transfer_amount))
+        .await?;
+    let reclaim_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxReclaim::weight(), Some(transfer_amount))
+        .await?;
+    let mercy_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxMercy::weight(), Some(transfer_amount))
+        .await?;
     let punish_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
         .await?;
@@ -1296,6 +1308,10 @@ async fn capture_wallet_snapshot(
         punish_address,
         redeem_fee,
         cancel_fee,
+        refund_fee,
+        partial_refund_fee,
+        reclaim_fee,
+        mercy_fee,
         punish_fee,
         withhold_fee,
     ))

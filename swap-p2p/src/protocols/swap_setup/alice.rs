@@ -55,6 +55,10 @@ pub struct WalletSnapshot {
 
     redeem_fee: bitcoin::Amount,
     cancel_fee: bitcoin::Amount,
+    refund_fee: bitcoin::Amount,
+    partial_refund_fee: bitcoin::Amount,
+    reclaim_fee: bitcoin::Amount,
+    mercy_fee: bitcoin::Amount,
     punish_fee: bitcoin::Amount,
     withhold_fee: bitcoin::Amount,
 }
@@ -66,6 +70,10 @@ impl WalletSnapshot {
         punish_address: bitcoin::Address,
         redeem_fee: bitcoin::Amount,
         cancel_fee: bitcoin::Amount,
+        refund_fee: bitcoin::Amount,
+        partial_refund_fee: bitcoin::Amount,
+        reclaim_fee: bitcoin::Amount,
+        mercy_fee: bitcoin::Amount,
         punish_fee: bitcoin::Amount,
         withhold_fee: bitcoin::Amount,
     ) -> Self {
@@ -78,6 +86,10 @@ impl WalletSnapshot {
             cancel_fee,
             punish_fee,
             withhold_fee,
+            refund_fee,
+            partial_refund_fee,
+            reclaim_fee,
+            mercy_fee,
         }
     }
 }
@@ -574,11 +586,29 @@ async fn run_swap_setup(
         return Err(sanity_err).context("Amnesty sanity check failed");
     }
 
-    for (transaction_type, proposed_fee, our_estimate) in [(
-        "TxCancel",
-        message0.tx_cancel_fee,
-        wallet_snapshot.cancel_fee,
-    )] {
+    for (transaction_type, proposed_fee, our_estimate) in [
+        (
+            "TxCancel",
+            message0.tx_cancel_fee,
+            wallet_snapshot.cancel_fee,
+        ),
+        (
+            "TxRefund",
+            message0.tx_refund_fee,
+            wallet_snapshot.refund_fee,
+        ),
+        (
+            "TxPartialRefund",
+            message0.tx_partial_refund_fee,
+            wallet_snapshot.partial_refund_fee,
+        ),
+        (
+            "TxReclaim",
+            message0.tx_reclaim_fee,
+            wallet_snapshot.reclaim_fee,
+        ),
+        ("TxMercy", message0.tx_mercy_fee, wallet_snapshot.mercy_fee),
+    ] {
         if let Err(sanity_err) =
             swap_machine::common::sanity_check_transaction_fee(proposed_fee, our_estimate)
         {
