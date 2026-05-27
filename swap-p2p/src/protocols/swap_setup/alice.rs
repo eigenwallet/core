@@ -573,22 +573,6 @@ async fn run_swap_setup(
         .context("Failed to read message0")?
         .context("Peer sent an error instead of message0")?;
 
-    if let Err(sanity_err) = swap_machine::common::sanity_check_amnesty_amount(
-        request.btc,
-        btc_amnesty_amount,
-        message0.tx_partial_refund_fee,
-        message0.tx_reclaim_fee,
-        wallet_snapshot.withhold_fee,
-        message0.tx_mercy_fee,
-    ) {
-        if let Err(err) =
-            swap_setup::write_cbor_error(&mut substream, sanity_err.clone().into()).await
-        {
-            tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
-        };
-        return Err(sanity_err).context("Amnesty sanity check failed");
-    }
-
     for (transaction_type, proposed_fee, our_estimate) in [
         (
             "TxCancel",
@@ -624,6 +608,22 @@ async fn run_swap_setup(
                 "Transaction fee sanity check failed for {transaction_type}"
             ));
         }
+    }
+
+    if let Err(sanity_err) = swap_machine::common::sanity_check_amnesty_amount(
+        request.btc,
+        btc_amnesty_amount,
+        message0.tx_partial_refund_fee,
+        message0.tx_reclaim_fee,
+        wallet_snapshot.withhold_fee,
+        message0.tx_mercy_fee,
+    ) {
+        if let Err(err) =
+            swap_setup::write_cbor_error(&mut substream, sanity_err.clone().into()).await
+        {
+            tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
+        };
+        return Err(sanity_err).context("Amnesty sanity check failed");
     }
 
     let (swap_id, state1) = state0

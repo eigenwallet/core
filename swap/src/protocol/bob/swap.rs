@@ -19,7 +19,8 @@ use monero_interface::PublishTransaction;
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::{
-    ExpiredTimelocks, TxCancel, TxFullRefund, TxMercy, TxPartialRefund, TxReclaim,
+    ExpiredTimelocks, TxCancel, TxFullRefund, TxMercy, TxPartialRefund, TxPunish, TxReclaim,
+    TxRedeem, TxWithhold,
 };
 use swap_core::monero::BlockHeight;
 use swap_env::env;
@@ -142,6 +143,15 @@ async fn next_state(
             let tx_mercy_fee = bitcoin_wallet
                 .estimate_fee(TxMercy::weight(), Some(btc_amount))
                 .await?;
+            let tx_redeem_fee = bitcoin_wallet
+                .estimate_fee(TxRedeem::weight(), Some(btc_amount))
+                .await?;
+            let tx_punish_fee = bitcoin_wallet
+                .estimate_fee(TxPunish::weight(), Some(btc_amount))
+                .await?;
+            let tx_withhold_fee = bitcoin_wallet
+                .estimate_fee(TxWithhold::weight(), Some(btc_amount))
+                .await?;
 
             // Emit an event to tauri that we are negotiating with the maker to lock the Bitcoin
             event_emitter.emit_swap_progress_event(
@@ -161,6 +171,9 @@ async fn next_state(
                     tx_reclaim_fee,
                     tx_mercy_fee,
                     tx_cancel_fee,
+                    tx_redeem_fee,
+                    tx_punish_fee,
+                    tx_withhold_fee,
                     bitcoin_refund_address: change_address,
                 })
                 .await?;
