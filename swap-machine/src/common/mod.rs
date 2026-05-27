@@ -2,7 +2,7 @@ use crate::alice::AliceState;
 use crate::alice::is_complete as alice_is_complete;
 use crate::bob::BobState;
 use crate::bob::is_complete as bob_is_complete;
-use anyhow::{Result, bail};
+use anyhow::Result;
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
 use rust_decimal::prelude::FromPrimitive;
@@ -92,22 +92,40 @@ pub struct Message4 {
     pub tx_mercy_sig: Option<bitcoin::Signature>,
 }
 
-/// Validates that a proposed transaction fee is between
-/// [`bitcoin_wallet::MIN_ABSOLUTE_TX_FEE`] and 3× the `conservative_estimated_fee`.
+/// Ensure the proposed fee for a transaction is in a sensible range
+/// around our own estimate.
 pub fn sanity_check_transaction_fee(
-    fee: bitcoin::Amount,
+    proposed_fee: bitcoin::Amount,
     conservative_estimated_fee: bitcoin::Amount,
-) -> Result<()> {
-    if fee < bitcoin_wallet::MIN_ABSOLUTE_TX_FEE {
-        bail!(
-            "Fee ({fee}) is below the minimum relay fee ({})",
-            bitcoin_wallet::MIN_ABSOLUTE_TX_FEE,
-        );
+) -> Result<(), SanityCheckError> {
+    // Require minimum 50% of the fee we'd set
+    const MAX_FEE_UNDERPAY_FACTOR: u64 = 2;
+    // Allow maximum 300% of the fee we'd set
+    const MAX_FEE_OVERPAY_FACTOR: u64 = 3;
+
+    let floor = bitcoin_wallet::MIN_ABSOLUTE_TX_FEE.max(bitcoin::Amount::from_sat(
+        conservative_estimated_fee
+            .to_sat()
+            .saturating_div(MAX_FEE_UNDERPAY_FACTOR),
+    ));
+    let ceiling = bitcoin::Amount::from_sat(
+        conservative_estimated_fee
+            .to_sat()
+            .saturating_mul(MAX_FEE_OVERPAY_FACTOR),
+    );
+
+    if proposed_fee < floor {
+        return Err(SanityCheckError::TransactionFeeTooLow {
+            proposed: proposed_fee,
+            our_estimate: conservative_estimated_fee,
+        });
     }
 
-    let ceiling = conservative_estimated_fee.to_sat().saturating_mul(3);
-    if fee.to_sat() > ceiling {
-        bail!("Fee ({fee}) exceeds 3x the conservative estimate ({conservative_estimated_fee})",);
+    if proposed_fee > ceiling {
+        return Err(SanityCheckError::TransactionFeeTooHigh {
+            proposed: proposed_fee,
+            our_estimate: conservative_estimated_fee,
+        });
     }
 
     Ok(())
@@ -127,6 +145,20 @@ pub enum SanityCheckError {
     AntiSpamDepositRatioTooHigh {
         ratio: rust_decimal::Decimal,
         max_accepted_ratio: rust_decimal::Decimal,
+    },
+    #[error(
+        "Other party suggested a network fee which is too low compared to our estimate ({proposed} vs {our_estimate})"
+    )]
+    TransactionFeeTooLow {
+        proposed: bitcoin::Amount,
+        our_estimate: bitcoin::Amount,
+    },
+    #[error(
+        "Other party suggested a network fee which is too high compared to our estimate ({proposed} vs {our_estimate})"
+    )]
+    TransactionFeeTooHigh {
+        proposed: bitcoin::Amount,
+        our_estimate: bitcoin::Amount,
     },
 }
 

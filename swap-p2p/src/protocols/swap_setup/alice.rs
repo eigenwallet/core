@@ -54,6 +54,7 @@ pub struct WalletSnapshot {
     punish_address: bitcoin::Address,
 
     redeem_fee: bitcoin::Amount,
+    cancel_fee: bitcoin::Amount,
     punish_fee: bitcoin::Amount,
     withhold_fee: bitcoin::Amount,
 }
@@ -64,6 +65,7 @@ impl WalletSnapshot {
         redeem_address: bitcoin::Address,
         punish_address: bitcoin::Address,
         redeem_fee: bitcoin::Amount,
+        cancel_fee: bitcoin::Amount,
         punish_fee: bitcoin::Amount,
         withhold_fee: bitcoin::Amount,
     ) -> Self {
@@ -73,6 +75,7 @@ impl WalletSnapshot {
             redeem_address,
             punish_address,
             redeem_fee,
+            cancel_fee,
             punish_fee,
             withhold_fee,
         }
@@ -569,6 +572,25 @@ async fn run_swap_setup(
             tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
         };
         return Err(sanity_err).context("Amnesty sanity check failed");
+    }
+
+    for (transaction_type, proposed_fee, our_estimate) in [(
+        "TxCancel",
+        message0.tx_cancel_fee,
+        wallet_snapshot.cancel_fee,
+    )] {
+        if let Err(sanity_err) =
+            swap_machine::common::sanity_check_transaction_fee(proposed_fee, our_estimate)
+        {
+            if let Err(err) =
+                swap_setup::write_cbor_error(&mut substream, sanity_err.clone().into()).await
+            {
+                tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
+            };
+            return Err(sanity_err).context(format!(
+                "Transaction fee sanity check failed for {transaction_type}"
+            ));
+        }
     }
 
     let (swap_id, state1) = state0

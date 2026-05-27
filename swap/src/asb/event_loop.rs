@@ -1276,6 +1276,9 @@ async fn capture_wallet_snapshot(
         .await?;
     let redeem_fee = scale_fee(redeem_fee, btc_redeem_fee_multiplier)
         .context("Failed to apply btc_redeem_fee_multiplier")?;
+    let cancel_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxCancel::weight(), Some(transfer_amount))
+        .await?;
     let punish_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
         .await?;
@@ -1291,6 +1294,7 @@ async fn capture_wallet_snapshot(
         unlocked_balance.into(),
         redeem_address,
         punish_address,
+        cancel_fee,
         redeem_fee,
         punish_fee,
         withhold_fee,
