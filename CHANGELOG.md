@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.6.7] - 2026-05-27
+
 ## [4.6.6] - 2026-05-27
 
 - ASB+GUI: Both parties will now reject swaps where the other party's proposed fee is too far off from the own fee estimate.
@@ -962,7 +964,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.6.6...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.6.7...HEAD
+[4.6.7]: https://github.com/eigenwallet/core/compare/4.6.6...4.6.7
 [4.6.6]: https://github.com/eigenwallet/core/compare/4.6.5...4.6.6
 [4.6.5]: https://github.com/eigenwallet/core/compare/4.6.4...4.6.5
 [4.6.4]: https://github.com/eigenwallet/core/compare/4.6.3...4.6.4
