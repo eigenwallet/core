@@ -40,7 +40,7 @@ If you're not compiling the `orchestrator` from source you can grab the latest [
 
 Run the command below to start the wizard. It’ll guide you through a bunch of questions to generate the `config.toml` file and the `docker-compose.yml` file based on your needs. You can always modify the `config.toml` later on to modify specific things about your `asb` like the minimum swap amount or the configured markup.
 
-To also ship `asb` tracing logs to a Loki endpoint, set `PROMTAIL_LOKI_PUSH_URL`, `PROMTAIL_LOKI_PUSH_TOKEN`, and `PROMTAIL_INSTANCE` before running the orchestrator — this adds a `promtail` service to the generated `docker-compose.yml`.
+To also ship the `asb` tracing logs and the `bitcoind`/`monerod`/`electrs` container logs to a Loki endpoint, set `PROMTAIL_LOKI_PUSH_URL`, `PROMTAIL_LOKI_PUSH_TOKEN`, and `PROMTAIL_INSTANCE` before running the orchestrator — this adds `promtail` and `docker-socket-proxy` services to the generated `docker-compose.yml`. All streams are labelled with `host=<instance>`; the daemon logs additionally carry `job=node` and `container=<name>`.
 
 ```bash
 ./orchestrator
