@@ -2470,12 +2470,32 @@ impl FfiWallet {
             "Failed to create multi-destination transaction: FFI call failed with exception",
         )?;
 
+        self.finalize_created_pending_transaction(
+            raw_tx,
+            "Failed to create multi-destination transaction",
+        )
+    }
+
+    /// Wrap a freshly created pending transaction pointer, propagating any error
+    /// recorded during construction.
+    ///
+    /// wallet2 returns a non-null object even when construction fails, recording the
+    /// cause in the transaction's own status; checking it here keeps that error from
+    /// being masked by the empty-txid check during publishing.
+    fn finalize_created_pending_transaction(
+        &self,
+        raw_tx: *mut ffi::PendingTransaction,
+        error_context: &'static str,
+    ) -> anyhow::Result<PendingTransactionHandle> {
         if raw_tx.is_null() {
-            self.check_error()
-                .context("Failed to create multi-destination transaction")?;
+            self.check_error().context(error_context)?;
+            bail!("{}: wallet returned a null pending transaction", error_context);
         }
 
-        Ok(PendingTransactionHandle(raw_tx))
+        let pending_tx = PendingTransactionHandle(raw_tx);
+        pending_tx.check_error().context(error_context)?;
+
+        Ok(pending_tx)
     }
 
     /// Create a pending sweep transaction without publishing it.
@@ -2489,12 +2509,10 @@ impl FfiWallet {
 
         let_cxx_string!(address_str = address.to_string());
 
-        let pending_tx = PendingTransactionHandle(
-            ffi::createSweepTransaction(self.inner.pinned(), &address_str)
-                .context("Failed to create sweep transaction: FFI call failed with exception")?,
-        );
+        let raw_tx = ffi::createSweepTransaction(self.inner.pinned(), &address_str)
+            .context("Failed to create sweep transaction: FFI call failed with exception")?;
 
-        Ok(pending_tx)
+        self.finalize_created_pending_transaction(raw_tx, "Failed to create sweep transaction")
     }
 
     /// Publish a pending transaction and return a receipt.
