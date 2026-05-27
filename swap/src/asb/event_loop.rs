@@ -1271,6 +1271,9 @@ async fn capture_wallet_snapshot(
         .clone()
         .unwrap_or(bitcoin_wallet.new_address().await?);
 
+    let tx_lock_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxLock::weight(), Some(transfer_amount))
+        .await?;
     let redeem_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxRedeem::weight(), Some(transfer_amount))
         .await?;
@@ -1306,6 +1309,7 @@ async fn capture_wallet_snapshot(
         unlocked_balance.into(),
         redeem_address,
         punish_address,
+        tx_lock_fee,
         redeem_fee,
         cancel_fee,
         refund_fee,

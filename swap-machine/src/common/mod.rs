@@ -98,31 +98,44 @@ pub fn sanity_check_transaction_fee(
     proposed_fee: bitcoin::Amount,
     conservative_estimated_fee: bitcoin::Amount,
 ) -> Result<(), SanityCheckError> {
-    // Require minimum 50% of the fee we'd set
-    const MAX_FEE_UNDERPAY_FACTOR: u64 = 2;
     // Allow maximum 300% of the fee we'd set
     const MAX_FEE_OVERPAY_FACTOR: u64 = 3;
 
-    let floor = bitcoin_wallet::MIN_ABSOLUTE_TX_FEE.max(bitcoin::Amount::from_sat(
-        conservative_estimated_fee
-            .to_sat()
-            .saturating_div(MAX_FEE_UNDERPAY_FACTOR),
-    ));
+    sanity_check_transaction_fee_floor(proposed_fee, conservative_estimated_fee)?;
+
     let ceiling = bitcoin::Amount::from_sat(
         conservative_estimated_fee
             .to_sat()
             .saturating_mul(MAX_FEE_OVERPAY_FACTOR),
     );
 
-    if proposed_fee < floor {
-        return Err(SanityCheckError::TransactionFeeTooLow {
+    if proposed_fee > ceiling {
+        return Err(SanityCheckError::TransactionFeeTooHigh {
             proposed: proposed_fee,
             our_estimate: conservative_estimated_fee,
         });
     }
 
-    if proposed_fee > ceiling {
-        return Err(SanityCheckError::TransactionFeeTooHigh {
+    Ok(())
+}
+
+/// Floor-only counterpart to [`sanity_check_transaction_fee`], for fees where
+/// only underpayment (which risks the transaction never confirming) concerns us.
+pub fn sanity_check_transaction_fee_floor(
+    proposed_fee: bitcoin::Amount,
+    conservative_estimated_fee: bitcoin::Amount,
+) -> Result<(), SanityCheckError> {
+    // Require minimum 50% of the fee we'd set
+    const MAX_FEE_UNDERPAY_FACTOR: u64 = 2;
+
+    let floor = bitcoin_wallet::MIN_ABSOLUTE_TX_FEE.max(bitcoin::Amount::from_sat(
+        conservative_estimated_fee
+            .to_sat()
+            .saturating_div(MAX_FEE_UNDERPAY_FACTOR),
+    ));
+
+    if proposed_fee < floor {
+        return Err(SanityCheckError::TransactionFeeTooLow {
             proposed: proposed_fee,
             our_estimate: conservative_estimated_fee,
         });
