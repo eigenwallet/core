@@ -1271,11 +1271,29 @@ async fn capture_wallet_snapshot(
         .clone()
         .unwrap_or(bitcoin_wallet.new_address().await?);
 
+    let tx_lock_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxLock::weight(), Some(transfer_amount))
+        .await?;
     let redeem_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxRedeem::weight(), Some(transfer_amount))
         .await?;
     let redeem_fee = scale_fee(redeem_fee, btc_redeem_fee_multiplier)
         .context("Failed to apply btc_redeem_fee_multiplier")?;
+    let cancel_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxCancel::weight(), Some(transfer_amount))
+        .await?;
+    let refund_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxFullRefund::weight(), Some(transfer_amount))
+        .await?;
+    let partial_refund_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxPartialRefund::weight(), Some(transfer_amount))
+        .await?;
+    let reclaim_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxReclaim::weight(), Some(transfer_amount))
+        .await?;
+    let mercy_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxMercy::weight(), Some(transfer_amount))
+        .await?;
     let punish_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
         .await?;
@@ -1291,7 +1309,13 @@ async fn capture_wallet_snapshot(
         unlocked_balance.into(),
         redeem_address,
         punish_address,
+        tx_lock_fee,
         redeem_fee,
+        cancel_fee,
+        refund_fee,
+        partial_refund_fee,
+        reclaim_fee,
+        mercy_fee,
         punish_fee,
         withhold_fee,
     ))

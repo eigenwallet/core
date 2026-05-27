@@ -65,6 +65,20 @@ pub enum SwapSetupError {
         ratio: rust_decimal::Decimal,
         max_accepted_ratio: rust_decimal::Decimal,
     },
+    #[error(
+        "Other party suggested a network fee which is too low compared to our estimate ({proposed} vs {our_estimate})"
+    )]
+    TransactionFeeTooLow {
+        proposed: bitcoin::Amount,
+        our_estimate: bitcoin::Amount,
+    },
+    #[error(
+        "Other party suggested a network fee which is too high compared to our estimate ({proposed} vs {our_estimate})"
+    )]
+    TransactionFeeTooHigh {
+        proposed: bitcoin::Amount,
+        our_estimate: bitcoin::Amount,
+    },
 }
 
 impl From<swap_machine::common::SanityCheckError> for SwapSetupError {
@@ -83,6 +97,20 @@ impl From<swap_machine::common::SanityCheckError> for SwapSetupError {
             } => SwapSetupError::AntiSpamDepositRatioTooHigh {
                 ratio,
                 max_accepted_ratio,
+            },
+            swap_machine::common::SanityCheckError::TransactionFeeTooLow {
+                proposed,
+                our_estimate,
+            } => SwapSetupError::TransactionFeeTooLow {
+                proposed,
+                our_estimate,
+            },
+            swap_machine::common::SanityCheckError::TransactionFeeTooHigh {
+                proposed,
+                our_estimate,
+            } => SwapSetupError::TransactionFeeTooHigh {
+                proposed,
+                our_estimate,
             },
         }
     }

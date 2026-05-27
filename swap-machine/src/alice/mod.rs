@@ -469,6 +469,10 @@ pub struct State2 {
 }
 
 impl State2 {
+    pub fn tx_lock_fee(&self) -> Result<bitcoin::Amount> {
+        self.tx_lock.fee()
+    }
+
     pub fn next_message(&self) -> Result<Message3> {
         let tx_cancel = swap_core::bitcoin::TxCancel::new(
             &self.tx_lock,

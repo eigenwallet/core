@@ -494,6 +494,9 @@ impl State1 {
             self.tx_cancel_fee,
         )?;
 
+        bitcoin::verify_sig(&self.A, &tx_cancel.digest(), &msg.tx_cancel_sig)
+            .context("Couldn't verify Alice's signatures on TxCancel")?;
+
         // Depending on which signatures we get, verify and store them
         let refund_signatures = match (
             msg.tx_full_refund_encsig,
