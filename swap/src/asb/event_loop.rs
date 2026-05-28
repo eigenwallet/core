@@ -859,6 +859,46 @@ where
             bail!("swap in invalid state")
         };
 
+        // === Background ===
+        // On 2026-05-25 an attacker managed to maliciously increase the fee
+        // on TxCancel to very high levels. As a result, a large part of the swap
+        // was lost to network fees. We will deny cooperative redeem in these
+        // cases.
+        // ==================
+
+        // Interpret a fee of more than 1 / MAX_CANCEL_FEE_PART
+        // of the swap amount to be maliciously high.
+        const MAX_CANCEL_FEE_PART: u64 = 4;
+        let max_tolerated_fee = state3
+            .btc
+            .to_sat()
+            .checked_div(MAX_CANCEL_FEE_PART)
+            .context("MAX_CANCEL_FEE_PART is 0")?;
+
+        if state3.tx_cancel_fee.to_sat() > max_tolerated_fee {
+            tracing::info!(
+                swap_id = %swap_id,
+                reason = "malicious swap",
+                "Rejecting cooperative Monero redeem request"
+            );
+            self.swarm
+                .behaviour_mut()
+                .cooperative_xmr_redeem
+                .send_response(
+                    channel,
+                    Rejected {
+                        swap_id,
+                        reason: CooperativeXmrRedeemRejectReason::MaliciousRequest,
+                    },
+                )
+                .map_err(|_| {
+                    anyhow!("Failed to send rejection for cooperative Monero redeem request")
+                })?;
+            bail!(
+                "Malicious swap detected (TxCancel network fee > 1/{MAX_CANCEL_FEE_PART} of swap amount)"
+            )
+        }
+
         self.swarm
             .behaviour_mut()
             .cooperative_xmr_redeem
