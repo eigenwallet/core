@@ -1229,6 +1229,13 @@ impl Wallet {
 
         tracing::info!("Wallet handle dropped, closing wallet and exiting thread",);
 
+        // Dispose any pending transactions still awaiting approval, otherwise their
+        // C++ objects leak when the map is dropped (PendingTransactionHandle has no
+        // Drop impl). This must run while the wallet is still open.
+        for (_, pending_tx) in self.pending_transactions.drain() {
+            self.wallet.dispose_pending_transaction(pending_tx);
+        }
+
         let result = self.manager.close_wallet(&mut self.wallet);
 
         if let Err(e) = result {
@@ -2483,7 +2490,7 @@ impl FfiWallet {
     /// cause in the transaction's own status; checking it here keeps that error from
     /// being masked by the empty-txid check during publishing.
     fn finalize_created_pending_transaction(
-        &self,
+        &mut self,
         raw_tx: *mut ffi::PendingTransaction,
         error_context: &'static str,
     ) -> anyhow::Result<PendingTransactionHandle> {
@@ -2492,8 +2499,13 @@ impl FfiWallet {
             bail!("{}: wallet returned a null pending transaction", error_context);
         }
 
+        // A failed construction still allocates the object, so it must be
+        // disposed rather than leaked when we propagate the error.
         let pending_tx = PendingTransactionHandle(raw_tx);
-        pending_tx.check_error().context(error_context)?;
+        if let Err(error) = pending_tx.check_error() {
+            self.dispose_pending_transaction(pending_tx);
+            return Err(error.context(error_context));
+        }
 
         Ok(pending_tx)
     }
