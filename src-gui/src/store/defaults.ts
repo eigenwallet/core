@@ -21,7 +21,6 @@ export const NEGATIVE_NODES_MAINNET = [
   "tcp://electrum.coinucopia.io:50001",
   "tcp://se-mma-crypto-payments-001.mullvad.net:50001",
   "tcp://electrum2.bluewallet.io:50777",
-  "tcp://electrum.eigenwallet.org:22293",
 ];
 
 export const NEGATIVE_NODES_TESTNET = [
@@ -50,6 +49,7 @@ export const DEFAULT_NODES: Record<Network, Record<Blockchain, string[]>> = {
   },
   [Network.Mainnet]: {
     [Blockchain.Bitcoin]: [
+      "tcp://electrum.eigenwallet.org:22293",
       "ssl://electrum.blockstream.info:50002",
       "ssl://bitcoin.stackwallet.com:50002",
       "ssl://b.1209k.com:50002",
