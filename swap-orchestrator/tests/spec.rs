@@ -33,9 +33,9 @@ fn make_input(
             electrs: OrchestratorImage::Registry(images::ELECTRS_IMAGE.to_string()),
             bitcoind: OrchestratorImage::Registry(images::BITCOIND_IMAGE.to_string()),
             tor: OrchestratorImage::Registry(images::TOR_IMAGE.to_string()),
-            rendezvous_node: OrchestratorImage::Build(
-                images::rendezvous_node_image_from_source(&source_build_context),
-            ),
+            rendezvous_node: OrchestratorImage::Build(images::rendezvous_node_image_from_source(
+                &source_build_context,
+            )),
             asb: OrchestratorImage::Build(images::asb_image_from_source(&source_build_context)),
             asb_controller: OrchestratorImage::Build(images::asb_controller_image_from_source(
                 &source_build_context,
