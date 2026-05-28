@@ -12,6 +12,7 @@ fn make_input(
     cloudflared: Option<CloudflaredConfig>,
     promtail: Option<PromtailConfig>,
 ) -> OrchestratorInput {
+    let source_build_context = images::source_build_context(None);
     OrchestratorInput {
         ports: OrchestratorPorts {
             monerod_rpc: 38081,
@@ -33,12 +34,12 @@ fn make_input(
             bitcoind: OrchestratorImage::Registry(images::BITCOIND_IMAGE.to_string()),
             tor: OrchestratorImage::Registry(images::TOR_IMAGE.to_string()),
             rendezvous_node: OrchestratorImage::Build(
-                images::RENDEZVOUS_NODE_IMAGE_FROM_SOURCE.clone(),
+                images::rendezvous_node_image_from_source(&source_build_context),
             ),
-            asb: OrchestratorImage::Build(images::ASB_IMAGE_FROM_SOURCE.clone()),
-            asb_controller: OrchestratorImage::Build(
-                images::ASB_CONTROLLER_IMAGE_FROM_SOURCE.clone(),
-            ),
+            asb: OrchestratorImage::Build(images::asb_image_from_source(&source_build_context)),
+            asb_controller: OrchestratorImage::Build(images::asb_controller_image_from_source(
+                &source_build_context,
+            )),
             asb_tracing_logger: OrchestratorImage::Registry(
                 images::ASB_TRACING_LOGGER_IMAGE.to_string(),
             ),
@@ -95,6 +96,31 @@ fn test_orchestrator_spec_generation() {
         Some(sample_promtail_config()),
     )
     .to_spec();
+}
+
+#[test]
+fn test_gh_token_inlined_into_build_context() {
+    let context = images::source_build_context(Some("ghp_exampletoken"));
+    assert!(context.starts_with("https://ghp_exampletoken@github.com/"));
+
+    // A spec built from the authenticated context must still validate, and the
+    // token must reach the build attribute of every source-built service.
+    let mut input = make_input(false, None, None);
+    input.images.asb = OrchestratorImage::Build(images::asb_image_from_source(&context));
+    input.images.asb_controller =
+        OrchestratorImage::Build(images::asb_controller_image_from_source(&context));
+    input.images.rendezvous_node =
+        OrchestratorImage::Build(images::rendezvous_node_image_from_source(&context));
+
+    let compose = input.to_spec();
+    assert_eq!(compose.matches("ghp_exampletoken@github.com").count(), 3);
+}
+
+#[test]
+fn test_source_build_context_without_token_is_clean() {
+    let context = images::source_build_context(None);
+    assert!(context.starts_with("https://github.com/"));
+    assert!(!context.contains('@'));
 }
 
 #[test]
