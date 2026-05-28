@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: The ASB will refuse to cooperate with cooperative XMR redeem requests if the swap in question was deemed malicious. A swap is considered malicious if the fee of TxCancel is more than 25% of the swap's total Bitcoin amount.
+
 ## [4.7.8] - 2026-05-28
 
 ## [4.6.7] - 2026-05-27
