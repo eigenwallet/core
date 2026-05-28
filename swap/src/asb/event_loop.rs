@@ -860,22 +860,29 @@ where
         };
 
         // === Background ===
-        // On 2026-05-25 an attacker managed to maliciously increase the fee
-        // on TxCancel to very high levels. As a result, a large part of the swap
-        // was lost to network fees. We will deny cooperative redeem in these
-        // cases.
+        // On 2026-05-25 an attacker managed to maliciously increase the fees
+        // in a way that causes Alice to get significantly less BTC.
         // ==================
 
-        // Interpret a fee of more than 1 / MAX_CANCEL_FEE_PART
+        // Interpret a loss of more than 1 / MAX_CANCEL_FEE_PART
         // of the swap amount to be maliciously high.
-        const MAX_CANCEL_FEE_PART: u64 = 4;
-        let max_tolerated_fee = state3
-            .btc
-            .to_sat()
-            .checked_div(MAX_CANCEL_FEE_PART)
-            .context("MAX_CANCEL_FEE_PART is 0")?;
+        const MAX_LOSS_PART: u64 = 4;
+        let max_tolerated_loss = bitcoin::Amount::from_sat(
+            state3
+                .btc
+                .to_sat()
+                .checked_div(MAX_LOSS_PART)
+                .context("MAX_CANCEL_FEE_PART is 0")?,
+        );
 
-        if state3.tx_cancel_fee.to_sat() > max_tolerated_fee {
+        let final_btc =
+            bitcoin::Amount::min(state3.tx_redeem().amount(), state3.tx_punish().amount());
+        let lost_btc = state3
+            .btc
+            .checked_sub(final_btc)
+            .context("final BTC output is larger than total Bitcoin amount")?;
+
+        if lost_btc > max_tolerated_loss {
             tracing::info!(
                 swap_id = %swap_id,
                 reason = "malicious swap",
@@ -895,7 +902,7 @@ where
                     anyhow!("Failed to send rejection for cooperative Monero redeem request")
                 })?;
             bail!(
-                "Malicious swap detected (TxCancel network fee > 1/{MAX_CANCEL_FEE_PART} of swap amount)"
+                "Malicious swap detected (swap lost us more than 1/{MAX_LOSS_PART} of swap amount)"
             )
         }
 

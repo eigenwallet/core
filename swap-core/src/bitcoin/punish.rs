@@ -99,6 +99,14 @@ impl TxPunish {
         Ok(tx_punish)
     }
 
+    // The amount of BTC sent to the punish address.
+    pub fn amount(&self) -> Amount {
+        self.inner
+            .tx_out(0)
+            .expect("TxPunish has exactly one output by construction")
+            .value
+    }
+
     pub fn weight() -> Weight {
         Weight::from_wu(548)
     }
