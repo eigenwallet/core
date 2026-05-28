@@ -41,24 +41,34 @@ pub static PROMTAIL_IMAGE: &str = "grafana/promtail@sha256:8b2aa61745bc4a9343cc4
 /// docker-socket-proxy 0.3.0 (https://hub.docker.com/r/tecnativa/docker-socket-proxy)
 pub static DOCKER_SOCKET_PROXY_IMAGE: &str = "tecnativa/docker-socket-proxy@sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2";
 
-/// These are built from source
-pub static ASB_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
-    // The context is the root of the Cargo workspace
-    context: PINNED_GIT_REPOSITORY,
-    // The Dockerfile of the asb is in the swap-asb crate
-    dockerfile: "./swap-asb/Dockerfile",
-};
+/// Build-context URL for the source-built images. A `gh_token` is inlined into
+/// the URL userinfo so Docker can fetch a private repository — note this writes
+/// the token into `docker-compose.yml` in plaintext.
+pub fn source_build_context(gh_token: Option<&str>) -> String {
+    match gh_token {
+        Some(token) => PINNED_GIT_REPOSITORY.replacen("https://", &format!("https://{token}@"), 1),
+        None => PINNED_GIT_REPOSITORY.to_string(),
+    }
+}
 
-pub static ASB_CONTROLLER_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
-    // The context is the root of the Cargo workspace
-    context: PINNED_GIT_REPOSITORY,
-    // The Dockerfile of the asb-controller is in the swap-controller crate
-    dockerfile: "./swap-controller/Dockerfile",
-};
+/// Source-built images; `context` comes from [`source_build_context`].
+pub fn asb_image_from_source(context: &str) -> DockerBuildInput {
+    DockerBuildInput {
+        context: context.to_string(),
+        dockerfile: "./swap-asb/Dockerfile",
+    }
+}
 
-pub static RENDEZVOUS_NODE_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
-    // The context is the root of the Cargo workspace
-    context: PINNED_GIT_REPOSITORY,
-    // The Dockerfile of the rendezvous node is in the libp2p-rendezvous-node crate
-    dockerfile: "./libp2p-rendezvous-node/Dockerfile",
-};
+pub fn asb_controller_image_from_source(context: &str) -> DockerBuildInput {
+    DockerBuildInput {
+        context: context.to_string(),
+        dockerfile: "./swap-controller/Dockerfile",
+    }
+}
+
+pub fn rendezvous_node_image_from_source(context: &str) -> DockerBuildInput {
+    DockerBuildInput {
+        context: context.to_string(),
+        dockerfile: "./libp2p-rendezvous-node/Dockerfile",
+    }
+}

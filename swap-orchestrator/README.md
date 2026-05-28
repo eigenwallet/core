@@ -42,6 +42,8 @@ Run the command below to start the wizard. It’ll guide you through a bunch of 
 
 To also ship the `asb` tracing logs and the `bitcoind`/`monerod`/`electrs` container logs to a Loki endpoint, set `PROMTAIL_LOKI_PUSH_URL`, `PROMTAIL_LOKI_PUSH_TOKEN`, and `PROMTAIL_INSTANCE` before running the orchestrator — this adds `promtail` and `docker-socket-proxy` services to the generated `docker-compose.yml`. All streams are labelled with `host=<instance>`; the daemon logs additionally carry `job=node` and `container=<name>`.
 
+If the `asb`/`asb-controller`/`rendezvous-node` images are built from a **private** GitHub repository, set `GH_TOKEN` to a token with read access before running the orchestrator. The token is inlined into the build-context URL in the generated `docker-compose.yml` so `docker compose build` can clone the repository.
+
 ```bash
 ./orchestrator
 ```

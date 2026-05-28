@@ -141,6 +141,17 @@ fn read_promtail_config_from_env() -> Option<PromtailConfig> {
     })
 }
 
+/// `GH_TOKEN` for fetching a private build-context repository; `None` if unset
+/// or empty. See [`images::source_build_context`].
+fn read_gh_token_from_env() -> Option<String> {
+    let token = std::env::var("GH_TOKEN").ok()?;
+    let token = token.trim();
+    if token.is_empty() {
+        return None;
+    }
+    Some(token.to_string())
+}
+
 fn main() {
     // Cloudflare Tunnel is opt-in via env vars so existing deployments
     // keep working unchanged.
@@ -148,6 +159,9 @@ fn main() {
     // Promtail log shipping is opt-in via env vars; same rationale as the
     // Cloudflare integration above.
     let promtail_config = read_promtail_config_from_env();
+    // Opt-in: inlined into the build-context URL so Docker can fetch a private repo.
+    let gh_token = read_gh_token_from_env();
+    let source_build_context = images::source_build_context(gh_token.as_deref());
 
     let want_tor = prompt::tor_for_daemons();
     let (bitcoin_network, monero_network) = prompt::network();
@@ -180,17 +194,17 @@ fn main() {
             bitcoind: OrchestratorImage::Registry(images::BITCOIND_IMAGE.to_string()),
             tor: OrchestratorImage::Registry(images::TOR_IMAGE.to_string()),
             // TODO: Allow pre-built images here
-            asb: OrchestratorImage::Build(images::ASB_IMAGE_FROM_SOURCE.clone()),
+            asb: OrchestratorImage::Build(images::asb_image_from_source(&source_build_context)),
             // TODO: Allow pre-built images here
-            asb_controller: OrchestratorImage::Build(
-                images::ASB_CONTROLLER_IMAGE_FROM_SOURCE.clone(),
-            ),
+            asb_controller: OrchestratorImage::Build(images::asb_controller_image_from_source(
+                &source_build_context,
+            )),
             asb_tracing_logger: OrchestratorImage::Registry(
                 images::ASB_TRACING_LOGGER_IMAGE.to_string(),
             ),
-            rendezvous_node: OrchestratorImage::Build(
-                images::RENDEZVOUS_NODE_IMAGE_FROM_SOURCE.clone(),
-            ),
+            rendezvous_node: OrchestratorImage::Build(images::rendezvous_node_image_from_source(
+                &source_build_context,
+            )),
             cloudflared: OrchestratorImage::Registry(images::CLOUDFLARED_IMAGE.to_string()),
             promtail: OrchestratorImage::Registry(images::PROMTAIL_IMAGE.to_string()),
             docker_socket_proxy: OrchestratorImage::Registry(

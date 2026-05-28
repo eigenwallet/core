@@ -158,8 +158,8 @@ impl OrchestratorDirectories {
 /// See: https://docs.docker.com/reference/compose-file/build/#illustrative-example
 #[derive(Debug, Clone)]
 pub struct DockerBuildInput {
-    // Usually this is the root of the Cargo workspace
-    pub context: &'static str,
+    // Root of the Cargo workspace; may embed a token in the URL userinfo for a private repo.
+    pub context: String,
     // Usually this is the path to the Dockerfile
     pub dockerfile: &'static str,
 }
