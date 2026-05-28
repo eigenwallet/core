@@ -1004,7 +1004,9 @@ impl WalletHandle {
                 let (txid, amount, fee) = match result {
                     Ok(values) => values,
                     Err(e) => {
-                        wallet.dispose_pending_transaction(pending_tx);
+                        if let Err(dispose_error) = wallet.dispose_pending_transaction(pending_tx) {
+                            tracing::error!(error=%dispose_error, "Failed to dispose pending transaction after validation error");
+                        }
                         return Err(e);
                     }
                 };
@@ -1032,16 +1034,20 @@ impl WalletHandle {
                     let receipt_result =
                         wallet.publish_pending_transaction(&mut pending_tx, &[address]);
 
-                    // Dispose the pending transaction independent of whether the publish was successful or not
-                    wallet.dispose_pending_transaction(pending_tx);
+                    // Dispose independent of whether the publish succeeded. Log the
+                    // disposal error rather than propagating it, so it can't mask a
+                    // publish result that may have already moved funds.
+                    if let Err(dispose_error) = wallet.dispose_pending_transaction(pending_tx) {
+                        tracing::error!(error=%dispose_error, "Failed to dispose pending transaction after publishing");
+                    }
 
                     let receipt = receipt_result?;
 
                     return Ok(Some((receipt, amount, fee)));
                 }
 
-                // Dispose the pending transaction if the user didn't approve
-                wallet.dispose_pending_transaction(pending_tx);
+                // Nothing was published, so propagate a disposal failure directly.
+                wallet.dispose_pending_transaction(pending_tx)?;
 
                 Ok(None)
             })
@@ -1228,6 +1234,15 @@ impl Wallet {
         }
 
         tracing::info!("Wallet handle dropped, closing wallet and exiting thread",);
+
+        // Dispose any pending transactions still awaiting approval, otherwise their
+        // C++ objects leak when the map is dropped (PendingTransactionHandle has no
+        // Drop impl). This must run while the wallet is still open.
+        for (_, pending_tx) in self.pending_transactions.drain() {
+            if let Err(e) = self.wallet.dispose_pending_transaction(pending_tx) {
+                tracing::error!(error=%e, "Failed to dispose pending transaction during shutdown");
+            }
+        }
 
         let result = self.manager.close_wallet(&mut self.wallet);
 
@@ -2372,9 +2387,12 @@ impl FfiWallet {
             .publish_pending_transaction(&mut pending_tx, &[*address])
             .context("Failed to publish sweep transaction");
 
-        // Dispose the pending transaction after we're done with it
-        // independent of whether the publish was successful or not
-        self.dispose_pending_transaction(pending_tx);
+        // Dispose the pending transaction after we're done with it, independent of
+        // whether the publish succeeded. Log a disposal error rather than
+        // propagating it, so a cleanup failure doesn't override the publish result.
+        if let Err(e) = self.dispose_pending_transaction(pending_tx) {
+            tracing::error!(error=%e, "Failed to dispose pending transaction after sweeping");
+        }
 
         result
     }
@@ -2400,9 +2418,12 @@ impl FfiWallet {
         // Publish the transaction
         let result = self.publish_pending_transaction(&mut pending_tx, &output_addresses);
 
-        // Dispose the pending transaction after we're done with it
-        // independent of whether the publish was successful or not
-        self.dispose_pending_transaction(pending_tx);
+        // Dispose the pending transaction after we're done with it, independent of
+        // whether the publish succeeded. Log a disposal error rather than
+        // propagating it, so a cleanup failure doesn't override the publish result.
+        if let Err(e) = self.dispose_pending_transaction(pending_tx) {
+            tracing::error!(error=%e, "Failed to dispose pending transaction after transferring");
+        }
 
         result
     }
@@ -2470,12 +2491,36 @@ impl FfiWallet {
             "Failed to create multi-destination transaction: FFI call failed with exception",
         )?;
 
+        self.finalize_created_pending_transaction(raw_tx)
+            .context("Failed to create multi-destination transaction")
+    }
+
+    /// Wrap a freshly created pending transaction pointer, propagating any error
+    /// recorded during construction.
+    ///
+    /// wallet2 returns a non-null object even when construction fails, recording the
+    /// cause in the transaction's own status; checking it here keeps that error from
+    /// being masked by the empty-txid check during publishing.
+    fn finalize_created_pending_transaction(
+        &mut self,
+        raw_tx: *mut ffi::PendingTransaction,
+    ) -> anyhow::Result<PendingTransactionHandle> {
         if raw_tx.is_null() {
-            self.check_error()
-                .context("Failed to create multi-destination transaction")?;
+            self.check_error()?;
+            bail!("wallet returned a null pending transaction");
         }
 
-        Ok(PendingTransactionHandle(raw_tx))
+        // A failed construction still allocates the object, so it must be
+        // disposed rather than leaked when we propagate the error.
+        let pending_tx = PendingTransactionHandle(raw_tx);
+        if let Err(error) = pending_tx.check_error() {
+            if let Err(dispose_error) = self.dispose_pending_transaction(pending_tx) {
+                tracing::error!(error=%dispose_error, "Failed to dispose pending transaction after construction error");
+            }
+            return Err(error);
+        }
+
+        Ok(pending_tx)
     }
 
     /// Create a pending sweep transaction without publishing it.
@@ -2489,12 +2534,11 @@ impl FfiWallet {
 
         let_cxx_string!(address_str = address.to_string());
 
-        let pending_tx = PendingTransactionHandle(
-            ffi::createSweepTransaction(self.inner.pinned(), &address_str)
-                .context("Failed to create sweep transaction: FFI call failed with exception")?,
-        );
+        let raw_tx = ffi::createSweepTransaction(self.inner.pinned(), &address_str)
+            .context("Failed to create sweep transaction: FFI call failed with exception")?;
 
-        Ok(pending_tx)
+        self.finalize_created_pending_transaction(raw_tx)
+            .context("Failed to create sweep transaction")
     }
 
     /// Publish a pending transaction and return a receipt.
@@ -2622,14 +2666,20 @@ impl FfiWallet {
     /// Dispose (deallocate) a pending transaction object.
     /// Always call this before dropping a pending transaction object,
     /// otherwise we leak memory.
-    fn dispose_pending_transaction(&mut self, tx: PendingTransactionHandle) {
+    ///
+    /// Returns an error if the underlying FFI call fails. Callers decide whether
+    /// to propagate it: where it would mask a more important result (e.g. after a
+    /// publish attempt) it should be logged instead.
+    fn dispose_pending_transaction(
+        &mut self,
+        tx: PendingTransactionHandle,
+    ) -> anyhow::Result<()> {
         // Safety: we pass a valid pointer and we verified it's not used again since PendingTransaction is moved into this function
         unsafe {
             self.inner
                 .pinned()
                 .disposeTransaction(tx.0)
                 .context("Failed to dispose transaction: FFI call failed with exception")
-                .expect("Shouldn't panic");
         }
     }
 
@@ -2821,15 +2871,16 @@ impl PendingTransactionHandle {
         let status = self
             .status()
             .context("Failed to get pending transaction status: FFI call failed with exception")?;
+
+        if status == 0 {
+            return Ok(());
+        }
+
         let error_string = ffi::pendingTransactionErrorString(self)
             .context(
                 "Failed to get pending transaction error string: FFI call failed with exception",
             )?
             .to_string();
-
-        if status == 0 {
-            return Ok(());
-        }
 
         let error_type = if status == 2 { "critical" } else { "error" };
 
