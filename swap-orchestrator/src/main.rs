@@ -141,11 +141,8 @@ fn read_promtail_config_from_env() -> Option<PromtailConfig> {
     })
 }
 
-/// Reads the GitHub token used to clone the build-context repository.
-///
-/// Returns `None` if `GH_TOKEN` is unset or empty. When set, the token is
-/// inlined into the source-build context URL so `docker compose build` can
-/// clone a private repository — see [`images::source_build_context`].
+/// `GH_TOKEN` for fetching a private build-context repository; `None` if unset
+/// or empty. See [`images::source_build_context`].
 fn read_gh_token_from_env() -> Option<String> {
     let token = std::env::var("GH_TOKEN").ok()?;
     let token = token.trim();
@@ -162,8 +159,7 @@ fn main() {
     // Promtail log shipping is opt-in via env vars; same rationale as the
     // Cloudflare integration above.
     let promtail_config = read_promtail_config_from_env();
-    // GH_TOKEN is opt-in: when set, it is inlined into the source-build
-    // context URL so a private repository can be cloned at build time.
+    // Opt-in: inlined into the build-context URL so Docker can fetch a private repo.
     let gh_token = read_gh_token_from_env();
     let source_build_context = images::source_build_context(gh_token.as_deref());
 
@@ -403,14 +399,6 @@ fn main() {
 
     println!();
     println!("Run `docker compose up -d` to start the services.");
-
-    if gh_token.is_some() {
-        println!();
-        println!(
-            "GH_TOKEN detected: inlined into the build-context URL in {} so Docker can clone the private repository. Keep this file secret.",
-            DOCKER_COMPOSE_FILE
-        );
-    }
 
     if let Some(cf) = cloudflared_config.as_ref() {
         print_cloudflared_instructions(cf);
