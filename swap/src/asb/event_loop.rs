@@ -867,22 +867,8 @@ where
         // Interpret a loss of more than 1 / MAX_CANCEL_FEE_PART
         // of the swap amount to be maliciously high.
         const MAX_LOSS_PART: u64 = 4;
-        let max_tolerated_loss = bitcoin::Amount::from_sat(
-            state3
-                .btc
-                .to_sat()
-                .checked_div(MAX_LOSS_PART)
-                .context("MAX_CANCEL_FEE_PART is 0")?,
-        );
 
-        let final_btc =
-            bitcoin::Amount::min(state3.tx_redeem().amount(), state3.tx_punish().amount());
-        let lost_btc = state3
-            .btc
-            .checked_sub(final_btc)
-            .context("final BTC output is larger than total Bitcoin amount")?;
-
-        if lost_btc > max_tolerated_loss {
+        if state3.check_max_loss_under_tolerance(MAX_LOSS_PART)? == false {
             tracing::info!(
                 swap_id = %swap_id,
                 reason = "malicious swap",

@@ -1130,6 +1130,24 @@ impl State3 {
             "Bitcoin refund transaction not found even though we saw it in the mempool previously",
         )
     }
+
+    // Check if the maximum possible BTC loss is < 1 / max_loss_part of the swap volume
+    pub fn check_max_loss_under_tolerance(&self, max_loss_part: u64) -> Result<bool> {
+        let max_tolerated_loss = bitcoin::Amount::from_sat(
+            self.btc
+                .to_sat()
+                .checked_div(max_loss_part)
+                .context("MAX_LOSS_PART is 0")?,
+        );
+
+        let final_btc = bitcoin::Amount::min(self.tx_redeem().amount(), self.tx_punish().amount());
+        let lost_btc = self
+            .btc
+            .checked_sub(final_btc)
+            .context("final BTC output is larger than total Bitcoin amount")?;
+
+        Ok(lost_btc <= max_tolerated_loss)
+    }
 }
 
 pub trait ReservesMonero {
