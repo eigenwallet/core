@@ -26,7 +26,7 @@ use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
 use swap::protocol::alice::{AliceState, Swap, TipConfig};
 use swap::protocol::bob::BobState;
-use swap::protocol::{Database, alice, bob};
+use swap::protocol::{Database, State, alice, bob};
 use swap::seed::Seed;
 use swap::{asb, cli, monero};
 use swap_core::bitcoin::{CancelTimelock, PunishTimelock};
@@ -861,6 +861,32 @@ impl TestContext {
         self.alice_handle = alice_handle;
         self.alice_swap_handle = alice_swap_handle;
         self.alice_rpc_server_handle = alice_rpc_server_handle;
+    }
+
+    /// Stops Alice, mutates her persisted state for `swap_id`, writes it back, and
+    /// restarts her. Used to simulate a corrupted/malicious swap from Alice's point of view.
+    pub async fn corrupt_alice_state(&mut self, swap_id: Uuid, modify: impl FnOnce(&mut AliceState)) {
+        // Stop Alice so we have exclusive access to her database.
+        self.alice_handle.abort();
+        self.alice_rpc_server_handle.abort();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Load the latest state, apply the mutation, and persist it again.
+        {
+            let db = SqliteDatabase::open(self.alice_db_path.as_path(), AccessMode::ReadWrite)
+                .await
+                .unwrap();
+            let State::Alice(mut alice_state) = db.get_state(swap_id).await.unwrap() else {
+                panic!("expected an Alice state for swap {swap_id}");
+            };
+            modify(&mut alice_state);
+            db.insert_latest_state(swap_id, State::Alice(alice_state))
+                .await
+                .unwrap();
+        }
+
+        // Bring Alice back up so she can answer Bob's cooperative-redeem request.
+        self.restart_alice().await;
     }
 
     pub async fn alice_next_swap(&mut self) -> alice::Swap {
