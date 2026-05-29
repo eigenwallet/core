@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.7.9] - 2026-05-29
+
 - ASB: The ASB will refuse to cooperate with cooperative XMR redeem requests if the swap in question was deemed malicious. A swap is considered malicious if for any reason the Bitcoin amount the ASB receives is less than 75% of what was sent into the swap originally.
 
 ## [4.7.8] - 2026-05-28
@@ -968,7 +970,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.7.8...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.7.9...HEAD
+[4.7.9]: https://github.com/eigenwallet/core/compare/4.7.8...4.7.9
 [4.7.8]: https://github.com/eigenwallet/core/compare/4.6.7...4.7.8
 [4.6.7]: https://github.com/eigenwallet/core/compare/4.6.6...4.6.7
 [4.6.6]: https://github.com/eigenwallet/core/compare/4.6.5...4.6.6
