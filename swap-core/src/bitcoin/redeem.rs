@@ -151,6 +151,14 @@ impl TxRedeem {
         Weight::from_wu(548)
     }
 
+    // The amount of BTC sent to the redeem address.
+    pub fn amount(&self) -> Amount {
+        self.inner
+            .tx_out(0)
+            .expect("TxRedeem has exactly one output by construction")
+            .value
+    }
+
     #[cfg(test)]
     pub fn inner(&self) -> Transaction {
         self.inner.clone()

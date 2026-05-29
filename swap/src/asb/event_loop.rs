@@ -859,6 +859,39 @@ where
             bail!("swap in invalid state")
         };
 
+        // === Background ===
+        // On 2026-05-25 an attacker managed to maliciously increase the fees
+        // in a way that causes Alice to get significantly less BTC.
+        // ==================
+
+        // Interpret a loss of more than 1 / MAX_CANCEL_FEE_PART
+        // of the swap amount to be maliciously high.
+        const MAX_LOSS_PART: u64 = 4;
+
+        if state3.check_max_loss_under_tolerance(MAX_LOSS_PART)? == false {
+            tracing::info!(
+                swap_id = %swap_id,
+                reason = "malicious swap",
+                "Rejecting cooperative Monero redeem request"
+            );
+            self.swarm
+                .behaviour_mut()
+                .cooperative_xmr_redeem
+                .send_response(
+                    channel,
+                    Rejected {
+                        swap_id,
+                        reason: CooperativeXmrRedeemRejectReason::MaliciousRequest,
+                    },
+                )
+                .map_err(|_| {
+                    anyhow!("Failed to send rejection for cooperative Monero redeem request")
+                })?;
+            bail!(
+                "Malicious swap detected (swap lost us more than 1/{MAX_LOSS_PART} of swap amount)"
+            )
+        }
+
         self.swarm
             .behaviour_mut()
             .cooperative_xmr_redeem
