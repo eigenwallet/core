@@ -42,9 +42,6 @@ impl Image for Electrs {
 impl Default for Electrs {
     fn default() -> Self {
         Electrs {
-            // Docker Hub dropped the old version tags for this image; only
-            // `latest` (still the 2020 build with the same /build/electrs
-            // entrypoint) remains, so the previous "v0.16.0.3" now 404s.
             tag: "latest".into(),
             args: ElectrsArgs::default(),
             entrypoint: Some("/build/electrs".into()),
