@@ -16,8 +16,8 @@ use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 // High-priority Tor dials get more concurrency and tighter spacing than
 // normal ones.
-const TOR_DIAL_HIGH_PRIORITY_MAX_CONCURRENT: usize = 2;
-const TOR_DIAL_HIGH_PRIORITY_MIN_DELAY: Duration = Duration::from_millis(250);
+const TOR_DIAL_HIGH_PRIORITY_MAX_CONCURRENT: usize = 5;
+const TOR_DIAL_HIGH_PRIORITY_MIN_DELAY: Duration = Duration::from_millis(100);
 const TOR_DIAL_NORMAL_PRIORITY_MAX_CONCURRENT: usize = 2;
 const TOR_DIAL_NORMAL_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(1);
 
