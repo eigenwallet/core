@@ -42,7 +42,7 @@ impl Image for Electrs {
 impl Default for Electrs {
     fn default() -> Self {
         Electrs {
-            tag: "v0.16.0.3".into(),
+            tag: "latest".into(),
             args: ElectrsArgs::default(),
             entrypoint: Some("/build/electrs".into()),
             wait_for_message: "Running accept thread".to_string(),
