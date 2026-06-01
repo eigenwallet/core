@@ -1,6 +1,6 @@
 [package]
 name = "swap-controller"
-version = "4.7.9"
+version = "3.7.10"
 edition = "2024"
 
 [[bin]]
