@@ -14,12 +14,12 @@ import SortIcon from "@mui/icons-material/Sort";
 import CheckIcon from "@mui/icons-material/Check";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import MakerOfferItem from "./MakerOfferItem";
-import { usePendingSelectMakerApproval } from "store/hooks";
 import MakerDiscoveryStatus from "./MakerDiscoveryStatus";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { SatsAmount } from "renderer/components/other/Units";
 import { useEffect, useState } from "react";
-import { sortApprovalsAndKnownQuotes, OfferSortMode } from "utils/sortUtils";
+import { OfferSortMode } from "utils/sortUtils";
+import { useCachedMakerOffers } from "./useCachedMakerOffers";
 
 const SORT_OPTIONS: { value: OfferSortMode; label: string }[] = [
   { value: "large", label: "Large swaps" },
@@ -32,14 +32,12 @@ export default function DepositAndChooseOfferPage({
   max_giveable,
   known_quotes,
 }: TauriSwapProgressEventContent<"WaitingForBtcDeposit">) {
-  const pendingSelectMakerApprovals = usePendingSelectMakerApproval();
   const [currentPage, setCurrentPage] = useState(1);
   const [sortMode, setSortMode] = useState<OfferSortMode>("small");
   const [sortAnchorEl, setSortAnchorEl] = useState<null | HTMLElement>(null);
   const offersPerPage = 3;
 
-  const makerOffers = sortApprovalsAndKnownQuotes(
-    pendingSelectMakerApprovals,
+  const makerOffers = useCachedMakerOffers(
     known_quotes,
     sortMode,
     offersPerPage,
