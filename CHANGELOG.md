@@ -9,8 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.7.10] - 2026-06-02
 
-## [3.7.10] - 2026-06-01
-
 ## [4.7.9] - 2026-05-29
 
 - ASB: The ASB will refuse to cooperate with cooperative XMR redeem requests if the swap in question was deemed malicious. A swap is considered malicious if for any reason the Bitcoin amount the ASB receives is less than 75% of what was sent into the swap originally.
