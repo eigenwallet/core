@@ -663,9 +663,19 @@ where
         let db = self.db.clone();
         let monero_wallet = self.monero_wallet.clone();
         let monero_wallet_for_proof = self.monero_wallet.clone();
+        let bitcoin_wallet = self.bitcoin_wallet.clone();
         let peer_id = self.peer_id();
 
         async move {
+            // Refuse to advertise a quote while the Bitcoin wallet is unavailable.
+            // The resulting zero quote stops Bob from starting a swap we could not
+            // fulfill because we can't access the Bitcoin blockchain. This is checked
+            // on every request (before the cache) so that recovery is picked up quickly.
+            if let Err(err) = bitcoin_wallet.check_connection().await {
+                tracing::warn!(?err, "Bitcoin wallet is unavailable, advertising a zero quote");
+                return Err(Arc::new(err.context("Bitcoin wallet is unavailable")));
+            }
+
             // We use the min and max buy amounts to create a unique key for the cache
             // Although these values stay constant over the lifetime of an instance of the asb, this might change in the future
             let key = QuoteCacheKey { min_buy, max_buy };
@@ -1291,6 +1301,13 @@ async fn capture_wallet_snapshot(
     transfer_amount: bitcoin::Amount,
 ) -> Result<WalletSnapshot> {
     let start_time = Instant::now();
+
+    // Refuse to set up a new swap if we can't reach the Bitcoin blockchain.
+    // Otherwise we would later fail to fund, redeem or refund the swap.
+    bitcoin_wallet
+        .check_connection()
+        .await
+        .context("Bitcoin wallet is unavailable, refusing to set up new swap")?;
 
     let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await?;
     let total_balance = monero_wallet.main_wallet().await.total_balance().await?;

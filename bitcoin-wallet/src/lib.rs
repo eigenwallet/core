@@ -49,6 +49,13 @@ pub trait BitcoinWallet: Send + Sync {
 
     async fn sync(&self) -> Result<()>;
 
+    /// Checks whether the wallet's Electrum backend is currently reachable.
+    ///
+    /// Returns `Ok(())` if at least one Electrum server responded, otherwise
+    /// an error describing why none could be reached. Used to avoid accepting
+    /// new swaps while the Bitcoin wallet is unavailable.
+    async fn check_connection(&self) -> Result<()>;
+
     async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription;
 
     async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus>;

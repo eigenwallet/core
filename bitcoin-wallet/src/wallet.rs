@@ -1688,6 +1688,21 @@ impl Client {
         Ok(())
     }
 
+    /// Probe the Electrum servers to verify connectivity.
+    ///
+    /// Succeeds as soon as one server responds and fails if none can be
+    /// reached. Uses `block_headers_subscribe` as a lightweight liveness ping.
+    pub async fn check_connection(&self) -> Result<()> {
+        self.inner
+            .call_async("block_headers_subscribe", |client| {
+                client.inner.block_headers_subscribe().map(drop)
+            })
+            .await
+            .context("Failed to reach any Electrum server")?;
+
+        Ok(())
+    }
+
     /// Update the script histories.
     async fn update_script_histories(&self) -> Result<()> {
         let scripts: Vec<_> = self.script_history.read().await.keys().cloned().collect();
@@ -2164,6 +2179,10 @@ impl BitcoinWallet for Wallet {
 
     async fn sync(&self) -> Result<()> {
         Wallet::sync(self).await
+    }
+
+    async fn check_connection(&self) -> Result<()> {
+        self.electrum_client.check_connection().await
     }
 
     async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
@@ -2973,6 +2992,10 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     async fn sync(&self) -> Result<()> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn check_connection(&self) -> Result<()> {
         unimplemented!("stub method called erroneously")
     }
 

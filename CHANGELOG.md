@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Remove three dead rendezvous points
+- ASB: The ASB now refuses to start new swaps while its Bitcoin wallet is unavailable (no Electrum server reachable). It advertises a zero quote and rejects swap setup until connectivity is restored.
 
 ## [4.7.10] - 2026-06-02
 
