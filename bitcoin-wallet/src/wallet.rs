@@ -87,6 +87,18 @@ pub const MIN_ABSOLUTE_TX_FEE_SATS: u64 = 1000;
 pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(MIN_ABSOLUTE_TX_FEE_SATS);
 pub const DUST_AMOUNT: Amount = Amount::from_sat(546);
 
+/// How often the background task polls the status of a watched transaction.
+const SUBSCRIPTION_POLL_INTERVAL: Duration = Duration::from_secs(5);
+
+/// How long a subscription is kept alive after its last listener has gone away.
+///
+/// Once a swap is done nobody is waiting on the transaction status anymore, but
+/// the polling task would otherwise keep running (and hammering the electrum
+/// server) forever. We keep the subscription around for a short grace period so
+/// that a brief gap between listeners doesn't tear down and immediately respawn
+/// the polling task, then drop it.
+const SUBSCRIPTION_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
 /// This is our wrapper around a bdk wallet and a corresponding
 /// bdk electrum client.
 /// It unifies all the functionality we need when interacting
@@ -128,7 +140,13 @@ pub struct Client {
     /// The history of transactions for each script.
     script_history: Arc<TokioRwLock<BTreeMap<ScriptBuf, Vec<GetHistoryRes>>>>,
     /// The subscriptions to the status of transactions.
-    subscriptions: Arc<TokioMutex<HashMap<(Txid, ScriptBuf), Subscription>>>,
+    ///
+    /// We store the [`watch::Sender`] (not a full [`Subscription`]) so that the
+    /// channel's receiver count reflects only the *external* listeners. A new
+    /// listener is handed out via [`watch::Sender::subscribe`]. Once no listeners
+    /// remain for a while, the polling task drops the subscription (see
+    /// [`SUBSCRIPTION_IDLE_TIMEOUT`]).
+    subscriptions: Arc<TokioMutex<HashMap<(Txid, ScriptBuf), watch::Sender<ScriptStatus>>>>,
     /// The time of the last sync.
     last_sync: Arc<SyncMutex<Instant>>,
     /// How often we sync with the server.
@@ -803,6 +821,7 @@ impl Wallet {
     pub async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
         let txid = tx.id();
         let script = tx.script();
+        let key = (txid, script);
 
         let initial_status = match self.electrum_client.status_of_script(&tx, false).await {
             Ok(status) => Some(status),
@@ -814,50 +833,76 @@ impl Wallet {
 
         let mut subscriptions = self.electrum_client.subscriptions.lock().await;
 
-        let sub = subscriptions
-            .entry((txid, script.clone()))
-            .or_insert_with(|| {
-                let (sender, receiver) = watch::channel(ScriptStatus::Unseen);
-                let client = self.electrum_client.clone();
+        // If we already have a polling task for this transaction, just hand out a
+        // fresh listener tied to the existing channel.
+        if let Some(sender) = subscriptions.get(&key) {
+            return Subscription {
+                receiver: sender.subscribe(),
+                finality_confirmations: self.finality_confirmations,
+                txid,
+            };
+        }
 
-                tokio::spawn(async move {
-                    let mut last_status = initial_status;
+        // Otherwise, set up a new channel and spawn the polling task. We keep the
+        // sender in the map and return a receiver to the caller, so the channel's
+        // receiver count reflects only external listeners.
+        let (sender, receiver) = watch::channel(ScriptStatus::Unseen);
+        subscriptions.insert(key.clone(), sender);
+        drop(subscriptions);
 
-                    loop {
-                        let new_status = client
-                            .status_of_script(&tx, false)
-                            .await
-                            .unwrap_or_else(|error| {
-                                tracing::warn!(%txid, error = ?error, "Failed to get status of script");
-                                ScriptStatus::Retrying
-                            });
+        let client = self.electrum_client.clone();
 
-                        if new_status != ScriptStatus::Retrying
-                        {
-                            last_status = Some(trace_status_change(txid, last_status, new_status));
+        tokio::spawn(async move {
+            let mut last_status = initial_status;
+            // The point in time since which no listeners have been around.
+            let mut idle_since: Option<Instant> = None;
 
-                            let all_receivers_gone = sender.send(new_status).is_err();
+            loop {
+                let new_status = client
+                    .status_of_script(&tx, false)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::warn!(%txid, error = ?error, "Failed to get status of script");
+                        ScriptStatus::Retrying
+                    });
 
-                            if all_receivers_gone {
-                                tracing::debug!(%txid, "All receivers gone, removing subscription");
-                                client.subscriptions.lock().await.remove(&(txid, script));
-                                return;
-                            }
-                        }
+                let mut subscriptions = client.subscriptions.lock().await;
 
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                    }
-                }.instrument(debug_span!("BitcoinWalletSubscription")));
+                // The subscription might have been removed while we were polling.
+                let Some(sender) = subscriptions.get(&key) else {
+                    return;
+                };
 
-                Subscription {
-                    receiver,
-                    finality_confirmations: self.finality_confirmations,
-                    txid,
+                if new_status != ScriptStatus::Retrying {
+                    last_status = Some(trace_status_change(txid, last_status, new_status));
+                    // Ignore the error: with no listeners there is simply nobody to
+                    // notify. The idle-timeout logic below handles cleanup.
+                    let _ = sender.send(new_status);
                 }
-            })
-            .clone();
 
-        sub
+                if sender.receiver_count() == 0 {
+                    let idle_since = idle_since.get_or_insert_with(Instant::now);
+
+                    if idle_since.elapsed() >= SUBSCRIPTION_IDLE_TIMEOUT {
+                        tracing::debug!(%txid, "No listeners for subscription, removing it");
+                        subscriptions.remove(&key);
+                        return;
+                    }
+                } else {
+                    idle_since = None;
+                }
+
+                drop(subscriptions);
+
+                tokio::time::sleep(SUBSCRIPTION_POLL_INTERVAL).await;
+            }
+        }.instrument(debug_span!("BitcoinWalletSubscription")));
+
+        Subscription {
+            receiver,
+            finality_confirmations: self.finality_confirmations,
+            txid,
+        }
     }
 
     pub async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
