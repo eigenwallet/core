@@ -893,6 +893,10 @@ pub use builder::ContextBuilder;
 mod wallet {
     use super::*;
 
+    // Legacy mode uses this Monero monitoring wallet and the seed.pem-derived
+    // Bitcoin wallet in the same CLI data directory.
+    const LEGACY_MONITORING_WALLET_NAME: &str = "swap-tool-blockchain-monitoring-wallet";
+
     pub(super) async fn init_bitcoin_wallet(
         electrum_rpc_urls: Vec<String>,
         seed: &Seed,
@@ -925,12 +929,20 @@ mod wallet {
         Ok(wallet)
     }
 
+    fn legacy_wallet_path(data_dir: &Path) -> PathBuf {
+        data_dir.join(LEGACY_MONITORING_WALLET_NAME)
+    }
+
+    fn is_legacy_wallet_path(wallet_path: &str, legacy_data_dir: &Path) -> bool {
+        Path::new(wallet_path) == legacy_wallet_path(legacy_data_dir)
+    }
+
     pub(super) async fn request_and_open_monero_wallet_legacy(
         data_dir: &PathBuf,
         env_config: EnvConfig,
         daemon: &monero_sys::Daemon,
     ) -> Result<monero_sys::WalletHandle, Error> {
-        let wallet_path = data_dir.join("swap-tool-blockchain-monitoring-wallet");
+        let wallet_path = legacy_wallet_path(data_dir);
 
         let wallet = monero::Wallet::open_or_create(
             wallet_path.display().to_string(),
@@ -1056,6 +1068,20 @@ mod wallet {
                         SeedChoice::FromWalletPath { ref wallet_path } => {
                             let wallet_path = wallet_path.clone();
 
+                            if is_legacy_wallet_path(&wallet_path, legacy_data_dir) {
+                                let wallet = request_and_open_monero_wallet_legacy(
+                                    legacy_data_dir,
+                                    env_config,
+                                    daemon,
+                                )
+                                .await?;
+                                let seed = Seed::from_file_or_generate(legacy_data_dir)
+                                    .await
+                                    .context("Failed to read legacy seed from file")?;
+
+                                break (wallet, seed);
+                            }
+
                             // Helper function to verify password
                             let verify_password = |password: String| -> Result<bool> {
                                 monero_sys::WalletHandle::verify_wallet_password(
@@ -1148,7 +1174,7 @@ mod wallet {
                             .await?;
                             let seed = Seed::from_file_or_generate(legacy_data_dir)
                                 .await
-                                .context("Failed to extract seed from wallet")?;
+                                .context("Failed to read legacy seed from file")?;
 
                             break (wallet, seed);
                         }
@@ -1175,13 +1201,61 @@ mod wallet {
                         .await?;
                 let seed = Seed::from_file_or_generate(legacy_data_dir)
                     .await
-                    .context("Failed to extract seed from wallet")?;
+                    .context("Failed to read legacy seed from file")?;
 
                 (wallet, seed)
             }
         };
 
         Ok(wallet)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use bitcoin_wallet::BitcoinWalletSeed;
+
+        #[test]
+        fn detects_legacy_monitoring_wallet_path() {
+            let legacy_data_dir = PathBuf::from("/tmp/eigenwallet-mainnet");
+            let wallet_path = legacy_wallet_path(&legacy_data_dir);
+
+            assert!(is_legacy_wallet_path(
+                wallet_path.to_str().unwrap(),
+                &legacy_data_dir,
+            ));
+        }
+
+        #[test]
+        fn does_not_treat_other_wallet_files_as_legacy() {
+            let legacy_data_dir = PathBuf::from("/tmp/eigenwallet-mainnet");
+            let wallet_path = "/tmp/eigenwallet/wallets/wallet_123";
+
+            assert!(!is_legacy_wallet_path(wallet_path, &legacy_data_dir));
+        }
+
+        #[tokio::test]
+        async fn legacy_seed_file_keeps_bitcoin_key_stable() {
+            let temp_dir = tempfile::tempdir().unwrap();
+
+            let legacy_seed = Seed::from_file_or_generate(temp_dir.path()).await.unwrap();
+            let legacy_key = legacy_seed
+                .derive_extended_private_key(bitcoin::Network::Bitcoin)
+                .unwrap();
+
+            let reread_legacy_seed = Seed::from_file_or_generate(temp_dir.path()).await.unwrap();
+            let reread_legacy_key = reread_legacy_seed
+                .derive_extended_private_key(bitcoin::Network::Bitcoin)
+                .unwrap();
+
+            let non_legacy_seed = Seed::from([0; crate::seed::SEED_LENGTH]);
+            let non_legacy_key = non_legacy_seed
+                .derive_extended_private_key(bitcoin::Network::Bitcoin)
+                .unwrap();
+
+            assert_eq!(legacy_key, reread_legacy_key);
+            assert_ne!(legacy_key, non_legacy_key);
+        }
     }
 }
 
