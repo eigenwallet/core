@@ -20,6 +20,10 @@
 }:
 
 let
+  supportedSystem = pkgs.stdenv.hostPlatform.system == "x86_64-linux";
+in
+if supportedSystem then
+let
   prefixWrapper = from: tool: pkgs.writeShellScriptBin "x86_64-linux-gnu-${tool}"
     ''exec ${from}/bin/${tool} "$@"'';
 
@@ -132,5 +136,11 @@ pkgs.mkShell {
     export PATH="$corepack_bin:$PATH"
 
     export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS"
+  '';
+}
+else
+pkgs.mkShell {
+  shellHook = ''
+    echo "Skipping eigenwallet Nix dev shell; supported only on x86_64 Linux."
   '';
 }

@@ -8,7 +8,8 @@ kept comment-free.
 ## Usage
 
 - `nix-shell` — impure shell; auto-detects the host NVIDIA driver for GPU rendering.
-- `direnv` — `.envrc` runs `use nix`, so the shell loads automatically on `cd`.
+- `direnv` — `.envrc` runs `use nix` on x86_64 Linux, so the shell loads
+  automatically on `cd`. On other systems it intentionally does nothing.
 - `nix develop` — pure flake shell; uses mesa software rendering (pure eval can't read
   `/proc`). For GPU acceleration use `nix-shell`, or `nix develop --impure` with an
   explicit `nvidiaVersion` (e.g. `"580.159.03"`).
