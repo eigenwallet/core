@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QuoteWithAddress } from "models/tauriModel";
-import { usePendingSelectMakerApproval } from "store/hooks";
+import { useAppSelector, usePendingSelectMakerApproval } from "store/hooks";
 import _ from "lodash";
 import {
   OfferSortMode,
@@ -13,14 +13,16 @@ const REFRESH_INTERVAL_MS = 5_000;
 // The sorted list re-shuffles whenever the backend streams an approval or
 // quote update. We snapshot it and only refresh on a fixed cadence so cards
 // don't visibly flicker. The snapshot is also refreshed immediately on
-// sort-mode change and whenever a new peer appears, so newly-discovered
-// makers don't get stuck behind the cadence.
+// sort-mode change, on Bitcoin balance change, and whenever a new peer
+// appears, so newly-discovered makers and freshly-deposited funds don't get
+// stuck behind the cadence.
 export function useCachedMakerOffers(
   known_quotes: QuoteWithAddress[],
   sortMode: OfferSortMode,
   offersPerPage: number,
 ): SortedMakerEntry[] {
   const pendingApprovals = usePendingSelectMakerApproval();
+  const bitcoinBalance = useAppSelector((state) => state.bitcoinWallet.balance);
 
   const liveOffers = useMemo(
     () =>
@@ -40,7 +42,7 @@ export function useCachedMakerOffers(
 
   useEffect(() => {
     setSnapshot(liveOffersRef.current);
-  }, [sortMode]);
+  }, [sortMode, bitcoinBalance]);
 
   useEffect(() => {
     const snapshotPeers = new Set(
