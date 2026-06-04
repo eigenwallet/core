@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { QuoteWithAddress, RefundPolicyWire } from "models/tauriModel";
+import { QuoteWithAddress } from "models/tauriModel";
 import { usePendingSelectMakerApproval } from "store/hooks";
+import _ from "lodash";
 import {
   OfferSortMode,
   SortedMakerEntry,
@@ -8,38 +9,6 @@ import {
 } from "utils/sortUtils";
 
 const REFRESH_INTERVAL_MS = 5_000;
-
-function refundPolicyEqual(a: RefundPolicyWire, b: RefundPolicyWire): boolean {
-  if (a.type !== b.type) return false;
-  if (a.type === "FullRefund") return true;
-  return (
-    a.content.anti_spam_deposit_ratio ===
-    (b as Extract<RefundPolicyWire, { type: "PartialRefund" }>).content
-      .anti_spam_deposit_ratio
-  );
-}
-
-function offersEqual(a: SortedMakerEntry[], b: SortedMakerEntry[]): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const x = a[i];
-    const y = b[i];
-    if (x.isDuplicate !== y.isDuplicate) return false;
-    if (x.approval?.request_id !== y.approval?.request_id) return false;
-    const xq = x.quote_with_address;
-    const yq = y.quote_with_address;
-    if (xq.peer_id !== yq.peer_id) return false;
-    if (xq.multiaddr !== yq.multiaddr) return false;
-    if (xq.version !== yq.version) return false;
-    if (xq.quote.price !== yq.quote.price) return false;
-    if (xq.quote.min_quantity !== yq.quote.min_quantity) return false;
-    if (xq.quote.max_quantity !== yq.quote.max_quantity) return false;
-    if (!refundPolicyEqual(xq.quote.refund_policy, yq.quote.refund_policy))
-      return false;
-  }
-  return true;
-}
 
 // The sorted list re-shuffles whenever the backend streams an approval or
 // quote update. We snapshot it and only refresh on a fixed cadence so cards
@@ -86,7 +55,7 @@ export function useCachedMakerOffers(
   useEffect(() => {
     const id = window.setInterval(() => {
       setSnapshot((prev) =>
-        offersEqual(prev, liveOffersRef.current) ? prev : liveOffersRef.current,
+        _.isEqual(prev, liveOffersRef.current) ? prev : liveOffersRef.current,
       );
     }, REFRESH_INTERVAL_MS);
     return () => window.clearInterval(id);
