@@ -1,6 +1,4 @@
-use anyhow::Context;
 use anyhow::bail;
-use bdk_electrum::electrum_client::HeaderNotification;
 use serde::{Deserialize, Serialize};
 use std::ops::Add;
 
@@ -22,19 +20,6 @@ impl From<BlockHeight> for u32 {
 impl From<u32> for BlockHeight {
     fn from(height: u32) -> Self {
         Self(height)
-    }
-}
-
-impl TryFrom<HeaderNotification> for BlockHeight {
-    type Error = anyhow::Error;
-
-    fn try_from(value: HeaderNotification) -> Result<Self, Self::Error> {
-        Ok(Self(
-            value
-                .height
-                .try_into()
-                .context("Failed to fit usize into u32")?,
-        ))
     }
 }
 
@@ -171,85 +156,68 @@ impl From<RpcErrorCode> for i64 {
     }
 }
 
+/// Extract a Bitcoin Core RPC error code from a server error JSON payload.
+///
+/// The payload may be the error object itself (`{ "code": -26, ... }`) or wrap the relevant code
+/// inside a `message` string (e.g. `sendrawtransaction RPC error: { "code": -26, ... }`).
+pub(crate) fn extract_rpc_error_code(payload: &str) -> Option<i64> {
+    fn code_from_value(value: &serde_json::Value) -> Option<i64> {
+        match value {
+            serde_json::Value::Object(map) => map.get("code").and_then(serde_json::Value::as_i64),
+            serde_json::Value::String(string) => code_from_str(string),
+            _ => None,
+        }
+    }
+
+    fn code_from_str(raw: &str) -> Option<i64> {
+        let cleaned = raw
+            .replace("sendrawtransaction RPC error:", "")
+            .replace("daemon error:", "");
+        let value: serde_json::Value = serde_json::from_str(cleaned.trim()).ok()?;
+        code_from_value(&value)
+    }
+
+    let value: serde_json::Value = match serde_json::from_str(payload) {
+        Ok(value) => value,
+        // The payload was not valid JSON on its own; treat it as a raw (possibly prefixed) string.
+        Err(_) => return code_from_str(payload),
+    };
+
+    // A direct code, or one nested inside the `message` field of the error object.
+    code_from_value(&value).or_else(|| {
+        value
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .and_then(code_from_str)
+    })
+}
+
 pub fn parse_rpc_error_code(error: &anyhow::Error) -> anyhow::Result<i64> {
-    // First try to extract an Electrum error from a MultiError if present
     for error in error.chain() {
         if let Some(multi_error) = error.downcast_ref::<electrum_pool::MultiError>() {
-            // Try to find the first Electrum error in the MultiError
             for single_error in multi_error.iter() {
-                if let bdk_electrum::electrum_client::Error::Protocol(serde_json::Value::String(
-                    string,
-                )) = single_error
-                {
-                    let json = serde_json::from_str(
-                        &string
-                            .replace("sendrawtransaction RPC error:", "")
-                            .replace("daemon error:", ""),
-                    )?;
-
-                    let json_map = match json {
-                        serde_json::Value::Object(map) => map,
-                        _ => continue, // Try next error if this one isn't a JSON object
-                    };
-
-                    let error_code_value = match json_map.get("code") {
-                        Some(val) => val,
-                        None => continue, // Try next error if no error code field
-                    };
-
-                    let error_code_number = match error_code_value {
-                        serde_json::Value::Number(num) => num,
-                        _ => continue, // Try next error if error code isn't a number
-                    };
-
-                    if let Some(int) = error_code_number.as_i64() {
-                        return Ok(int);
+                if let Some(json) = single_error.response_json() {
+                    if let Some(code) = extract_rpc_error_code(json) {
+                        return Ok(code);
                     }
                 }
             }
-            // If we couldn't extract an RPC error code from any error in the MultiError
             bail!(
-                "Error is of incorrect variant. We expected an Electrum error, but got: {}",
+                "Error is of incorrect variant. We expected an Electrum server error, but got: {}",
                 error
             );
         }
 
-        // Original logic for direct Electrum errors
-        let string = match error.downcast_ref::<bdk_electrum::electrum_client::Error>() {
-            Some(bdk_electrum::electrum_client::Error::Protocol(serde_json::Value::String(
-                string,
-            ))) => string,
-            _ => bail!(
-                "Error is of incorrect variant. We expected an Electrum error, but got: {}",
+        if let Some(single_error) = error.downcast_ref::<electrum_pool::Error>() {
+            if let Some(json) = single_error.response_json() {
+                if let Some(code) = extract_rpc_error_code(json) {
+                    return Ok(code);
+                }
+            }
+            bail!(
+                "Error is of incorrect variant. We expected an Electrum server error, but got: {}",
                 error
-            ),
-        };
-
-        let json = serde_json::from_str(
-            &string
-                .replace("sendrawtransaction RPC error:", "")
-                .replace("daemon error:", ""),
-        )?;
-
-        let json_map = match json {
-            serde_json::Value::Object(map) => map,
-            _ => bail!("Json error is not json object "),
-        };
-
-        let error_code_value = match json_map.get("code") {
-            Some(val) => val,
-            None => bail!("No error code field"),
-        };
-
-        let error_code_number = match error_code_value {
-            serde_json::Value::Number(num) => num,
-            _ => bail!("Error code is not a number"),
-        };
-
-        if let Some(int) = error_code_number.as_i64() {
-            return Ok(int);
-        } else {
-            bail!("Error code is not an unsigned integer")
+            );
         }
     }
 

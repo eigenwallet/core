@@ -38,6 +38,7 @@ bdk_core = "0.6.0"
 bdk_electrum = { version = "0.23.0", default-features = false }
 bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
+electrum_streaming_client = { git = "https://github.com/bitcoindevkit/electrum_streaming_client", rev = "ed94df0ae21be0f892415872368467872d7bac63" }
 
 # monero-oxide
 monero-address = { git = "https://github.com/kayabaNerve/monero-oxide.git" }
@@ -94,6 +95,10 @@ uuid = { version = "1", features = ["v4"] }
 testcontainers = "0.15"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
 tokio-util = { version = "0.7", features = ["io", "codec", "rt"] }
+
+# Electrum transport TLS
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls-native-certs = "0.8"
 
 # Tor/Arti crates
 arti-client = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0", default-features = false }

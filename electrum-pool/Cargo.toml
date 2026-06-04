@@ -5,10 +5,18 @@ authors = ["eigenwallet Team <help@unstoppableswap.net>"]
 edition = "2024"
 
 [dependencies]
+anyhow = { workspace = true }
 backoff = { workspace = true }
-bdk_electrum = { workspace = true, features = ["use-rustls-ring"] }
 bitcoin = { workspace = true }
+electrum_streaming_client = { workspace = true }
 futures = { workspace = true }
 once_cell = { workspace = true }
-tokio = { workspace = true }
+rustls-native-certs = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["net", "io-util"] }
+tokio-rustls = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }

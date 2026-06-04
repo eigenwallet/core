@@ -884,7 +884,7 @@ dependencies = [
  "async-trait",
  "bdk-macros",
  "bitcoin 0.29.2",
- "electrum-client 0.12.1",
+ "electrum-client",
  "getrandom 0.2.17",
  "js-sys",
  "log",
@@ -929,16 +929,6 @@ dependencies = [
  "bitcoin 0.32.8",
  "hashbrown 0.14.5",
  "serde",
-]
-
-[[package]]
-name = "bdk_electrum"
-version = "0.23.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b59a3f7fbe678874fa34354097644a171276e02a49934c13b3d61c54610ddf39"
-dependencies = [
- "bdk_core",
- "electrum-client 0.24.1",
 ]
 
 [[package]]
@@ -1110,12 +1100,12 @@ dependencies = [
  "bdk",
  "bdk_chain",
  "bdk_core",
- "bdk_electrum",
  "bdk_wallet",
  "bitcoin 0.32.8",
  "bitcoin-harness",
  "derive_builder",
  "electrum-pool",
+ "electrum_streaming_client",
  "futures",
  "moka",
  "proptest",
@@ -3036,33 +3026,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "electrum-client"
-version = "0.24.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5059f13888a90486e7268bbce59b175f5f76b1c55e5b9c568ceaa42d2b8507c"
-dependencies = [
- "bitcoin 0.32.8",
- "byteorder",
- "libc",
- "log",
- "rustls 0.23.37",
- "serde",
- "serde_json",
- "webpki-roots 0.25.4",
- "winapi",
-]
-
-[[package]]
 name = "electrum-pool"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "backoff",
- "bdk_electrum",
  "bitcoin 0.32.8",
+ "electrum_streaming_client",
  "futures",
  "once_cell",
+ "rustls-native-certs 0.8.3",
+ "serde_json",
+ "thiserror 1.0.69",
  "tokio",
+ "tokio-rustls 0.26.4",
  "tracing",
+]
+
+[[package]]
+name = "electrum_streaming_client"
+version = "0.4.0"
+source = "git+https://github.com/bitcoindevkit/electrum_streaming_client?rev=ed94df0ae21be0f892415872368467872d7bac63#ed94df0ae21be0f892415872368467872d7bac63"
+dependencies = [
+ "bitcoin 0.32.8",
+ "futures",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

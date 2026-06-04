@@ -1,7 +1,9 @@
 mod core;
+mod electrum;
 mod wallet;
 
 pub use core::*;
+pub use electrum::Client;
 pub use wallet::*;
 
 pub mod primitives;
