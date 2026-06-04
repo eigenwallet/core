@@ -30,7 +30,7 @@ import {
   SatsAmount,
 } from "renderer/components/other/Units";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { resolveApproval } from "renderer/rpc";
+import { useResolveSelectMakerApproval } from "./useResolveSelectMakerApproval";
 import WarningIcon from "@mui/icons-material/Warning";
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
@@ -68,6 +68,7 @@ export default function MakerOfferItem({
   const isOutOfLiquidity = quote.max_quantity == 0;
   const isTooOld = isMakerVersionTooOld(version);
   const priorityMaker = showAsPriority ? getPriorityMaker(peer_id) : undefined;
+  const resolveSelectMakerApproval = useResolveSelectMakerApproval();
 
   return (
     <Paper
@@ -163,12 +164,7 @@ export default function MakerOfferItem({
         </Box>
         <PromiseInvokeButton
           variant="contained"
-          onInvoke={() => {
-            if (!requestId) {
-              throw new Error("Request ID is required");
-            }
-            return resolveApproval(requestId, true as unknown as object);
-          }}
+          onInvoke={() => resolveSelectMakerApproval(peer_id, requestId)}
           displayErrorSnackbar
           disabled={!requestId}
           tooltipTitle={

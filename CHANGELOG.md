@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Fix flickering of offers
 - Remove three dead rendezvous points
 
 ## [4.7.10] - 2026-06-02
