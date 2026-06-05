@@ -49,6 +49,8 @@ pub trait BitcoinWallet: Send + Sync {
 
     async fn sync(&self) -> Result<()>;
 
+    async fn health_check(&self) -> Result<()>;
+
     async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription;
 
     async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus>;
