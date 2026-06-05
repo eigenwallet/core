@@ -139,7 +139,7 @@ pub struct Client {
     latest_block_height: Arc<SyncMutex<BlockHeight>>,
 }
 
-const DEFAULT_SUBSCRIPTION_IDLE_TIMEOUT: Duration = Duration::from_secs(2 * 60);
+const DEFAULT_SUBSCRIPTION_IDLE_TIMEOUT: Duration = Duration::from_secs(4 * 60);
 
 /// Holds the configuration parameters for creating a Bitcoin wallet.
 /// The actual Wallet<Connection> will be constructed from this configuration.
