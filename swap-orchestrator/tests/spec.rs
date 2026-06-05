@@ -1,9 +1,9 @@
 #![allow(unused_crate_dependencies)]
 
 use swap_orchestrator::compose::{
-    CloudflaredConfig, IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages,
-    OrchestratorInput, OrchestratorNetworks, OrchestratorPorts, PromtailConfig,
-    build_promtail_yml,
+    CloudflaredConfig, IntoSpec, MetricsConfig, OrchestratorDirectories, OrchestratorImage,
+    OrchestratorImages, OrchestratorInput, OrchestratorNetworks, OrchestratorPorts, PromtailConfig,
+    build_prometheus_agent_yml, build_promtail_yml,
 };
 use swap_orchestrator::images;
 
@@ -11,6 +11,7 @@ fn make_input(
     want_tor: bool,
     cloudflared: Option<CloudflaredConfig>,
     promtail: Option<PromtailConfig>,
+    metrics: Option<MetricsConfig>,
 ) -> OrchestratorInput {
     let source_build_context = images::source_build_context(None);
     OrchestratorInput {
@@ -48,6 +49,8 @@ fn make_input(
             docker_socket_proxy: OrchestratorImage::Registry(
                 images::DOCKER_SOCKET_PROXY_IMAGE.to_string(),
             ),
+            cadvisor: OrchestratorImage::Registry(images::CADVISOR_IMAGE.to_string()),
+            prometheus_agent: OrchestratorImage::Registry(images::PROMETHEUS_IMAGE.to_string()),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),
@@ -55,6 +58,7 @@ fn make_input(
         want_tor,
         cloudflared,
         promtail,
+        metrics,
     }
 }
 
@@ -75,17 +79,25 @@ fn sample_promtail_config() -> PromtailConfig {
     }
 }
 
+fn sample_metrics_config() -> MetricsConfig {
+    MetricsConfig {
+        remote_write_url: "https://loki-asb-logs.example.com/api/v1/write".to_string(),
+        token: "test-token".to_string(),
+        instance: "asb-test-1".to_string(),
+    }
+}
+
 #[test]
 fn test_orchestrator_spec_generation() {
     // `to_spec` runs `validate_compose` internally, so generating each
     // variant is enough to catch indentation regressions in the optional
     // tor / cloudflared / promtail segments.
-    let _ = make_input(false, None, None).to_spec();
-    let _ = make_input(true, None, None).to_spec();
-    let _ = make_input(false, Some(sample_cloudflared_config()), None).to_spec();
-    let _ = make_input(true, Some(sample_cloudflared_config()), None).to_spec();
-    let compose = make_input(false, None, Some(sample_promtail_config())).to_spec();
-    let _ = make_input(true, None, Some(sample_promtail_config())).to_spec();
+    let _ = make_input(false, None, None, None).to_spec();
+    let _ = make_input(true, None, None, None).to_spec();
+    let _ = make_input(false, Some(sample_cloudflared_config()), None, None).to_spec();
+    let _ = make_input(true, Some(sample_cloudflared_config()), None, None).to_spec();
+    let compose = make_input(false, None, Some(sample_promtail_config()), None).to_spec();
+    let _ = make_input(true, None, Some(sample_promtail_config()), None).to_spec();
 
     // promtail's docker SD needs the networks API, not just containers, or
     // discovery 403s on /networks and no node logs ship.
@@ -94,8 +106,26 @@ fn test_orchestrator_spec_generation() {
         true,
         Some(sample_cloudflared_config()),
         Some(sample_promtail_config()),
+        None,
     )
     .to_spec();
+
+    // With metrics enabled, both cadvisor and the prometheus agent must appear.
+    let metrics_compose = make_input(
+        true,
+        Some(sample_cloudflared_config()),
+        Some(sample_promtail_config()),
+        Some(sample_metrics_config()),
+    )
+    .to_spec();
+    assert!(metrics_compose.contains("container_name: cadvisor"));
+    assert!(metrics_compose.contains("container_name: prometheus-agent"));
+    assert!(metrics_compose.contains("prometheus-agent-data:"));
+
+    // Without metrics, neither service is generated.
+    let plain = make_input(false, None, None, None).to_spec();
+    assert!(!plain.contains("cadvisor"));
+    assert!(!plain.contains("prometheus-agent"));
 }
 
 #[test]
@@ -105,7 +135,7 @@ fn test_gh_token_inlined_into_build_context() {
 
     // A spec built from the authenticated context must still validate, and the
     // token must reach the build attribute of every source-built service.
-    let mut input = make_input(false, None, None);
+    let mut input = make_input(false, None, None, None);
     input.images.asb = OrchestratorImage::Build(images::asb_image_from_source(&context));
     input.images.asb_controller =
         OrchestratorImage::Build(images::asb_controller_image_from_source(&context));
@@ -191,4 +221,31 @@ fn test_promtail_yml_ships_node_container_logs() {
         .find(|rc| rc["target_label"].as_str() == Some("host"))
         .expect("a host relabel must be present");
     assert_eq!(host_relabel["replacement"].as_str(), Some("asb-test-1"));
+}
+
+#[test]
+fn test_prometheus_agent_yml_is_valid_and_wired() {
+    let yml = build_prometheus_agent_yml(&sample_metrics_config());
+    let parsed: serde_yaml::Value =
+        serde_yaml::from_str(&yml).expect("prometheus.yml must be valid YAML");
+
+    // The host external label must match the Promtail instance so metrics and
+    // logs share one selector in Grafana.
+    assert_eq!(
+        parsed["global"]["external_labels"]["host"].as_str(),
+        Some("asb-test-1")
+    );
+
+    // The agent scrapes the local cadvisor and pushes to the remote endpoint
+    // with the shared bearer token.
+    assert_eq!(
+        parsed["scrape_configs"][0]["static_configs"][0]["targets"][0].as_str(),
+        Some("cadvisor:8080")
+    );
+    let remote = &parsed["remote_write"][0];
+    assert_eq!(
+        remote["url"].as_str(),
+        Some("https://loki-asb-logs.example.com/api/v1/write")
+    );
+    assert_eq!(remote["bearer_token"].as_str(), Some("test-token"));
 }

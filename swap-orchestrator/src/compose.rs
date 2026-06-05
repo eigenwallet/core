@@ -11,6 +11,7 @@ pub const ASB_DATA_DIR: &str = "/asb-data";
 pub const ASB_CONFIG_FILE: &str = "config.toml";
 pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
 pub const PROMTAIL_CONFIG_FILE: &str = "./promtail.yml";
+pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
 
 pub struct OrchestratorInput {
     pub ports: OrchestratorPorts,
@@ -20,6 +21,7 @@ pub struct OrchestratorInput {
     pub want_tor: bool,
     pub cloudflared: Option<CloudflaredConfig>,
     pub promtail: Option<PromtailConfig>,
+    pub metrics: Option<MetricsConfig>,
 }
 
 /// Cloudflare Tunnel configuration.
@@ -65,6 +67,13 @@ pub struct PromtailConfig {
     pub instance: String,
 }
 
+#[derive(Clone)]
+pub struct MetricsConfig {
+    pub remote_write_url: String,
+    pub token: String,
+    pub instance: String,
+}
+
 pub struct OrchestratorDirectories {
     pub asb_data_dir: PathBuf,
 }
@@ -87,6 +96,8 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub cloudflared: T,
     pub promtail: T,
     pub docker_socket_proxy: T,
+    pub cadvisor: T,
+    pub prometheus_agent: T,
 }
 
 pub struct OrchestratorPorts {
@@ -366,6 +377,45 @@ fn build(input: OrchestratorInput) -> String {
         (String::new(), "")
     };
 
+    let (metrics_segment, metrics_volume) = if input.metrics.is_some() {
+        let metrics_segment = format!(
+            "\
+  cadvisor:
+    container_name: cadvisor
+    {image_cadvisor}
+    restart: unless-stopped
+    privileged: true
+    cgroup: host
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - '/:/rootfs:ro'
+      - '/var/run:/var/run:ro'
+      - '/sys:/sys:ro'
+      - '/var/lib/docker/:/var/lib/docker:ro'
+      - '/dev/disk/:/dev/disk:ro'
+    expose:
+      - 8080
+  prometheus-agent:
+    container_name: prometheus-agent
+    {image_prometheus_agent}
+    restart: unless-stopped
+    depends_on:
+      - cadvisor
+    volumes:
+      - '{prometheus_config_file}:/etc/prometheus/prometheus.yml:ro'
+      - 'prometheus-agent-data:/prometheus'
+    command: [\"--config.file=/etc/prometheus/prometheus.yml\", \"--agent\", \"--storage.agent.path=/prometheus\"]\
+",
+            image_cadvisor = input.images.cadvisor.to_image_attribute(),
+            image_prometheus_agent = input.images.prometheus_agent.to_image_attribute(),
+            prometheus_config_file = PROMETHEUS_CONFIG_FILE,
+        );
+        (metrics_segment, "prometheus-agent-data:")
+    } else {
+        (String::new(), "")
+    };
+
     let (tor_segment, tor_volume) = if input.want_tor {
         // This image comes with an empty /etc/tor/, so this is the entire config
         let command_tor = command![
@@ -457,6 +507,7 @@ services:
   {tor_segment}
   {cloudflared_segment}
   {promtail_segment}
+  {metrics_segment}
   asb:
     container_name: asb
     {image_asb}
@@ -512,6 +563,7 @@ volumes:
   rendezvous-data:
   {tor_volume}
   {promtail_volume}
+  {metrics_volume}
 ",
         port_monerod_rpc = input.ports.monerod_rpc,
         port_bitcoind_rpc = input.ports.bitcoind_rpc,
@@ -626,6 +678,33 @@ scrape_configs:
         url = yaml_single_quote(&cfg.loki_push_url),
         token = yaml_single_quote(&cfg.loki_push_token),
         instance = yaml_single_quote(&cfg.instance),
+    )
+}
+
+pub fn build_prometheus_agent_yml(cfg: &MetricsConfig) -> String {
+    fn yaml_single_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "''"))
+    }
+
+    format!(
+        "\
+global:
+  scrape_interval: 30s
+  external_labels:
+    host: {instance}
+
+scrape_configs:
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+remote_write:
+  - url: {url}
+    bearer_token: {token}
+",
+        instance = yaml_single_quote(&cfg.instance),
+        url = yaml_single_quote(&cfg.remote_write_url),
+        token = yaml_single_quote(&cfg.token),
     )
 }
 

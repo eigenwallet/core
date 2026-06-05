@@ -41,6 +41,12 @@ pub static PROMTAIL_IMAGE: &str = "grafana/promtail@sha256:8b2aa61745bc4a9343cc4
 /// docker-socket-proxy 0.3.0 (https://hub.docker.com/r/tecnativa/docker-socket-proxy)
 pub static DOCKER_SOCKET_PROXY_IMAGE: &str = "tecnativa/docker-socket-proxy@sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2";
 
+/// cadvisor v0.52.1 (https://github.com/google/cadvisor/pkgs/container/cadvisor)
+pub static CADVISOR_IMAGE: &str = "gcr.io/cadvisor/cadvisor@sha256:f40e65878e25c2e78ea037f73a449527a0fb994e303dc3e34cb6b187b4b91435";
+
+/// prometheus v3.1.0 (https://hub.docker.com/r/prom/prometheus)
+pub static PROMETHEUS_IMAGE: &str = "prom/prometheus@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218";
+
 /// Build-context URL for the source-built images. A `gh_token` is inlined into
 /// the URL userinfo so Docker can fetch a private repository — note this writes
 /// the token into `docker-compose.yml` in plaintext.
