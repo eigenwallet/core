@@ -406,6 +406,7 @@ fn build(input: OrchestratorInput) -> String {
     {image_cadvisor}
     restart: unless-stopped
     privileged: true
+    cgroup: host
     devices:
       - /dev/kmsg:/dev/kmsg
     volumes:
@@ -534,6 +535,8 @@ services:
     restart: unless-stopped
     cap_add:
       - SYS_PTRACE
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1
     depends_on:
       - electrs
     volumes:
