@@ -11,6 +11,7 @@ pub const ASB_DATA_DIR: &str = "/asb-data";
 pub const ASB_CONFIG_FILE: &str = "config.toml";
 pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
 pub const PROMTAIL_CONFIG_FILE: &str = "./promtail.yml";
+pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
 
 pub struct OrchestratorInput {
     pub ports: OrchestratorPorts,
@@ -20,6 +21,7 @@ pub struct OrchestratorInput {
     pub want_tor: bool,
     pub cloudflared: Option<CloudflaredConfig>,
     pub promtail: Option<PromtailConfig>,
+    pub metrics: Option<MetricsConfig>,
 }
 
 /// Cloudflare Tunnel configuration.
@@ -65,6 +67,29 @@ pub struct PromtailConfig {
     pub instance: String,
 }
 
+/// Prometheus metrics-shipping configuration.
+///
+/// When set, the orchestrator adds `cadvisor` and `prometheus-agent` services
+/// to the compose file and writes a `prometheus.yml` next to
+/// `docker-compose.yml`. cadvisor exposes per-container resource metrics; the
+/// Prometheus agent scrapes it locally and `remote_write`s to a central
+/// endpoint. The bearer token and host label are reused from [`PromtailConfig`]
+/// so metrics and logs authenticate identically and share the same `host`
+/// selector in Grafana.
+#[derive(Clone)]
+pub struct MetricsConfig {
+    /// Prometheus `remote_write` endpoint, e.g.
+    /// `https://asb-logs.example.com/api/v1/write`.
+    pub remote_write_url: String,
+    /// Bearer token presented to the endpoint. The same token Promtail uses for
+    /// the Loki push — the central gate authorizes both with one token.
+    pub token: String,
+    /// Short host identifier, exported as the `host` external label so a
+    /// deployment's metrics and logs select with the same query. Reused from
+    /// the Promtail instance.
+    pub instance: String,
+}
+
 pub struct OrchestratorDirectories {
     pub asb_data_dir: PathBuf,
 }
@@ -87,6 +112,8 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub cloudflared: T,
     pub promtail: T,
     pub docker_socket_proxy: T,
+    pub cadvisor: T,
+    pub prometheus_agent: T,
 }
 
 pub struct OrchestratorPorts {
@@ -366,6 +393,49 @@ fn build(input: OrchestratorInput) -> String {
         (String::new(), "")
     };
 
+    let (metrics_segment, metrics_volume) = if input.metrics.is_some() {
+        // cadvisor reads cgroups/host paths read-only to expose per-container
+        // CPU/memory/PID/network/fs metrics. prometheus-agent runs in agent
+        // mode (no local query/storage beyond the WAL) and only scrapes
+        // cadvisor, then remote_writes to the central endpoint. The endpoint
+        // URL, bearer token and host label are baked into prometheus.yml.
+        let metrics_segment = format!(
+            "\
+  cadvisor:
+    container_name: cadvisor
+    {image_cadvisor}
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - '/:/rootfs:ro'
+      - '/var/run:/var/run:ro'
+      - '/sys:/sys:ro'
+      - '/var/lib/docker/:/var/lib/docker:ro'
+      - '/dev/disk/:/dev/disk:ro'
+    expose:
+      - 8080
+  prometheus-agent:
+    container_name: prometheus-agent
+    {image_prometheus_agent}
+    restart: unless-stopped
+    depends_on:
+      - cadvisor
+    volumes:
+      - '{prometheus_config_file}:/etc/prometheus/prometheus.yml:ro'
+      - 'prometheus-agent-data:/prometheus'
+    command: [\"--config.file=/etc/prometheus/prometheus.yml\", \"--agent\", \"--storage.agent.path=/prometheus\"]\
+",
+            image_cadvisor = input.images.cadvisor.to_image_attribute(),
+            image_prometheus_agent = input.images.prometheus_agent.to_image_attribute(),
+            prometheus_config_file = PROMETHEUS_CONFIG_FILE,
+        );
+        (metrics_segment, "prometheus-agent-data:")
+    } else {
+        (String::new(), "")
+    };
+
     let (tor_segment, tor_volume) = if input.want_tor {
         // This image comes with an empty /etc/tor/, so this is the entire config
         let command_tor = command![
@@ -457,6 +527,7 @@ services:
   {tor_segment}
   {cloudflared_segment}
   {promtail_segment}
+  {metrics_segment}
   asb:
     container_name: asb
     {image_asb}
@@ -510,6 +581,7 @@ volumes:
   rendezvous-data:
   {tor_volume}
   {promtail_volume}
+  {metrics_volume}
 ",
         port_monerod_rpc = input.ports.monerod_rpc,
         port_bitcoind_rpc = input.ports.bitcoind_rpc,
@@ -624,6 +696,39 @@ scrape_configs:
         url = yaml_single_quote(&cfg.loki_push_url),
         token = yaml_single_quote(&cfg.loki_push_token),
         instance = yaml_single_quote(&cfg.instance),
+    )
+}
+
+/// Builds the YAML body of `prometheus.yml` for the host's Prometheus agent.
+///
+/// The agent scrapes the local cadvisor and `remote_write`s to the central
+/// endpoint. Values from [`MetricsConfig`] are baked in directly. The `host`
+/// external label matches the Promtail `host` label so a deployment's metrics
+/// and logs select identically in Grafana.
+pub fn build_prometheus_agent_yml(cfg: &MetricsConfig) -> String {
+    fn yaml_single_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "''"))
+    }
+
+    format!(
+        "\
+global:
+  scrape_interval: 30s
+  external_labels:
+    host: {instance}
+
+scrape_configs:
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+remote_write:
+  - url: {url}
+    bearer_token: {token}
+",
+        instance = yaml_single_quote(&cfg.instance),
+        url = yaml_single_quote(&cfg.remote_write_url),
+        token = yaml_single_quote(&cfg.token),
     )
 }
 
