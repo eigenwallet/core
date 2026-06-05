@@ -1,6 +1,6 @@
 use self::quote::{
-    QUOTE_CACHE_TTL, QuoteCacheKey, make_quote, reserve_proof_with_timeout,
-    unlocked_monero_balance_with_timeout,
+    QUOTE_CACHE_TTL, QuoteCacheKey, bitcoin_health_check_with_retry, make_quote,
+    reserve_proof_with_timeout, unlocked_monero_balance_with_timeout,
 };
 use crate::asb::{Behaviour, OutEvent};
 use crate::monero;
@@ -663,6 +663,7 @@ where
         let db = self.db.clone();
         let monero_wallet = self.monero_wallet.clone();
         let monero_wallet_for_proof = self.monero_wallet.clone();
+        let bitcoin_wallet = self.bitcoin_wallet.clone();
         let peer_id = self.peer_id();
 
         async move {
@@ -701,17 +702,22 @@ where
                     .await
             };
 
-            let result = make_quote(
-                min_buy,
-                max_buy,
-                rate,
-                get_unlocked_balance,
-                get_reserved_items,
-                get_reserve_proof,
-                developer_tip,
-                refund_policy,
-            )
-            .await;
+            let result = match bitcoin_health_check_with_retry(bitcoin_wallet).await {
+                Ok(()) => {
+                    make_quote(
+                        min_buy,
+                        max_buy,
+                        rate,
+                        get_unlocked_balance,
+                        get_reserved_items,
+                        get_reserve_proof,
+                        developer_tip,
+                        refund_policy,
+                    )
+                    .await
+                }
+                Err(err) => Err(Arc::new(err.context("Bitcoin wallet health check failed"))),
+            };
 
             // Insert the computed quote into the cache
             // Need to clone it as insert takes ownership
@@ -1575,6 +1581,7 @@ mod quote {
         sync::Arc,
         time::{Duration, Instant},
     };
+    use bitcoin_wallet::BitcoinWallet;
     use swap_feed::LatestRate;
     use tokio::time::timeout;
 
@@ -1764,6 +1771,32 @@ mod quote {
 
     /// This is how long we maximally wait for the wallet operation
     const MONERO_WALLET_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
+
+    /// How long we keep retrying the Bitcoin wallet health check before failing the quote.
+    const BITCOIN_WALLET_HEALTH_CHECK_MAX_ELAPSED: Duration = Duration::from_secs(60);
+
+    /// Checks that the Bitcoin wallet can reach its Electrum backend, retrying on failure.
+    pub async fn bitcoin_health_check_with_retry(
+        wallet: Arc<dyn BitcoinWallet>,
+    ) -> Result<(), anyhow::Error> {
+        let backoff = backoff::ExponentialBackoffBuilder::new()
+            .with_max_elapsed_time(Some(BITCOIN_WALLET_HEALTH_CHECK_MAX_ELAPSED))
+            .with_max_interval(Duration::from_secs(15))
+            .build();
+
+        backoff::future::retry_notify(
+            backoff,
+            || async { wallet.health_check().await.map_err(backoff::Error::transient) },
+            |e, wait_time: Duration| {
+                tracing::warn!(
+                    error = ?e,
+                    "Bitcoin wallet health check failed. We will retry in {} seconds",
+                    wait_time.as_secs()
+                )
+            },
+        )
+        .await
+    }
 
     /// Returns the unlocked Monero balance from the wallet
     pub async fn unlocked_monero_balance_with_timeout(
