@@ -555,10 +555,6 @@ fn print_metrics_instructions(metrics: &MetricsConfig) {
     println!("  - Ships: per-container cpu/memory/pids/network/fs via cadvisor");
     println!("  - Verify after `docker compose up -d`:");
     println!("      docker compose logs --tail 50 prometheus-agent");
-    println!(
-        "  - Grafana query (cpu per container): rate(container_cpu_usage_seconds_total{{host=\"{}\"}}[5m])",
-        metrics.instance
-    );
 }
 
 fn unix_epoch_secs() -> u64 {
