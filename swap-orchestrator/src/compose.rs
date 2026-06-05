@@ -67,26 +67,10 @@ pub struct PromtailConfig {
     pub instance: String,
 }
 
-/// Prometheus metrics-shipping configuration.
-///
-/// When set, the orchestrator adds `cadvisor` and `prometheus-agent` services
-/// to the compose file and writes a `prometheus.yml` next to
-/// `docker-compose.yml`. cadvisor exposes per-container resource metrics; the
-/// Prometheus agent scrapes it locally and `remote_write`s to a central
-/// endpoint. The bearer token and host label are reused from [`PromtailConfig`]
-/// so metrics and logs authenticate identically and share the same `host`
-/// selector in Grafana.
 #[derive(Clone)]
 pub struct MetricsConfig {
-    /// Prometheus `remote_write` endpoint, e.g.
-    /// `https://asb-logs.example.com/api/v1/write`.
     pub remote_write_url: String,
-    /// Bearer token presented to the endpoint. The same token Promtail uses for
-    /// the Loki push — the central gate authorizes both with one token.
     pub token: String,
-    /// Short host identifier, exported as the `host` external label so a
-    /// deployment's metrics and logs select with the same query. Reused from
-    /// the Promtail instance.
     pub instance: String,
 }
 
@@ -394,11 +378,6 @@ fn build(input: OrchestratorInput) -> String {
     };
 
     let (metrics_segment, metrics_volume) = if input.metrics.is_some() {
-        // cadvisor reads cgroups/host paths read-only to expose per-container
-        // CPU/memory/PID/network/fs metrics. prometheus-agent runs in agent
-        // mode (no local query/storage beyond the WAL) and only scrapes
-        // cadvisor, then remote_writes to the central endpoint. The endpoint
-        // URL, bearer token and host label are baked into prometheus.yml.
         let metrics_segment = format!(
             "\
   cadvisor:
@@ -702,12 +681,6 @@ scrape_configs:
     )
 }
 
-/// Builds the YAML body of `prometheus.yml` for the host's Prometheus agent.
-///
-/// The agent scrapes the local cadvisor and `remote_write`s to the central
-/// endpoint. Values from [`MetricsConfig`] are baked in directly. The `host`
-/// external label matches the Promtail `host` label so a deployment's metrics
-/// and logs select identically in Grafana.
 pub fn build_prometheus_agent_yml(cfg: &MetricsConfig) -> String {
     fn yaml_single_quote(value: &str) -> String {
         format!("'{}'", value.replace('\'', "''"))

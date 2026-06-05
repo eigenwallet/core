@@ -142,13 +142,6 @@ fn read_promtail_config_from_env() -> Option<PromtailConfig> {
     })
 }
 
-/// Reads the Prometheus metrics-shipping configuration from the environment.
-///
-/// Opt-in via `METRICS_REMOTE_WRITE_URL`. Metrics reuse Promtail's bearer token
-/// and instance label (the central gate authorizes both with one token and the
-/// `host` label must match), so Promtail must be configured too — enabling
-/// metrics without it is a hard error rather than a silent, unauthenticated or
-/// unlabelled push.
 fn read_metrics_config_from_env(promtail: Option<&PromtailConfig>) -> Option<MetricsConfig> {
     let remote_write_url = std::env::var("METRICS_REMOTE_WRITE_URL").ok()?;
 
@@ -187,8 +180,6 @@ fn main() {
     // Promtail log shipping is opt-in via env vars; same rationale as the
     // Cloudflare integration above.
     let promtail_config = read_promtail_config_from_env();
-    // Prometheus metrics shipping is opt-in and reuses the Promtail token and
-    // instance label, so it is read after (and depends on) the Promtail config.
     let metrics_config = read_metrics_config_from_env(promtail_config.as_ref());
     // Opt-in: inlined into the build-context URL so Docker can fetch a private repo.
     let gh_token = read_gh_token_from_env();
@@ -555,8 +546,6 @@ fn print_promtail_instructions(promtail: &PromtailConfig) {
     );
 }
 
-/// Prints the operator-facing summary for the Prometheus metrics agent so they
-/// can verify it landed and know which Grafana query selects this host.
 fn print_metrics_instructions(metrics: &MetricsConfig) {
     println!();
     println!("Prometheus metrics shipping is enabled.");
