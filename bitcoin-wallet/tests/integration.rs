@@ -173,3 +173,78 @@ async fn wallet_sends_broadcasts_and_confirms() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn unused_subscription_is_dropped_after_idle_timeout() -> Result<()> {
+    init_tracing();
+
+    let cli = Cli::default();
+    let env = harness::setup(&cli).await?;
+
+    let idle_timeout = Duration::from_secs(3);
+
+    let wallet = WalletBuilder::<TestSeed>::default()
+        .seed(TestSeed::default())
+        .network(bitcoin::Network::Regtest)
+        .electrum_rpc_urls(vec![env.electrum_url.clone()])
+        .persister(PersisterConfig::InMemorySqlite)
+        .finality_confirmations(1u32)
+        .target_block(1u32)
+        .sync_interval(Duration::from_millis(0))
+        .subscription_idle_timeout(idle_timeout)
+        .use_mempool_space_fee_estimation(false)
+        .build()
+        .await?;
+
+    wallet.sync().await?;
+
+    let receive_addr = wallet.new_address().await?;
+    let funding = bitcoin::Amount::from_sat(100_000);
+    harness::fund_and_mine(&env.bitcoind, receive_addr, funding).await?;
+    sync_until_balance(&wallet, funding).await?;
+
+    let recipient = env
+        .bitcoind
+        .with_wallet(harness::BITCOIN_TEST_WALLET_NAME)?
+        .getnewaddress(None, None)
+        .await?
+        .require_network(env.bitcoind.network().await?)?;
+
+    let psbt = wallet
+        .send_to_address(
+            recipient,
+            bitcoin::Amount::from_sat(25_000),
+            bitcoin::Amount::from_sat(2_000),
+            None,
+        )
+        .await?;
+    let tx = wallet.sign_and_finalize(psbt).await?;
+
+    // Broadcasting subscribes to the transaction's status.
+    let (_txid, sub) = wallet.broadcast(tx, "it-idle-cleanup").await?;
+    assert_eq!(wallet.active_subscription_count().await, 1);
+
+    tokio::time::sleep(idle_timeout * 2).await;
+    assert_eq!(
+        wallet.active_subscription_count().await,
+        1,
+        "subscription with a live receiver must not be dropped"
+    );
+
+    drop(sub);
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        if wallet.active_subscription_count().await == 0 {
+            break;
+        }
+
+        if tokio::time::Instant::now() >= deadline {
+            anyhow::bail!("subscription was not dropped after its last receiver was gone");
+        }
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+
+    Ok(())
+}
