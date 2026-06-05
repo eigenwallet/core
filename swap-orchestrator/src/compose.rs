@@ -463,6 +463,8 @@ services:
     restart: unless-stopped
     cap_add:
       - SYS_PTRACE
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1
     depends_on:
       - electrs
     volumes:
