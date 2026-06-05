@@ -1096,6 +1096,13 @@ impl Wallet {
         .context("Failed to sync Bitcoin wallet after retries")
     }
 
+    pub async fn health_check(&self) -> Result<()> {
+        self.electrum_client
+            .update_block_height()
+            .await
+            .context("Bitcoin wallet failed to reach the Electrum backend")
+    }
+
     /// Calculate the fee for a given transaction.
     ///
     /// Will fail if the transaction inputs are not owned by this wallet.
@@ -1663,7 +1670,7 @@ impl Client {
     }
 
     /// Update the block height.
-    async fn update_block_height(&self) -> Result<()> {
+    pub async fn update_block_height(&self) -> Result<()> {
         let latest_block = self
             .inner
             .call_async("block_headers_subscribe", |client| {
@@ -2164,6 +2171,10 @@ impl BitcoinWallet for Wallet {
 
     async fn sync(&self) -> Result<()> {
         Wallet::sync(self).await
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        Wallet::health_check(self).await
     }
 
     async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
@@ -2973,6 +2984,10 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     async fn sync(&self) -> Result<()> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn health_check(&self) -> Result<()> {
         unimplemented!("stub method called erroneously")
     }
 

@@ -1292,6 +1292,11 @@ async fn capture_wallet_snapshot(
 ) -> Result<WalletSnapshot> {
     let start_time = Instant::now();
 
+    bitcoin_wallet
+        .health_check()
+        .await
+        .context("Bitcoin wallet health check failed while capturing wallet snapshot")?;
+
     let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await?;
     let total_balance = monero_wallet.main_wallet().await.total_balance().await?;
 
