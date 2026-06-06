@@ -14,6 +14,7 @@ use libp2p::swarm::handler::ConnectionEvent;
 use libp2p::swarm::{ConnectionHandler, ConnectionId};
 use libp2p::swarm::{ConnectionHandlerEvent, NetworkBehaviour, SubstreamProtocol, ToSwarm};
 use libp2p::{Multiaddr, PeerId};
+use tracing::Instrument;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::task::Poll;
@@ -161,8 +162,8 @@ where
 
     fn handle_established_inbound_connection(
         &mut self,
-        _connection_id: libp2p::swarm::ConnectionId,
-        _peer: PeerId,
+        connection_id: libp2p::swarm::ConnectionId,
+        peer: PeerId,
         _local_addr: &Multiaddr,
         _remote_addr: &Multiaddr,
     ) -> std::result::Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
@@ -170,6 +171,8 @@ where
         // He wants to negotiate a swap setup with us
         // We create a new Handler to handle the negotiation
         let handler = Handler::new(
+            peer,
+            connection_id,
             self.min_buy,
             self.max_buy,
             self.env_config,
@@ -182,14 +185,16 @@ where
 
     fn handle_established_outbound_connection(
         &mut self,
-        _connection_id: libp2p::swarm::ConnectionId,
-        _peer: PeerId,
+        connection_id: libp2p::swarm::ConnectionId,
+        peer: PeerId,
         _addr: &Multiaddr,
         _role_override: libp2p::core::Endpoint,
     ) -> std::result::Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         // A new outbound connection has been established (probably to a rendezvous node because we dont dial Bob)
         // We still return a handler, because we dont want to close the connection
         let handler = Handler::new(
+            peer,
+            connection_id,
             self.min_buy,
             self.max_buy,
             self.env_config,
@@ -246,6 +251,9 @@ pub struct Handler<LR> {
     inbound_streams: FuturesUnordered<BoxFuture<'static, Result<(Uuid, State3)>>>,
     events: VecDeque<HandlerOutEvent>,
 
+    peer_id: PeerId,
+    connection_id: ConnectionId,
+
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
     env_config: env::Config,
@@ -259,6 +267,8 @@ pub struct Handler<LR> {
 
 impl<LR> Handler<LR> {
     fn new(
+        peer_id: PeerId,
+        connection_id: ConnectionId,
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         env_config: env::Config,
@@ -268,6 +278,8 @@ impl<LR> Handler<LR> {
         Self {
             inbound_streams: FuturesUnordered::new(),
             events: Default::default(),
+            peer_id,
+            connection_id,
             min_buy,
             max_buy,
             env_config,
@@ -342,13 +354,45 @@ where
                     ),
                 );
 
+                // Attach a span so every log emitted during the negotiation is
+                // attributable to the peer and connection it belongs to.
+                let span = tracing::info_span!(
+                    "swap_setup",
+                    peer = %self.peer_id,
+                    connection = %self.connection_id,
+                );
+
                 let max_seconds = self.negotiation_timeout.as_secs();
                 self.inbound_streams.push(
                     async move {
-                        protocol.await.with_context(|| {
-                            format!("Failed to complete execution setup within {}s", max_seconds)
-                        })?
+                        tracing::debug!("Inbound swap setup negotiation started");
+
+                        let result = match protocol.await {
+                            Ok(result) => result,
+                            Err(_elapsed) => {
+                                tracing::warn!(
+                                    timeout_seconds = max_seconds,
+                                    "Swap setup timed out"
+                                );
+                                return Err(anyhow!(
+                                    "Failed to complete execution setup within {}s",
+                                    max_seconds
+                                ));
+                            }
+                        };
+
+                        match &result {
+                            Ok((swap_id, _)) => {
+                                tracing::info!(%swap_id, "Swap setup completed")
+                            }
+                            Err(error) => {
+                                tracing::warn!(error = ?error, "Swap setup failed")
+                            }
+                        }
+
+                        result
                     }
+                    .instrument(span)
                     .boxed(),
                 );
 
@@ -630,6 +674,8 @@ async fn run_swap_setup(
         .receive(message0)
         .context("Failed to transition state0 -> state1 using message0")?;
 
+    tracing::debug!(%swap_id, "Swap setup transition: State0 -> State1 (received Message0)");
+
     swap_setup::write_cbor_message(
         &mut substream,
         state1
@@ -646,6 +692,8 @@ async fn run_swap_setup(
     let state2 = state1
         .receive(message2)
         .context("Failed to transition state1 -> state2 using message2")?;
+
+    tracing::debug!(%swap_id, "Swap setup transition: State1 -> State2 (received Message2)");
 
     let tx_lock_fee = state2
         .tx_lock_fee()
@@ -676,6 +724,8 @@ async fn run_swap_setup(
     let state3 = state2
         .receive(message4)
         .context("Failed to transition state2 -> state3 using message4")?;
+
+    tracing::debug!(%swap_id, "Swap setup transition: State2 -> State3 (received Message4)");
 
     substream
         .flush()

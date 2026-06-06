@@ -16,6 +16,7 @@ use libp2p::swarm::{
 };
 use libp2p::{Multiaddr, PeerId};
 use std::collections::{HashMap, HashSet, VecDeque};
+use tracing::Instrument;
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
@@ -94,8 +95,8 @@ impl NetworkBehaviour for Behaviour {
 
     fn handle_established_inbound_connection(
         &mut self,
-        _connection_id: ConnectionId,
-        _peer: PeerId,
+        connection_id: ConnectionId,
+        peer: PeerId,
         _local_addr: &Multiaddr,
         _remote_addr: &Multiaddr,
     ) -> Result<THandler<Self>, ConnectionDenied> {
@@ -106,17 +107,27 @@ impl NetworkBehaviour for Behaviour {
             "Bob does not listen so he should never get an inbound connection"
         );
 
-        Ok(Handler::new(self.env_config, self.bitcoin_wallet.clone()))
+        Ok(Handler::new(
+            peer,
+            connection_id,
+            self.env_config,
+            self.bitcoin_wallet.clone(),
+        ))
     }
 
     fn handle_established_outbound_connection(
         &mut self,
-        _connection_id: ConnectionId,
-        _peer: PeerId,
+        connection_id: ConnectionId,
+        peer: PeerId,
         _addr: &Multiaddr,
         _role_override: libp2p::core::Endpoint,
     ) -> Result<THandler<Self>, ConnectionDenied> {
-        Ok(Handler::new(self.env_config, self.bitcoin_wallet.clone()))
+        Ok(Handler::new(
+            peer,
+            connection_id,
+            self.env_config,
+            self.bitcoin_wallet.clone(),
+        ))
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
@@ -290,6 +301,9 @@ impl NetworkBehaviour for Behaviour {
 }
 
 pub struct Handler {
+    peer_id: PeerId,
+    connection_id: ConnectionId,
+
     // Configuration
     env_config: env::Config,
     timeout: Duration,
@@ -310,8 +324,15 @@ pub struct Handler {
 }
 
 impl Handler {
-    fn new(env_config: env::Config, bitcoin_wallet: Arc<dyn BitcoinWallet>) -> Self {
+    fn new(
+        peer_id: PeerId,
+        connection_id: ConnectionId,
+        env_config: env::Config,
+        bitcoin_wallet: Arc<dyn BitcoinWallet>,
+    ) -> Self {
         Self {
+            peer_id,
+            connection_id,
             env_config,
             timeout: crate::defaults::NEGOTIATION_TIMEOUT,
             bitcoin_wallet,
@@ -401,13 +422,42 @@ impl ConnectionHandler for Handler {
 
                 let max_seconds = self.timeout.as_secs();
 
+                // Attach a span so every log emitted during the negotiation is
+                // attributable to the swap, peer and connection it belongs to.
+                let span = tracing::info_span!(
+                    "swap_setup",
+                    %swap_id,
+                    peer = %self.peer_id,
+                    connection = %self.connection_id,
+                );
+
                 let did_replace_existing_future = self.outbound_streams.replace(
                     swap_id,
-                    Box::pin(async move {
-                        protocol.await.map_err(|_| Error::Timeout {
-                            seconds: max_seconds,
-                        })?
-                    }),
+                    Box::pin(
+                        async move {
+                            tracing::debug!("Outbound swap setup negotiation started");
+
+                            let result = protocol.await.map_err(|_| {
+                                tracing::warn!(
+                                    timeout_seconds = max_seconds,
+                                    "Swap setup timed out"
+                                );
+                                Error::Timeout {
+                                    seconds: max_seconds,
+                                }
+                            })?;
+
+                            match &result {
+                                Ok(_) => tracing::info!("Swap setup completed"),
+                                Err(error) => {
+                                    tracing::warn!(error = ?error, "Swap setup failed")
+                                }
+                            }
+
+                            result
+                        }
+                        .instrument(span),
+                    ),
                 );
 
                 // In poll(..), we ensure that we never dispatch multiple concurrent swap setup requests for the same swap on the same ConnectionHandler
