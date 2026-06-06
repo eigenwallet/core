@@ -7,6 +7,12 @@ use std::{
     path::PathBuf,
 };
 
+/// Per-container docker `json-file` log rotation, referenced by every service.
+/// `max-file * max-size` is the hard cap on a container's daemon logs before the
+/// oldest file is dropped (5 * 1g = 5GB).
+pub const DOCKER_LOG_MAX_SIZE: &str = "1g";
+pub const DOCKER_LOG_MAX_FILE: &str = "5";
+
 pub const ASB_DATA_DIR: &str = "/asb-data";
 pub const ASB_CONFIG_FILE: &str = "config.toml";
 pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
@@ -320,6 +326,7 @@ fn build(input: OrchestratorInput) -> String {
     container_name: cloudflared
     {image_cloudflared}
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - asb
     entrypoint: ''
@@ -348,6 +355,7 @@ fn build(input: OrchestratorInput) -> String {
     container_name: docker-socket-proxy
     {image_docker_socket_proxy}
     restart: unless-stopped
+    logging: *default-logging
     environment:
       - CONTAINERS=1
       - NETWORKS=1
@@ -359,6 +367,7 @@ fn build(input: OrchestratorInput) -> String {
     container_name: promtail
     {image_promtail}
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - asb
       - docker-socket-proxy
@@ -384,6 +393,7 @@ fn build(input: OrchestratorInput) -> String {
     container_name: cadvisor
     {image_cadvisor}
     restart: unless-stopped
+    logging: *default-logging
     privileged: true
     cgroup: host
     devices:
@@ -400,6 +410,7 @@ fn build(input: OrchestratorInput) -> String {
     container_name: prometheus-agent
     {image_prometheus_agent}
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - cadvisor
     volumes:
@@ -432,6 +443,7 @@ fn build(input: OrchestratorInput) -> String {
     container_name: tor
     {image_tor}
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - 'tor-data:/var/lib/tor/'
     expose:
@@ -466,11 +478,17 @@ fn build(input: OrchestratorInput) -> String {
 #
 # Please check for new releases regularly. Breaking network changes are rare, but they do happen from time to time.
 name: {project_name}
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '{log_max_size}'
+    max-file: '{log_max_file}'
 services:
   monerod:
     container_name: monerod
     {image_monerod}
     restart: unless-stopped
+    logging: *default-logging
     user: root
     volumes:
       - 'monerod-data:/monerod-data/'
@@ -482,6 +500,7 @@ services:
     container_name: bitcoind
     {image_bitcoind}
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - 'bitcoind-data:/bitcoind-data/'
     expose:
@@ -494,6 +513,7 @@ services:
     container_name: electrs
     {image_electrs}
     restart: unless-stopped
+    logging: *default-logging
     user: root
     depends_on:
       - bitcoind
@@ -512,6 +532,7 @@ services:
     container_name: asb
     {image_asb}
     restart: unless-stopped
+    logging: *default-logging
     cap_add:
       - SYS_PTRACE
     sysctls:
@@ -531,6 +552,7 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - asb
     entrypoint: ''
@@ -539,6 +561,7 @@ services:
     container_name: asb-tracing-logger
     {image_asb_tracing_logger}
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - asb
     volumes:
@@ -549,6 +572,7 @@ services:
     container_name: rendezvous-node
     {image_rendezvous_node}
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - 'rendezvous-data:/rendezvous-data'
     ports:
@@ -565,6 +589,8 @@ volumes:
   {promtail_volume}
   {metrics_volume}
 ",
+        log_max_size = DOCKER_LOG_MAX_SIZE,
+        log_max_file = DOCKER_LOG_MAX_FILE,
         port_monerod_rpc = input.ports.monerod_rpc,
         port_bitcoind_rpc = input.ports.bitcoind_rpc,
         port_bitcoind_p2p = input.ports.bitcoind_p2p,
