@@ -69,7 +69,9 @@ function BitcoinRedeemedStateAlert({ swap }: { swap: GetSwapInfoResponseExt }) {
           "If this step fails, you can manually redeem your funds",
         ]}
       />
-      <SwapMoneroRecoveryButton swap={swap} size="small" variant="contained" />
+      <SwapMoneroRecoveryButton swap={swap} size="small" variant="contained">
+        Display Monero Recovery Keys
+      </SwapMoneroRecoveryButton>
     </Box>
   );
 }
