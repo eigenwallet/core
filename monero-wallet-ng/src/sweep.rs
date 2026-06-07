@@ -18,6 +18,7 @@ use monero_oxide_wallet::send::{Change, SendError, SignableTransaction};
 use monero_oxide_wallet::transaction::{NotPruned, Transaction};
 use monero_oxide_wallet::{OutputWithDecoys, Scanner, ViewPair, ViewPairError};
 
+use crate::retry::with_retry;
 use crate::rpc::{ProvidesTransactionStatus, TransactionStatus, TransactionStatusError};
 use crate::util::public_key;
 use crate::{MAX_FEE_PER_WEIGHT, RING_LEN};
@@ -94,6 +95,7 @@ pub async fn construct_sweep_tx_to_single<P>(
     private_view_key: Zeroizing<Scalar>,
     tx_id: [u8; 32],
     destination: MoneroAddress,
+    inner_retry: Option<backoff::ExponentialBackoff>,
 ) -> Result<Transaction<NotPruned>, SweepError>
 where
     P: ProvidesScannableBlocks
@@ -110,6 +112,7 @@ where
         private_view_key,
         tx_id,
         vec![(destination, 1.0)],
+        inner_retry,
     )
     .await
 }
@@ -119,12 +122,16 @@ where
 /// Looks up which block contains `tx_id` via the provider, scans that block
 /// for outputs belonging to `tx_id`, selects the largest output,
 /// and constructs a transaction that sweeps it across `destinations` split by ratio.
+///
+/// As this internally does multiple network requests sequentially,
+/// those are retried according to the `inner_retry` policy.
 pub async fn construct_sweep_tx_to<P>(
     provider: P,
     private_spend_key: Zeroizing<Scalar>,
     private_view_key: Zeroizing<Scalar>,
     tx_id: [u8; 32],
     destinations: Vec<(MoneroAddress, f64)>,
+    inner_retry: Option<backoff::ExponentialBackoff>,
 ) -> Result<Transaction<NotPruned>, SweepError>
 where
     P: ProvidesScannableBlocks
@@ -140,7 +147,11 @@ where
     }
 
     // Locate the block that contains the transaction
-    let block_height = match provider.transaction_status(tx_id).await? {
+    let status = with_retry(inner_retry.clone(), "Sweep transaction-status lookup", || {
+        async { provider.transaction_status(tx_id).await }
+    })
+    .await?;
+    let block_height = match status {
         TransactionStatus::InBlock { block_height } => block_height as usize,
         TransactionStatus::InPool => return Err(SweepError::TransactionInMempool { tx_id }),
         TransactionStatus::Unknown => return Err(SweepError::TransactionNotFound { tx_id }),
@@ -156,9 +167,14 @@ where
 
     // Find the largest output belonging to the transaction
     let largest_output = {
-        let blocks = provider
-            .contiguous_scannable_blocks(block_height..=block_height)
-            .await?;
+        let blocks = with_retry(inner_retry.clone(), "Sweep block fetch", || {
+            async {
+                provider
+                    .contiguous_scannable_blocks(block_height..=block_height)
+                    .await
+            }
+        })
+        .await?;
         let block = blocks
             .into_iter()
             .next()
@@ -173,20 +189,29 @@ where
     };
 
     // Generate decoys for the input
-    let block_number = provider.latest_block_number().await?;
-    let input = OutputWithDecoys::new(
-        &mut OsRng,
-        &provider,
-        RING_LEN,
-        block_number,
-        largest_output,
-    )
+    let block_number = with_retry(inner_retry.clone(), "Sweep latest-block-number lookup", || {
+        async { provider.latest_block_number().await }
+    })
+    .await?;
+    let input = with_retry(inner_retry.clone(), "Sweep decoy selection", || {
+        async {
+            OutputWithDecoys::new(
+                &mut OsRng,
+                &provider,
+                RING_LEN,
+                block_number,
+                largest_output.clone(),
+            )
+            .await
+        }
+    })
     .await?;
 
     // Get the fee rate
-    let fee_rate = provider
-        .fee_rate(FeePriority::Normal, MAX_FEE_PER_WEIGHT)
-        .await?;
+    let fee_rate = with_retry(inner_retry, "Sweep fee-rate lookup", || {
+        async { provider.fee_rate(FeePriority::Normal, MAX_FEE_PER_WEIGHT).await }
+    })
+    .await?;
 
     // Generate a random outgoing view key
     let mut outgoing_view_key = Zeroizing::new([0u8; 32]);

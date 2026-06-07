@@ -321,6 +321,7 @@ impl Wallets {
         spend_key: monero_oxide_ext::PrivateKey,
         view_key: PrivateViewKey,
         destinations: Vec<(monero_address::MoneroAddress, f64)>,
+        inner_retry: Option<backoff::ExponentialBackoff>,
     ) -> Result<Transaction<NotPruned>> {
         let rpc_client = self.rpc_client().await;
         let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
@@ -334,6 +335,7 @@ impl Wallets {
             view_scalar,
             tx_id,
             destinations,
+            inner_retry,
         )
         .await
         .context("Failed to construct sweep transaction to destinations")
@@ -346,6 +348,7 @@ impl Wallets {
         spend_key: monero_oxide_ext::PrivateKey,
         view_key: PrivateViewKey,
         destination: monero_address::MoneroAddress,
+        inner_retry: Option<backoff::ExponentialBackoff>,
     ) -> Result<Transaction<NotPruned>> {
         let rpc_client = self.rpc_client().await;
         let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
@@ -359,6 +362,7 @@ impl Wallets {
             view_scalar,
             tx_id,
             destination,
+            inner_retry,
         )
         .await
         .context("Failed to construct sweep transaction to destination")

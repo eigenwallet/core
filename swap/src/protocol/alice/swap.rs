@@ -1022,7 +1022,13 @@ impl XmrRefundable for State3 {
         tracing::debug!(%swap_id, %main_address, "Sweeping lock output to redeem address");
 
         let tx = monero_wallet
-            .construct_sweep_to_single(&transfer_proof.tx_hash(), spend_key, view_key, main_address)
+            .construct_sweep_to_single(
+                &transfer_proof.tx_hash(),
+                spend_key,
+                view_key,
+                main_address,
+                None,
+            )
             .await
             .context("Failed to construct Monero refund transaction")?;
 
