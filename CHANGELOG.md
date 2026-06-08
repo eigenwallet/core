@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.8.3] - 2026-06-08
+
+- Reliably retry Monero redeem step
+
 ## [4.8.2] - 2026-06-06
 
 ## [4.8.1] - 2026-06-05
@@ -983,7 +987,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.8.2...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.8.3...HEAD
+[4.8.3]: https://github.com/eigenwallet/core/compare/4.8.2...4.8.3
 [4.8.2]: https://github.com/eigenwallet/core/compare/4.8.1...4.8.2
 [4.8.1]: https://github.com/eigenwallet/core/compare/4.8.0...4.8.1
 [4.8.0]: https://github.com/eigenwallet/core/compare/4.7.11...4.8.0
