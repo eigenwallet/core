@@ -1,4 +1,5 @@
 mod event_loop;
+pub mod metrics;
 mod network;
 mod recovery;
 pub mod rpc;

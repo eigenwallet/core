@@ -337,6 +337,7 @@ fn main() {
                 listen: listen_addresses,
                 rendezvous_point: rendezvous_points,
                 external_addresses: vec![],
+                prometheus_port: None,
             },
             bitcoin: Bitcoin {
                 electrum_rpc_urls: match electrum_server_type {
@@ -419,8 +420,12 @@ fn main() {
     }
 
     if let Some(metrics) = metrics_config.as_ref() {
-        std::fs::write(PROMETHEUS_CONFIG_FILE, build_prometheus_agent_yml(metrics))
-            .expect("Failed to write prometheus.yml");
+        ensure_prometheus_port_in_config(&recipe);
+        std::fs::write(
+            PROMETHEUS_CONFIG_FILE,
+            build_prometheus_agent_yml(metrics, recipe.ports.asb_metrics_port),
+        )
+        .expect("Failed to write prometheus.yml");
     }
 
     // Write the compose to ./docker-compose.yml
@@ -468,8 +473,13 @@ fn ensure_cloudflared_addresses_in_config(recipe: &OrchestratorInput, cf: &Cloud
     // a TCP port the ASB is already bound to. The ASB binds every entry in
     // `config.network.listen` individually, so a clash produces `AddrInUse`
     // at startup and the tunnel silently never comes up. Also check the
-    // well-known orchestrator ports (libp2p TCP + RPC) for the same reason.
-    let mut reserved_ports: Vec<u16> = vec![recipe.ports.asb_libp2p, recipe.ports.asb_rpc_port];
+    // well-known orchestrator ports (libp2p TCP + RPC + Prometheus metrics)
+    // for the same reason.
+    let mut reserved_ports: Vec<u16> = vec![
+        recipe.ports.asb_libp2p,
+        recipe.ports.asb_rpc_port,
+        recipe.ports.asb_metrics_port,
+    ];
     for existing in &config.network.listen {
         if existing == &ws_listen {
             continue;
@@ -494,6 +504,29 @@ fn ensure_cloudflared_addresses_in_config(recipe: &OrchestratorInput, cf: &Cloud
     if !config.network.external_addresses.contains(&wss_external) {
         config.network.external_addresses.push(wss_external);
     }
+
+    std::fs::write(
+        &config_path,
+        toml::to_string(&config).expect("Failed to serialize patched config.toml"),
+    )
+    .expect("Failed to write patched config.toml");
+}
+
+/// Points the ASB config's libp2p metrics endpoint at the port the Prometheus
+/// agent scrapes. Applied whenever metrics shipping is enabled, so it covers
+/// both a freshly generated config and one that already existed on disk.
+fn ensure_prometheus_port_in_config(recipe: &OrchestratorInput) {
+    let config_path = recipe.directories.asb_config_path_on_host_as_path_buf();
+
+    let mut config = swap_env::config::read_config(config_path.clone())
+        .expect("Failed to read asb config for prometheus patching")
+        .expect("asb config must exist by this point");
+
+    if config.network.prometheus_port == Some(recipe.ports.asb_metrics_port) {
+        return;
+    }
+
+    config.network.prometheus_port = Some(recipe.ports.asb_metrics_port);
 
     std::fs::write(
         &config_path,

@@ -17,6 +17,7 @@ use bitcoin_wallet::BitcoinWallet;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{FuturesUnordered, StreamExt};
+use libp2p::metrics::{Metrics, Recorder};
 use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
@@ -47,6 +48,7 @@ where
     LR: LatestRate + Send + 'static + Debug + Clone,
 {
     swarm: libp2p::Swarm<Behaviour<LR>>,
+    metrics: Option<Metrics>,
     env_config: env::Config,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
@@ -179,6 +181,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         swarm: Swarm<Behaviour<LR>>,
+        metrics: Option<Metrics>,
         env_config: env::Config,
         bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
@@ -202,6 +205,7 @@ where
 
         let event_loop = EventLoop {
             swarm,
+            metrics,
             env_config,
             bitcoin_wallet,
             monero_wallet,
@@ -292,6 +296,10 @@ where
         loop {
             tokio::select! {
                 swarm_event = self.swarm.select_next_some() => {
+                    if let Some(metrics) = &self.metrics {
+                        metrics.record(&swarm_event);
+                    }
+
                     match swarm_event {
                         SwarmEvent::Behaviour(OutEvent::SwapSetupInitiated { mut send_wallet_snapshot }) => {
                             let bitcoin_wallet = self.bitcoin_wallet.clone();
@@ -481,6 +489,16 @@ where
                         }
                         SwarmEvent::ConnectionClosed { peer_id: peer, num_established: 0, endpoint, cause: None, connection_id } => {
                             tracing::trace!(%peer, address = %endpoint.get_remote_address(), %connection_id,  "Successfully closed connection");
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Ping(ping_event)) => {
+                            if let Some(metrics) = &self.metrics {
+                                metrics.record(&ping_event);
+                            }
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Identify(identify_event)) => {
+                            if let Some(metrics) = &self.metrics {
+                                metrics.record(identify_event.as_ref());
+                            }
                         }
                         SwarmEvent::NewListenAddr{address, .. } => {
                             let multiaddr = format!("{address}/p2p/{}", self.swarm.local_peer_id());

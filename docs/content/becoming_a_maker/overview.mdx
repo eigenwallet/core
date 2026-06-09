@@ -264,6 +264,7 @@ external_addresses = [
 | `listen` | The ip and port the asb will listen on. The IP address `0.0.0.0` means the asb will listen on all IP addresses. Remember that the asb service is running in a docker container. Make sure the port is the same as in the `.env` file. | This multiaddr should only include an IP address and a port number. |
 | `rendezvous_point` | A list of rendezvous points the asb will connect to. | These multiaddrs should include an address (e.g. IPv4, IPv6, DNS), a port number and a peer ID. |
 | `external_addresses` | A list of external addresses the asb will advertise to the rendezvous points. If you registered a domain, you can add it here. If you enabled the onion service, it will be included automatically, so you don't need to specify the onion address. | These multiaddrs should only include an address (e.g. IPv4, IPv6, DNS). |
+| `prometheus_port` | Optional. When set, the asb serves libp2p Prometheus metrics over HTTP at `/metrics` on this port. When omitted, the metrics endpoint is disabled. | A port number. |
 
 
 Et, voilà!
