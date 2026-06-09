@@ -402,7 +402,7 @@ mod tests {
         // Create the swarm for Alice
         // Let her listen on a random memory address
         // Let her respond to requests
-        let alice = new_swarm(|_| quote::alice());
+        let alice = new_swarm(|_| quote::alice(None));
         let (alice_peer_id, alice_addr, alice_handle) = serve_quotes(alice).await;
 
         // Tell Bob about Alice's address

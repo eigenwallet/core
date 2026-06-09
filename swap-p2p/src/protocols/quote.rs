@@ -1,4 +1,5 @@
 use crate::out_event;
+use crate::protocols::metered::{Metered, RequestResponseMetrics};
 use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::{PeerId, StreamProtocol};
 use rust_decimal::Decimal;
@@ -11,7 +12,7 @@ pub(crate) const PROTOCOL: &str = "/comit/xmr/btc/bid-quote/2.0.0";
 pub type OutEvent = request_response::Event<(), BidQuote>;
 pub type Message = request_response::Message<(), BidQuote>;
 
-pub type Behaviour = request_response::json::Behaviour<(), BidQuote>;
+pub type Behaviour = Metered<request_response::json::Behaviour<(), BidQuote>>;
 
 /// The refund policy that will apply if the swap is cancelled.
 /// Communicated in quotes so takers know the terms upfront.
@@ -105,11 +106,15 @@ pub struct ReserveProofWithAddress {
 ///
 /// The ASB is always listening and only supports inbound connections, i.e.
 /// handing out quotes.
-pub fn alice() -> Behaviour {
-    Behaviour::new(
-        vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Inbound)],
-        request_response::Config::default()
-            .with_request_timeout(crate::defaults::QUOTE_REQUEST_TIMEOUT),
+pub fn alice(metrics: Option<RequestResponseMetrics>) -> Behaviour {
+    Metered::new(
+        request_response::json::Behaviour::new(
+            vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Inbound)],
+            request_response::Config::default()
+                .with_request_timeout(crate::defaults::QUOTE_REQUEST_TIMEOUT),
+        ),
+        PROTOCOL,
+        metrics,
     )
 }
 
@@ -118,10 +123,14 @@ pub fn alice() -> Behaviour {
 /// The CLI is always dialing and only supports outbound connections, i.e.
 /// requesting quotes.
 pub fn bob() -> Behaviour {
-    Behaviour::new(
-        vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Outbound)],
-        request_response::Config::default()
-            .with_request_timeout(crate::defaults::QUOTE_REQUEST_TIMEOUT),
+    Metered::new(
+        request_response::json::Behaviour::new(
+            vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Outbound)],
+            request_response::Config::default()
+                .with_request_timeout(crate::defaults::QUOTE_REQUEST_TIMEOUT),
+        ),
+        PROTOCOL,
+        None,
     )
 }
 
