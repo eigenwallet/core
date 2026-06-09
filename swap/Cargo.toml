@@ -29,7 +29,7 @@ tor-llcrypto = { workspace = true }
 tor-rtcompat = { workspace = true, features = ["tokio"] }
 
 # LibP2P
-libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa", "websocket"] }
+libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa", "websocket", "metrics"] }
 libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service"] }
 
 # Error handling
@@ -85,6 +85,12 @@ url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 void = "1"
 zeroize = { workspace = true }
+
+# Prometheus metrics endpoint
+prometheus-client = "0.22"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
 
 # Tokio
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }

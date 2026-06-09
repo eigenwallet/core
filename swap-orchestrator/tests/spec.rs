@@ -23,6 +23,7 @@ fn make_input(
             tor_socks: 9050,
             asb_libp2p: 9839,
             asb_rpc_port: 9944,
+            asb_metrics_port: 9945,
             rendezvous_node_port: 8888,
         },
         networks: OrchestratorNetworks {
@@ -225,7 +226,7 @@ fn test_promtail_yml_ships_node_container_logs() {
 
 #[test]
 fn test_prometheus_agent_yml_is_valid_and_wired() {
-    let yml = build_prometheus_agent_yml(&sample_metrics_config());
+    let yml = build_prometheus_agent_yml(&sample_metrics_config(), 9945);
     let parsed: serde_yaml::Value =
         serde_yaml::from_str(&yml).expect("prometheus.yml must be valid YAML");
 
@@ -241,6 +242,12 @@ fn test_prometheus_agent_yml_is_valid_and_wired() {
     assert_eq!(
         parsed["scrape_configs"][0]["static_configs"][0]["targets"][0].as_str(),
         Some("cadvisor:8080")
+    );
+
+    // The agent also scrapes the ASB's libp2p Prometheus endpoint.
+    assert_eq!(
+        parsed["scrape_configs"][1]["static_configs"][0]["targets"][0].as_str(),
+        Some("asb:9945")
     );
     let remote = &parsed["remote_write"][0];
     assert_eq!(

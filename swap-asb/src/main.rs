@@ -25,6 +25,7 @@ use structopt::clap;
 use structopt::clap::ErrorKind;
 mod command;
 use command::{Arguments, Command, parse_args};
+use swap::asb::metrics;
 use swap::asb::rpc::RpcServer;
 use swap::asb::{
     EventLoop, ExchangeRate, Finality, cancel, grant_mercy, punish, redeem, refund, safely_abort,
@@ -349,9 +350,19 @@ pub async fn main() -> Result<()> {
                 }
             };
 
+            let (metrics, _metrics_server) = match config.network.prometheus_port {
+                Some(port) => {
+                    let (metrics, registry) = metrics::new();
+                    let server = metrics::MetricsServer::start(port, registry).await?;
+                    (Some(metrics), Some(server))
+                }
+                None => (None, None),
+            };
+
             let bitcoin_wallet = Arc::new(bitcoin_wallet);
             let (event_loop, mut swap_receiver, event_loop_service) = EventLoop::new(
                 swarm,
+                metrics,
                 env_config,
                 bitcoin_wallet.clone(),
                 monero_wallet.clone(),

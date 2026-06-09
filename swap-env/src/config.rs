@@ -47,6 +47,10 @@ pub struct Network {
         deserialize_with = "swap_serde::libp2p::multiaddresses::deserialize"
     )]
     pub external_addresses: Vec<Multiaddr>,
+    /// Port on which to expose libp2p Prometheus metrics over HTTP at
+    /// `/metrics`. When unset, the metrics endpoint is disabled.
+    #[serde(default)]
+    pub prometheus_port: Option<u16>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -407,6 +411,7 @@ pub fn query_user_for_initial_config_with_network(
             listen: listen_addresses,
             rendezvous_point: rendezvous_points,
             external_addresses: vec![],
+            prometheus_port: None,
         },
         bitcoin: Bitcoin {
             electrum_rpc_urls,

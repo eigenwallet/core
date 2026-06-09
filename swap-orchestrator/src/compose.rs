@@ -114,6 +114,7 @@ pub struct OrchestratorPorts {
     pub tor_socks: u16,
     pub asb_libp2p: u16,
     pub asb_rpc_port: u16,
+    pub asb_metrics_port: u16,
     pub rendezvous_node_port: u16,
 }
 
@@ -128,6 +129,7 @@ impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for O
                 tor_socks: 9050,
                 asb_libp2p: 9939,
                 asb_rpc_port: 9944,
+                asb_metrics_port: 9945,
                 rendezvous_node_port: 8888,
             },
             (monero_address::Network::Stagenet, bitcoin::Network::Testnet) => OrchestratorPorts {
@@ -138,6 +140,7 @@ impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for O
                 tor_socks: 9050,
                 asb_libp2p: 9839,
                 asb_rpc_port: 9944,
+                asb_metrics_port: 9945,
                 rendezvous_node_port: 8888,
             },
             _ => panic!("Unsupported Bitcoin / Monero network combination"),
@@ -707,7 +710,7 @@ scrape_configs:
     )
 }
 
-pub fn build_prometheus_agent_yml(cfg: &MetricsConfig) -> String {
+pub fn build_prometheus_agent_yml(cfg: &MetricsConfig, asb_metrics_port: u16) -> String {
     fn yaml_single_quote(value: &str) -> String {
         format!("'{}'", value.replace('\'', "''"))
     }
@@ -723,6 +726,9 @@ scrape_configs:
   - job_name: cadvisor
     static_configs:
       - targets: ['cadvisor:8080']
+  - job_name: asb
+    static_configs:
+      - targets: ['asb:{asb_metrics_port}']
 
 remote_write:
   - url: {url}

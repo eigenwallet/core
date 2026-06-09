@@ -424,6 +424,7 @@ async fn start_alice(
 
     let (event_loop, swap_handle, service) = asb::EventLoop::new(
         swarm,
+        None,
         env_config,
         bitcoin_wallet.clone(),
         monero_wallet.clone(),
