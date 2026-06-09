@@ -1,4 +1,5 @@
 pub use crate::network::rendezvous;
+use crate::network::io_limit::IoLimits;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::alice;
 use crate::network::transport::authenticate_and_multiplex;
@@ -133,8 +134,12 @@ pub mod transport {
         // come first — otherwise Tor or TCP would eagerly claim the address.
         let transport = ws_transport.or_transport(tcp_with_dns).boxed();
 
+        // No IO limits on the ASB by default. To cap upload bandwidth, pass
+        // e.g. `IoLimits::outgoing(bytes_per_sec)` here.
+        let io_limits = IoLimits::unlimited();
+
         Ok((
-            authenticate_and_multiplex(transport, identity)?,
+            authenticate_and_multiplex(transport, identity, &io_limits)?,
             onion_addresses,
             wormhole_channels,
             onion_service_handle,

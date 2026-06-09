@@ -8,6 +8,7 @@ pub use swap_p2p::protocols::rendezvous;
 pub use swap_p2p::protocols::swap_setup;
 pub use swap_p2p::protocols::transfer_proof;
 
+pub mod io_limit;
 pub mod swarm;
 pub mod transport;
 pub mod wormhole;

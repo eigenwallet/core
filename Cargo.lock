@@ -10612,6 +10612,7 @@ dependencies = [
  "ecdsa_fun",
  "electrum-pool",
  "futures",
+ "futures-timer",
  "http-body-util",
  "hyper 1.8.1",
  "hyper-util",

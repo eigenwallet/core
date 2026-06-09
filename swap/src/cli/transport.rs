@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::network::io_limit::IoLimits;
 use crate::network::transport::authenticate_and_multiplex;
 use anyhow::Result;
 use arti_client::TorClient;
@@ -106,8 +107,12 @@ pub fn new(
     // /ws suffix) and establish a raw connection without a WebSocket handshake.
     let transport = ws_transport.or_transport(plain_transport).boxed();
 
+    // No IO limits on the CLI by default. To cap upload bandwidth, pass e.g.
+    // `IoLimits::outgoing(bytes_per_sec)` here.
+    let io_limits = IoLimits::unlimited();
+
     Ok((
-        authenticate_and_multiplex(transport, identity)?,
+        authenticate_and_multiplex(transport, identity, &io_limits)?,
         maybe_tor_priority_tracker,
     ))
 }
