@@ -473,8 +473,13 @@ fn ensure_cloudflared_addresses_in_config(recipe: &OrchestratorInput, cf: &Cloud
     // a TCP port the ASB is already bound to. The ASB binds every entry in
     // `config.network.listen` individually, so a clash produces `AddrInUse`
     // at startup and the tunnel silently never comes up. Also check the
-    // well-known orchestrator ports (libp2p TCP + RPC) for the same reason.
-    let mut reserved_ports: Vec<u16> = vec![recipe.ports.asb_libp2p, recipe.ports.asb_rpc_port];
+    // well-known orchestrator ports (libp2p TCP + RPC + Prometheus metrics)
+    // for the same reason.
+    let mut reserved_ports: Vec<u16> = vec![
+        recipe.ports.asb_libp2p,
+        recipe.ports.asb_rpc_port,
+        recipe.ports.asb_metrics_port,
+    ];
     for existing in &config.network.listen {
         if existing == &ws_listen {
             continue;
