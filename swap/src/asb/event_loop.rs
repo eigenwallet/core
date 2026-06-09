@@ -341,6 +341,11 @@ where
                                         unknown_swap_id = %swap_id,
                                         from = %peer,
                                         "Ignoring encrypted signature for unknown swap");
+
+                                    if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
+                                        tracing::debug!(%peer, "Disconnected peer for malicious encrypted signature request")
+                                    }
+
                                     continue;
                                 }
                             };
@@ -352,6 +357,11 @@ where
                                     expected_from = %swap_peer,
                                     "Ignoring malicious encrypted signature which was not expected from this peer",
                                     );
+
+                                if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
+                                    tracing::debug!(%peer, "Disconnected peer for malicious encrypted signature request")
+                                }
+
                                 continue;
                             }
 
@@ -809,6 +819,11 @@ where
                         },
                     )
                     .map_err(|_| anyhow!("Couldn't reject cooperative redeem request"))?;
+
+                if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
+                    tracing::debug!(%peer, "Disconnected peer for malicious cooperative Monero redeem request")
+                }
+
                 bail!("swap not found")
             }
         };
@@ -833,6 +848,11 @@ where
                     },
                 )
                 .map_err(|_| anyhow!("Failed to reject cooperative XMR redeem request"))?;
+
+            if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
+                tracing::debug!(%peer, "Disconnected peer for malicious cooperative Monero redeem request")
+            }
+
             bail!("malicious request (wrong peer)")
         }
 
@@ -862,6 +882,11 @@ where
                 .map_err(|_| {
                     anyhow!("Failed to send rejection for cooperative Monero redeem request")
                 })?;
+
+            if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
+                tracing::debug!(%peer, "Disconnected peer for malicious cooperative Monero redeem request")
+            }
+
             bail!("swap in invalid state")
         };
 
@@ -1576,12 +1601,12 @@ mod service {
 mod quote {
     use crate::monero::{Amount, AmountExt};
     use anyhow::{Context, anyhow};
+    use bitcoin_wallet::BitcoinWallet;
     use rust_decimal::Decimal;
     use std::{
         sync::Arc,
         time::{Duration, Instant},
     };
-    use bitcoin_wallet::BitcoinWallet;
     use swap_feed::LatestRate;
     use tokio::time::timeout;
 
@@ -1786,7 +1811,12 @@ mod quote {
 
         backoff::future::retry_notify(
             backoff,
-            || async { wallet.health_check().await.map_err(backoff::Error::transient) },
+            || async {
+                wallet
+                    .health_check()
+                    .await
+                    .map_err(backoff::Error::transient)
+            },
             |e, wait_time: Duration| {
                 tracing::warn!(
                     error = ?e,
