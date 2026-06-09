@@ -53,6 +53,9 @@ pub enum OutEvent {
         peer: PeerId,
     },
     Rendezvous(rendezvous::register::Event),
+    // Carried purely so the event loop can record libp2p Prometheus metrics.
+    Ping(ping::Event),
+    Identify(Box<identify::Event>),
     OutboundRequestResponseFailure {
         peer: PeerId,
         error: OutboundFailure,
@@ -98,14 +101,14 @@ impl From<void::Void> for OutEvent {
 }
 
 impl From<ping::Event> for OutEvent {
-    fn from(_: ping::Event) -> Self {
-        OutEvent::Other
+    fn from(event: ping::Event) -> Self {
+        OutEvent::Ping(event)
     }
 }
 
 impl From<identify::Event> for OutEvent {
-    fn from(_: identify::Event) -> Self {
-        OutEvent::Other
+    fn from(event: identify::Event) -> Self {
+        OutEvent::Identify(Box::new(event))
     }
 }
 

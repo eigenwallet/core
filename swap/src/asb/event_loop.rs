@@ -48,7 +48,6 @@ where
     LR: LatestRate + Send + 'static + Debug + Clone,
 {
     swarm: libp2p::Swarm<Behaviour<LR>>,
-    /// libp2p Prometheus recorder. When `None`, metrics collection is disabled.
     metrics: Option<Metrics>,
     env_config: env::Config,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
@@ -490,6 +489,16 @@ where
                         }
                         SwarmEvent::ConnectionClosed { peer_id: peer, num_established: 0, endpoint, cause: None, connection_id } => {
                             tracing::trace!(%peer, address = %endpoint.get_remote_address(), %connection_id,  "Successfully closed connection");
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Ping(ping_event)) => {
+                            if let Some(metrics) = &self.metrics {
+                                metrics.record(&ping_event);
+                            }
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Identify(identify_event)) => {
+                            if let Some(metrics) = &self.metrics {
+                                metrics.record(identify_event.as_ref());
+                            }
                         }
                         SwarmEvent::NewListenAddr{address, .. } => {
                             let multiaddr = format!("{address}/p2p/{}", self.swarm.local_peer_id());
