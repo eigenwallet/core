@@ -16,6 +16,9 @@ swap-serde = { path = "../swap-serde" }
 async-trait = { workspace = true, optional = true }
 libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify"] }
 
+# Metrics
+prometheus-client = "0.22"
+
 # Serialization
 asynchronous-codec = "0.7.0"
 serde = { workspace = true }

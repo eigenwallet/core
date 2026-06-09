@@ -10900,6 +10900,7 @@ dependencies = [
  "libp2p",
  "libp2p-tor",
  "monero-address",
+ "prometheus-client",
  "rand 0.8.5",
  "rust_decimal",
  "semver",
