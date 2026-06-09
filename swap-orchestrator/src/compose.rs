@@ -19,6 +19,10 @@ pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
 pub const PROMTAIL_CONFIG_FILE: &str = "./promtail.yml";
 pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
 
+/// Port `cloudflared` serves its built-in Prometheus metrics on, scraped by the
+/// prometheus-agent over the docker network.
+pub const CLOUDFLARED_METRICS_PORT: u16 = 2000;
+
 pub struct OrchestratorInput {
     pub ports: OrchestratorPorts,
     pub networks: OrchestratorNetworks<monero_address::Network, bitcoin::Network>,
@@ -318,6 +322,8 @@ fn build(input: OrchestratorInput) -> String {
             "cloudflared",
             flag!("--no-autoupdate"),
             flag!("tunnel"),
+            flag!("--metrics"),
+            flag!("0.0.0.0:{}", CLOUDFLARED_METRICS_PORT),
             flag!("run"),
             flag!("--token"),
             flag!("{}", cf.token),
@@ -332,10 +338,13 @@ fn build(input: OrchestratorInput) -> String {
     logging: *default-logging
     depends_on:
       - asb
+    expose:
+      - {port_cloudflared_metrics}
     entrypoint: ''
     command: {command_cloudflared}\
 ",
             image_cloudflared = input.images.cloudflared.to_image_attribute(),
+            port_cloudflared_metrics = CLOUDFLARED_METRICS_PORT,
         )
     } else {
         String::new()
@@ -710,10 +719,28 @@ scrape_configs:
     )
 }
 
-pub fn build_prometheus_agent_yml(cfg: &MetricsConfig, asb_metrics_port: u16) -> String {
+/// Builds `prometheus.yml`. Always scrapes cadvisor and the ASB's libp2p
+/// endpoint; also scrapes cloudflared's metrics endpoint when
+/// `scrape_cloudflared` is set.
+pub fn build_prometheus_agent_yml(
+    cfg: &MetricsConfig,
+    asb_metrics_port: u16,
+    scrape_cloudflared: bool,
+) -> String {
     fn yaml_single_quote(value: &str) -> String {
         format!("'{}'", value.replace('\'', "''"))
     }
+
+    let cloudflared_scrape = if scrape_cloudflared {
+        format!(
+            "
+  - job_name: cloudflared
+    static_configs:
+      - targets: ['cloudflared:{CLOUDFLARED_METRICS_PORT}']"
+        )
+    } else {
+        String::new()
+    };
 
     format!(
         "\
@@ -728,7 +755,7 @@ scrape_configs:
       - targets: ['cadvisor:8080']
   - job_name: asb
     static_configs:
-      - targets: ['asb:{asb_metrics_port}']
+      - targets: ['asb:{asb_metrics_port}']{cloudflared_scrape}
 
 remote_write:
   - url: {url}

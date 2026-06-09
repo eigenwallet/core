@@ -226,7 +226,7 @@ fn test_promtail_yml_ships_node_container_logs() {
 
 #[test]
 fn test_prometheus_agent_yml_is_valid_and_wired() {
-    let yml = build_prometheus_agent_yml(&sample_metrics_config(), 9945);
+    let yml = build_prometheus_agent_yml(&sample_metrics_config(), 9945, false);
     let parsed: serde_yaml::Value =
         serde_yaml::from_str(&yml).expect("prometheus.yml must be valid YAML");
 
@@ -255,4 +255,23 @@ fn test_prometheus_agent_yml_is_valid_and_wired() {
         Some("https://loki-asb-logs.example.com/api/v1/write")
     );
     assert_eq!(remote["bearer_token"].as_str(), Some("test-token"));
+
+    // Without the tunnel, cadvisor and asb are the only scrape targets.
+    assert!(parsed["scrape_configs"][2].is_null());
+}
+
+#[test]
+fn test_prometheus_agent_scrapes_cloudflared_when_enabled() {
+    let yml = build_prometheus_agent_yml(&sample_metrics_config(), 9945, true);
+    let parsed: serde_yaml::Value =
+        serde_yaml::from_str(&yml).expect("prometheus.yml must be valid YAML");
+
+    assert_eq!(
+        parsed["scrape_configs"][2]["job_name"].as_str(),
+        Some("cloudflared")
+    );
+    assert_eq!(
+        parsed["scrape_configs"][2]["static_configs"][0]["targets"][0].as_str(),
+        Some("cloudflared:2000")
+    );
 }
