@@ -1,8 +1,8 @@
 //! libp2p Prometheus metrics for the ASB.
 //!
-//! [`new`] builds the recorder handed to the event loop together with the
-//! registry it writes into; [`MetricsServer`] exposes that registry over HTTP
-//! at `/metrics`.
+//! [`MetricsServer`] exposes a [`Registry`] over HTTP at `/metrics`. The
+//! [`Metrics`] recorder (driven from the event loop) and the bandwidth
+//! transport wrapper both register into that registry.
 
 use anyhow::{Context, Result};
 use http_body_util::Full;
@@ -12,7 +12,6 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use libp2p::metrics::{Metrics, Registry};
 use prometheus_client::encoding::text::encode;
 use std::convert::Infallible;
 use std::net::Ipv4Addr;
@@ -20,18 +19,10 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_util::task::AbortOnDropHandle;
 
+pub use libp2p::metrics::{Metrics, Registry};
+
 /// OpenMetrics content type emitted by [`prometheus_client`]'s text encoder.
 const METRICS_CONTENT_TYPE: &str = "application/openmetrics-text; version=1.0.0; charset=utf-8";
-
-/// Builds the libp2p metrics recorder and the registry it records into. The
-/// recorder is moved into the event loop; the registry is served by
-/// [`MetricsServer::start`]. Both share the underlying atomic counters, so
-/// recorded events are visible to the HTTP endpoint without further plumbing.
-pub fn new() -> (Metrics, Registry) {
-    let mut registry = Registry::default();
-    let metrics = Metrics::new(&mut registry);
-    (metrics, registry)
-}
 
 #[allow(missing_debug_implementations)]
 pub struct MetricsServer;

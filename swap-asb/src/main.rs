@@ -273,6 +273,11 @@ pub async fn main() -> Result<()> {
             bootstrap_tor_client(tor_client.clone(), None).await?;
             let tor_client = tor_client.into();
 
+            let mut metrics_registry = config
+                .network
+                .prometheus_port
+                .map(|_| metrics::Registry::default());
+
             let (mut swarm, onion_addresses, onion_service_handle) = swarm::asb(
                 &seed,
                 config.maker.min_buy_btc,
@@ -291,6 +296,7 @@ pub async fn main() -> Result<()> {
                 config.tor.wormhole_num_intro_points,
                 config.tor.wormhole_swap_freshness_hours,
                 db.clone(),
+                metrics_registry.as_mut(),
             )?;
 
             for listen in config.network.listen.clone() {
@@ -350,13 +356,14 @@ pub async fn main() -> Result<()> {
                 }
             };
 
-            let (metrics, _metrics_server) = match config.network.prometheus_port {
-                Some(port) => {
-                    let (metrics, registry) = metrics::new();
+            let (metrics, _metrics_server) = match (config.network.prometheus_port, metrics_registry)
+            {
+                (Some(port), Some(mut registry)) => {
+                    let metrics = metrics::Metrics::new(&mut registry);
                     let server = metrics::MetricsServer::start(port, registry).await?;
                     (Some(metrics), Some(server))
                 }
-                None => (None, None),
+                _ => (None, None),
             };
 
             let bitcoin_wallet = Arc::new(bitcoin_wallet);
