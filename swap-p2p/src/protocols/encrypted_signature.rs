@@ -1,4 +1,5 @@
 use crate::out_event;
+use crate::protocols::metered::{Metered, RequestResponseMetrics};
 use libp2p::request_response::{self};
 use libp2p::{PeerId, StreamProtocol};
 use serde::{Deserialize, Serialize};
@@ -8,7 +9,7 @@ const PROTOCOL: &str = "/comit/xmr/btc/encrypted_signature/1.0.0";
 type OutEvent = request_response::Event<Request, ()>;
 type Message = request_response::Message<Request, ()>;
 
-pub type Behaviour = request_response::cbor::Behaviour<Request, ()>;
+pub type Behaviour = Metered<request_response::cbor::Behaviour<Request, ()>>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EncryptedSignatureProtocol;
@@ -25,25 +26,33 @@ pub struct Request {
     pub tx_redeem_encsig: swap_core::bitcoin::EncryptedSignature,
 }
 
-pub fn alice() -> Behaviour {
-    Behaviour::new(
-        vec![(
-            StreamProtocol::new(EncryptedSignatureProtocol.as_ref()),
-            request_response::ProtocolSupport::Inbound,
-        )],
-        request_response::Config::default()
-            .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+pub fn alice(metrics: Option<RequestResponseMetrics>) -> Behaviour {
+    Metered::new(
+        request_response::cbor::Behaviour::new(
+            vec![(
+                StreamProtocol::new(EncryptedSignatureProtocol.as_ref()),
+                request_response::ProtocolSupport::Inbound,
+            )],
+            request_response::Config::default()
+                .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+        ),
+        PROTOCOL,
+        metrics,
     )
 }
 
 pub fn bob() -> Behaviour {
-    Behaviour::new(
-        vec![(
-            StreamProtocol::new(EncryptedSignatureProtocol.as_ref()),
-            request_response::ProtocolSupport::Outbound,
-        )],
-        request_response::Config::default()
-            .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+    Metered::new(
+        request_response::cbor::Behaviour::new(
+            vec![(
+                StreamProtocol::new(EncryptedSignatureProtocol.as_ref()),
+                request_response::ProtocolSupport::Outbound,
+            )],
+            request_response::Config::default()
+                .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+        ),
+        PROTOCOL,
+        None,
     )
 }
 

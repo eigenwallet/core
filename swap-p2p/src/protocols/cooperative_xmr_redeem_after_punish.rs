@@ -1,4 +1,5 @@
 use crate::out_event;
+use crate::protocols::metered::{Metered, RequestResponseMetrics};
 use libp2p::request_response::ProtocolSupport;
 use libp2p::{PeerId, StreamProtocol, request_response};
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,7 @@ const PROTOCOL: &str = "/comit/xmr/btc/cooperative_xmr_redeem_after_punish/1.0.0
 type OutEvent = request_response::Event<Request, Response>;
 type Message = request_response::Message<Request, Response>;
 
-pub type Behaviour = request_response::cbor::Behaviour<Request, Response>;
+pub type Behaviour = Metered<request_response::cbor::Behaviour<Request, Response>>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CooperativeXmrRedeemProtocol;
@@ -49,25 +50,33 @@ pub enum Response {
     },
 }
 
-pub fn alice() -> Behaviour {
-    Behaviour::new(
-        vec![(
-            StreamProtocol::new(CooperativeXmrRedeemProtocol.as_ref()),
-            ProtocolSupport::Inbound,
-        )],
-        request_response::Config::default()
-            .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+pub fn alice(metrics: Option<RequestResponseMetrics>) -> Behaviour {
+    Metered::new(
+        request_response::cbor::Behaviour::new(
+            vec![(
+                StreamProtocol::new(CooperativeXmrRedeemProtocol.as_ref()),
+                ProtocolSupport::Inbound,
+            )],
+            request_response::Config::default()
+                .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+        ),
+        PROTOCOL,
+        metrics,
     )
 }
 
 pub fn bob() -> Behaviour {
-    Behaviour::new(
-        vec![(
-            StreamProtocol::new(CooperativeXmrRedeemProtocol.as_ref()),
-            ProtocolSupport::Outbound,
-        )],
-        request_response::Config::default()
-            .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+    Metered::new(
+        request_response::cbor::Behaviour::new(
+            vec![(
+                StreamProtocol::new(CooperativeXmrRedeemProtocol.as_ref()),
+                ProtocolSupport::Outbound,
+            )],
+            request_response::Config::default()
+                .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+        ),
+        PROTOCOL,
+        None,
     )
 }
 

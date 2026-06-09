@@ -8,6 +8,7 @@ use libp2p::Transport as _;
 use libp2p::connection_limits::ConnectionLimits;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::metrics::{BandwidthTransport, Registry};
+use swap_p2p::protocols::metered::RequestResponseMetrics;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{Multiaddr, Swarm, identity};
 use libp2p::{PeerId, SwarmBuilder};
@@ -81,12 +82,18 @@ where
             wormhole_num_intro_points,
         )?;
 
-    let transport = match metrics_registry {
+    let mut metrics_registry = metrics_registry;
+
+    let transport = match metrics_registry.as_deref_mut() {
         Some(registry) => BandwidthTransport::new(transport, registry)
             .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))
             .boxed(),
         None => transport,
     };
+
+    let request_response_metrics = metrics_registry
+        .as_deref_mut()
+        .map(RequestResponseMetrics::register);
 
     let behaviour = asb::Behaviour::new(
         min_buy,
@@ -105,6 +112,7 @@ where
             None
         },
         wormhole_swap_freshness_hours,
+        request_response_metrics,
     );
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)

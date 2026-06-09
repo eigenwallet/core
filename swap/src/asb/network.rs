@@ -146,6 +146,7 @@ pub mod behaviour {
     use std::sync::Arc;
 
     use libp2p::{connection_limits, identify, identity, ping, swarm::behaviour::toggle::Toggle};
+    use swap_p2p::protocols::metered::RequestResponseMetrics;
     use swap_p2p::{out_event::alice::OutEvent, patches};
 
     use crate::network::wormhole;
@@ -194,6 +195,7 @@ pub mod behaviour {
             trust_provider: Arc<dyn PeerTrust + Send + Sync>,
             wormhole_channels: Option<WormholeChannels>,
             wormhole_swap_freshness_hours: u64,
+            request_response_metrics: Option<RequestResponseMetrics>,
         ) -> Self {
             let (identity, namespace) = identify_params;
             let agent_version = format!("asb/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
@@ -230,7 +232,7 @@ pub mod behaviour {
             Self {
                 connection_limits: connection_limits::Behaviour::new(connection_limits),
                 rendezvous: Toggle::from(behaviour),
-                quote: quote::alice(),
+                quote: quote::alice(request_response_metrics.clone()),
                 swap_setup: alice::Behaviour::new(
                     min_buy,
                     max_buy,
@@ -238,9 +240,11 @@ pub mod behaviour {
                     latest_rate,
                     resume_only,
                 ),
-                transfer_proof: transfer_proof::alice(),
-                encrypted_signature: encrypted_signature::alice(),
-                cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::alice(),
+                transfer_proof: transfer_proof::alice(request_response_metrics.clone()),
+                encrypted_signature: encrypted_signature::alice(request_response_metrics.clone()),
+                cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::alice(
+                    request_response_metrics,
+                ),
                 ping: ping::Behaviour::new(pingConfig),
                 identify: patches::identify::Behaviour::new(identifyConfig),
                 wormhole: Toggle::from(wormhole),
