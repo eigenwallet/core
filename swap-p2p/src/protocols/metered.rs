@@ -27,8 +27,6 @@ struct Labels {
     kind: &'static str,
 }
 
-/// Counter family shared by all [`Metered`] behaviours. Cloning is cheap (the
-/// family is reference-counted) and yields handles to the same counters.
 #[derive(Clone, Debug)]
 pub struct RequestResponseMetrics(Family<Labels, Counter>);
 
