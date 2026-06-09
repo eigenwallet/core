@@ -423,7 +423,11 @@ fn main() {
         ensure_prometheus_port_in_config(&recipe);
         std::fs::write(
             PROMETHEUS_CONFIG_FILE,
-            build_prometheus_agent_yml(metrics, recipe.ports.asb_metrics_port),
+            build_prometheus_agent_yml(
+                metrics,
+                recipe.ports.asb_metrics_port,
+                cloudflared_config.is_some(),
+            ),
         )
         .expect("Failed to write prometheus.yml");
     }
