@@ -10721,6 +10721,7 @@ dependencies = [
  "bitcoin 0.32.8",
  "clap 4.6.0",
  "comfy-table",
+ "dialoguer",
  "jsonrpsee",
  "monero-oxide-ext",
  "rustyline",
@@ -10796,10 +10797,14 @@ dependencies = [
  "config",
  "console 0.16.3",
  "dialoguer",
+ "hex",
+ "hmac",
  "libp2p",
  "monero-address",
+ "rand 0.8.5",
  "rust_decimal",
  "serde",
+ "sha2",
  "swap-fs",
  "swap-serde",
  "thiserror 1.0.69",
@@ -13094,7 +13099,6 @@ version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4e6559d53cc268e5031cd8429d05415bc4cb4aefc4aa5d6cc35fbf5b924a1f8"
 dependencies = [
- "base64 0.22.1",
  "bitflags 2.11.0",
  "bytes",
  "futures-util",

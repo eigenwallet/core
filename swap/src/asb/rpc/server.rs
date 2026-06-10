@@ -3,15 +3,13 @@ use crate::monero;
 use crate::protocol::Database;
 use anyhow::{Context, Result};
 use bitcoin_wallet::BitcoinWallet;
-use jsonrpsee::server::{ServerBuilder, ServerHandle};
+use jsonrpsee::server::{HttpBody, HttpRequest, HttpResponse, ServerBuilder, ServerHandle};
 use jsonrpsee::types::ErrorObjectOwned;
 use jsonrpsee::types::error::ErrorCode;
-use rand::distributions::{Alphanumeric, DistString};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
-use std::path::Path;
 use std::sync::Arc;
-use tower_http::validate_request::ValidateRequestHeaderLayer;
+use tower_http::validate_request::{ValidateRequest, ValidateRequestHeaderLayer};
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     ExternalBitcoinRedeemAddressResponse, MoneroAddressResponse, MoneroBalanceResponse,
@@ -32,17 +30,18 @@ impl RpcServer {
     pub async fn start(
         host: String,
         port: u16,
-        data_dir: &Path,
+        auth_verifier: Option<String>,
         bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
         event_loop_service: EventLoopService,
         db: Arc<dyn Database + Send + Sync>,
     ) -> Result<Self> {
-        let cookie_path = data_dir.join(swap_controller_api::RPC_COOKIE_FILE_NAME);
-        let token = read_or_create_cookie(&cookie_path)?;
-
-        let http_middleware =
-            tower::ServiceBuilder::new().layer(ValidateRequestHeaderLayer::bearer(&token));
+        let http_middleware = tower::ServiceBuilder::new()
+            .option_layer(auth_verifier.map(|verifier| {
+                ValidateRequestHeaderLayer::custom(BearerPasswordAuth {
+                    verifier: Arc::from(verifier),
+                })
+            }));
 
         let server = ServerBuilder::default()
             .set_http_middleware(http_middleware)
@@ -60,11 +59,7 @@ impl RpcServer {
         };
         let handle = server.start(rpc_impl.into_rpc());
 
-        tracing::info!(
-            "JSON-RPC server listening on {}, auth token at {}",
-            addr,
-            cookie_path.display()
-        );
+        tracing::info!("JSON-RPC server listening on {}", addr);
 
         Ok(Self { handle })
     }
@@ -77,34 +72,29 @@ impl RpcServer {
     }
 }
 
-fn read_or_create_cookie(path: &Path) -> Result<String> {
-    match std::fs::read_to_string(path) {
-        Ok(token) if !token.trim().is_empty() => return Ok(token.trim().to_string()),
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => {
-            return Err(e)
-                .with_context(|| format!("Failed to read RPC cookie file at {}", path.display()));
-        }
-    }
-
-    let token = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
-    write_cookie(path, &token)?;
-    Ok(token)
+#[derive(Clone)]
+struct BearerPasswordAuth {
+    verifier: Arc<str>,
 }
 
-fn write_cookie(path: &Path, token: &str) -> Result<()> {
-    std::fs::write(path, token)
-        .with_context(|| format!("Failed to write RPC cookie file to {}", path.display()))?;
+impl<B> ValidateRequest<B> for BearerPasswordAuth {
+    type ResponseBody = HttpBody;
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .context("Failed to restrict permissions on RPC cookie file")?;
+    fn validate(&mut self, request: &mut HttpRequest<B>) -> Result<(), HttpResponse> {
+        let presented = request
+            .headers()
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "));
+
+        match presented {
+            Some(password) if swap_env::rpc_auth::verify(password, &self.verifier) => Ok(()),
+            _ => Err(HttpResponse::builder()
+                .status(401)
+                .body(HttpBody::empty())
+                .expect("static 401 response is valid")),
+        }
     }
-
-    Ok(())
 }
 
 pub struct RpcImpl {

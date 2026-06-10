@@ -15,7 +15,8 @@ pub const DOCKER_LOG_MAX_FILE: &str = "5";
 
 pub const ASB_DATA_DIR: &str = "/asb-data";
 pub const ASB_CONFIG_FILE: &str = "config.toml";
-pub const ASB_RPC_COOKIE_FILE: &str = ".cookie";
+pub const ASB_RPC_AUTH_FILE: &str = "rpc-auth";
+pub const ASB_RPC_AUTH_FILE_ON_HOST: &str = "./rpc-auth";
 pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
 pub const PROMTAIL_CONFIG_FILE: &str = "./promtail.yml";
 pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
@@ -178,6 +179,14 @@ impl OrchestratorDirectories {
     pub fn asb_config_path_on_host_as_path_buf(&self) -> PathBuf {
         PathBuf::from(self.asb_config_path_on_host())
     }
+
+    pub fn asb_rpc_auth_path_inside_container(&self) -> PathBuf {
+        self.asb_data_dir.join(ASB_RPC_AUTH_FILE)
+    }
+
+    pub fn asb_rpc_auth_path_on_host(&self) -> &'static str {
+        ASB_RPC_AUTH_FILE_ON_HOST
+    }
 }
 
 /// See: https://docs.docker.com/reference/compose-file/build/#illustrative-example
@@ -235,6 +244,10 @@ fn build(input: OrchestratorInput) -> String {
         flag!("start"),
         flag!("--rpc-bind-port={}", input.ports.asb_rpc_port),
         flag!("--rpc-bind-host=0.0.0.0"),
+        flag!(
+            "--rpc-auth-file={}",
+            PathBuf::from(ASB_DATA_DIR).join(ASB_RPC_AUTH_FILE).display()
+        ),
     ];
 
     // monerod's --proxy addr:port and --tx-proxy tor,addr;port can only take numeric addr,
@@ -298,14 +311,6 @@ fn build(input: OrchestratorInput) -> String {
     let command_asb_controller = command![
         "asb-controller",
         flag!("--url=http://asb:{}", input.ports.asb_rpc_port),
-        flag!(
-            "--cookie={}",
-            input
-                .directories
-                .asb_data_dir
-                .join(ASB_RPC_COOKIE_FILE)
-                .display()
-        ),
     ];
 
     let command_asb_tracing_logger = command![
@@ -562,6 +567,7 @@ services:
       - electrs
     volumes:
       - '{asb_config_path_on_host}:{asb_config_path_inside_container}'
+      - '{asb_rpc_auth_path_on_host}:{asb_rpc_auth_path_inside_container}:ro'
       - 'asb-data:{asb_data_dir}'
     ports:
       - '0.0.0.0:{asb_port}:{asb_port}'
@@ -576,8 +582,6 @@ services:
     logging: *default-logging
     depends_on:
       - asb
-    volumes:
-      - 'asb-data:{asb_data_dir}:ro'
     entrypoint: ''
     command: {command_asb_controller}
   asb-tracing-logger:
@@ -631,6 +635,8 @@ volumes:
         asb_data_dir = input.directories.asb_data_dir.display(),
         asb_config_path_on_host = input.directories.asb_config_path_on_host(),
         asb_config_path_inside_container = input.directories.asb_config_path_inside_container().display(),
+        asb_rpc_auth_path_on_host = input.directories.asb_rpc_auth_path_on_host(),
+        asb_rpc_auth_path_inside_container = input.directories.asb_rpc_auth_path_inside_container().display(),
     );
 
     validate_compose(&compose_str);

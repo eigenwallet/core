@@ -30,6 +30,7 @@ where
             resume_only,
             rpc_bind_host,
             rpc_bind_port,
+            rpc_auth_file,
         } => {
             // Validate RPC bind arguments early
             validate_rpc_bind_args(&rpc_bind_host, &rpc_bind_port)?;
@@ -44,6 +45,7 @@ where
                     resume_only,
                     rpc_bind_host,
                     rpc_bind_port,
+                    rpc_auth_file,
                 },
             }
         }
@@ -226,6 +228,7 @@ pub enum Command {
         resume_only: bool,
         rpc_bind_host: Option<String>,
         rpc_bind_port: Option<u16>,
+        rpc_auth_file: Option<PathBuf>,
     },
     History {
         only_unfinished: bool,
@@ -319,6 +322,11 @@ pub enum RawCommand {
             help = "Port to bind the JSON-RPC server to (e.g., 9944). Must be used together with --rpc-bind-host."
         )]
         rpc_bind_port: Option<u16>,
+        #[structopt(
+            long = "rpc-auth-file",
+            help = "Path to a file containing the `salt:hmac` RPC auth verifier. Required when the JSON-RPC server is enabled."
+        )]
+        rpc_auth_file: Option<PathBuf>,
     },
     #[structopt(about = "Prints all logging messages issued in the past.")]
     Logs {
@@ -494,6 +502,7 @@ mod tests {
                 resume_only: false,
                 rpc_bind_host: None,
                 rpc_bind_port: None,
+                rpc_auth_file: None,
             },
         };
         let args = parse_args(raw_ars).unwrap();
@@ -707,6 +716,7 @@ mod tests {
                 resume_only: false,
                 rpc_bind_host: None,
                 rpc_bind_port: None,
+                rpc_auth_file: None,
             },
         };
         let args = parse_args(raw_ars).unwrap();
@@ -948,6 +958,7 @@ mod tests {
                 resume_only: false,
                 rpc_bind_host: None,
                 rpc_bind_port: None,
+                rpc_auth_file: None,
             },
         };
         let args = parse_args(raw_ars).unwrap();

@@ -157,6 +157,7 @@ pub async fn main() -> Result<()> {
             resume_only,
             rpc_bind_host,
             rpc_bind_port,
+            rpc_auth_file,
         } => {
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
@@ -388,10 +389,26 @@ pub async fn main() -> Result<()> {
 
             // Start RPC server conditionally
             let _rpc_server = if let (Some(host), Some(port)) = (rpc_bind_host, rpc_bind_port) {
+                let auth_file = rpc_auth_file.context(
+                    "The JSON-RPC server requires authentication: pass --rpc-auth-file pointing at a `salt:hmac` verifier file",
+                )?;
+                let auth_verifier = std::fs::read_to_string(&auth_file)
+                    .with_context(|| {
+                        format!("Failed to read RPC auth file at {}", auth_file.display())
+                    })?
+                    .trim()
+                    .to_string();
+                if !auth_verifier.contains(':') {
+                    anyhow::bail!(
+                        "RPC auth file at {} is malformed: expected `salt:hmac`",
+                        auth_file.display()
+                    );
+                }
+
                 let rpc_server = RpcServer::start(
                     host,
                     port,
-                    &config.data.dir,
+                    Some(auth_verifier),
                     bitcoin_wallet.clone(),
                     monero_wallet.clone(),
                     event_loop_service,

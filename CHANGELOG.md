@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB+CONTROLLER: The JSON-RPC server now requires authentication. The ASB verifies a password against a hashed `salt:hmac` keyfile (`--rpc-auth-file`), and `asb-controller` prompts for the password on startup. Generate the keyfile with `orchestrator gen-rpc-auth`.
+
 ## [4.8.4] - 2026-06-09
 
 ## [4.8.3] - 2026-06-08

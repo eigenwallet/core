@@ -91,8 +91,8 @@ http-body-util = "0.1"
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 prometheus-client = "0.22"
-tower = "0.5"
-tower-http = { version = "0.6", features = ["auth", "validate-request"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["validate-request"] }
 
 # Tokio
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }

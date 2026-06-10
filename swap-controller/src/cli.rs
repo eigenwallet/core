@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
 use uuid::Uuid;
 
 #[derive(Parser)]
@@ -10,10 +9,6 @@ pub struct Cli {
     #[arg(long, default_value = "http://127.0.0.1:9944")]
     pub url: String,
 
-    /// Path to the RPC auth cookie file written by the ASB
-    #[arg(long)]
-    pub cookie: PathBuf,
-
     /// Command to execute (defaults to interactive shell if omitted)
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
@@ -21,8 +16,6 @@ pub struct Cli {
 
 #[derive(Subcommand, Clone)]
 pub enum Cmd {
-    /// Print the RPC auth cookie token
-    Cookie,
     /// Check connection to ASB server
     CheckConnection,
     /// Get Bitcoin balance

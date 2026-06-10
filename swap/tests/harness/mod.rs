@@ -208,22 +208,7 @@ ask_spread = "0"
     )
     .await;
 
-    let alice_cookie_path = alice_db_path
-        .parent()
-        .expect("db_path has a parent directory")
-        .join(swap_controller_api::RPC_COOKIE_FILE_NAME);
-    let alice_rpc_token = std::fs::read_to_string(&alice_cookie_path)
-        .expect("Failed to read RPC cookie file")
-        .trim()
-        .to_string();
-    let mut alice_rpc_headers = jsonrpsee::http_client::HeaderMap::new();
-    alice_rpc_headers.insert(
-        "authorization",
-        jsonrpsee::http_client::HeaderValue::from_str(&format!("Bearer {alice_rpc_token}"))
-            .expect("RPC cookie token is a valid header value"),
-    );
     let alice_rpc_client = jsonrpsee::http_client::HttpClientBuilder::default()
-        .set_headers(alice_rpc_headers)
         .build(format!("http://127.0.0.1:{}", alice_rpc_port))
         .expect("Failed to create RPC client");
 
@@ -457,11 +442,10 @@ async fn start_alice(
     )
     .unwrap();
 
-    let data_dir = db_path.parent().expect("db_path has a parent directory");
     let rpc_server_handle = asb::rpc::RpcServer::start(
         "127.0.0.1".to_string(),
         rpc_port,
-        data_dir,
+        None,
         bitcoin_wallet,
         monero_wallet,
         service,
