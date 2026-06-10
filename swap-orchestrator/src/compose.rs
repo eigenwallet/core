@@ -408,6 +408,9 @@ fn build(input: OrchestratorInput) -> String {
     logging: *default-logging
     privileged: true
     cgroup: host
+    command:
+      # Workaround for cadvisor#3860
+      - '--disable_metrics=disk'
     devices:
       - /dev/kmsg:/dev/kmsg
     volumes:
