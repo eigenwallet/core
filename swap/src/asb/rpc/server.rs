@@ -6,9 +6,12 @@ use bitcoin_wallet::BitcoinWallet;
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::ErrorObjectOwned;
 use jsonrpsee::types::error::ErrorCode;
+use rand::distributions::{Alphanumeric, DistString};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
+use std::path::Path;
 use std::sync::Arc;
+use tower_http::validate_request::ValidateRequestHeaderLayer;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     ExternalBitcoinRedeemAddressResponse, MoneroAddressResponse, MoneroBalanceResponse,
@@ -29,12 +32,21 @@ impl RpcServer {
     pub async fn start(
         host: String,
         port: u16,
+        data_dir: &Path,
         bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
         event_loop_service: EventLoopService,
         db: Arc<dyn Database + Send + Sync>,
     ) -> Result<Self> {
+        let token = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
+        let cookie_path = data_dir.join(swap_controller_api::RPC_COOKIE_FILE_NAME);
+        write_cookie(&cookie_path, &token)?;
+
+        let http_middleware =
+            tower::ServiceBuilder::new().layer(ValidateRequestHeaderLayer::bearer(&token));
+
         let server = ServerBuilder::default()
+            .set_http_middleware(http_middleware)
             .build((host, port))
             .await
             .context("Failed to build RPC server")?;
@@ -49,7 +61,11 @@ impl RpcServer {
         };
         let handle = server.start(rpc_impl.into_rpc());
 
-        tracing::info!("JSON-RPC server listening on {}", addr);
+        tracing::info!(
+            "JSON-RPC server listening on {}, auth token written to {}",
+            addr,
+            cookie_path.display()
+        );
 
         Ok(Self { handle })
     }
@@ -60,6 +76,20 @@ impl RpcServer {
             self.handle.stopped().await;
         }))
     }
+}
+
+fn write_cookie(path: &Path, token: &str) -> Result<()> {
+    std::fs::write(path, token)
+        .with_context(|| format!("Failed to write RPC cookie file to {}", path.display()))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .context("Failed to restrict permissions on RPC cookie file")?;
+    }
+
+    Ok(())
 }
 
 pub struct RpcImpl {

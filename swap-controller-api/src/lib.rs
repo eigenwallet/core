@@ -3,6 +3,8 @@ use jsonrpsee::types::ErrorObjectOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub const RPC_COOKIE_FILE_NAME: &str = ".cookie";
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BitcoinBalanceResponse {
     #[serde(with = "bitcoin::amount::serde::as_sat")]

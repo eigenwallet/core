@@ -15,6 +15,7 @@ pub const DOCKER_LOG_MAX_FILE: &str = "5";
 
 pub const ASB_DATA_DIR: &str = "/asb-data";
 pub const ASB_CONFIG_FILE: &str = "config.toml";
+pub const ASB_RPC_COOKIE_FILE: &str = ".cookie";
 pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
 pub const PROMTAIL_CONFIG_FILE: &str = "./promtail.yml";
 pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
@@ -297,6 +298,14 @@ fn build(input: OrchestratorInput) -> String {
     let command_asb_controller = command![
         "asb-controller",
         flag!("--url=http://asb:{}", input.ports.asb_rpc_port),
+        flag!(
+            "--cookie={}",
+            input
+                .directories
+                .asb_data_dir
+                .join(ASB_RPC_COOKIE_FILE)
+                .display()
+        ),
     ];
 
     let command_asb_tracing_logger = command![
@@ -567,6 +576,8 @@ services:
     logging: *default-logging
     depends_on:
       - asb
+    volumes:
+      - 'asb-data:{asb_data_dir}:ro'
     entrypoint: ''
     command: {command_asb_controller}
   asb-tracing-logger:

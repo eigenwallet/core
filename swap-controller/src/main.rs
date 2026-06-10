@@ -1,20 +1,40 @@
 mod cli;
 mod repl;
 
+use anyhow::Context;
 use clap::Parser;
 use cli::{Cli, Cmd};
+use jsonrpsee::http_client::{HeaderMap, HeaderValue, HttpClientBuilder};
 use swap_controller_api::{AsbApiClient, MoneroSeedResponse};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let client = jsonrpsee::http_client::HttpClientBuilder::default().build(&cli.url)?;
+    let token = std::fs::read_to_string(&cli.cookie)
+        .with_context(|| format!("Failed to read RPC cookie file at {}", cli.cookie.display()))?;
+    let token = token.trim().to_string();
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {token}"))
+            .context("Cookie token is not a valid HTTP header value")?,
+    );
+    let client = HttpClientBuilder::default()
+        .set_headers(headers)
+        .build(&cli.url)?;
 
     match cli.cmd {
-        None => repl::run(client, dispatch).await?,
+        None => {
+            repl::run(client, move |cmd, client| {
+                let token = token.clone();
+                async move { dispatch(cmd, client, token).await }
+            })
+            .await?
+        }
         Some(cmd) => {
-            if let Err(e) = dispatch(cmd.clone(), client.clone()).await {
+            if let Err(e) = dispatch(cmd.clone(), client.clone(), token).await {
                 eprintln!("Command failed with error: {e:?}");
             }
         }
@@ -23,8 +43,11 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
+async fn dispatch(cmd: Cmd, client: impl AsbApiClient, token: String) -> anyhow::Result<()> {
     match cmd {
+        Cmd::Cookie => {
+            println!("{token}");
+        }
         Cmd::CheckConnection => {
             client.check_connection().await?;
             println!("Connected");

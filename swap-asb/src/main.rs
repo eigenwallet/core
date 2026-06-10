@@ -391,6 +391,7 @@ pub async fn main() -> Result<()> {
                 let rpc_server = RpcServer::start(
                     host,
                     port,
+                    &config.data.dir,
                     bitcoin_wallet.clone(),
                     monero_wallet.clone(),
                     event_loop_service,
