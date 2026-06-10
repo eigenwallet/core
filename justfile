@@ -85,13 +85,9 @@ test_monero_sys:
 swap:
 	cargo build -p swap-asb --bin asb && cd swap && cargo build --bin=swap
 
-# Generate the ASB RPC auth keyfile
-gen-rpc-auth:
-	cargo run -p swap-orchestrator --bin orchestrator -- gen-rpc-auth
-
 # Run the asb on testnet
 asb-testnet:
-	cargo run -p swap-asb --bin asb -- --testnet --trace start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0 --rpc-auth-file rpc-auth
+	cargo run -p swap-asb --bin asb -- --testnet --trace start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
 
 # Launch the ASB controller REPL against a local testnet ASB instance
 asb-testnet-controller:

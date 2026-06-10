@@ -1,7 +1,6 @@
 mod compose;
 mod containers;
 mod images;
-mod keygen;
 mod prompt;
 
 use swap_orchestrator as _;
@@ -175,11 +174,6 @@ fn read_gh_token_from_env() -> Option<String> {
 }
 
 fn main() {
-    if std::env::args().nth(1).as_deref() == Some("gen-rpc-auth") {
-        keygen::generate_rpc_auth_keyfile();
-        return;
-    }
-
     // Cloudflare Tunnel is opt-in via env vars so existing deployments
     // keep working unchanged.
     let cloudflared_config = read_cloudflared_config_from_env();
@@ -322,7 +316,7 @@ fn main() {
             config_prompt::rendezvous_points().expect("Failed to prompt for rendezvous points");
         let tor_hidden_service =
             config_prompt::tor_hidden_service().expect("Failed to prompt for tor hidden service");
-        let listen_addresses = config_prompt::listen_addresses(&defaults.listen_addresses)
+        let listen_addresses = config_prompt::listen_addresses(&defaults.listen_address_tcp)
             .expect("Failed to prompt for listen addresses");
         let monero_node_type = prompt::monero_node_type();
         let electrum_server_type = prompt::electrum_server_type(&defaults.electrum_rpc_urls);

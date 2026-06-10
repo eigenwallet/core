@@ -9,14 +9,10 @@ bitcoin = { workspace = true }
 config = { version = "0.14", default-features = false, features = ["toml"] }
 console = { workspace = true }
 dialoguer = { workspace = true }
-hex = "0.4"
-hmac = "0.12"
 libp2p = { workspace = true, features = ["serde"] }
 monero-address = { workspace = true }
-rand = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
-sha2 = { workspace = true }
 swap-fs = { path = "../swap-fs" }
 swap-serde = { path = "../swap-serde" }
 thiserror = { workspace = true }
