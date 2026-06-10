@@ -17,6 +17,9 @@ tempdb.sqlite
 swap-orchestrator/docker-compose.yml
 swap-orchestrator/config.toml
 
+# ASB RPC auth keyfile (secret salt:hmac verifier)
+rpc-auth
+
 # release build generator scripts
 release-build.sh
 cn_macos

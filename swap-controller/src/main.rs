@@ -1,15 +1,17 @@
 mod cli;
 mod repl;
 
+use anyhow::Context;
 use clap::Parser;
 use cli::{Cli, Cmd};
+use jsonrpsee::http_client::{HeaderMap, HeaderValue, HttpClient, HttpClientBuilder};
 use swap_controller_api::{AsbApiClient, MoneroSeedResponse};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let client = jsonrpsee::http_client::HttpClientBuilder::default().build(&cli.url)?;
+    let client = authenticate(&cli.url).await?;
 
     match cli.cmd {
         None => repl::run(client, dispatch).await?,
@@ -21,6 +23,46 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Prompts for the RPC password and returns a client once the server accepts
+/// it, re-prompting on an authentication failure and bailing if the server is
+/// unreachable for any other reason.
+async fn authenticate(url: &str) -> anyhow::Result<HttpClient> {
+    loop {
+        let password = dialoguer::Password::new()
+            .with_prompt("ASB RPC password")
+            .interact()
+            .context("Failed to read password")?;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            HeaderValue::from_str(&format!("Bearer {password}"))
+                .context("Password is not a valid HTTP header value")?,
+        );
+        let client = HttpClientBuilder::default()
+            .set_headers(headers)
+            .build(url)?;
+
+        match client.check_connection().await {
+            Ok(()) => return Ok(client),
+            Err(e) if is_auth_failure(&e) => eprintln!("Authentication failed, try again."),
+            Err(e) => return Err(e).context("Failed to reach the ASB RPC server"),
+        }
+    }
+}
+
+fn is_auth_failure(error: &jsonrpsee::core::ClientError) -> bool {
+    use jsonrpsee::http_client::transport::Error as TransportError;
+
+    let jsonrpsee::core::ClientError::Transport(source) = error else {
+        return false;
+    };
+    matches!(
+        source.downcast_ref::<TransportError>(),
+        Some(TransportError::Rejected { status_code: 401 })
+    )
 }
 
 async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
