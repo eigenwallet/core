@@ -38,9 +38,8 @@ impl RpcServer {
         event_loop_service: EventLoopService,
         db: Arc<dyn Database + Send + Sync>,
     ) -> Result<Self> {
-        let token = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
         let cookie_path = data_dir.join(swap_controller_api::RPC_COOKIE_FILE_NAME);
-        write_cookie(&cookie_path, &token)?;
+        let token = read_or_create_cookie(&cookie_path)?;
 
         let http_middleware =
             tower::ServiceBuilder::new().layer(ValidateRequestHeaderLayer::bearer(&token));
@@ -62,7 +61,7 @@ impl RpcServer {
         let handle = server.start(rpc_impl.into_rpc());
 
         tracing::info!(
-            "JSON-RPC server listening on {}, auth token written to {}",
+            "JSON-RPC server listening on {}, auth token at {}",
             addr,
             cookie_path.display()
         );
@@ -76,6 +75,22 @@ impl RpcServer {
             self.handle.stopped().await;
         }))
     }
+}
+
+fn read_or_create_cookie(path: &Path) -> Result<String> {
+    match std::fs::read_to_string(path) {
+        Ok(token) if !token.trim().is_empty() => return Ok(token.trim().to_string()),
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(e)
+                .with_context(|| format!("Failed to read RPC cookie file at {}", path.display()));
+        }
+    }
+
+    let token = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
+    write_cookie(path, &token)?;
+    Ok(token)
 }
 
 fn write_cookie(path: &Path, token: &str) -> Result<()> {
