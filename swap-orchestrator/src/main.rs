@@ -1,6 +1,7 @@
 mod compose;
 mod containers;
 mod images;
+mod keygen;
 mod prompt;
 
 use swap_orchestrator as _;
@@ -174,6 +175,11 @@ fn read_gh_token_from_env() -> Option<String> {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("gen-rpc-auth") {
+        keygen::generate_rpc_auth_keyfile();
+        return;
+    }
+
     // Cloudflare Tunnel is opt-in via env vars so existing deployments
     // keep working unchanged.
     let cloudflared_config = read_cloudflared_config_from_env();
@@ -437,6 +443,23 @@ fn main() {
     std::fs::write(DOCKER_COMPOSE_FILE, compose).expect("Failed to write docker-compose.yml");
 
     println!();
+    if !std::path::Path::new(compose::ASB_RPC_AUTH_FILE_ON_HOST).exists() {
+        let generate_now = dialoguer::Confirm::with_theme(&dialoguer::theme::ColorfulTheme::default())
+            .with_prompt(format!(
+                "No RPC auth keyfile found at {}. Without it the asb will refuse to start its RPC server. Generate one now?",
+                compose::ASB_RPC_AUTH_FILE_ON_HOST
+            ))
+            .default(true)
+            .interact()
+            .expect("Failed to read confirmation");
+
+        if generate_now {
+            keygen::generate_rpc_auth_keyfile();
+        } else {
+            println!("Run `orchestrator gen-rpc-auth` before starting the services.");
+        }
+        println!();
+    }
     println!("Run `docker compose up -d` to start the services.");
 
     if let Some(cf) = cloudflared_config.as_ref() {

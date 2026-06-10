@@ -445,6 +445,7 @@ async fn start_alice(
     let rpc_server_handle = asb::rpc::RpcServer::start(
         "127.0.0.1".to_string(),
         rpc_port,
+        None,
         bitcoin_wallet,
         monero_wallet,
         service,

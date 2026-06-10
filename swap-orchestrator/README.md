@@ -56,6 +56,16 @@ To build the images, run this command. Also run this after upgrading the `orches
 docker compose build --no-cache # --no-cache fixes a git caching issue (error: tag clobbered)
 ```
 
+### Set the JSON-RPC password
+
+The `asb` authenticates its JSON-RPC endpoint, and refuses to start it without an auth keyfile. Before starting the environment, generate one:
+
+```bash
+./orchestrator gen-rpc-auth
+```
+
+This prompts for a strong password and writes a hashed verifier to `./rpc-auth` (mounted read-only into the `asb` container); the password itself is never stored. Keep the password — you enter it when attaching to `asb-controller`.
+
 To start the environment, run a command [such as](https://docs.docker.com/reference/cli/docker/compose/up/):
 
 ```bash
@@ -77,10 +87,12 @@ To view high-verbosity logs of the asb, peek inside the `asb-tracing-logger` con
 docker compose logs -f --tail 100 asb-tracing-logger
 ```
 
-Once the `asb` is running properly you can get a shell
+Once the `asb` is running properly you can get a shell. It prompts for the RPC password you set with `gen-rpc-auth` before granting access.
 
 ```bash
 $ docker compose attach asb-controller
+
+ASB RPC password: ********
 
 ASB Control Shell - Type 'help' for commands, 'quit' to exit
 
