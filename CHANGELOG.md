@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB+GUI: Skip publishing the Monero redeem/refund transaction if it is already present on chain (e.g. after a restart)
+
 ## [4.8.4] - 2026-06-09
 
 ## [4.8.3] - 2026-06-08
