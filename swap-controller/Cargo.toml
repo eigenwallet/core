@@ -12,7 +12,6 @@ anyhow = { workspace = true }
 bitcoin = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 comfy-table = "7.2.1"
-dialoguer = { workspace = true }
 jsonrpsee = { workspace = true, features = ["client-core", "http-client"] }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 rustyline = "17.0.0"
