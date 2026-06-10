@@ -5,7 +5,6 @@
 //!  - wait for transactions to be confirmed
 //!  - send money from one wallet to another.
 pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
-pub use monero_wallet_ng::rpc::TransactionStatus;
 
 use anyhow::{Context, Result};
 use monero_address::Network;
@@ -293,16 +292,18 @@ impl Wallets {
         rpc_client
     }
 
-    pub async fn transaction_status(&self, tx_hash: &TxHash) -> Result<TransactionStatus> {
-        use monero_wallet_ng::rpc::ProvidesTransactionStatus;
+    pub async fn is_transaction_present(&self, tx_hash: &TxHash) -> Result<bool> {
+        use monero_wallet_ng::rpc::{ProvidesTransactionStatus, TransactionStatus};
 
         let rpc_client = self.rpc_client().await;
         let tx_id = tx_hash_to_bytes(tx_hash)?;
 
-        rpc_client
+        let status = rpc_client
             .transaction_status(tx_id)
             .await
-            .context("Failed to query Monero transaction status")
+            .context("Failed to query Monero transaction status")?;
+
+        Ok(!matches!(status, TransactionStatus::Unknown))
     }
 
     pub async fn direct_rpc_block_height(&self) -> Result<u64> {

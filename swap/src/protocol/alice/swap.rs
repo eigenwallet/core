@@ -753,13 +753,13 @@ where
             retry(
                 "Publishing Monero refund transaction",
                 || async {
-                    let status = monero_wallet
-                        .transaction_status(&xmr_refund_tx_hash)
+                    let is_present = monero_wallet
+                        .is_transaction_present(&xmr_refund_tx_hash)
                         .await
                         .context("Failed to check whether Monero refund transaction is already present on chain")
                         .map_err(backoff::Error::transient)?;
 
-                    if !matches!(status, monero::TransactionStatus::Unknown) {
+                    if is_present {
                         tracing::info!(%swap_id, %xmr_refund_tx_hash, "Monero refund transaction is already present on chain, skipping publish");
                         return Ok(());
                     }
