@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.9.0] - 2026-06-10
+
 - ASB+CONTROLLER: The JSON-RPC server now requires authentication. The ASB verifies a password against a hashed keyfile (`--rpc-auth-file`), and `asb-controller` prompts for the password on startup. Generate the keyfile with `orchestrator gen-rpc-auth`. Clients authenticate by sending the password with every request in an `Authorization: Bearer <password>` header.
 - ASB+GUI: Skip publishing the Monero redeem/refund transaction if it is already present on chain (e.g. after a restart)
 
@@ -992,7 +994,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.8.4...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.9.0...HEAD
+[4.9.0]: https://github.com/eigenwallet/core/compare/4.8.4...4.9.0
 [4.8.4]: https://github.com/eigenwallet/core/compare/4.8.3...4.8.4
 [4.8.3]: https://github.com/eigenwallet/core/compare/4.8.2...4.8.3
 [4.8.2]: https://github.com/eigenwallet/core/compare/4.8.1...4.8.2
