@@ -157,7 +157,18 @@ pub async fn main() -> Result<()> {
             resume_only,
             rpc_bind_host,
             rpc_bind_port,
+            rpc_auth_file,
         } => {
+            let rpc_auth_verifier = match (&rpc_bind_host, &rpc_bind_port) {
+                (Some(_), Some(_)) => {
+                    let auth_file = rpc_auth_file.context(
+                        "The JSON-RPC server requires authentication: pass --rpc-auth-file pointing at the RPC auth verifier file",
+                    )?;
+                    Some(swap_env::rpc_auth::load_verifier(&auth_file)?)
+                }
+                _ => None,
+            };
+
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
             let developer_tip = config.maker.developer_tip;
@@ -391,6 +402,7 @@ pub async fn main() -> Result<()> {
                 let rpc_server = RpcServer::start(
                     host,
                     port,
+                    rpc_auth_verifier,
                     bitcoin_wallet.clone(),
                     monero_wallet.clone(),
                     event_loop_service,

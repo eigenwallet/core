@@ -3,12 +3,13 @@ use crate::monero;
 use crate::protocol::Database;
 use anyhow::{Context, Result};
 use bitcoin_wallet::BitcoinWallet;
-use jsonrpsee::server::{ServerBuilder, ServerHandle};
+use jsonrpsee::server::{HttpBody, HttpRequest, HttpResponse, ServerBuilder, ServerHandle};
 use jsonrpsee::types::ErrorObjectOwned;
 use jsonrpsee::types::error::ErrorCode;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
 use std::sync::Arc;
+use tower_http::validate_request::{ValidateRequest, ValidateRequestHeaderLayer};
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     ExternalBitcoinRedeemAddressResponse, MoneroAddressResponse, MoneroBalanceResponse,
@@ -29,12 +30,21 @@ impl RpcServer {
     pub async fn start(
         host: String,
         port: u16,
+        auth_verifier: Option<String>,
         bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
         event_loop_service: EventLoopService,
         db: Arc<dyn Database + Send + Sync>,
     ) -> Result<Self> {
+        let http_middleware = tower::ServiceBuilder::new()
+            .option_layer(auth_verifier.map(|verifier| {
+                ValidateRequestHeaderLayer::custom(BearerPasswordAuth {
+                    verifier: Arc::from(verifier),
+                })
+            }));
+
         let server = ServerBuilder::default()
+            .set_http_middleware(http_middleware)
             .build((host, port))
             .await
             .context("Failed to build RPC server")?;
@@ -59,6 +69,31 @@ impl RpcServer {
         AbortOnDropHandle::new(tokio::spawn(async move {
             self.handle.stopped().await;
         }))
+    }
+}
+
+#[derive(Clone)]
+struct BearerPasswordAuth {
+    verifier: Arc<str>,
+}
+
+impl<B> ValidateRequest<B> for BearerPasswordAuth {
+    type ResponseBody = HttpBody;
+
+    fn validate(&mut self, request: &mut HttpRequest<B>) -> Result<(), HttpResponse> {
+        let presented = request
+            .headers()
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "));
+
+        match presented {
+            Some(password) if swap_env::rpc_auth::verify(password, &self.verifier) => Ok(()),
+            _ => Err(HttpResponse::builder()
+                .status(401)
+                .body(HttpBody::empty())
+                .expect("static 401 response is valid")),
+        }
     }
 }
 

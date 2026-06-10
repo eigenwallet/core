@@ -15,6 +15,8 @@ pub const DOCKER_LOG_MAX_FILE: &str = "5";
 
 pub const ASB_DATA_DIR: &str = "/asb-data";
 pub const ASB_CONFIG_FILE: &str = "config.toml";
+pub const ASB_RPC_AUTH_FILE_ON_HOST: &str = "./rpc-auth";
+pub const ASB_RPC_AUTH_FILE_IN_CONTAINER: &str = "/rpc-auth";
 pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
 pub const PROMTAIL_CONFIG_FILE: &str = "./promtail.yml";
 pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
@@ -177,6 +179,7 @@ impl OrchestratorDirectories {
     pub fn asb_config_path_on_host_as_path_buf(&self) -> PathBuf {
         PathBuf::from(self.asb_config_path_on_host())
     }
+
 }
 
 /// See: https://docs.docker.com/reference/compose-file/build/#illustrative-example
@@ -234,6 +237,7 @@ fn build(input: OrchestratorInput) -> String {
         flag!("start"),
         flag!("--rpc-bind-port={}", input.ports.asb_rpc_port),
         flag!("--rpc-bind-host=0.0.0.0"),
+        flag!("--rpc-auth-file={}", ASB_RPC_AUTH_FILE_IN_CONTAINER),
     ];
 
     // monerod's --proxy addr:port and --tx-proxy tor,addr;port can only take numeric addr,
@@ -556,6 +560,13 @@ services:
       - electrs
     volumes:
       - '{asb_config_path_on_host}:{asb_config_path_inside_container}'
+      # makes `docker compose up` fail if the keyfile is missing
+      - type: bind
+        source: '{asb_rpc_auth_file_on_host}'
+        target: '{asb_rpc_auth_file_in_container}'
+        read_only: true
+        bind:
+          create_host_path: false
       - 'asb-data:{asb_data_dir}'
     ports:
       - '0.0.0.0:{asb_port}:{asb_port}'
@@ -623,6 +634,8 @@ volumes:
         asb_data_dir = input.directories.asb_data_dir.display(),
         asb_config_path_on_host = input.directories.asb_config_path_on_host(),
         asb_config_path_inside_container = input.directories.asb_config_path_inside_container().display(),
+        asb_rpc_auth_file_on_host = ASB_RPC_AUTH_FILE_ON_HOST,
+        asb_rpc_auth_file_in_container = ASB_RPC_AUTH_FILE_IN_CONTAINER,
     );
 
     validate_compose(&compose_str);
