@@ -846,7 +846,7 @@ function RendezvousPointsSetting() {
                           onValidatedChange={(value) =>
                             setNewPoint(value ?? "")
                           }
-                          placeholder="/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa"
+                          placeholder="/dns4/discovery.eigenwallet.org/tcp/443/wss/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw"
                           fullWidth
                           isValid={isValidMultiAddressWithPeerId}
                           variant="outlined"
