@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT peer_id, address FROM peer_addresses",
+  "query": "\n            SELECT peers.peer_id, swap_states.entered_at\n            FROM peers\n            JOIN swap_states ON swap_states.swap_id = peers.swap_id\n            ",
   "describe": {
     "columns": [
       {
@@ -9,7 +9,7 @@
         "type_info": "Text"
       },
       {
-        "name": "address",
+        "name": "entered_at",
         "ordinal": 1,
         "type_info": "Text"
       }
@@ -22,5 +22,5 @@
       false
     ]
   },
-  "hash": "6130b6cdd184181f890964eb460741f5cf23b5237fb676faed009106627a4ca6"
+  "hash": "151e0b804bca756d148fa5e614218c01b7df49629145c5aab7f24e8167cb35bc"
 }

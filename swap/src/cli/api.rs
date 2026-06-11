@@ -18,6 +18,11 @@ use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
+use std::time::Duration;
+
+/// Peers we have swapped with within this window are added to the swarm on
+/// startup and dialed for quotes, even without a rendezvous registration.
+const RECENT_PEER_DISCOVERY_WINDOW: Duration = Duration::from_secs(12 * 60 * 60);
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
 use tauri_bindings::{MoneroNodeConfig, TauriBackgroundProgress, TauriEmitter, TauriHandle};
@@ -857,10 +862,16 @@ mod builder {
                     }
                 }
 
-                // Add addresses of peers that we have previously connected to to the swarm
-                for (peer_id, addrs) in db.get_all_peer_addresses().await.context(
-                    "Failed to retrieve peer addresses from database to insert into swarm",
-                )? {
+                // Add addresses of peers that we have swapped with recently
+                // to the swarm; they are dialed for quotes even when they are
+                // not registered at a rendezvous point.
+                for (peer_id, addrs) in db
+                    .get_recent_peer_addresses(RECENT_PEER_DISCOVERY_WINDOW)
+                    .await
+                    .context(
+                        "Failed to retrieve peer addresses from database to insert into swarm",
+                    )?
+                {
                     for addr in addrs {
                         swarm.add_peer_address(peer_id, addr);
                     }

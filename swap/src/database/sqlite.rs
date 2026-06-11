@@ -19,6 +19,17 @@ use uuid::Uuid;
 
 use super::AccessMode;
 
+/// Parses the `Display` format of `OffsetDateTime` that `insert_latest_state`
+/// writes into `entered_at`, e.g. "2026-06-11 7:53:02.123456789 +00:00:00".
+fn parse_entered_at(entered_at: &str) -> Result<OffsetDateTime> {
+    let format = time::format_description::parse(
+        "[year]-[month]-[day] [hour padding:none]:[minute]:[second].[subsecond] \
+         [offset_hour sign:mandatory]:[offset_minute]:[offset_second]",
+    )?;
+
+    Ok(OffsetDateTime::parse(entered_at, &format)?)
+}
+
 pub struct SqliteDatabase {
     pool: Pool<Sqlite>,
     tauri_handle: Option<TauriHandle>,
@@ -244,7 +255,42 @@ impl Database for SqliteDatabase {
         addresses
     }
 
-    async fn get_all_peer_addresses(&self) -> Result<Vec<(PeerId, Vec<Multiaddr>)>> {
+    async fn get_recent_peer_addresses(
+        &self,
+        within: std::time::Duration,
+    ) -> Result<Vec<(PeerId, Vec<Multiaddr>)>> {
+        let cutoff =
+            OffsetDateTime::now_utc() - time::Duration::seconds(within.as_secs() as i64);
+
+        // `entered_at` is the Display format of OffsetDateTime, which is
+        // neither lexicographically ordered (hours are not zero-padded) nor a
+        // standard SQL datetime, so the time filter happens in Rust.
+        let swap_rows = sqlx::query!(
+            r#"
+            SELECT peers.peer_id, swap_states.entered_at
+            FROM peers
+            JOIN swap_states ON swap_states.swap_id = peers.swap_id
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let recent_peers: std::collections::HashSet<String> = swap_rows
+            .into_iter()
+            .filter(|row| match parse_entered_at(&row.entered_at) {
+                Ok(entered_at) => entered_at > cutoff,
+                Err(e) => {
+                    tracing::warn!(
+                        entered_at = %row.entered_at,
+                        error = %e,
+                        "Failed to parse swap state timestamp, skipping entry"
+                    );
+                    false
+                }
+            })
+            .map(|row| row.peer_id)
+            .collect();
+
         let rows = sqlx::query!("SELECT peer_id, address FROM peer_addresses")
             .fetch_all(&self.pool)
             .await?;
@@ -253,6 +299,10 @@ impl Database for SqliteDatabase {
             std::collections::HashMap::new();
 
         for row in rows.iter() {
+            if !recent_peers.contains(&row.peer_id) {
+                continue;
+            }
+
             match (
                 PeerId::from_str(&row.peer_id),
                 Multiaddr::from_str(&row.address),
@@ -860,6 +910,48 @@ mod tests {
             assert_eq!(orig.percentage(), loaded.percentage());
             assert_eq!(orig.label(), loaded.label());
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_recent_peer_addresses() -> Result<()> {
+        let db = setup_test_db().await?;
+
+        let recent_peer = PeerId::random();
+        let old_peer = PeerId::random();
+        let address = "/ip4/127.0.0.1/tcp/9939".parse::<Multiaddr>()?;
+
+        let recent_swap = Uuid::new_v4();
+        let old_swap = Uuid::new_v4();
+
+        db.insert_address(recent_peer, address.clone()).await?;
+        db.insert_address(old_peer, address.clone()).await?;
+        db.insert_peer_id(recent_swap, recent_peer).await?;
+        db.insert_peer_id(old_swap, old_peer).await?;
+
+        // The recent swap gets a state entered now, the old one 24 hours ago.
+        db.insert_latest_state(recent_swap, State::Alice(AliceState::BtcRedeemed))
+            .await?;
+
+        let old_entered_at =
+            (OffsetDateTime::now_utc() - time::Duration::hours(24)).to_string();
+        let old_state =
+            serde_json::to_string(&Swap::from(State::Alice(AliceState::BtcRedeemed)))?;
+        sqlx::query("insert into swap_states (swap_id, entered_at, state) values (?, ?, ?)")
+            .bind(old_swap.to_string())
+            .bind(old_entered_at)
+            .bind(old_state)
+            .execute(&db.pool)
+            .await?;
+
+        let recent = db
+            .get_recent_peer_addresses(std::time::Duration::from_secs(12 * 60 * 60))
+            .await?;
+
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].0, recent_peer);
+        assert_eq!(recent[0].1, vec![address]);
 
         Ok(())
     }

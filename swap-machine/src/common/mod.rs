@@ -297,7 +297,12 @@ pub trait Database {
     async fn get_monero_addresses(&self) -> Result<Vec<::monero_address::MoneroAddress>>;
     async fn insert_address(&self, peer_id: PeerId, address: Multiaddr) -> Result<()>;
     async fn get_addresses(&self, peer_id: PeerId) -> Result<Vec<Multiaddr>>;
-    async fn get_all_peer_addresses(&self) -> Result<Vec<(PeerId, Vec<Multiaddr>)>>;
+    /// Peers we have swapped with within the given window, with their last
+    /// known addresses.
+    async fn get_recent_peer_addresses(
+        &self,
+        within: std::time::Duration,
+    ) -> Result<Vec<(PeerId, Vec<Multiaddr>)>>;
     async fn get_swap_start_date(&self, swap_id: Uuid) -> Result<String>;
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()>;
     async fn get_state(&self, swap_id: Uuid) -> Result<State>;
