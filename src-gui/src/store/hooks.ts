@@ -20,6 +20,7 @@ import {
   isOfferPhase,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
+import type { SwapState } from "models/storeModel";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
 import { parseDateString } from "utils/parseUtils";
 import { useEffect, useMemo, useState } from "react";
@@ -76,16 +77,28 @@ export function useResumeableSwapsCountExcludingPunished() {
 // other than a *terminal* Released. A Released event carrying
 // `next_auto_resume_at_unix_ms` is a retry signal — the swap manager will
 // auto-resume — so the GUI should keep treating those swaps as active.
-function isSwapInFlight(swap: import("models/storeModel").SwapState) {
+function isSwapInFlight(swap: SwapState) {
   if (swap.curr.type !== "Released") return true;
   return swap.curr.content.next_auto_resume_at_unix_ms != null;
 }
 
 // For "in flight, past the offer phase" we look at the previous event when the
 // current is Released — `prev` carries the actual swap-machine state.
-function effectivePhaseEvent(swap: import("models/storeModel").SwapState) {
+function effectivePhaseEvent(swap: SwapState) {
   if (swap.curr.type !== "Released") return swap.curr;
   return swap.prev;
+}
+
+function isInFlightOfferPhaseSwap(swap: SwapState) {
+  if (!isSwapInFlight(swap)) return false;
+  const phase = effectivePhaseEvent(swap);
+  return phase != null && isOfferPhase(phase);
+}
+
+function isInFlightSwapPhaseSwap(swap: SwapState) {
+  if (!isSwapInFlight(swap)) return false;
+  const phase = effectivePhaseEvent(swap);
+  return phase != null && !isOfferPhase(phase);
 }
 
 /// Returns true if we have any swap that is running
@@ -97,30 +110,15 @@ export function useIsSwapRunning() {
 
 /// Returns the number of swaps that are currently running
 export function useRunningSwapsCount() {
-  return useAppSelector((state) =>
-    state ? Object.values(state.swap.swaps).filter(isSwapInFlight).length : 0,
+  return useAppSelector(
+    (state) => Object.values(state.swap.swaps).filter(isSwapInFlight).length,
   );
 }
 
 /// Returns true if we have a swap that is still in the offer/setup phase
 export function useHasOfferPhaseSwap() {
   return useAppSelector((state) =>
-    Object.values(state.swap.swaps).some((swap) => {
-      if (!isSwapInFlight(swap)) return false;
-      const phase = effectivePhaseEvent(swap);
-      return phase != null && isOfferPhase(phase);
-    }),
-  );
-}
-
-/// Returns true if we have a swap that has progressed past the offer phase
-export function useHasSwapPhaseSwap() {
-  return useAppSelector((state) =>
-    Object.values(state.swap.swaps).some((swap) => {
-      if (!isSwapInFlight(swap)) return false;
-      const phase = effectivePhaseEvent(swap);
-      return phase != null && !isOfferPhase(phase);
-    }),
+    Object.values(state.swap.swaps).some(isInFlightOfferPhaseSwap),
   );
 }
 
@@ -128,11 +126,7 @@ export function useHasSwapPhaseSwap() {
 export function useSwapPhaseSwapsCount() {
   return useAppSelector(
     (state) =>
-      Object.values(state.swap.swaps).filter((swap) => {
-        if (!isSwapInFlight(swap)) return false;
-        const phase = effectivePhaseEvent(swap);
-        return phase != null && !isOfferPhase(phase);
-      }).length,
+      Object.values(state.swap.swaps).filter(isInFlightSwapPhaseSwap).length,
   );
 }
 

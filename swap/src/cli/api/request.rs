@@ -5,7 +5,7 @@ use crate::cli::api::tauri_bindings::{
     TauriSwapProgressEvent,
 };
 use crate::cli::list_sellers::QuoteWithAddress;
-use crate::cli::swap_manager::{StartSwapInputs, run_exclusive_initiation};
+use crate::cli::swap_manager::StartSwapInputs;
 use crate::common::{get_logs, redact};
 use crate::monero;
 use crate::monero::MoneroAddressPool;
@@ -1099,48 +1099,48 @@ pub async fn buy_xmr(
         let bitcoin_wallet = Arc::clone(&bitcoin_wallet);
         let tauri_handle = tauri_handle.clone();
         async move {
-            let wallet_for_closures = Arc::clone(&bitcoin_wallet);
-            let tauri_for_determine = tauri_handle.clone();
-            let tauri_for_selection = tauri_handle.clone();
-
             let (seller_multiaddr, seller_peer_id, quote, tx_lock_amount, tx_lock_fee) =
                 determine_btc_to_swap(
                     quotes_rx,
                     bitcoin_wallet.new_address(),
                     {
-                        let w = Arc::clone(&wallet_for_closures);
+                        let w = Arc::clone(&bitcoin_wallet);
                         move || {
                             let w = w.clone();
                             async move { w.balance().await }
                         }
                     },
                     {
-                        let w = Arc::clone(&wallet_for_closures);
+                        let w = Arc::clone(&bitcoin_wallet);
                         move || {
                             let w = w.clone();
                             async move { w.max_giveable(address_len).await }
                         }
                     },
                     {
-                        let w = Arc::clone(&wallet_for_closures);
+                        let w = Arc::clone(&bitcoin_wallet);
                         move || {
                             let w = w.clone();
                             async move { w.sync().await }
                         }
                     },
-                    tauri_for_determine,
+                    tauri_handle.clone(),
                     swap_id,
-                    move |quote_with_address| {
-                        let tauri = tauri_for_selection.clone();
-                        Box::new(async move {
-                            let details = SelectMakerDetails {
-                                swap_id,
-                                btc_amount_to_swap: quote_with_address.quote.max_quantity,
-                                maker: quote_with_address,
-                            };
+                    {
+                        let tauri_handle = tauri_handle.clone();
+                        move |quote_with_address| {
+                            let tauri = tauri_handle.clone();
+                            Box::new(async move {
+                                let details = SelectMakerDetails {
+                                    swap_id,
+                                    btc_amount_to_swap: quote_with_address.quote.max_quantity,
+                                    maker: quote_with_address,
+                                };
 
-                            tauri.request_maker_selection(details, 300).await
-                        }) as Box<dyn Future<Output = Result<bool>> + Send>
+                                tauri.request_maker_selection(details, 300).await
+                            })
+                                as Box<dyn Future<Output = Result<bool>> + Send>
+                        }
                     },
                 )
                 .await?;
@@ -1170,7 +1170,10 @@ pub async fn buy_xmr(
         }
     };
 
-    run_exclusive_initiation(&context.swap_manager, swap_id, body, tauri_handle).await?;
+    context
+        .swap_manager
+        .run_exclusive_initiation(swap_id, body, tauri_handle)
+        .await?;
     Ok(())
 }
 
