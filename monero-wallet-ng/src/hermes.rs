@@ -50,11 +50,11 @@
 // NOTE: This is very much a draft implementation and subject to change.
 
 use chacha20::{
-    cipher::{KeyIvInit, StreamCipher},
     ChaCha20,
+    cipher::{KeyIvInit, StreamCipher},
 };
 use monero_oxide::{ed25519::Scalar, primitives::keccak256};
-use monero_oxide_wallet::{extra::MAX_ARBITRARY_DATA_SIZE, WalletOutput};
+use monero_oxide_wallet::{WalletOutput, extra::MAX_ARBITRARY_DATA_SIZE};
 use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
@@ -376,9 +376,11 @@ mod tests {
             parts.len(),
             ENCRYPTED_HERMES_BLOB_LENGTH.div_ceil(MAX_ARBITRARY_DATA_SIZE)
         );
-        assert!(parts
-            .iter()
-            .all(|part| part.len() <= MAX_ARBITRARY_DATA_SIZE));
+        assert!(
+            parts
+                .iter()
+                .all(|part| part.len() <= MAX_ARBITRARY_DATA_SIZE)
+        );
 
         let received = HermesMessage::from_arbitrary_data(&parts, private_key).unwrap();
         assert_eq!(received.as_bytes(), original_data);

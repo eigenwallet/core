@@ -423,9 +423,9 @@ async fn start_alice(
     .unwrap();
     swarm.listen_on(listen_address).unwrap();
 
-    let hermes_funding_amount =
-        monero::Amount::parse_monero(&swap_env::config::default_hermes_funding_xmr().to_string())
-            .unwrap();
+    // Far above the mainnet default: regtest fee estimation demands
+    // ~0.0084 XMR for the Hermes transaction
+    let hermes_funding_amount = monero::Amount::parse_monero("0.02").unwrap();
 
     let (event_loop, swap_handle, service) = asb::EventLoop::new(
         swarm,

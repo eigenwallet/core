@@ -71,6 +71,30 @@ pub async fn verify_transfer<P: ProvidesTransactions>(
     Ok(has_expected_amount_output)
 }
 
+/// The total amount the given view pair receives in a transaction, or `None`
+/// if it receives no outputs.
+pub async fn received_amount<P: ProvidesTransactions>(
+    provider: &P,
+    tx_id: [u8; 32],
+    public_spend_key: Point,
+    private_view_key: Zeroizing<Scalar>,
+) -> Result<Option<u64>, VerifyError> {
+    let tx: Transaction<Pruned> = provider.pruned_transaction(tx_id).await?;
+
+    let view_pair = ViewPair::new(public_spend_key, private_view_key)?;
+    let mut scanner = Scanner::new(view_pair);
+
+    let scannable_block = create_scannable_block_for_tx(tx_id, tx);
+    let outputs = scanner.scan(scannable_block)?.ignore_additional_timelock();
+
+    let amount: u64 = outputs
+        .iter()
+        .map(|output| output.commitment().amount)
+        .sum();
+
+    Ok((!outputs.is_empty()).then_some(amount))
+}
+
 /// Create a fake ScannableBlock containing a single transaction.
 ///
 /// This is a workaround since monero-oxide's Scanner only scans blocks, not individual

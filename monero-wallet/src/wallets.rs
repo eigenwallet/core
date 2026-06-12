@@ -460,6 +460,32 @@ impl Wallets {
         Ok(result)
     }
 
+    /// The total amount the given view pair receives in `tx_hash`, or `None`
+    /// if it receives no outputs.
+    pub async fn received_amount(
+        &self,
+        tx_hash: &TxHash,
+        public_spend_key: monero_oxide_ext::PublicKey,
+        private_view_key: PrivateViewKey,
+    ) -> Result<Option<Amount>> {
+        let rpc_client = self.rpc_client().await;
+
+        let tx_id = tx_hash_to_bytes(tx_hash)?;
+        let public_spend_key = public_spend_key.decompress();
+        let private_view_key = Zeroizing::new(private_view_key.0.scalar);
+
+        let amount = monero_wallet_ng::verify::received_amount(
+            &rpc_client,
+            tx_id,
+            public_spend_key,
+            private_view_key,
+        )
+        .await
+        .context("Failed to scan transaction for received amount")?;
+
+        Ok(amount.map(Amount::from_pico))
+    }
+
     /// Wait until a transfer is verified and confirmed using monero-wallet-ng.
     ///
     /// This first verifies that the transaction sends the expected amount to the given view pair,
