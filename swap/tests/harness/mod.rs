@@ -423,6 +423,10 @@ async fn start_alice(
     .unwrap();
     swarm.listen_on(listen_address).unwrap();
 
+    let hermes_funding_amount =
+        monero::Amount::parse_monero(&swap_env::config::default_hermes_funding_xmr().to_string())
+            .unwrap();
+
     let (event_loop, swap_handle, service) = asb::EventLoop::new(
         swarm,
         None,
@@ -436,6 +440,7 @@ async fn start_alice(
         None,
         swap_env::config::default_btc_redeem_fee_multiplier(),
         developer_tip,
+        hermes_funding_amount,
         refund_policy,
         None,
         db_path.with_extension("config.toml"),
@@ -866,9 +871,47 @@ impl TestContext {
         self.alice_rpc_server_handle = alice_rpc_server_handle;
     }
 
+    /// Restart Alice on a fresh listen address, severing the p2p connection
+    /// for good: Bob keeps dialing the old address.
+    pub async fn restart_alice_unreachable(&mut self) {
+        self.alice_handle.abort();
+        self.alice_rpc_server_handle.abort();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let new_listen_port = std::net::TcpListener::bind(("127.0.0.1", 0))
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        self.alice_listen_address = format!("/ip4/127.0.0.1/tcp/{}", new_listen_port)
+            .parse()
+            .expect("failed to parse Alice's address");
+
+        let (alice_handle, alice_swap_handle, alice_rpc_server_handle) = start_alice(
+            &self.alice_seed,
+            self.alice_db_path.clone(),
+            self.alice_listen_address.clone(),
+            self.env_config,
+            self.alice_bitcoin_wallet.clone(),
+            self.alice_monero_wallet.clone(),
+            self.developer_tip.clone(),
+            self.refund_policy.clone(),
+            self.alice_rpc_port,
+        )
+        .await;
+
+        self.alice_handle = alice_handle;
+        self.alice_swap_handle = alice_swap_handle;
+        self.alice_rpc_server_handle = alice_rpc_server_handle;
+    }
+
     /// Stops Alice, mutates her persisted state for `swap_id`, writes it back, and
     /// restarts her. Used to simulate a corrupted/malicious swap from Alice's point of view.
-    pub async fn corrupt_alice_state(&mut self, swap_id: Uuid, modify: impl FnOnce(&mut AliceState)) {
+    pub async fn corrupt_alice_state(
+        &mut self,
+        swap_id: Uuid,
+        modify: impl FnOnce(&mut AliceState),
+    ) {
         // Stop Alice so we have exclusive access to her database.
         self.alice_handle.abort();
         self.alice_rpc_server_handle.abort();
@@ -1563,6 +1606,10 @@ struct Containers<'a> {
 
 pub mod alice_run_until {
     use swap::protocol::alice::AliceState;
+
+    pub fn is_btc_lock_transaction_seen(state: &AliceState) -> bool {
+        matches!(state, AliceState::BtcLockTransactionSeen { .. })
+    }
 
     pub fn is_xmr_lock_transaction_sent(state: &AliceState) -> bool {
         matches!(state, AliceState::XmrLockTransactionSent { .. })

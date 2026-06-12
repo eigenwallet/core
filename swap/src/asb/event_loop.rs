@@ -59,6 +59,7 @@ where
     external_redeem_address: Option<bitcoin::Address>,
     btc_redeem_fee_multiplier: Decimal,
     developer_tip: TipConfig,
+    hermes_funding_amount: monero::Amount,
     refund_policy: RefundPolicy,
 
     config_path: PathBuf,
@@ -192,6 +193,7 @@ where
         external_redeem_address: Option<bitcoin::Address>,
         btc_redeem_fee_multiplier: Decimal,
         developer_tip: TipConfig,
+        hermes_funding_amount: monero::Amount,
         refund_policy: RefundPolicy,
         onion_service_handle: Option<Arc<RunningOnionService>>,
         config_path: PathBuf,
@@ -217,6 +219,7 @@ where
             external_redeem_address,
             btc_redeem_fee_multiplier,
             developer_tip,
+            hermes_funding_amount,
             refund_policy,
             config_path,
             quote_cache,
@@ -283,6 +286,7 @@ where
                 state: state.try_into().expect("Alice state loaded from db"),
                 swap_id,
                 developer_tip: self.developer_tip.clone(),
+                hermes_funding_amount: self.hermes_funding_amount,
             };
 
             match self.swap_sender.send(swap).await {
@@ -806,6 +810,7 @@ where
             state: initial_state,
             swap_id,
             developer_tip: self.developer_tip.clone(),
+            hermes_funding_amount: self.hermes_funding_amount,
         };
 
         self.db
@@ -1035,6 +1040,7 @@ where
             state: new_state,
             swap_id,
             developer_tip: self.developer_tip.clone(),
+            hermes_funding_amount: self.hermes_funding_amount,
         };
 
         // Send swap to be resumed

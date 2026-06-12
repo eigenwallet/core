@@ -62,6 +62,8 @@ pub async fn cancel(
             ..
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLocked(state4) => state4.cancel(),
+        BobState::ConstructingHermesTx(state4) => state4.cancel(),
+        BobState::PublishingHermesTx { state, .. } => state.cancel(),
         BobState::EncSigSent(state4) => state4.cancel(),
         BobState::WaitingForCancelTimelockExpiration {
             state,
@@ -204,6 +206,8 @@ pub async fn refund(
             ..
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLocked(state4) => state4.cancel(),
+        BobState::ConstructingHermesTx(state4) => state4.cancel(),
+        BobState::PublishingHermesTx { state, .. } => state.cancel(),
         BobState::EncSigSent(state4) => state4.cancel(),
         BobState::WaitingForCancelTimelockExpiration {
             state,
