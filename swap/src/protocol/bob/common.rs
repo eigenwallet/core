@@ -147,12 +147,22 @@ impl WaitForIncomingXmrLockTransaction for State3 {
     }
 }
 
+/// Outcome of validating a Monero lock transaction candidate.
+#[derive(Clone, Copy)]
+pub(super) enum XmrLockTransactionValidity {
+    Invalid,
+    Valid {
+        /// What Alice attached to fund the Hermes transaction, if anything.
+        hermes_amount: Option<monero::Amount>,
+    },
+}
+
 pub(super) trait VerifyXmrLockTransaction {
     async fn verify_xmr_lock_transaction(
         &self,
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
-    ) -> Result<bool>;
+    ) -> Result<XmrLockTransactionValidity>;
 }
 
 impl VerifyXmrLockTransaction for State3 {
@@ -160,18 +170,29 @@ impl VerifyXmrLockTransaction for State3 {
         &self,
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
-    ) -> Result<bool> {
+    ) -> Result<XmrLockTransactionValidity> {
         let (public_spend_key, private_view_key) = self.xmr_view_keys();
         let expected_amount = self.xmr_amount();
 
-        monero_wallet
+        let is_valid = monero_wallet
             .verify_transfer(
                 &tx_hash,
                 public_spend_key,
                 private_view_key,
                 expected_amount,
             )
-            .await
+            .await?;
+
+        if !is_valid {
+            return Ok(XmrLockTransactionValidity::Invalid);
+        }
+
+        let (hermes_spend_key, hermes_view_key) = self.hermes_view_keys();
+        let hermes_amount = monero_wallet
+            .received_amount(&tx_hash, hermes_spend_key, hermes_view_key)
+            .await?;
+
+        Ok(XmrLockTransactionValidity::Valid { hermes_amount })
     }
 }
 
@@ -180,7 +201,7 @@ pub(super) trait InfallibleVerifyXmrLockTransaction {
         self,
         monero_wallet: Arc<monero::Wallets>,
         tx_hash: monero::TxHash,
-    ) -> bool;
+    ) -> XmrLockTransactionValidity;
 }
 
 impl<T> InfallibleVerifyXmrLockTransaction for T
@@ -191,7 +212,7 @@ where
         self,
         monero_wallet: Arc<monero::Wallets>,
         tx_hash: monero::TxHash,
-    ) -> bool {
+    ) -> XmrLockTransactionValidity {
         let state_for_retry = self;
 
         retry(

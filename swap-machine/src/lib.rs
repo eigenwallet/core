@@ -106,6 +106,7 @@ mod tests {
                 PrivateKey::from_scalar(Scalar::ONE),
             )
             .into(),
+            None,
         );
         let encrypted_signature = bob_state4.tx_redeem_encsig();
         let bob_state6 = bob_state4.cancel();

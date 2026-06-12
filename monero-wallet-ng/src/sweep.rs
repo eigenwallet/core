@@ -242,9 +242,11 @@ where
         + Sync,
 {
     // Locate the block that contains the transaction
-    let status = with_retry(inner_retry.clone(), "Sweep transaction-status lookup", || {
-        async { provider.transaction_status(tx_id).await }
-    })
+    let status = with_retry(
+        inner_retry.clone(),
+        "Sweep transaction-status lookup",
+        || async { provider.transaction_status(tx_id).await },
+    )
     .await?;
     let block_height = match status {
         TransactionStatus::InBlock { block_height } => block_height as usize,
@@ -262,12 +264,10 @@ where
 
     // Find the largest output belonging to the transaction
     let largest_output = {
-        let blocks = with_retry(inner_retry.clone(), "Sweep block fetch", || {
-            async {
-                provider
-                    .contiguous_scannable_blocks(block_height..=block_height)
-                    .await
-            }
+        let blocks = with_retry(inner_retry.clone(), "Sweep block fetch", || async {
+            provider
+                .contiguous_scannable_blocks(block_height..=block_height)
+                .await
         })
         .await?;
         let block = blocks
@@ -284,20 +284,28 @@ where
     };
 
     // Generate decoys for the input
-    let block_number = with_retry(inner_retry.clone(), "Sweep latest-block-number lookup", || {
-        async { provider.latest_block_number().await }
-    })
+    let block_number = with_retry(
+        inner_retry.clone(),
+        "Sweep latest-block-number lookup",
+        || async { provider.latest_block_number().await },
+    )
     .await?;
-    let input = with_retry(inner_retry.clone(), "Sweep decoy selection", || {
-        async {
-            OutputWithDecoys::new(&mut OsRng, provider, RING_LEN, block_number, largest_output.clone())
-                .await
-        }
+    let input = with_retry(inner_retry.clone(), "Sweep decoy selection", || async {
+        OutputWithDecoys::new(
+            &mut OsRng,
+            provider,
+            RING_LEN,
+            block_number,
+            largest_output.clone(),
+        )
+        .await
     })
     .await?;
 
-    let fee_rate = with_retry(inner_retry, "Sweep fee-rate lookup", || {
-        async { provider.fee_rate(FeePriority::Normal, MAX_FEE_PER_WEIGHT).await }
+    let fee_rate = with_retry(inner_retry, "Sweep fee-rate lookup", || async {
+        provider
+            .fee_rate(FeePriority::Normal, MAX_FEE_PER_WEIGHT)
+            .await
     })
     .await?;
 

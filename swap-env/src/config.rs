@@ -258,8 +258,8 @@ fn default_developer_tip() -> Decimal {
 }
 
 pub fn default_hermes_funding_xmr() -> Decimal {
-    // 0.02 XMR
-    Decimal::new(2, 2)
+    // 0.0001 XMR, roughly twice the typical network fee of a Hermes transaction
+    Decimal::new(1, 4)
 }
 
 pub fn default_btc_redeem_fee_multiplier() -> Decimal {

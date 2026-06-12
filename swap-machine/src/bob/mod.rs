@@ -24,6 +24,11 @@ use swap_core::monero::{ScalarExt, TransferProofMaybeWithTxKey};
 use swap_serde::bitcoin::address_serde;
 use uuid::Uuid;
 
+/// Hermes funding below this is considered insufficient to pay the Hermes
+/// transaction's fee, and no Hermes transaction is published (0.00005 XMR,
+/// roughly the typical network fee of such a transaction).
+pub const HERMES_FUNDING_LOWER_BOUND_PICONERO: u64 = 50_000_000;
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum BobState {
     Started {
@@ -60,6 +65,10 @@ pub enum BobState {
         state: State3,
         lock_transfer_proof: TransferProofMaybeWithTxKey,
         monero_wallet_restore_blockheight: BlockHeight,
+        /// What Alice attached to the lock transaction to fund the Hermes
+        /// transaction. None if she attached no Hermes output.
+        #[serde(default)]
+        hermes_amount: Option<monero::Amount>,
     },
     /// Bob has verified that the correct amount of Monero has been locked and fully confirmed.
     /// It is safe to transmit the encrypted signature to Alice.
@@ -816,10 +825,20 @@ impl State3 {
         self.xmr
     }
 
+    /// View keys of the Hermes wallet (spend key `s_b`, view key `v`).
+    pub fn hermes_view_keys(&self) -> (monero_oxide_ext::PublicKey, monero::PrivateViewKey) {
+        let S_b_monero = monero_oxide_ext::PublicKey::from_private_key(
+            &monero_oxide_ext::PrivateKey::from_scalar(self.s_b),
+        );
+
+        (S_b_monero, self.v)
+    }
+
     pub fn xmr_locked(
         self,
         monero_wallet_restore_blockheight: BlockHeight,
         lock_transfer_proof: TransferProofMaybeWithTxKey,
+        hermes_amount: Option<monero::Amount>,
     ) -> State4 {
         State4 {
             A: self.A,
@@ -839,6 +858,7 @@ impl State3 {
             refund_signatures: self.refund_signatures,
             monero_wallet_restore_blockheight,
             lock_transfer_proof,
+            hermes_amount,
             tx_redeem_fee: self.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
@@ -977,6 +997,10 @@ pub struct State4 {
     refund_signatures: RefundSignatures,
     monero_wallet_restore_blockheight: BlockHeight,
     lock_transfer_proof: TransferProofMaybeWithTxKey,
+    /// What Alice attached to the lock transaction to fund the Hermes
+    /// transaction. None if she attached no Hermes output.
+    #[serde(default)]
+    hermes_amount: Option<monero::Amount>,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
@@ -1036,6 +1060,13 @@ impl State4 {
 
     pub fn private_view_key(&self) -> monero::PrivateViewKey {
         self.v
+    }
+
+    /// Whether Alice attached enough Monero to the lock transaction to pay
+    /// the Hermes transaction's fee.
+    pub fn hermes_funding_sufficient(&self) -> bool {
+        self.hermes_amount
+            .is_some_and(|amount| amount.as_pico() > HERMES_FUNDING_LOWER_BOUND_PICONERO)
     }
 
     /// Spend key of the Hermes wallet: our Monero spend key share `s_b`.

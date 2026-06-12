@@ -9,7 +9,7 @@ use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::bob::common::{
     InfallibleVerifyXmrLockTransaction, InfallibleXmrRedeemable, RecvTransferProof,
     WaitForBtcRedeem, WaitForIncomingXmrLockTransaction, WaitForXmrLockTransactionConfirmation,
-    XmrRedeemable,
+    XmrLockTransactionValidity, XmrRedeemable,
 };
 use crate::protocol::bob::*;
 use crate::protocol::{Database, bob};
@@ -467,14 +467,15 @@ async fn next_state(
 
             select! {
                 // Wait until we have verified the Monero lock transaction candidate
-                is_valid_transfer = xmr_lock_transaction_verification => {
-                    if is_valid_transfer {
+                validity = xmr_lock_transaction_verification => {
+                    if let XmrLockTransactionValidity::Valid { hermes_amount } = validity {
                         tracing::info!(txid = %lock_transfer_proof.tx_hash(), "Monero lock transaction is valid");
 
                         return Ok(BobState::XmrLockTransactionSeen {
                             state,
                             lock_transfer_proof,
                             monero_wallet_restore_blockheight,
+                            hermes_amount,
                         });
                     } else {
                         tracing::warn!(txid = %lock_transfer_proof.tx_hash(), "Monero lock transaction is invalid. It does not transfer the correct amount of Monero to the correct address.");
@@ -506,6 +507,7 @@ async fn next_state(
             state,
             lock_transfer_proof,
             monero_wallet_restore_blockheight,
+            hermes_amount,
         } => {
             tracing::info!(txid = %lock_transfer_proof.tx_hash(), "Waiting for Monero lock transaction to be fully confirmed");
 
@@ -556,7 +558,7 @@ async fn next_state(
                 // Wait for the Monero lock transaction to be fully confirmed
                 _ = wait_for_confirmation => {
                     BobState::XmrLocked(
-                        state.xmr_locked(monero_wallet_restore_blockheight, lock_transfer_proof.clone())
+                        state.xmr_locked(monero_wallet_restore_blockheight, lock_transfer_proof.clone(), hermes_amount)
                     )
                 }
                 // Wait for the cancel timelock to expire
@@ -632,7 +634,41 @@ async fn next_state(
                 return Ok(BobState::CancelTimelockExpired(state.cancel()));
             }
 
-            BobState::ConstructingHermesTx(state)
+            if state.hermes_funding_sufficient() {
+                return Ok(BobState::ConstructingHermesTx(state));
+            }
+
+            // Alice did not attach (enough) Hermes funding; the encrypted
+            // signature can only be delivered over p2p
+            let (tx_lock_status, tx_early_refund_status): (
+                bitcoin_wallet::Subscription,
+                bitcoin_wallet::Subscription,
+            ) = tokio::join!(
+                bitcoin_wallet.subscribe_to(Box::new(state.tx_lock.clone())),
+                bitcoin_wallet.subscribe_to(Box::new(state.construct_tx_early_refund()))
+            );
+
+            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::InflightEncSig);
+
+            select! {
+                // Wait for the confirmation from Alice that she has received the encrypted signature
+                _ = event_loop_handle.send_encrypted_signature(state.tx_redeem_encsig()) => {
+                    BobState::EncSigSent(state)
+                },
+                // Wait for the Bitcoin redeem transaction to be published
+                state5 = state.infallible_wait_for_btc_redeem(&*bitcoin_wallet) => {
+                    BobState::BtcRedeemed(state5)
+                },
+                // Wait for the cancel timelock to expire
+                result = tx_lock_status.wait_until_confirmed_with(state.cancel_timelock) => {
+                    result?;
+                    BobState::CancelTimelockExpired(state.cancel())
+                }
+                // Wait for Alice to publish the early refund transaction
+                _ = tx_early_refund_status.wait_until_seen() => {
+                    BobState::BtcEarlyRefundPublished(state.cancel())
+                },
+            }
         }
         BobState::ConstructingHermesTx(state) => {
             let (tx_lock_status, tx_early_refund_status): (

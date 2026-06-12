@@ -33,6 +33,8 @@ pub enum Bob {
         state: bob::State3,
         lock_transfer_proof: TransferProofMaybeWithTxKey,
         monero_wallet_restore_blockheight: BlockHeight,
+        #[serde(default)]
+        hermes_amount: Option<swap_core::monero::Amount>,
     },
     XmrLocked {
         state4: bob::State4,
@@ -135,10 +137,12 @@ impl From<BobState> for Bob {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
+                hermes_amount,
             } => Bob::XmrLockTransactionSeen {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
+                hermes_amount,
             },
             BobState::XmrLocked(state4) => Bob::XmrLocked { state4 },
             BobState::ConstructingHermesTx(state4) => Bob::ConstructingHermesTx { state4 },
@@ -245,10 +249,12 @@ impl From<Bob> for BobState {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
+                hermes_amount,
             } => BobState::XmrLockTransactionSeen {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
+                hermes_amount,
             },
             Bob::XmrLocked { state4 } => BobState::XmrLocked(state4),
             Bob::ConstructingHermesTx { state4 } => BobState::ConstructingHermesTx(state4),
