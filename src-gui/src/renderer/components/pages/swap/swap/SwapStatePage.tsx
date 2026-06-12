@@ -46,18 +46,9 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     return <InitPage />;
   }
 
-  // A Released event with `next_auto_resume_at_unix_ms` is not terminal — the
-  // swap manager is just waiting to auto-retry. The retry banner mounted
-  // above this page already shows the countdown, so the body of the page
-  // should reflect what state the swap is actually in.
-  //
-  // - If `prev` carries a meaningful in-flight state, render that page.
-  // - If `prev` is just `Resuming` (a transitional event emitted before
-  //   `bob::run` ever produced anything), showing the "Resuming swap..."
-  //   spinner would be misleading — fall through to a neutral placeholder.
-  // - The `prev.type !== "Released"` guard prevents infinite recursion in
-  //   the (slice-prevented but cheap to defend) case where `prev` is also
-  //   Released.
+  // A Released event with `next_auto_resume_at_unix_ms` set is a retry signal,
+  // not a real release — render the previous in-flight state instead. A `prev`
+  // of `Resuming` carries no progress, so fall through to the logs page.
   if (
     state.curr.type === "Released" &&
     state.curr.content.next_auto_resume_at_unix_ms != null
@@ -127,9 +118,9 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     case "EncryptedSignatureSent":
       return <EncryptedSignatureSentPage />;
     case "ConstructingMoneroRedeem":
-      return <ConstructingMoneroRedeemPage />;
+      return <ConstructingMoneroRedeemPage swapId={state.swapId} />;
     case "PublishingMoneroRedeem":
-      return <PublishingMoneroRedeemPage />;
+      return <PublishingMoneroRedeemPage swapId={state.swapId} />;
     case "XmrRedeemPublished":
       if (state.curr.type === "XmrRedeemPublished") {
         return <XmrRedeemPublishedPage {...state.curr.content} />;
@@ -316,11 +307,7 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
   }
 }
 
-// Shown when the swap is in retry-backoff and there's no meaningful previous
-// state to render (the state machine errored before producing any progress).
-// The retry banner above this page already shows the error and countdown;
-// we surface the swap-specific logs here so the user can inspect what
-// actually went wrong.
+// Shown when the swap is in retry-backoff with no meaningful previous state to render.
 function RetryBackoffLogsPage({ swapId }: { swapId: string }) {
   const logs = useSwapLogs(swapId);
   return (
