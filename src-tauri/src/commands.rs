@@ -9,15 +9,15 @@ use swap::cli::{
             CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
             CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, CreateMoneroSubaddressArgs,
             DeleteAllLogsArgs, DfxAuthenticateResponse, ExportBitcoinWalletArgs,
-            GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
+            GetBitcoinAddressArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
             GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
             GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSubaddressesArgs,
             GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
             GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs,
             RedactArgs, RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
-            SetMoneroWalletPasswordArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs,
-            WithdrawBtcArgs,
+            ResolveApprovalArgs, ResumeAllSwapsArgs, ResumeSwapArgs, SendMoneroArgs,
+            SetMoneroSubaddressLabelArgs, SetMoneroWalletPasswordArgs, SetRestoreHeightArgs,
+            SuspendSwapArgs, WithdrawBtcArgs,
         },
         tauri_bindings::{ContextStatus, TauriSettings},
     },
@@ -46,16 +46,16 @@ macro_rules! generate_command_handlers {
             withdraw_btc,
             buy_xmr,
             resume_swap,
+            resume_all_swaps,
             get_history,
             monero_recovery,
             get_logs,
-            suspend_current_swap,
+            suspend_swap,
             cancel_and_refund,
             initialize_context,
             check_monero_node,
             check_electrum_node,
             get_wallet_descriptor,
-            get_current_swap,
             get_data_dir,
             resolve_approval_request,
             redact,
@@ -488,6 +488,7 @@ pub async fn dfx_authenticate(
 tauri_command!(get_balance, BalanceArgs);
 tauri_command!(buy_xmr, BuyXmrArgs);
 tauri_command!(resume_swap, ResumeSwapArgs);
+tauri_command!(resume_all_swaps, ResumeAllSwapsArgs, no_args);
 tauri_command!(withdraw_btc, WithdrawBtcArgs);
 tauri_command!(monero_recovery, MoneroRecoveryArgs);
 tauri_command!(get_logs, GetLogsArgs);
@@ -499,14 +500,13 @@ tauri_command!(change_monero_node, ChangeMoneroNodeArgs);
 // These commands require no arguments
 tauri_command!(get_bitcoin_address, GetBitcoinAddressArgs, no_args);
 tauri_command!(get_wallet_descriptor, ExportBitcoinWalletArgs, no_args);
-tauri_command!(suspend_current_swap, SuspendCurrentSwapArgs, no_args);
+tauri_command!(suspend_swap, SuspendSwapArgs);
 tauri_command!(get_swap_info, GetSwapInfoArgs);
 tauri_command!(get_swap_infos_all, GetSwapInfosAllArgs, no_args);
 tauri_command!(get_swap_timelock, GetSwapTimelockArgs);
 tauri_command!(get_history, GetHistoryArgs, no_args);
 tauri_command!(get_monero_addresses, GetMoneroAddressesArgs, no_args);
 tauri_command!(get_monero_history, GetMoneroHistoryArgs, no_args);
-tauri_command!(get_current_swap, GetCurrentSwapArgs, no_args);
 tauri_command!(set_monero_restore_height, SetRestoreHeightArgs);
 tauri_command!(get_restore_height, GetRestoreHeightArgs, no_args);
 tauri_command!(set_monero_wallet_password, SetMoneroWalletPasswordArgs);

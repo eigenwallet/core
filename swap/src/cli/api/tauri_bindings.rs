@@ -1215,7 +1215,13 @@ pub enum TauriSwapProgressEvent {
     CooperativeRedeemRejected {
         reason: String,
     },
-    Released,
+    /// The swap manager has dropped its handle on this swap. If the manager is
+    /// going to auto-retry, `next_auto_resume_at_unix_ms` carries the time of the
+    /// next retry; `None` means the swap has actually finished.
+    Released {
+        #[typeshare(serialized_as = "Option<number>")]
+        next_auto_resume_at_unix_ms: Option<u64>,
+    },
 }
 
 /// This event is emitted whenever there is a log message issued in the CLI.

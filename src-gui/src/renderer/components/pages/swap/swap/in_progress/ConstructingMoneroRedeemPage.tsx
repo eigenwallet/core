@@ -1,10 +1,14 @@
 import { Box } from "@mui/material";
 import { SwapMoneroRecoveryButton } from "renderer/components/pages/history/table/SwapMoneroRecoveryButton";
-import { useActiveSwapInfo } from "store/hooks";
+import { useSwapInfo } from "store/hooks";
 import CircularProgressWithSubtitle from "../components/CircularProgressWithSubtitle";
 
-export default function ConstructingMoneroRedeemPage() {
-  const swap = useActiveSwapInfo();
+export default function ConstructingMoneroRedeemPage({
+  swapId,
+}: {
+  swapId: string;
+}) {
+  const swap = useSwapInfo(swapId);
 
   return (
     <Box

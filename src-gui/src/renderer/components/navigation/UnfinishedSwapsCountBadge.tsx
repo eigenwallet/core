@@ -1,7 +1,7 @@
 import React from "react";
 import { Badge } from "@mui/material";
 import {
-  useIsSwapRunning,
+  useRunningSwapsCount,
   useResumeableSwapsCountExcludingPunished,
 } from "store/hooks";
 
@@ -10,16 +10,17 @@ export default function UnfinishedSwapsBadge({
 }: {
   children: React.ReactNode;
 }) {
-  const isSwapRunning = useIsSwapRunning();
+  const runningSwapsCount = useRunningSwapsCount();
   const resumableSwapsCount = useResumeableSwapsCountExcludingPunished();
 
-  const displayedResumableSwapsCount = isSwapRunning
-    ? resumableSwapsCount - 1
-    : resumableSwapsCount;
+  const displayedResumableSwapsCount = Math.max(
+    0,
+    resumableSwapsCount - runningSwapsCount,
+  );
 
   if (displayedResumableSwapsCount > 0) {
     return (
-      <Badge badgeContent={resumableSwapsCount} color="primary">
+      <Badge badgeContent={displayedResumableSwapsCount} color="primary">
         {children}
       </Badge>
     );

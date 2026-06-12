@@ -1,5 +1,8 @@
+import { Box, DialogContentText } from "@mui/material";
 import { SwapState } from "models/storeModel";
 import { TauriSwapProgressEventType } from "models/tauriModelExt";
+import CliLogsBox from "renderer/components/other/RenderedCliLog";
+import { useSwapLogs } from "store/hooks";
 import CircularProgressWithSubtitle from "./components/CircularProgressWithSubtitle";
 import BitcoinPunishedPage from "./done/BitcoinPunishedPage";
 import {
@@ -43,6 +46,23 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     return <InitPage />;
   }
 
+  // A Released event with `next_auto_resume_at_unix_ms` set is a retry signal,
+  // not a real release — render the previous in-flight state instead. A `prev`
+  // of `Resuming` carries no progress, so fall through to the logs page.
+  if (
+    state.curr.type === "Released" &&
+    state.curr.content.next_auto_resume_at_unix_ms != null
+  ) {
+    if (
+      state.prev != null &&
+      state.prev.type !== "Released" &&
+      state.prev.type !== "Resuming"
+    ) {
+      return <SwapStatePage state={{ ...state, curr: state.prev }} />;
+    }
+    return <RetryBackoffLogsPage swapId={state.swapId} />;
+  }
+
   const type: TauriSwapProgressEventType = state.curr.type;
 
   switch (type) {
@@ -58,7 +78,12 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       break;
     case "SwapSetupInflight":
       if (state.curr.type === "SwapSetupInflight") {
-        return <SwapSetupInflightPage {...state.curr.content} />;
+        return (
+          <SwapSetupInflightPage
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "RetrievingMoneroBlockheight":
@@ -93,9 +118,9 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     case "EncryptedSignatureSent":
       return <EncryptedSignatureSentPage />;
     case "ConstructingMoneroRedeem":
-      return <ConstructingMoneroRedeemPage />;
+      return <ConstructingMoneroRedeemPage swapId={state.swapId} />;
     case "PublishingMoneroRedeem":
-      return <PublishingMoneroRedeemPage />;
+      return <PublishingMoneroRedeemPage swapId={state.swapId} />;
     case "XmrRedeemPublished":
       if (state.curr.type === "XmrRedeemPublished") {
         return <XmrRedeemPublishedPage {...state.curr.content} />;
@@ -131,32 +156,59 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     //// 8 different types of Bitcoin refund states we can be in
     case "BtcRefundPublished": // tx_refund has been published but has not been confirmed yet
       if (state.curr.type === "BtcRefundPublished") {
-        return <BitcoinRefundPublishedPage {...state.curr.content} />;
+        return (
+          <BitcoinRefundPublishedPage
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcEarlyRefundPublished": // tx_early_refund has been published but has not been confirmed yet
       if (state.curr.type === "BtcEarlyRefundPublished") {
-        return <BitcoinEarlyRefundPublishedPage {...state.curr.content} />;
+        return (
+          <BitcoinEarlyRefundPublishedPage
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcRefunded": // tx_refund has been confirmed
       if (state.curr.type === "BtcRefunded") {
-        return <BitcoinRefundedPage {...state.curr.content} />;
+        return (
+          <BitcoinRefundedPage swapId={state.swapId} {...state.curr.content} />
+        );
       }
       break;
     case "BtcEarlyRefunded": // tx_early_refund has been confirmed
       if (state.curr.type === "BtcEarlyRefunded") {
-        return <BitcoinEarlyRefundedPage {...state.curr.content} />;
+        return (
+          <BitcoinEarlyRefundedPage
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcPartialRefundPublished":
       if (state.curr.type === "BtcPartialRefundPublished") {
-        return <BitcoinPartialRefundPublished {...state.curr.content} />;
+        return (
+          <BitcoinPartialRefundPublished
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcPartiallyRefunded":
       if (state.curr.type === "BtcPartiallyRefunded") {
-        return <BitcoinPartiallyRefunded {...state.curr.content} />;
+        return (
+          <BitcoinPartiallyRefunded
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "WaitingForEarnestDepositTimelockExpiration":
@@ -170,34 +222,61 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       break;
     case "BtcAmnestyPublished":
       if (state.curr.type === "BtcAmnestyPublished") {
-        return <BitcoinAmnestyPublished {...state.curr.content} />;
+        return (
+          <BitcoinAmnestyPublished
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcAmnestyReceived":
       if (state.curr.type === "BtcAmnestyReceived") {
-        return <BitcoinAmnestyReceived {...state.curr.content} />;
+        return (
+          <BitcoinAmnestyReceived
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
 
     //// 4 different types of withhold / mercy states
     case "BtcWithholdPublished":
       if (state.curr.type === "BtcWithholdPublished") {
-        return <BitcoinWithholdPublished {...state.curr.content} />;
+        return (
+          <BitcoinWithholdPublished
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcWithheld":
       if (state.curr.type === "BtcWithheld") {
-        return <BitcoinWithheld {...state.curr.content} />;
+        return (
+          <BitcoinWithheld swapId={state.swapId} {...state.curr.content} />
+        );
       }
       break;
     case "BtcMercyPublished":
       if (state.curr.type === "BtcMercyPublished") {
-        return <BitcoinMercyPublished {...state.curr.content} />;
+        return (
+          <BitcoinMercyPublished
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcMercyConfirmed":
       if (state.curr.type === "BtcMercyConfirmed") {
-        return <BitcoinMercyConfirmed {...state.curr.content} />;
+        return (
+          <BitcoinMercyConfirmed
+            swapId={state.swapId}
+            {...state.curr.content}
+          />
+        );
       }
       break;
 
@@ -226,4 +305,18 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     default:
       return exhaustiveGuard(type);
   }
+}
+
+// Shown when the swap is in retry-backoff with no meaningful previous state to render.
+function RetryBackoffLogsPage({ swapId }: { swapId: string }) {
+  const logs = useSwapLogs(swapId);
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+      <DialogContentText>
+        The swap hit an error before it could make any progress. We'll retry
+        automatically. See the logs below for details.
+      </DialogContentText>
+      <CliLogsBox logs={logs} label="Logs relevant to the swap" />
+    </Box>
+  );
 }

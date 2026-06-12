@@ -1,6 +1,4 @@
-import { Tooltip } from "@mui/material";
-import IconButton from "@mui/material/IconButton";
-import DeveloperBoardIcon from "@mui/icons-material/DeveloperBoard";
+import { Link } from "@mui/material";
 
 export default function DebugPageSwitchBadge({
   enabled,
@@ -9,19 +7,16 @@ export default function DebugPageSwitchBadge({
   enabled: boolean;
   setEnabled: (enabled: boolean) => void;
 }) {
-  const handleToggle = () => {
-    setEnabled(!enabled);
-  };
-
   return (
-    <Tooltip title={enabled ? "Hide debug view" : "Show debug view"}>
-      <IconButton
-        onClick={handleToggle}
-        color={enabled ? "primary" : "default"}
-        size="large"
-      >
-        <DeveloperBoardIcon />
-      </IconButton>
-    </Tooltip>
+    <Link
+      component="button"
+      type="button"
+      onClick={() => setEnabled(!enabled)}
+      variant="caption"
+      color={enabled ? "primary" : "text.secondary"}
+      underline="hover"
+    >
+      Debug
+    </Link>
   );
 }

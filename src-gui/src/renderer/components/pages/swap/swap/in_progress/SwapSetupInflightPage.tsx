@@ -6,11 +6,7 @@ import {
 } from "models/tauriModelExt";
 import { SatsAmount, PiconeroAmount } from "renderer/components/other/Units";
 import { Box, Typography, Paper, Divider, Theme, Link } from "@mui/material";
-import {
-  useActiveSwapId,
-  usePendingLockBitcoinApproval,
-  useAppSelector,
-} from "store/hooks";
+import { usePendingLockBitcoinApproval, useAppSelector } from "store/hooks";
 import { getMarkup, satsToBtc, piconerosToXmr } from "utils/conversionUtils";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import CircularProgressWithSubtitle from "../components/CircularProgressWithSubtitle";
@@ -18,21 +14,19 @@ import CheckIcon from "@mui/icons-material/Check";
 import ArrowRightAltIcon from "@mui/icons-material/ArrowRightAlt";
 import TruncatedText from "renderer/components/other/TruncatedText";
 
-/// A hook that returns the LockBitcoin confirmation request for the active swap
-/// Returns null if no confirmation request is found
-function useActiveLockBitcoinApprovalRequest(): PendingLockBitcoinApprovalRequest | null {
+function useLockBitcoinApprovalRequest(
+  swapId: string,
+): PendingLockBitcoinApprovalRequest | null {
   const approvals = usePendingLockBitcoinApproval();
-  const activeSwapId = useActiveSwapId();
 
-  return (
-    approvals?.find((r) => r.request.content.swap_id === activeSwapId) || null
-  );
+  return approvals?.find((r) => r.request.content.swap_id === swapId) || null;
 }
 
 export default function SwapSetupInflightPage({
+  swapId,
   btc_lock_amount,
-}: TauriSwapProgressEventContent<"SwapSetupInflight">) {
-  const request = useActiveLockBitcoinApprovalRequest();
+}: { swapId: string } & TauriSwapProgressEventContent<"SwapSetupInflight">) {
+  const request = useLockBitcoinApprovalRequest(swapId);
   // Get market rate for markup calculation (must be called unconditionally)
   const xmrBtcRate = useAppSelector((state) => state.rates.xmrBtcRate);
 

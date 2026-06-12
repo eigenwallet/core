@@ -1,7 +1,6 @@
-use super::api::SwapLock;
 use super::api::tauri_bindings::{BackgroundRefundProgress, TauriBackgroundProgress, TauriEmitter};
-use super::cancel_and_refund;
 use crate::cli::api::tauri_bindings::TauriHandle;
+use crate::cli::swap_manager::SwapManager;
 use crate::protocol::bob::BobState;
 use crate::protocol::{Database, State};
 use anyhow::{Context, Result};
@@ -18,7 +17,7 @@ pub struct Watcher {
     wallet: Arc<Wallet>,
     database: Arc<dyn Database + Send + Sync>,
     tauri: Option<TauriHandle>,
-    swap_lock: Arc<SwapLock>,
+    swap_manager: Arc<SwapManager>,
     /// This saves for every running swap the last known timelock status
     cached_timelocks: HashMap<Uuid, Option<ExpiredTimelocks>>,
 }
@@ -32,14 +31,14 @@ impl Watcher {
         wallet: Arc<Wallet>,
         database: Arc<dyn Database + Send + Sync>,
         tauri: Option<TauriHandle>,
-        swap_lock: Arc<SwapLock>,
+        swap_manager: Arc<SwapManager>,
     ) -> Self {
         Self {
             wallet,
             database,
             cached_timelocks: HashMap::new(),
             tauri,
-            swap_lock,
+            swap_manager,
         }
     }
 
@@ -121,16 +120,8 @@ impl Watcher {
                     continue;
                 }
 
-                // If the swap is already running, we can skip the refund
-                // The refund will be handled by the state machine
-                if let Some(current_swap_id) = self.swap_lock.get_current_swap_id().await {
-                    if current_swap_id == swap_id {
-                        continue;
-                    }
-                }
-
-                if let Err(e) = self.swap_lock.acquire_swap_lock(swap_id).await {
-                    tracing::error!(%e, %swap_id, "Watcher failed to refund a swap in the background because another swap is already running");
+                // A running swap's state machine handles its own refund.
+                if self.swap_manager.is_running(swap_id).await {
                     continue;
                 }
 
@@ -140,7 +131,16 @@ impl Watcher {
                         BackgroundRefundProgress { swap_id },
                     );
 
-                match cancel_and_refund(swap_id, self.wallet.clone(), self.database.clone()).await {
+                match self
+                    .swap_manager
+                    .cancel_and_refund(
+                        swap_id,
+                        self.wallet.clone(),
+                        self.database.clone(),
+                        self.tauri.clone(),
+                    )
+                    .await
+                {
                     Err(e) => {
                         tracing::error!(%e, %swap_id, "Watcher failed to refund a swap in the background");
 
@@ -152,9 +152,6 @@ impl Watcher {
                 }
 
                 background_process_handle.finish();
-
-                // We have to release the swap lock when we are done
-                self.swap_lock.release_swap_lock().await?;
             }
         }
 

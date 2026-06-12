@@ -1,51 +1,67 @@
-import { Box, Button } from "@mui/material";
+import { Link } from "@mui/material";
+import { SwapState } from "models/storeModel";
 import { haveFundsBeenLocked } from "models/tauriModelExt";
-import { getCurrentSwapId, suspendCurrentSwap } from "renderer/rpc";
-import { swapReset } from "store/features/swapSlice";
-import { useAppDispatch, useAppSelector, useIsSwapRunning } from "store/hooks";
+import { suspendSwap } from "renderer/rpc";
 import { useState } from "react";
 import SwapSuspendAlert from "renderer/components/modal/SwapSuspendAlert";
+import { useAppDispatch } from "store/hooks";
+import { swapProgressRemoved } from "store/features/swapSlice";
 
-export default function CancelButton() {
-  const dispatch = useAppDispatch();
-  const swap = useAppSelector((state) => state.swap);
-  const isSwapRunning = useIsSwapRunning();
+export default function CancelButton({ swapState }: { swapState: SwapState }) {
   const [openSuspendAlert, setOpenSuspendAlert] = useState(false);
+  const dispatch = useAppDispatch();
 
-  const hasFundsBeenLocked = haveFundsBeenLocked(swap.state?.curr);
+  // A Released event with `next_auto_resume_at_unix_ms` set is a retry signal, not a real release.
+  const isReleased =
+    swapState.curr.type === "Released" &&
+    swapState.curr.content.next_auto_resume_at_unix_ms == null;
+  const effectiveCurr =
+    swapState.curr.type === "Released" && swapState.prev != null
+      ? swapState.prev
+      : swapState.curr;
+  const hasFundsBeenLocked = haveFundsBeenLocked(effectiveCurr);
+
+  async function suspend(disableAutoResume: boolean = false) {
+    await suspendSwap(swapState.swapId, disableAutoResume);
+  }
 
   async function onCancel() {
-    const swapId = await getCurrentSwapId();
-
-    if (swapId.swap_id !== null) {
-      if (hasFundsBeenLocked && isSwapRunning) {
-        setOpenSuspendAlert(true);
-        return;
-      }
-
-      await suspendCurrentSwap();
+    if (isReleased) {
+      dispatch(swapProgressRemoved(swapState.swapId));
+      return;
     }
 
-    dispatch(swapReset());
+    if (hasFundsBeenLocked) {
+      setOpenSuspendAlert(true);
+      return;
+    }
+
+    await suspend();
   }
+
+  const label = isReleased
+    ? "Close"
+    : hasFundsBeenLocked
+      ? "Suspend"
+      : "Cancel";
 
   return (
     <>
       <SwapSuspendAlert
         open={openSuspendAlert}
         onClose={() => setOpenSuspendAlert(false)}
+        onSuspend={suspend}
       />
-      <Box
-        sx={{ display: "flex", justifyContent: "flex-start", width: "100%" }}
+      <Link
+        component="button"
+        type="button"
+        onClick={onCancel}
+        variant="caption"
+        color="text.secondary"
+        underline="hover"
       >
-        <Button variant="outlined" onClick={onCancel}>
-          {hasFundsBeenLocked && swap.state?.curr.type !== "Released"
-            ? "Suspend"
-            : swap.state?.curr.type === "Released"
-              ? "Close"
-              : "Cancel"}
-        </Button>
-      </Box>
+        {label}
+      </Link>
     </>
   );
 }

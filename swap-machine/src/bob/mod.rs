@@ -296,6 +296,20 @@ pub fn is_complete(state: &BobState) -> bool {
     )
 }
 
+/// States before any Bitcoin has been locked. There is nothing on-chain to
+/// recover, so these swaps are neither auto-resumed nor listed by the GUI.
+pub fn is_pre_lock_setup(state: &BobState) -> bool {
+    matches!(
+        state,
+        BobState::Started { .. } | BobState::SwapSetupCompleted(..)
+    )
+}
+
+/// Whether `resume_all` should pick this swap up on startup.
+pub fn is_resumable(state: &BobState) -> bool {
+    !is_complete(state) && !is_pre_lock_setup(state)
+}
+
 #[allow(non_snake_case)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct State0 {

@@ -3,6 +3,7 @@ pub mod tauri_bindings;
 
 use crate::cli::api::tauri_bindings::{ContextStatus, SeedChoice};
 use crate::cli::command::{Bitcoin, Monero};
+use crate::cli::swap_manager::SwapManager;
 use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
 use crate::database::{AccessMode, open_db};
@@ -10,22 +11,19 @@ use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::Seed;
 use crate::{common, monero};
-use anyhow::{Context as AnyContext, Error, Result, bail};
+use anyhow::{Context as AnyContext, Error, Result};
 use arti_client::TorClient;
-use futures::future::try_join_all;
 use libp2p::{Multiaddr, PeerId};
 use std::fmt;
-use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
 use tauri_bindings::{MoneroNodeConfig, TauriBackgroundProgress, TauriEmitter, TauriHandle};
-use tokio::sync::{Mutex as TokioMutex, RwLock, broadcast, broadcast::Sender};
+use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio_util::task::AbortOnDropHandle;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
-use uuid::Uuid;
 
 use super::watcher::Watcher;
 
@@ -74,141 +72,6 @@ mod config {
 
 pub use config::Config;
 
-mod swap_lock {
-    use super::*;
-
-    #[derive(Default)]
-    pub struct PendingTaskList(TokioMutex<Vec<JoinHandle<()>>>);
-
-    impl PendingTaskList {
-        pub async fn spawn<F, T>(&self, future: F)
-        where
-            F: Future<Output = T> + Send + 'static,
-            T: Send + 'static,
-        {
-            let handle = tokio::spawn(async move {
-                let _ = future.await;
-            });
-
-            self.0.lock().await.push(handle);
-        }
-
-        pub async fn wait_for_tasks(&self) -> Result<()> {
-            let tasks = {
-                // Scope for the lock, to avoid holding it for the entire duration of the async block
-                let mut guard = self.0.lock().await;
-                guard.drain(..).collect::<Vec<_>>()
-            };
-
-            try_join_all(tasks).await?;
-
-            Ok(())
-        }
-    }
-
-    /// The `SwapLock` manages the state of the current swap, ensuring that only one swap can be active at a time.
-    /// It includes:
-    /// - A lock for the current swap (`current_swap`)
-    /// - A broadcast channel for suspension signals (`suspension_trigger`)
-    ///
-    /// The `SwapLock` provides methods to acquire and release the swap lock, and to listen for suspension signals.
-    /// This ensures that swap operations do not overlap and can be safely suspended if needed.
-    pub struct SwapLock {
-        current_swap: RwLock<Option<Uuid>>,
-        suspension_trigger: Sender<()>,
-    }
-
-    impl SwapLock {
-        pub fn new() -> Self {
-            let (suspension_trigger, _) = broadcast::channel(10);
-            SwapLock {
-                current_swap: RwLock::new(None),
-                suspension_trigger,
-            }
-        }
-
-        pub async fn listen_for_swap_force_suspension(&self) -> Result<(), Error> {
-            let mut listener = self.suspension_trigger.subscribe();
-            let event = listener.recv().await;
-            match event {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    tracing::error!("Error receiving swap suspension signal: {}", e);
-                    bail!(e)
-                }
-            }
-        }
-
-        pub async fn acquire_swap_lock(&self, swap_id: Uuid) -> Result<(), Error> {
-            let mut current_swap = self.current_swap.write().await;
-            if current_swap.is_some() {
-                bail!("There already exists an active swap lock");
-            }
-
-            tracing::debug!(swap_id = %swap_id, "Acquiring swap lock");
-            *current_swap = Some(swap_id);
-            Ok(())
-        }
-
-        pub async fn get_current_swap_id(&self) -> Option<Uuid> {
-            *self.current_swap.read().await
-        }
-
-        /// Sends a signal to suspend all ongoing swap processes.
-        ///
-        /// This function performs the following steps:
-        /// 1. Triggers the suspension by sending a unit `()` signal to all listeners via `self.suspension_trigger`.
-        /// 2. Polls the `current_swap` state every 50 milliseconds to check if it has been set to `None`, indicating that the swap processes have been suspended and the lock released.
-        /// 3. If the lock is not released within 10 seconds, the function returns an error.
-        ///
-        /// If we send a suspend signal while no swap is in progress, the function will not fail, but will return immediately.
-        ///
-        /// # Returns
-        /// - `Ok(())` if the swap lock is successfully released.
-        /// - `Err(Error)` if the function times out waiting for the swap lock to be released.
-        ///
-        /// # Notes
-        /// The 50ms polling interval is considered negligible overhead compared to the typical time required to suspend ongoing swap processes.
-        pub async fn send_suspend_signal(&self) -> Result<(), Error> {
-            const TIMEOUT: u64 = 10_000;
-            const INTERVAL: u64 = 50;
-
-            let _ = self.suspension_trigger.send(())?;
-
-            for _ in 0..(TIMEOUT / INTERVAL) {
-                if self.get_current_swap_id().await.is_none() {
-                    return Ok(());
-                }
-                tokio::time::sleep(tokio::time::Duration::from_millis(INTERVAL)).await;
-            }
-
-            bail!("Timed out waiting for swap lock to be released");
-        }
-
-        pub async fn release_swap_lock(&self) -> Result<Uuid, Error> {
-            let mut current_swap = self.current_swap.write().await;
-            if let Some(swap_id) = current_swap.as_ref() {
-                tracing::debug!(swap_id = %swap_id, "Releasing swap lock");
-
-                let prev_swap_id = *swap_id;
-                *current_swap = None;
-                drop(current_swap);
-                Ok(prev_swap_id)
-            } else {
-                bail!("There is no current swap lock to release");
-            }
-        }
-    }
-
-    impl Default for SwapLock {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-}
-
-pub use swap_lock::{PendingTaskList, SwapLock};
-
 mod context {
     use super::*;
     use crate::cli::EventLoopHandle;
@@ -236,9 +99,8 @@ mod context {
     #[derive(Clone)]
     pub struct Context {
         pub db: Arc<RwLock<Option<Arc<dyn Database + Send + Sync>>>>,
-        pub swap_lock: Arc<SwapLock>,
+        pub swap_manager: Arc<SwapManager>,
         pub config: Arc<RwLock<Option<Config>>>,
-        pub tasks: Arc<PendingTaskList>,
         pub tauri_handle: Option<TauriHandle>,
         pub(super) bitcoin_wallet: Arc<RwLock<Option<Arc<bitcoin_wallet::Wallet>>>>,
         pub monero_manager: Arc<RwLock<Option<Arc<monero::Wallets>>>>,
@@ -257,13 +119,12 @@ mod context {
             Self::new(None)
         }
 
-        /// Creates an empty Context with only the swap_lock and tasks initialized
+        /// Creates an empty Context with only the swap_manager initialized
         fn new(tauri_handle: Option<TauriHandle>) -> Self {
             Self {
                 db: Arc::new(RwLock::new(None)),
-                swap_lock: Arc::new(SwapLock::new()),
+                swap_manager: Arc::new(SwapManager::new()),
                 config: Arc::new(RwLock::new(None)),
-                tasks: Arc::new(PendingTaskList::default()),
                 tauri_handle,
                 bitcoin_wallet: Arc::new(RwLock::new(None)),
                 monero_manager: Arc::new(RwLock::new(None)),
@@ -354,8 +215,7 @@ mod context {
                 monero_manager: Arc::new(RwLock::new(Some(bob_monero_wallet))),
                 config: Arc::new(RwLock::new(Some(config))),
                 db: Arc::new(RwLock::new(Some(db))),
-                swap_lock: SwapLock::new().into(),
-                tasks: PendingTaskList::default().into(),
+                swap_manager: Arc::new(SwapManager::new()),
                 tauri_handle: None,
                 tor_client: Arc::new(RwLock::new(None)),
                 monero_rpc_pool_handle: Arc::new(RwLock::new(None)),
@@ -812,7 +672,7 @@ mod builder {
                         wallet,
                         db.clone(),
                         self.tauri_handle.clone(),
-                        context.swap_lock.clone(),
+                        context.swap_manager.clone(),
                     );
                     tokio::spawn(watcher.run());
                 }

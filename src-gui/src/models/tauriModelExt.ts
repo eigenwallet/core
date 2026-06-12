@@ -436,6 +436,18 @@ export function haveFundsBeenLocked(
   return true;
 }
 
+/** Whether the swap is still picking/accepting an offer, i.e. no funds committed yet. */
+export function isOfferPhase(event: TauriSwapProgressEvent): boolean {
+  switch (event.type) {
+    case "ReceivedQuote":
+    case "WaitingForBtcDeposit":
+    case "SwapSetupInflight":
+      return true;
+    default:
+      return false;
+  }
+}
+
 export function isContextFullyInitialized(
   status: ResultContextStatus | null,
 ): boolean {

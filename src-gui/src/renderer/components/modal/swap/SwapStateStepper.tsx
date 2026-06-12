@@ -40,10 +40,13 @@ function getActiveStep(state: SwapState | null): PathStep | null {
   }
 
   const prevState = state.prev;
-  const isReleased = state.curr.type === "Released";
+  // A Released event with `next_auto_resume_at_unix_ms` set is a retry signal, not a real release.
+  const isReleased =
+    state.curr.type === "Released" &&
+    state.curr.content.next_auto_resume_at_unix_ms == null;
 
-  // If the swap is released we use the previous state to display the correct step
-  const latestState = isReleased ? prevState : state.curr;
+  // For Released events (terminal or retry) the previous state carries the actual step.
+  const latestState = state.curr.type === "Released" ? prevState : state.curr;
 
   // If the swap is released but we do not have a previous state we fallback
   if (latestState === null) {
@@ -67,6 +70,11 @@ function getActiveStep(state: SwapState | null): PathStep | null {
     case "WaitingForBtcDeposit":
     case "SwapSetupInflight":
       return null; // No funds have been locked yet
+
+    // Still pre-lock: Bitcoin lock tx signed but not yet broadcast
+    case "RetrievingMoneroBlockheight":
+    case "BtcLockPublishInflight":
+      return [PathType.HAPPY_PATH, 0, isReleased];
 
     // Step 1: Waiting for Bitcoin lock confirmation
     // Bitcoin has been locked, waiting for the counterparty to lock their XMR

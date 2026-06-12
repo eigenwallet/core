@@ -100,10 +100,18 @@ function InnerContent() {
           }
         />
         <Route
+          path="/offers"
+          element={
+            <ErrorBoundary>
+              <SwapPage mode="offers" />
+            </ErrorBoundary>
+          }
+        />
+        <Route
           path="/swap"
           element={
             <ErrorBoundary>
-              <SwapPage />
+              <SwapPage mode="swaps" />
             </ErrorBoundary>
           }
         />
