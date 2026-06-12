@@ -362,13 +362,13 @@ function MoneroNodeUrlSetting() {
   const network = getNetwork();
   const useMoneroRpcPool = useSettings((s) => s.useMoneroRpcPool);
   const moneroNodeUrl = useSettings(
-    (s) => s.nodes[network][Blockchain.Monero][0] || "",
+    (s) => s.nodesV2[network][Blockchain.Monero][0] || "",
   );
   const nodeStatuses = useNodes((s) => s.nodes);
   const dispatch = useAppDispatch();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const currentNodes = useSettings((s) => s.nodes[network][Blockchain.Monero]);
+  const currentNodes = useSettings((s) => s.nodesV2[network][Blockchain.Monero]);
 
   const handleNodeUrlChange = (newUrl: string) => {
     // Remove existing nodes and add the new one
@@ -593,7 +593,7 @@ function NodeTable({
   isValid: (url: string) => boolean;
   placeholder: string;
 }) {
-  const availableNodes = useSettings((s) => s.nodes[network][blockchain]);
+  const availableNodes = useSettings((s) => s.nodesV2[network][blockchain]);
   const currentNode = availableNodes[0];
   const nodeStatuses = useNodes((s) => s.nodes);
   const [newNode, setNewNode] = useState("");
