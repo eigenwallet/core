@@ -170,7 +170,7 @@ pub fn is_complete(state: &AliceState) -> bool {
         | AliceState::BtcPunished { .. }
         | AliceState::SafelyAborted
         | AliceState::BtcEarlyRefunded(_)
-        | AliceState::BtcWithholdConfirmed { .. }
+        
         | AliceState::BtcMercyConfirmed { .. } => true,
         _ => false,
     }

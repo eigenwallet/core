@@ -58,7 +58,7 @@ pub fn has_already_processed_transfer_proof(state: &BobState) -> bool {
 pub fn is_run_at_most_once(state: &BobState) -> bool {
     matches!(
         state,
-        BobState::BtcPunished { .. } | BobState::BtcWithheld(..)
+        BobState::BtcPunished { .. } 
     )
 }
 
