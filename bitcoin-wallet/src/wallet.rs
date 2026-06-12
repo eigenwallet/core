@@ -1697,10 +1697,10 @@ impl Client {
             return Ok(());
         }
 
-        // Concurrently fetch the script histories from ALL electrum servers
+        // Concurrently fetch the script histories from the electrum servers
         let results = self
             .inner
-            .join_all("batch_script_get_history", {
+            .join_quorum("batch_script_get_history", {
                 let scripts = scripts.clone();
 
                 move |client| {
@@ -1758,10 +1758,10 @@ impl Client {
         let (script_buf, _) = script.script_and_txid();
         let script_clone = script_buf.clone();
 
-        // Call all electrum servers in parallel to get script history.
+        // Call the electrum servers in parallel to get the script history.
         let results = self
             .inner
-            .join_all("script_get_history", move |client| {
+            .join_quorum("script_get_history", move |client| {
                 client.inner.script_get_history(script_clone.as_script())
             })
             .await?;
@@ -1902,68 +1902,91 @@ impl Client {
         }
     }
 
-    /// Get a transaction from the Electrum server.
-    /// Fails if the transaction is not found.
+    /// Get a transaction from the Electrum servers.
+    ///
+    /// A transaction returned by any single server is proof of its existence
+    /// (it is self-authenticating via its txid). Concluding that a transaction
+    /// does *not* exist requires `min_parallel_responses` servers to
+    /// independently report it as not found — or, if fewer servers are
+    /// reachable, every reachable server (at least one). If no server gives a
+    /// valid answer, an error is returned.
     pub async fn get_tx(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
-        match self
+        let results = self
             .inner
-            .call_async_with_multi_error("get_raw_transaction", move |client| {
+            .join_quorum("get_raw_transaction", move |client| {
                 use bitcoin::consensus::Decodable;
-                client.inner.transaction_get_raw(&txid).and_then(|raw| {
-                    let mut cursor = std::io::Cursor::new(&raw);
-                    bitcoin::Transaction::consensus_decode(&mut cursor).map_err(|e| {
-                        bdk_electrum::electrum_client::Error::Protocol(
-                            format!("Failed to deserialize transaction: {}", e).into(),
-                        )
-                    })
-                })
+
+                match client.inner.transaction_get_raw(&txid) {
+                    Ok(raw) => {
+                        let mut cursor = std::io::Cursor::new(&raw);
+                        let tx = bitcoin::Transaction::consensus_decode(&mut cursor).map_err(
+                            |e| {
+                                bdk_electrum::electrum_client::Error::Protocol(
+                                    format!("Failed to deserialize transaction: {}", e).into(),
+                                )
+                            },
+                        )?;
+
+                        Ok(Some(tx))
+                    }
+                    // A recognized "not found" is a valid answer, not a server failure
+                    Err(error) if indicates_tx_not_found(&error) => Ok(None),
+                    Err(error) => Err(error),
+                }
             })
             .await
+            .context("Failed to query Electrum servers for transaction")?;
+
+        if let Some(tx) = results
+            .iter()
+            .filter_map(|result| result.as_ref().ok())
+            .find_map(|response| response.as_ref())
         {
-            Ok(tx) => {
-                let tx = Arc::new(tx);
-                // Note: Perhaps it is better to only populate caches of the Electrum nodes
-                // that accepted our transaction?
-                self.inner.populate_tx_cache(vec![(*tx).clone()]);
-                Ok(Some(tx))
-            }
-            Err(multi_error) => {
-                // Check if any error indicates the transaction doesn't exist
-                let has_not_found = multi_error.any(|error| {
-                    let error_str = error.to_string();
-
-                    // Check for specific error patterns that indicate "not found"
-                    if error_str.contains("\"code\": Number(-5)")
-                        || error_str.contains("No such mempool or blockchain transaction")
-                        || error_str.contains("missing transaction")
-                    {
-                        return true;
-                    }
-
-                    // Also try to parse the RPC error code if possible
-                    let err_anyhow = anyhow::anyhow!(error_str);
-                    if let Ok(error_code) = parse_rpc_error_code(&err_anyhow) {
-                        if error_code == i64::from(RpcErrorCode::RpcInvalidAddressOrKey) {
-                            return true;
-                        }
-                    }
-
-                    false
-                });
-
-                if has_not_found {
-                    tracing::trace!(
-                        txid = %txid,
-                        error_count = multi_error.len(),
-                        "Transaction not found indicated by one or more Electrum servers"
-                    );
-                    Ok(None)
-                } else {
-                    let err = anyhow::anyhow!(multi_error);
-                    Err(err.context("Failed to get transaction from the Electrum server"))
-                }
-            }
+            let tx = Arc::new(tx.clone());
+            // Note: Perhaps it is better to only populate caches of the Electrum nodes
+            // that accepted our transaction?
+            self.inner.populate_tx_cache(vec![(*tx).clone()]);
+            return Ok(Some(tx));
         }
+
+        let not_found_responses = results
+            .iter()
+            .filter(|result| matches!(result, Ok(None)))
+            .count();
+        let required_not_found = self
+            .inner
+            .config()
+            .min_parallel_responses
+            .clamp(1, self.inner.client_count());
+
+        // If the quorum was not reached, join_quorum has waited for every server,
+        // so the reachable servers' answer is all the evidence there is
+        let all_servers_finished = results.len() >= self.inner.client_count();
+
+        if not_found_responses >= required_not_found
+            || (all_servers_finished && not_found_responses > 0)
+        {
+            tracing::trace!(
+                txid = %txid,
+                not_found_responses,
+                required_not_found,
+                "Transaction reported as not found by the reachable Electrum servers"
+            );
+            return Ok(None);
+        }
+
+        let errors: Vec<_> = results
+            .into_iter()
+            .filter_map(|result| result.err())
+            .collect();
+
+        Err(anyhow::Error::from(electrum_pool::MultiError::new(
+            errors,
+            format!(
+                "Could not determine whether transaction {} exists: only {} of the required {} servers reported it as not found",
+                txid, not_found_responses, required_not_found
+            ),
+        )))
     }
 
     /// Estimate the fee rate to be included in a block at the given offset.
@@ -2097,6 +2120,26 @@ impl Client {
 
         Ok(fee_rate)
     }
+}
+
+/// Returns true if the error is a server response indicating that the
+/// requested transaction does not exist (as opposed to the server failing
+/// to answer the query).
+fn indicates_tx_not_found(error: &bdk_electrum::electrum_client::Error) -> bool {
+    let error_str = error.to_string();
+
+    if error_str.contains("\"code\": Number(-5)")
+        || error_str.contains("No such mempool or blockchain transaction")
+        || error_str.contains("missing transaction")
+    {
+        return true;
+    }
+
+    let err_anyhow = anyhow!(error_str);
+    matches!(
+        parse_rpc_error_code(&err_anyhow),
+        Ok(code) if code == i64::from(RpcErrorCode::RpcInvalidAddressOrKey)
+    )
 }
 
 #[derive(Clone)]
