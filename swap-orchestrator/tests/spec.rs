@@ -1,9 +1,9 @@
 #![allow(unused_crate_dependencies)]
 
 use swap_orchestrator::compose::{
-    CloudflaredConfig, IntoSpec, MetricsConfig, OrchestratorDirectories, OrchestratorImage,
-    OrchestratorImages, OrchestratorInput, OrchestratorNetworks, OrchestratorPorts, PromtailConfig,
-    build_prometheus_agent_yml, build_promtail_yml,
+    CloudflaredConfig, GluetunConfig, IntoSpec, MetricsConfig, OrchestratorDirectories,
+    OrchestratorImage, OrchestratorImages, OrchestratorInput, OrchestratorNetworks,
+    OrchestratorPorts, PromtailConfig, build_prometheus_agent_yml, build_promtail_yml,
 };
 use swap_orchestrator::images;
 
@@ -12,6 +12,7 @@ fn make_input(
     cloudflared: Option<CloudflaredConfig>,
     promtail: Option<PromtailConfig>,
     metrics: Option<MetricsConfig>,
+    gluetun: Option<GluetunConfig>,
 ) -> OrchestratorInput {
     let source_build_context = images::source_build_context(None);
     OrchestratorInput {
@@ -52,6 +53,7 @@ fn make_input(
             ),
             cadvisor: OrchestratorImage::Registry(images::CADVISOR_IMAGE.to_string()),
             prometheus_agent: OrchestratorImage::Registry(images::PROMETHEUS_IMAGE.to_string()),
+            gluetun: OrchestratorImage::Registry(images::GLUETUN_IMAGE.to_string()),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),
@@ -60,6 +62,15 @@ fn make_input(
         cloudflared,
         promtail,
         metrics,
+        gluetun,
+    }
+}
+
+fn sample_gluetun_config() -> GluetunConfig {
+    GluetunConfig {
+        vpn_service_provider: "mullvad".to_string(),
+        wireguard_private_key: "test-private-key=".to_string(),
+        wireguard_addresses: "10.64.222.33/32".to_string(),
     }
 }
 
@@ -93,12 +104,12 @@ fn test_orchestrator_spec_generation() {
     // `to_spec` runs `validate_compose` internally, so generating each
     // variant is enough to catch indentation regressions in the optional
     // tor / cloudflared / promtail segments.
-    let _ = make_input(false, None, None, None).to_spec();
-    let _ = make_input(true, None, None, None).to_spec();
-    let _ = make_input(false, Some(sample_cloudflared_config()), None, None).to_spec();
-    let _ = make_input(true, Some(sample_cloudflared_config()), None, None).to_spec();
-    let compose = make_input(false, None, Some(sample_promtail_config()), None).to_spec();
-    let _ = make_input(true, None, Some(sample_promtail_config()), None).to_spec();
+    let _ = make_input(false, None, None, None, None).to_spec();
+    let _ = make_input(true, None, None, None, None).to_spec();
+    let _ = make_input(false, Some(sample_cloudflared_config()), None, None, None).to_spec();
+    let _ = make_input(true, Some(sample_cloudflared_config()), None, None, None).to_spec();
+    let compose = make_input(false, None, Some(sample_promtail_config()), None, None).to_spec();
+    let _ = make_input(true, None, Some(sample_promtail_config()), None, None).to_spec();
 
     // promtail's docker SD needs the networks API, not just containers, or
     // discovery 403s on /networks and no node logs ship.
@@ -108,6 +119,15 @@ fn test_orchestrator_spec_generation() {
         Some(sample_cloudflared_config()),
         Some(sample_promtail_config()),
         None,
+        None,
+    )
+    .to_spec();
+    let _ = make_input(
+        true,
+        Some(sample_cloudflared_config()),
+        Some(sample_promtail_config()),
+        Some(sample_metrics_config()),
+        Some(sample_gluetun_config()),
     )
     .to_spec();
 
@@ -117,6 +137,7 @@ fn test_orchestrator_spec_generation() {
         Some(sample_cloudflared_config()),
         Some(sample_promtail_config()),
         Some(sample_metrics_config()),
+        None,
     )
     .to_spec();
     assert!(metrics_compose.contains("container_name: cadvisor"));
@@ -124,7 +145,7 @@ fn test_orchestrator_spec_generation() {
     assert!(metrics_compose.contains("prometheus-agent-data:"));
 
     // Without metrics, neither service is generated.
-    let plain = make_input(false, None, None, None).to_spec();
+    let plain = make_input(false, None, None, None, None).to_spec();
     assert!(!plain.contains("cadvisor"));
     assert!(!plain.contains("prometheus-agent"));
 }
@@ -136,7 +157,7 @@ fn test_gh_token_inlined_into_build_context() {
 
     // A spec built from the authenticated context must still validate, and the
     // token must reach the build attribute of every source-built service.
-    let mut input = make_input(false, None, None, None);
+    let mut input = make_input(false, None, None, None, None);
     input.images.asb = OrchestratorImage::Build(images::asb_image_from_source(&context));
     input.images.asb_controller =
         OrchestratorImage::Build(images::asb_controller_image_from_source(&context));
@@ -185,7 +206,10 @@ fn test_promtail_yml_escapes_single_quotes() {
     };
     let yml = build_promtail_yml(&cfg);
     let parsed: serde_yaml::Value = serde_yaml::from_str(&yml).expect("must be valid YAML");
-    assert_eq!(parsed["clients"][0]["bearer_token"].as_str(), Some("abc'def"));
+    assert_eq!(
+        parsed["clients"][0]["bearer_token"].as_str(),
+        Some("abc'def")
+    );
 }
 
 #[test]
@@ -274,4 +298,37 @@ fn test_prometheus_agent_scrapes_cloudflared_when_enabled() {
         parsed["scrape_configs"][2]["static_configs"][0]["targets"][0].as_str(),
         Some("cloudflared:2000")
     );
+}
+
+#[test]
+fn test_gluetun_routes_asb_through_vpn_namespace() {
+    let spec = make_input(false, None, None, None, Some(sample_gluetun_config())).to_spec();
+
+    // The ASB joins the gluetun namespace; gluetun publishes the libp2p port.
+    assert!(spec.contains(r#"network_mode: "service:gluetun""#));
+    assert!(spec.contains("- '0.0.0.0:9839:9839'"));
+    assert!(spec.contains("VPN_SERVICE_PROVIDER: 'mullvad'"));
+
+    // The kill-switch must allow traffic to the docker network and the
+    // namespace must accept the libp2p + RPC ports. Docker's embedded DNS
+    // provides service-name resolution inside the shared namespace.
+    assert!(spec.contains("FIREWALL_OUTBOUND_SUBNETS: 172.28.0.0/24"));
+    assert!(spec.contains("FIREWALL_INPUT_PORTS: '9839,9944'"));
+    assert!(spec.contains("DNS_ADDRESS: 127.0.0.11"));
+    assert!(spec.contains("- subnet: 172.28.0.0/24"));
+
+    // Docker rejects net sysctls on a container that shares another
+    // container's network namespace, so tcp_tw_reuse must live on gluetun.
+    assert_eq!(spec.matches("net.ipv4.tcp_tw_reuse=1").count(), 1);
+    assert!(spec.contains("condition: service_healthy"));
+
+    // The gluetun `asb` alias lets everything keep dialing the ASB by hostname.
+    assert!(spec.contains("aliases:"));
+    assert!(spec.contains("http://asb:9944"));
+
+    let spec_without_gluetun = make_input(false, None, None, None, None).to_spec();
+    assert!(!spec_without_gluetun.contains("gluetun"));
+    assert!(spec_without_gluetun.contains("http://asb:9944"));
+    assert!(spec_without_gluetun.contains("net.ipv4.tcp_tw_reuse=1"));
+    assert!(!spec_without_gluetun.contains("- subnet:"));
 }
