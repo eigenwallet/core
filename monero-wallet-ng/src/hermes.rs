@@ -1,10 +1,10 @@
 //! Hermes is an extension to the Monero protocol intended exclusively for use by the Eigenwallet Atomic Swap protocol.
-//! 
+//!
 //! It allows two parties (Alice and Bob) to communicate messages through a shared Monero wallet.
 //! We use Monero to transmit small amounts of data between the parties as it can act as a reliable communication channel.
 //! We only transmit a single message per swap so this should not have a significant impact on the chain.
 //! We also commit the data on-chain such that either party can later construct a proof to allow another party that either one of the parties has acted in a certain way.
-//! 
+//!
 //! What is the difference to the Monero `PaymentId`s?
 //! 1. The message size is not limited to 32 bytes. It could be up to 1060 bytes large but we limit it to 256 bytes to avoid bloating the chain unnecessarily.
 //!    This is the primary reason for this custom extension. We need more to transmit around 162 bytes (> 32 bytes) of data.
@@ -13,9 +13,9 @@
 //!    PaymentIDs use the shared transaction secret.
 //!    We use a different shared secret primarily because it simplifies the implementation.
 //! 3. The extension could be modified to use a different shared secret that is negotiated off-chain.
-//! 
+//!
 //! Bob sends a message to Alice:
-//! 
+//!
 //! 1. Sending a transaction to the shared Monero wallet with a specially crafted `tx_extra` field that contains an encrypted message.
 //! 0. Bob has
 //! - his message `m`
@@ -28,7 +28,7 @@
 //! 2.1 The final encrypted blob is `e = nonce (12 bytes) || ChaCha20(k, n, b)`.
 //! 3. He sets this as the `tx_extra` field of the transaction, adds an output of any amount to the shared wallet.
 //! 4. He then signs the transaction and broadcasts it to the network.
-//! 
+//!
 //! Alice receives the message by:
 //! 0. She computes the shared secret key by applying Keccak256 to the private view key `k = H(v)`
 //! 1. Continuously scans the shared Monero wallet for incoming transactions.
@@ -37,7 +37,7 @@
 //! 2.2 She checks if the decrypted blob starts with the HERMES_DATA_MARKER.
 //! 2.2 She then extracts the length of the message `l` from the decrypted blob. She then reads the next `l` bytes as the message `m`.
 //! 2.3 Yields the message `m`.
-//! 
+//!
 //! Some notes:
 //! - We could push the marker to the front of the already encrypted blob. This would allow Alice to avoid decrypting unnecessary data but it would make us even more fingerprintable.
 //! - As we use monero-oxde arbitrary data tx_extra protocol, we will get an additional data marker in front of the encrypted blob. Preventing this would require patching the monero-oxide library.
@@ -49,8 +49,13 @@
 
 // NOTE: This is very much a draft implementation and subject to change.
 
-use chacha20::{ChaCha20, cipher::{KeyIvInit, StreamCipher}};
+use chacha20::{
+    cipher::{KeyIvInit, StreamCipher},
+    ChaCha20,
+};
 use monero_oxide::{ed25519::Scalar, primitives::keccak256};
+use monero_oxide_wallet::{extra::MAX_ARBITRARY_DATA_SIZE, WalletOutput};
+use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
 pub const MAX_HERMES_MESSAGE_SIZE: usize = 256;
@@ -65,19 +70,25 @@ pub const HERMES_BLOB_LENGTH: usize = 1 + 2 + MAX_HERMES_MESSAGE_SIZE;
 // The encrypted blob has an additional nonce at the front
 pub const ENCRYPTED_HERMES_BLOB_LENGTH: usize = NONCE_SIZE + HERMES_BLOB_LENGTH;
 
-#[derive(Debug, PartialEq)]
-enum HermesError {
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum HermesError {
+    #[error("Message exceeds {MAX_HERMES_MESSAGE_SIZE} bytes")]
     MessageTooLong,
+    #[error("Blob has an invalid length")]
     InvalidBlobLength,
+    #[error("Decrypted blob does not start with the Hermes marker")]
+    MissingMarker,
+    #[error("Decrypted blob specifies a message length exceeding the maximum")]
+    InvalidMessageLength,
 }
 
 // TODO: Add a constraint here regarding the length of the message
 /// An unencrypted Hermes message without any metadata
-/// 
+///
 /// This can either be manually constructed or recovered from an encrypted blob by decrypting it.
 /// It has a maximum size of 256 bytes.
 #[derive(Debug, PartialEq)]
-struct HermesMessage(Vec<u8>);
+pub struct HermesMessage(Vec<u8>);
 
 /// A blob that includes an encrypted Hermes message
 /// It has the format: nonce (12 bytes) || encrypted blob (259 bytes)
@@ -96,6 +107,47 @@ impl HermesMessage {
         }
 
         Ok(Self(message))
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Encrypt the message and split it into chunks suitable for the
+    /// arbitrary data (`data`) field of a `SignableTransaction`.
+    pub fn to_arbitrary_data(
+        &self,
+        private_view_key: Zeroizing<Scalar>,
+        rng: &mut (impl RngCore + CryptoRng),
+    ) -> Vec<Vec<u8>> {
+        let mut nonce = [0u8; NONCE_SIZE];
+        rng.fill_bytes(&mut nonce);
+
+        let encrypted = self.blob().encrypt(private_view_key, nonce);
+
+        encrypted
+            .0
+            .chunks(MAX_ARBITRARY_DATA_SIZE)
+            .map(<[u8]>::to_vec)
+            .collect()
+    }
+
+    /// Recover a message from the arbitrary data parts of a transaction's tx_extra.
+    pub fn from_arbitrary_data(
+        parts: &[Vec<u8>],
+        private_view_key: Zeroizing<Scalar>,
+    ) -> Result<Self, HermesError> {
+        let encrypted = EncryptedHermesBlob::new(parts.concat())?;
+
+        encrypted.decrypt(private_view_key)?.message()
+    }
+
+    /// Recover a message from a scanned output of the shared wallet.
+    pub fn from_wallet_output(
+        output: &WalletOutput,
+        private_view_key: Zeroizing<Scalar>,
+    ) -> Result<Self, HermesError> {
+        Self::from_arbitrary_data(output.arbitrary_data(), private_view_key)
     }
 
     fn blob(&self) -> HermesBlob {
@@ -123,17 +175,17 @@ impl EncryptedHermesBlob {
 
     pub fn decrypt(self, private_view_key: Zeroizing<Scalar>) -> Result<HermesBlob, HermesError> {
         let key = shared_secret(private_view_key);
-        
+
         // Extract nonce from the first 12 bytes
         let nonce: [u8; NONCE_SIZE] = self.0[..NONCE_SIZE]
             .try_into()
             .expect("slice is exactly NONCE_SIZE");
-        
+
         // Extract ciphertext (remaining bytes)
         let mut decrypted: [u8; HERMES_BLOB_LENGTH] = self.0[NONCE_SIZE..]
             .try_into()
             .expect("remaining bytes are exactly HERMES_BLOB_LENGTH");
-        
+
         // Decrypt using ChaCha20
         let mut cipher = ChaCha20::new(&key.into(), &nonce.into());
         cipher.apply_keystream(&mut decrypted);
@@ -159,6 +211,19 @@ impl HermesBlob {
         u16::from_le_bytes([self.0[1], self.0[2]])
     }
 
+    fn message(&self) -> Result<HermesMessage, HermesError> {
+        if !self.has_marker() {
+            return Err(HermesError::MissingMarker);
+        }
+
+        let length = usize::from(self.message_length());
+        if length > MAX_HERMES_MESSAGE_SIZE {
+            return Err(HermesError::InvalidMessageLength);
+        }
+
+        Ok(HermesMessage(self.0[3..3 + length].to_vec()))
+    }
+
     pub fn validate(&self) -> bool {
         // The marker must be present
         if !self.has_marker() {
@@ -178,14 +243,18 @@ impl HermesBlob {
         return true;
     }
 
-    pub fn encrypt(self, private_view_key: Zeroizing<Scalar>, nonce: [u8; NONCE_SIZE]) -> EncryptedHermesBlob {
+    pub fn encrypt(
+        self,
+        private_view_key: Zeroizing<Scalar>,
+        nonce: [u8; NONCE_SIZE],
+    ) -> EncryptedHermesBlob {
         let key = shared_secret(private_view_key);
-        
+
         // Encrypt the blob using ChaCha20
         let mut encrypted = self.0;
         let mut cipher = ChaCha20::new(&key.into(), &nonce.into());
         cipher.apply_keystream(&mut encrypted);
-        
+
         // Prepend nonce to ciphertext
         let mut result = [0u8; ENCRYPTED_HERMES_BLOB_LENGTH];
         result[..NONCE_SIZE].copy_from_slice(&nonce);
@@ -292,6 +361,39 @@ mod tests {
 
         let blob = HermesBlob::new(blob_data).unwrap();
         assert!(!blob.validate());
+    }
+
+    #[test]
+    fn arbitrary_data_roundtrip() {
+        let private_key = Zeroizing::new(Scalar::hash(b"shared_view_key"));
+        let original_data = vec![7u8; 162];
+
+        let message = HermesMessage::new(original_data.clone()).unwrap();
+        let parts = message.to_arbitrary_data(private_key.clone(), &mut rand::rngs::OsRng);
+
+        // The encrypted blob exceeds a single arbitrary data part, so it must be chunked
+        assert_eq!(
+            parts.len(),
+            ENCRYPTED_HERMES_BLOB_LENGTH.div_ceil(MAX_ARBITRARY_DATA_SIZE)
+        );
+        assert!(parts
+            .iter()
+            .all(|part| part.len() <= MAX_ARBITRARY_DATA_SIZE));
+
+        let received = HermesMessage::from_arbitrary_data(&parts, private_key).unwrap();
+        assert_eq!(received.as_bytes(), original_data);
+    }
+
+    #[test]
+    fn arbitrary_data_wrong_key_is_rejected() {
+        let encrypt_key = Zeroizing::new(Scalar::hash(b"key1"));
+        let decrypt_key = Zeroizing::new(Scalar::hash(b"key2"));
+
+        let message = HermesMessage::new(vec![1, 2, 3]).unwrap();
+        let parts = message.to_arbitrary_data(encrypt_key, &mut rand::rngs::OsRng);
+
+        let result = HermesMessage::from_arbitrary_data(&parts, decrypt_key);
+        assert_eq!(result, Err(HermesError::MissingMarker));
     }
 
     #[test]
