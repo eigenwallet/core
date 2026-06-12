@@ -18,7 +18,7 @@ const MIN_TIME_BETWEEN_DEFAULT_RENDEZVOUS_APPLY = 7 * 24 * 60 * 60 * 1000; // 7 
 
 export interface SettingsState {
   /// This is an ordered list of node urls for each network and blockchain
-  nodes: Record<Network, Record<Blockchain, string[]>>;
+  nodesV2: Record<Network, Record<Blockchain, string[]>>;
   /// Which theme to use
   theme: Theme;
   /// Whether to fetch fiat prices from the internet
@@ -116,7 +116,7 @@ export enum FiatCurrency {
 }
 
 const initialState: SettingsState = {
-  nodes: DEFAULT_NODES,
+  nodesV2: DEFAULT_NODES,
   theme: Theme.Dark,
   fetchFiatPrices: false,
   fiatCurrency: FiatCurrency.Usd,
@@ -148,15 +148,15 @@ const alertsSlice = createSlice({
         node: string;
       }>,
     ) {
-      const index = slice.nodes[action.payload.network][
+      const index = slice.nodesV2[action.payload.network][
         action.payload.type
       ].indexOf(action.payload.node);
       if (index > 0) {
         const temp =
-          slice.nodes[action.payload.network][action.payload.type][index];
-        slice.nodes[action.payload.network][action.payload.type][index] =
-          slice.nodes[action.payload.network][action.payload.type][index - 1];
-        slice.nodes[action.payload.network][action.payload.type][index - 1] =
+          slice.nodesV2[action.payload.network][action.payload.type][index];
+        slice.nodesV2[action.payload.network][action.payload.type][index] =
+          slice.nodesV2[action.payload.network][action.payload.type][index - 1];
+        slice.nodesV2[action.payload.network][action.payload.type][index - 1] =
           temp;
       }
     },
@@ -187,14 +187,14 @@ const alertsSlice = createSlice({
     ) {
       // Make sure the node is not already in the list
       if (
-        slice.nodes[action.payload.network][action.payload.type].includes(
+        slice.nodesV2[action.payload.network][action.payload.type].includes(
           action.payload.node,
         )
       ) {
         return;
       }
       // Add the node to the list
-      slice.nodes[action.payload.network][action.payload.type].push(
+      slice.nodesV2[action.payload.network][action.payload.type].push(
         action.payload.node,
       );
     },
@@ -206,7 +206,7 @@ const alertsSlice = createSlice({
         node: string;
       }>,
     ) {
-      slice.nodes[action.payload.network][action.payload.type] = slice.nodes[
+      slice.nodesV2[action.payload.network][action.payload.type] = slice.nodesV2[
         action.payload.network
       ][action.payload.type].filter((node) => node !== action.payload.node);
     },
@@ -266,14 +266,14 @@ const alertsSlice = createSlice({
           MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY
       ) {
         // Remove negative nodes from mainnet
-        slice.nodes[Network.Mainnet][Blockchain.Bitcoin] = slice.nodes[
+        slice.nodesV2[Network.Mainnet][Blockchain.Bitcoin] = slice.nodesV2[
           Network.Mainnet
         ][Blockchain.Bitcoin].filter(
           (node) => !action.payload.negativeNodesMainnet.includes(node),
         );
 
         // Remove negative nodes from testnet
-        slice.nodes[Network.Testnet][Blockchain.Bitcoin] = slice.nodes[
+        slice.nodesV2[Network.Testnet][Blockchain.Bitcoin] = slice.nodesV2[
           Network.Testnet
         ][Blockchain.Bitcoin].filter(
           (node) => !action.payload.negativeNodesTestnet.includes(node),
@@ -284,9 +284,9 @@ const alertsSlice = createSlice({
           Blockchain.Bitcoin
         ].forEach((node) => {
           if (
-            !slice.nodes[Network.Mainnet][Blockchain.Bitcoin].includes(node)
+            !slice.nodesV2[Network.Mainnet][Blockchain.Bitcoin].includes(node)
           ) {
-            slice.nodes[Network.Mainnet][Blockchain.Bitcoin].unshift(node);
+            slice.nodesV2[Network.Mainnet][Blockchain.Bitcoin].unshift(node);
           }
         });
 
@@ -295,9 +295,9 @@ const alertsSlice = createSlice({
           Blockchain.Bitcoin
         ].forEach((node) => {
           if (
-            !slice.nodes[Network.Testnet][Blockchain.Bitcoin].includes(node)
+            !slice.nodesV2[Network.Testnet][Blockchain.Bitcoin].includes(node)
           ) {
-            slice.nodes[Network.Testnet][Blockchain.Bitcoin].unshift(node);
+            slice.nodesV2[Network.Testnet][Blockchain.Bitcoin].unshift(node);
           }
         });
 
