@@ -367,15 +367,19 @@ pub async fn main() -> Result<()> {
                 }
             };
 
-            let (metrics, _metrics_server) = match (config.network.prometheus_port, metrics_registry)
-            {
-                (Some(port), Some(mut registry)) => {
-                    let metrics = metrics::Metrics::new(&mut registry);
-                    let server = metrics::MetricsServer::start(port, registry).await?;
-                    (Some(metrics), Some(server))
-                }
-                _ => (None, None),
-            };
+            let hermes_funding_amount =
+                monero::Amount::parse_monero(&config.maker.hermes_funding_xmr.to_string())
+                    .context("Invalid maker.hermes_funding_xmr in config")?;
+
+            let (metrics, _metrics_server) =
+                match (config.network.prometheus_port, metrics_registry) {
+                    (Some(port), Some(mut registry)) => {
+                        let metrics = metrics::Metrics::new(&mut registry);
+                        let server = metrics::MetricsServer::start(port, registry).await?;
+                        (Some(metrics), Some(server))
+                    }
+                    _ => (None, None),
+                };
 
             let bitcoin_wallet = Arc::new(bitcoin_wallet);
             let (event_loop, mut swap_receiver, event_loop_service) = EventLoop::new(
@@ -391,6 +395,7 @@ pub async fn main() -> Result<()> {
                 config.maker.external_bitcoin_redeem_address,
                 config.maker.btc_redeem_fee_multiplier,
                 tip_config,
+                hermes_funding_amount,
                 config.maker.refund_policy,
                 onion_service_handle,
                 config_path.clone(),

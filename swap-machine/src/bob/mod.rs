@@ -64,6 +64,17 @@ pub enum BobState {
     /// Bob has verified that the correct amount of Monero has been locked and fully confirmed.
     /// It is safe to transmit the encrypted signature to Alice.
     XmrLocked(State4),
+    /// We are constructing the Hermes transaction which transmits the
+    /// encrypted signature to Alice on-chain.
+    ConstructingHermesTx(State4),
+    /// We have constructed the Hermes transaction but have not yet
+    /// published it.
+    PublishingHermesTx {
+        state: State4,
+        /// The signed transaction to publish, serialized as wire-format hex.
+        #[serde(with = "swap_serde::monero::transaction")]
+        hermes_tx: monero_oxide_wallet::transaction::Transaction,
+    },
     EncSigSent(State4),
     BtcRedeemed(State5),
     WaitingForCancelTimelockExpiration {
@@ -183,6 +194,8 @@ impl fmt::Display for BobState {
             }
             BobState::XmrLockTransactionSeen { .. } => write!(f, "xmr lock transaction seen"),
             BobState::XmrLocked(..) => write!(f, "xmr is locked"),
+            BobState::ConstructingHermesTx(..) => write!(f, "hermes tx is being constructed"),
+            BobState::PublishingHermesTx { .. } => write!(f, "hermes tx is constructed"),
             BobState::EncSigSent(..) => write!(f, "encrypted signature is sent"),
             BobState::BtcRedeemed(..) => write!(f, "btc is redeemed"),
             BobState::WaitingForCancelTimelockExpiration { .. } => {
@@ -253,7 +266,10 @@ impl BobState {
             | BobState::WaitingForCancelTimelockExpiration { state, .. } => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
-            BobState::XmrLocked(state) | BobState::EncSigSent(state) => {
+            BobState::XmrLocked(state)
+            | BobState::ConstructingHermesTx(state)
+            | BobState::PublishingHermesTx { state, .. }
+            | BobState::EncSigSent(state) => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
             BobState::CancelTimelockExpired(state)
@@ -1012,6 +1028,36 @@ impl State4 {
         let tx_redeem =
             bitcoin::TxRedeem::new(&self.tx_lock, &self.redeem_address, self.tx_redeem_fee);
         self.b.encsign(self.S_a_bitcoin, tx_redeem.digest())
+    }
+
+    pub fn lock_transfer_proof(&self) -> TransferProofMaybeWithTxKey {
+        self.lock_transfer_proof.clone()
+    }
+
+    pub fn private_view_key(&self) -> monero::PrivateViewKey {
+        self.v
+    }
+
+    /// Spend key of the Hermes wallet: our Monero spend key share `s_b`.
+    pub fn hermes_wallet_spend_key(&self) -> monero_oxide_ext::PrivateKey {
+        monero_oxide_ext::PrivateKey { scalar: self.s_b }
+    }
+
+    /// Address of the Hermes wallet, funded by Alice via the Monero lock
+    /// transaction and spent by us for the Hermes transaction.
+    pub fn hermes_wallet_address(
+        &self,
+        network: monero_address::Network,
+    ) -> monero_address::MoneroAddress {
+        let public_spend_key =
+            monero_oxide_ext::PublicKey::from_private_key(&self.hermes_wallet_spend_key());
+
+        monero_address::MoneroAddress::new(
+            network,
+            monero_address::AddressType::Legacy,
+            public_spend_key.decompress(),
+            self.v.public().0.decompress(),
+        )
     }
 
     pub async fn watch_for_redeem_btc(

@@ -38,6 +38,8 @@ pub fn has_already_processed_transfer_proof(state: &BobState) -> bool {
     matches!(
         state,
         |BobState::XmrLockTransactionSeen { .. }| BobState::XmrLocked(..)
+            | BobState::ConstructingHermesTx(..)
+            | BobState::PublishingHermesTx { .. }
             | BobState::EncSigSent(..)
             | BobState::BtcRedeemed(..)
             | BobState::XmrRedeemConstructed { .. }
@@ -630,6 +632,9 @@ async fn next_state(
                 return Ok(BobState::CancelTimelockExpired(state.cancel()));
             }
 
+            BobState::ConstructingHermesTx(state)
+        }
+        BobState::ConstructingHermesTx(state) => {
             let (tx_lock_status, tx_early_refund_status): (
                 bitcoin_wallet::Subscription,
                 bitcoin_wallet::Subscription,
@@ -640,13 +645,13 @@ async fn next_state(
 
             event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::InflightEncSig);
 
-            // Alice has locked her Monero
-            // Bob sends Alice the encrypted signature which allows her to sign and broadcast the Bitcoin redeem transaction
             select! {
-                // Wait for the confirmation from Alice that she has received the encrypted signature
-                _ = event_loop_handle.send_encrypted_signature(state.tx_redeem_encsig()) => {
-                    BobState::EncSigSent(state)
+                // Construct the Hermes transaction which transmits the encrypted signature on-chain
+                hermes_tx = construct_hermes_tx(&monero_wallet, &state, &env_config) => {
+                    BobState::PublishingHermesTx { state, hermes_tx }
                 },
+                // Concurrently offer the encrypted signature over p2p
+                never = send_encrypted_signature_p2p(event_loop_handle, &state) => match never {},
                 // Wait for the Bitcoin redeem transaction to be published
                 state5 = state.infallible_wait_for_btc_redeem(&*bitcoin_wallet) => {
                     BobState::BtcRedeemed(state5)
@@ -661,6 +666,39 @@ async fn next_state(
                 // after she has locked her Monero because she won't be able to refund her
                 // Monero without our Bitcoin refund transaction
                 // However, theoretically it's possible so we check for it
+                _ = tx_early_refund_status.wait_until_seen() => {
+                    BobState::BtcEarlyRefundPublished(state.cancel())
+                },
+            }
+        }
+        BobState::PublishingHermesTx { state, hermes_tx } => {
+            let (tx_lock_status, tx_early_refund_status): (
+                bitcoin_wallet::Subscription,
+                bitcoin_wallet::Subscription,
+            ) = tokio::join!(
+                bitcoin_wallet.subscribe_to(Box::new(state.tx_lock.clone())),
+                bitcoin_wallet.subscribe_to(Box::new(state.construct_tx_early_refund()))
+            );
+
+            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::InflightEncSig);
+
+            select! {
+                result = publish_hermes_tx(&monero_wallet, &hermes_tx) => {
+                    result?;
+                    BobState::EncSigSent(state)
+                },
+                // Concurrently offer the encrypted signature over p2p
+                never = send_encrypted_signature_p2p(event_loop_handle, &state) => match never {},
+                // Wait for the Bitcoin redeem transaction to be published
+                state5 = state.infallible_wait_for_btc_redeem(&*bitcoin_wallet) => {
+                    BobState::BtcRedeemed(state5)
+                },
+                // Wait for the cancel timelock to expire
+                result = tx_lock_status.wait_until_confirmed_with(state.cancel_timelock) => {
+                    result?;
+                    BobState::CancelTimelockExpired(state.cancel())
+                }
+                // Wait for Alice to publish the early refund transaction
                 _ = tx_early_refund_status.wait_until_seen() => {
                     BobState::BtcEarlyRefundPublished(state.cancel())
                 },
@@ -713,6 +751,8 @@ async fn next_state(
             );
 
             select! {
+                // Keep offering the encrypted signature over p2p
+                never = send_encrypted_signature_p2p(event_loop_handle, &state) => match never {},
                 // Wait for Alice to redeem the Bitcoin
                 // We can then extract the key and redeem our Monero
                 state5 = state.infallible_wait_for_btc_redeem(&*bitcoin_wallet) => {
@@ -1663,4 +1703,125 @@ async fn next_state(
             BobState::XmrRedeemed { tx_lock_id }
         }
     })
+}
+
+/// Construct the Hermes transaction: spends the funding output Alice attached
+/// to the lock transaction, with the encrypted signature embedded in tx_extra.
+///
+/// Pends forever on failure (e.g. Alice did not fund the Hermes wallet).
+async fn construct_hermes_tx(
+    monero_wallet: &monero::Wallets,
+    state: &State4,
+    env_config: &env::Config,
+) -> monero_oxide_wallet::transaction::Transaction {
+    let result = async {
+        let message =
+            crate::protocol::hermes::encode_encrypted_signature(&state.tx_redeem_encsig())?;
+        let lock_tx_hash = state.lock_transfer_proof().tx_hash();
+
+        // The funding output only becomes spendable once the lock transaction
+        // is fully confirmed
+        monero_wallet
+            .wait_until_confirmed(
+                &lock_tx_hash,
+                env_config.monero_finality_confirmations,
+                None::<fn((monero::TxHash, u64, u64))>,
+            )
+            .await
+            .context("Failed to wait for the Hermes funding output to become spendable")?;
+
+        retry(
+            "Constructing Hermes transaction",
+            || async {
+                let data = message.to_arbitrary_data(
+                    zeroize::Zeroizing::new(state.private_view_key().0.scalar),
+                    &mut rand::rngs::OsRng,
+                );
+
+                monero_wallet
+                    .construct_data_tx(
+                        &lock_tx_hash,
+                        state.hermes_wallet_spend_key(),
+                        state.private_view_key(),
+                        state.hermes_wallet_address(env_config.monero_network),
+                        data,
+                        None,
+                    )
+                    .await
+                    .map_err(backoff::Error::transient)
+            },
+            None,
+            Duration::from_secs(60),
+        )
+        .await
+    }
+    .await;
+
+    match result {
+        Ok(hermes_tx) => hermes_tx,
+        Err(error) => {
+            tracing::warn!(
+                ?error,
+                "Failed to construct the Hermes transaction. Relying on the p2p channel"
+            );
+
+            std::future::pending().await
+        }
+    }
+}
+
+/// Publish the Hermes transaction, skipping the publish if it is already
+/// present on chain (e.g. after a restart).
+async fn publish_hermes_tx(
+    monero_wallet: &monero::Wallets,
+    hermes_tx: &monero_oxide_wallet::transaction::Transaction,
+) -> Result<()> {
+    let hermes_tx_hash = monero::TxHash::from_tx(hermes_tx);
+
+    retry(
+        "Publishing Hermes transaction",
+        || async {
+            let is_present = monero_wallet
+                .is_transaction_present(&hermes_tx_hash)
+                .await
+                .context(
+                    "Failed to check whether the Hermes transaction is already present on chain",
+                )
+                .map_err(backoff::Error::transient)?;
+
+            if is_present {
+                return Ok(());
+            }
+
+            monero_wallet
+                .rpc_client()
+                .await
+                .publish_transaction(hermes_tx)
+                .await
+                .context("Failed to publish the Hermes transaction")
+                .map_err(backoff::Error::transient)
+        },
+        None,
+        Duration::from_secs(60),
+    )
+    .await?;
+
+    tracing::info!(%hermes_tx_hash, "Published encrypted signature via Hermes");
+
+    Ok(())
+}
+
+/// Send the encrypted signature over the p2p channel, then pend forever
+/// so it never decides a state transition.
+async fn send_encrypted_signature_p2p(
+    event_loop_handle: &mut SwapEventLoopHandle,
+    state: &State4,
+) -> std::convert::Infallible {
+    event_loop_handle
+        .send_encrypted_signature(state.tx_redeem_encsig())
+        .await;
+
+    tracing::info!("Sent encrypted signature over p2p");
+
+    std::future::pending().await
 }

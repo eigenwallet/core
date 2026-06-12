@@ -382,6 +382,37 @@ impl Wallets {
         .context("Failed to construct sweep transaction to destination")
     }
 
+    /// Construct a transaction carrying `data` in its tx_extra: it spends the
+    /// output of `funding_tx_hash`, pays a single piconero to `destination`
+    /// and the entire remainder as fee.
+    pub async fn construct_data_tx(
+        &self,
+        funding_tx_hash: &TxHash,
+        spend_key: monero_oxide_ext::PrivateKey,
+        view_key: PrivateViewKey,
+        destination: monero_address::MoneroAddress,
+        data: Vec<Vec<u8>>,
+        inner_retry: Option<backoff::ExponentialBackoff>,
+    ) -> Result<Transaction<NotPruned>> {
+        let rpc_client = self.rpc_client().await;
+        let tx_id = tx_hash_to_bytes(funding_tx_hash)?;
+
+        let spend_scalar = Zeroizing::new(spend_key.scalar);
+        let view_scalar = Zeroizing::new(view_key.0.scalar);
+
+        monero_wallet_ng::sweep::construct_data_tx(
+            rpc_client,
+            spend_scalar,
+            view_scalar,
+            tx_id,
+            destination,
+            data,
+            inner_retry,
+        )
+        .await
+        .context("Failed to construct data transaction")
+    }
+
     /// Verify a transfer using the new monero-wallet-ng implementation.
     ///
     /// This verifies that a transaction sends the expected amount to the given view pair
@@ -505,6 +536,49 @@ impl Wallets {
         );
 
         Ok(TxHash(tx_hash))
+    }
+
+    /// Scan the wallet of the given view pair from `restore_height` until an
+    /// output carrying a valid Hermes message is found.
+    pub async fn wait_for_hermes_message(
+        &self,
+        public_spend_key: monero_oxide_ext::PublicKey,
+        private_view_key: PrivateViewKey,
+        restore_height: BlockHeight,
+    ) -> Result<monero_wallet_ng::hermes::HermesMessage> {
+        use monero_wallet_ng::hermes::HermesMessage;
+        use monero_wallet_ng::scanner;
+
+        let rpc_client = self.rpc_client().await;
+
+        let public_spend_key = public_spend_key.decompress();
+        let view_scalar = Zeroizing::new(private_view_key.0.scalar);
+
+        let mut subscription = scanner::naive_scanner(
+            rpc_client,
+            public_spend_key,
+            view_scalar.clone(),
+            restore_height.height as usize,
+            POLL_INTERVAL,
+        )
+        .context("Failed to create scanner")?;
+
+        let output = subscription
+            .wait_until(|output| {
+                HermesMessage::from_wallet_output(output, view_scalar.clone()).is_ok()
+            })
+            .await
+            .context("Scanner subscription closed before finding a Hermes message")?;
+
+        let message = HermesMessage::from_wallet_output(&output, view_scalar)
+            .expect("output was selected because it contains a valid Hermes message");
+
+        tracing::debug!(
+            tx_hash = %hex::encode(output.transaction()),
+            "Found Hermes message"
+        );
+
+        Ok(message)
     }
 }
 
