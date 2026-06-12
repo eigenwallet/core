@@ -436,11 +436,7 @@ export function haveFundsBeenLocked(
   return true;
 }
 
-/**
- * A swap is in the "offer phase" while the user is still picking/accepting an
- * offer (no funds committed yet). Once setup completes and we move to locking
- * Bitcoin, the swap belongs to the "swaps" tab instead.
- */
+/** Whether the swap is still picking/accepting an offer, i.e. no funds committed yet. */
 export function isOfferPhase(event: TauriSwapProgressEvent): boolean {
   switch (event.type) {
     case "ReceivedQuote":

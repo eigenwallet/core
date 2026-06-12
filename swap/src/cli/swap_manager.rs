@@ -1,14 +1,6 @@
-//! Owns the lifecycle of Bob state machines.
-//!
-//! [`SwapManager`] is the single entry point for starting, resuming, suspending
-//! and refunding swaps. It internally tracks per-swap [`JoinHandle`]s and
-//! force-suspension senders, and coordinates the globally exclusive
-//! "initiation" phase (the pre-swap maker selection / deposit waiting) via
-//! [`run_exclusive_initiation`](SwapManager::run_exclusive_initiation).
-//!
-//! Read-only swap inspection (history, swap info, timelock checks, monero
-//! recovery) intentionally stays in `cli::api::request` — this manager is
-//! about state-machine lifecycle, not generic database access.
+//! Owns the lifecycle of Bob state machines: starting, resuming, suspending
+//! and refunding swaps, plus the globally exclusive pre-swap "initiation"
+//! phase. Read-only swap inspection stays in `cli::api::request`.
 
 use crate::cli;
 use crate::cli::EventLoopHandle;
@@ -37,18 +29,12 @@ const RETRY_MAX_INTERVAL: Duration = Duration::from_secs(60);
 const TASK_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Builds the [`bob::Swap`] for one attempt of the retry loop. Called with
-/// `is_first_attempt = true` exactly once; retries are rebuilt from the DB —
-/// `bob::run` persists state transitions itself, so a retry simply picks up
-/// whatever was last persisted.
+/// `is_first_attempt = true` exactly once; retries are rebuilt from the DB.
 type MakeSwap = Box<dyn FnMut(bool) -> BoxFuture<'static, Result<Swap>> + Send + 'static>;
 
-/// Why a swap-task was asked to suspend. Lets the task decide whether to
-/// emit a final `Released` event on the way out: a regular `Terminate`
-/// (user-initiated suspend, shutdown, etc.) does emit, but an
-/// `ExternalTakeover` (another `start`/`resume`/`cancel_and_refund` is about
-/// to take over the swap) suppresses it so the frontend doesn't see a
-/// spurious "released" flicker before the new owner emits its own progress
-/// event.
+/// Why a swap-task was asked to suspend. `Terminate` emits a final `Released`
+/// event on exit; `ExternalTakeover` suppresses it because the new owner is
+/// about to emit its own progress events.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SuspendReason {
     Terminate,
@@ -80,18 +66,13 @@ pub struct SwapManager {
 struct RunningSwap {
     /// Force-suspension trigger for this swap's state machine task.
     suspend: broadcast::Sender<SuspendReason>,
-    /// JoinHandle for the spawned state-machine task. `None` once
-    /// [`SwapManager::suspend`] has taken it, or when the entry is a refund
-    /// reservation made by [`SwapManager::cancel_and_refund`] (which has no
-    /// task of its own). Removal of the entry itself is always done by
-    /// [`SwapManager::release_running`] on the owning operation's exit path,
-    /// so that [`is_running`](SwapManager::is_running) stays true until the
-    /// swap has actually finished cleaning up.
+    /// `None` once [`SwapManager::suspend`] has taken it, or for a refund
+    /// reservation made by [`SwapManager::cancel_and_refund`]. The entry itself
+    /// is removed only by [`SwapManager::release_running`] on the owning
+    /// operation's exit path, so `is_running` stays true until cleanup is done.
     handle: Option<JoinHandle<()>>,
-    /// `true` while the task is sleeping in retry backoff after an error.
-    /// In that state the state machine is idle, so `start`/`resume`/
-    /// `cancel_and_refund` can pre-empt the pending retry by signalling
-    /// `ExternalTakeover` on `suspend` rather than bailing.
+    /// `true` while the task is sleeping in retry backoff after an error,
+    /// i.e. idle and pre-emptable via `ExternalTakeover`.
     in_retry_backoff: bool,
 }
 
@@ -146,13 +127,11 @@ impl SwapManager {
     }
 
     /// Acquire the initiation lock for `swap_id`, run `body` while listening
-    /// for force-suspension, and release the lock on every exit path. The
-    /// lock is held across the *entire* `body`, so callers can perform DB
-    /// writes and spawn the state-machine task without a gap between
-    /// selection and registration.
+    /// for force-suspension, and release the lock on every exit path. The lock
+    /// is held across the entire `body`, so there is no gap between maker
+    /// selection and state-machine registration.
     ///
-    /// Returns `Ok(None)` if the initiation was force-suspended, otherwise
-    /// `Ok(Some(value))` where `value` is whatever `body` produced.
+    /// Returns `Ok(None)` if the initiation was force-suspended.
     pub async fn run_exclusive_initiation<F, T>(
         &self,
         swap_id: Uuid,
@@ -169,9 +148,8 @@ impl SwapManager {
             _ = self.await_initiation_force_suspension() => Ok(None),
         };
 
-        // Unless `body` completed and spawned the state machine, nothing will
-        // ever emit another progress event for this swap — send a final
-        // `Released` so the frontend can drop the entry.
+        // Unless `body` spawned the state machine, nothing will ever emit
+        // another progress event for this swap — release it in the frontend.
         if !matches!(result, Ok(Some(_))) {
             tauri_handle.emit_swap_progress_event(
                 swap_id,
@@ -187,18 +165,11 @@ impl SwapManager {
         result
     }
 
-    /// Start a fresh swap state machine.
+    /// Start a fresh swap state machine. Retries with exponential backoff
+    /// until completion or suspension.
     ///
-    /// Persists peer/address/monero-pool to the DB, registers the swap as
-    /// running, and spawns the [`bob::run`] task. The task retries the state
-    /// machine with exponential backoff on error and exits when either:
-    ///   - `bob::run` returns `Ok` (the swap reached a terminal state), or
-    ///   - [`suspend`](Self::suspend) is called for `swap_id`.
-    ///
-    /// The pre-swap maker selection (currently `determine_btc_to_swap`) must
-    /// run before calling this and produce the [`StartSwapInputs`]. Use
-    /// [`run_exclusive_initiation`](Self::run_exclusive_initiation) to guard
-    /// that pre-swap phase.
+    /// Maker selection must run before this, guarded by
+    /// [`run_exclusive_initiation`](Self::run_exclusive_initiation).
     #[allow(clippy::too_many_arguments)]
     pub async fn start(
         self: &Arc<Self>,
@@ -334,12 +305,8 @@ impl SwapManager {
         self.spawn_swap_task(swap_id, tauri_handle, make_swap).await
     }
 
-    /// Resume every Bob swap that is in a resumable state.
-    ///
-    /// A swap is considered resumable when it has not reached a terminal
-    /// state and is not already running. Each resumable swap is started via
-    /// [`resume`](Self::resume); failures for individual swaps are logged
-    /// and skipped, so one bad swap does not prevent the rest from resuming.
+    /// Resume every Bob swap that is in a resumable state. Failures for
+    /// individual swaps are logged and skipped.
     pub async fn resume_all(
         self: &Arc<Self>,
         db: Arc<dyn Database + Send + Sync>,
@@ -370,10 +337,8 @@ impl SwapManager {
                 continue;
             }
 
-            // Match the per-swap span that `request()` attaches for a
-            // single `resume_swap` call so the spawned state-machine task
-            // is tagged with `swap{swap_id=…}` and log lines stay
-            // filterable by swap.
+            // Match the per-swap span that `request()` attaches for a single
+            // `resume_swap` call so log lines stay filterable by swap.
             let swap_span = debug_span!("swap", %swap_id);
             match self
                 .resume(
@@ -398,15 +363,8 @@ impl SwapManager {
         Ok(resumed)
     }
 
-    /// Suspend a swap.
-    ///
-    /// If `swap_id` is currently in the initiation phase, sends an initiation
-    /// suspend signal and waits for the lock to be released. Otherwise sends a
-    /// per-swap suspend signal and awaits the spawned task's completion. The
-    /// running-map entry is left in place; the task's own exit path
-    /// ([`release_running`](Self::release_running)) is what removes it, so
-    /// [`is_running`](Self::is_running) stays true until the state machine has
-    /// finished cleaning up.
+    /// Suspend a swap (or its initiation phase) and await the task's exit.
+    /// Returns only once the swap is no longer running.
     pub async fn suspend(&self, swap_id: Uuid) -> Result<()> {
         if self.current_initiation_swap_id().await == Some(swap_id) {
             return self.suspend_initiation(swap_id).await;
@@ -417,8 +375,8 @@ impl SwapManager {
             let Some(entry) = running.get_mut(&swap_id) else {
                 return Ok(());
             };
-            // Best-effort: a task with no live subscriber means it already
-            // raced past the select! and we'll just await it below.
+            // Best-effort: a task with no live subscriber already raced past
+            // the select! and we'll just await it below.
             let _ = entry.suspend.send(SuspendReason::Terminate);
             entry.handle.take()
         };
@@ -427,12 +385,8 @@ impl SwapManager {
         self.await_task_exit(swap_id, handle).await
     }
 
-    /// If a swap-task is currently sleeping in retry backoff, signal it to
-    /// exit silently and await its completion. No-op if the swap is not
-    /// running, or is running but not in backoff.
-    ///
-    /// Used by `start`, `resume`, and `cancel_and_refund` to take over a swap
-    /// whose state machine is idle between retries.
+    /// If a swap-task is sleeping in retry backoff, signal it to exit silently
+    /// and await its completion. No-op otherwise.
     async fn cancel_pending_retry_if_any(&self, swap_id: Uuid) -> Result<()> {
         let handle = {
             let mut running = self.running.lock().await;
@@ -451,10 +405,8 @@ impl SwapManager {
     }
 
     /// Await the exit of a swap task whose suspension has already been
-    /// signalled. `None` means another caller has taken the [`JoinHandle`];
-    /// in that case fall back to polling the running map so this call still
-    /// upholds the "returns only after the swap is no longer running"
-    /// contract.
+    /// signalled. If another caller has taken the [`JoinHandle`], fall back to
+    /// polling the running map.
     async fn await_task_exit(&self, swap_id: Uuid, handle: Option<JoinHandle<()>>) -> Result<()> {
         let Some(handle) = handle else {
             return self.wait_until_not_running(swap_id).await;
@@ -469,8 +421,6 @@ impl SwapManager {
         }
     }
 
-    /// Set the `in_retry_backoff` flag on the running entry. Called by the
-    /// task when it enters / exits the inter-retry sleep.
     async fn set_in_retry_backoff(&self, swap_id: Uuid, value: bool) {
         let mut running = self.running.lock().await;
         if let Some(entry) = running.get_mut(&swap_id) {
@@ -495,11 +445,9 @@ impl SwapManager {
             .context("Timed out waiting for swap to exit")
     }
 
-    /// Cancel and refund a swap. Bails if the swap is actively running (its
-    /// state machine is in flight), since the running state machine is
-    /// responsible for its own refunds. A swap that is sleeping in retry
-    /// backoff is pre-empted: we cancel the pending retry and then run the
-    /// refund ourselves.
+    /// Cancel and refund a swap. Bails if the swap is actively running, since
+    /// the state machine handles its own refunds. A swap sleeping in retry
+    /// backoff is pre-empted and refunded here.
     pub async fn cancel_and_refund(
         &self,
         swap_id: Uuid,
@@ -509,9 +457,8 @@ impl SwapManager {
     ) -> Result<BobState> {
         self.cancel_pending_retry_if_any(swap_id).await?;
 
-        // Reserve the running slot for the duration of the refund so no
-        // concurrent `start`/`resume` can spawn a state machine that races
-        // our refund transaction.
+        // Reserve the running slot so no concurrent `start`/`resume` can spawn
+        // a state machine that races our refund transaction.
         {
             let mut running = self.running.lock().await;
             if running.contains_key(&swap_id) {
@@ -566,23 +513,17 @@ impl SwapManager {
         Ok(())
     }
 
-    /// Spawn `make_swap` as a tracked, retrying state-machine task under
-    /// `swap_id`. See [`run_swap_task`] for the retry semantics.
-    ///
-    /// The running-map lock is held across the conflict check, the spawn and
-    /// the insert. The task's first access to the map (`release_running` /
-    /// `set_in_retry_backoff`) blocks on that same lock, so the entry is
-    /// guaranteed to be in place before the task can observe the map.
+    /// Spawn `make_swap` as a tracked, retrying state-machine task. The
+    /// running-map lock is held across the conflict check, spawn and insert,
+    /// so the entry is in place before the task can observe the map.
     async fn spawn_swap_task(
         self: &Arc<Self>,
         swap_id: Uuid,
         tauri_handle: Option<TauriHandle>,
         make_swap: MakeSwap,
     ) -> Result<()> {
-        // If this swap is currently asleep between retries, pre-empt it: the
-        // existing task will exit silently and free the slot. An actively-
-        // running task is left alone (the conflict check below will surface
-        // a clear error to the caller).
+        // Pre-empt a pending retry; an actively-running task is left alone and
+        // surfaces as a conflict below.
         self.cancel_pending_retry_if_any(swap_id).await?;
 
         let mut running = self.running.lock().await;
@@ -630,16 +571,9 @@ impl Default for SwapManager {
 }
 
 /// Drive a single swap task. Retries the state machine with exponential
-/// backoff on `Err`, exits on `Ok` (terminal state reached) or on receipt of
-/// a force-suspension signal. Always releases the running-map entry and
-/// (unless pre-empted by an external takeover) emits a final `Released` on
-/// exit.
-///
-/// The retry behaviour is intentional: individual states inside `bob::run`
-/// already retry their own operations, but `bob::run` itself can still
-/// return `Err`. While we're sleeping between retries the `in_retry_backoff`
-/// flag is set on our running entry so `start`/`resume`/`cancel_and_refund`
-/// can pre-empt us instead of bailing with "already running".
+/// backoff on `Err`, exits on `Ok` or on a force-suspension signal. Always
+/// releases the running-map entry and (unless pre-empted by an external
+/// takeover) emits a final `Released` on exit.
 async fn run_swap_task(
     manager: Arc<SwapManager>,
     swap_id: Uuid,
@@ -688,10 +622,8 @@ async fn run_swap_task(
                     error,
                 );
 
-                // Mark the slot as idle and tell the frontend we've released
-                // the swap *with* a hint about when we'll auto-resume — the
-                // user can manually resume / cancel during this window and
-                // pre-empt us.
+                // Mark the slot as idle and tell the frontend when we'll
+                // auto-resume; the user can pre-empt us during this window.
                 manager.set_in_retry_backoff(swap_id, true).await;
                 tauri_handle.emit_swap_progress_event(
                     swap_id,
@@ -713,9 +645,6 @@ async fn run_swap_task(
                     _ = tokio::time::sleep(next) => {}
                 }
 
-                // Sleep finished naturally — clear the flag so the next
-                // iteration's attempt runs under "actively running"
-                // semantics again.
                 manager.set_in_retry_backoff(swap_id, false).await;
             }
         }
@@ -723,9 +652,8 @@ async fn run_swap_task(
 
     manager.release_running(swap_id).await;
 
-    // Suppress the final Released only when another caller is about to take
-    // over the swap and will emit its own progress event. This avoids a
-    // brief "released" flash in the frontend between takeovers.
+    // On external takeover the new owner emits its own progress events; a
+    // final Released here would flash "released" in the frontend.
     if !external_takeover {
         tauri_handle.emit_swap_progress_event(
             swap_id,
@@ -744,8 +672,7 @@ fn unix_now_ms() -> u64 {
 }
 
 /// Poll `predicate` every 50ms until it returns true, for at most
-/// [`TASK_EXIT_TIMEOUT`]. Used as a fallback when we no longer own a
-/// [`JoinHandle`] for the task we're waiting on.
+/// [`TASK_EXIT_TIMEOUT`].
 async fn wait_until<F, Fut>(mut predicate: F) -> Result<()>
 where
     F: FnMut() -> Fut,

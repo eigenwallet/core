@@ -1215,13 +1215,9 @@ pub enum TauriSwapProgressEvent {
     CooperativeRedeemRejected {
         reason: String,
     },
-    /// The swap manager has dropped its handle on this swap. If the swap exited
-    /// because of a transient error and the manager is going to auto-retry the
-    /// resume, `next_auto_resume_at_unix_ms` carries the wall-clock time at
-    /// which the next retry will fire — the GUI can use this to show a
-    /// countdown and the user can still trigger a manual resume in the
-    /// meantime. `None` means the swap has actually finished (terminal state,
-    /// suspended by the user, etc.).
+    /// The swap manager has dropped its handle on this swap. If the manager is
+    /// going to auto-retry, `next_auto_resume_at_unix_ms` carries the time of the
+    /// next retry; `None` means the swap has actually finished.
     Released {
         #[typeshare(serialized_as = "Option<number>")]
         next_auto_resume_at_unix_ms: Option<u64>,

@@ -4,10 +4,8 @@ import { useEffect, useState } from "react";
 import { resumeSwap } from "renderer/rpc";
 import { useAppSelector } from "store/hooks";
 
-// Renders only when the swap is currently waiting in the auto-retry backoff
-// (`curr.type === "Released"` with `next_auto_resume_at_unix_ms` set). Shows
-// the remaining time until the manager will auto-retry; clicking the alert
-// pre-empts the wait and resumes immediately.
+// Countdown until the manager auto-retries the swap; clicking resumes immediately.
+// Renders only while the swap is in retry backoff.
 export default function RetryBackoffAlert({ swapId }: { swapId: string }) {
   const nextRetryAtMs = useAppSelector((state) => {
     const s = state.swap.swaps[swapId];

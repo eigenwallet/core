@@ -11,9 +11,7 @@ export default function CancelButton({ swapState }: { swapState: SwapState }) {
   const [openSuspendAlert, setOpenSuspendAlert] = useState(false);
   const dispatch = useAppDispatch();
 
-  // A Released event with `next_auto_resume_at_unix_ms` is just a retry
-  // signal — the swap is still in flight, so keep the cancel/suspend
-  // behavior driven by the previous state.
+  // A Released event with `next_auto_resume_at_unix_ms` set is a retry signal, not a real release.
   const isReleased =
     swapState.curr.type === "Released" &&
     swapState.curr.content.next_auto_resume_at_unix_ms == null;
@@ -29,7 +27,6 @@ export default function CancelButton({ swapState }: { swapState: SwapState }) {
 
   async function onCancel() {
     if (isReleased) {
-      // Swap is already done; "Close" just dismisses the final-state panel.
       dispatch(swapProgressRemoved(swapState.swapId));
       return;
     }

@@ -73,17 +73,14 @@ export function useResumeableSwapsCountExcludingPunished() {
   );
 }
 
-// A swap entry counts as "still in flight" while its current event is anything
-// other than a *terminal* Released. A Released event carrying
-// `next_auto_resume_at_unix_ms` is a retry signal — the swap manager will
-// auto-resume — so the GUI should keep treating those swaps as active.
+// A Released event with `next_auto_resume_at_unix_ms` set is a retry signal —
+// the swap manager will auto-resume — so those swaps still count as in flight.
 function isSwapInFlight(swap: SwapState) {
   if (swap.curr.type !== "Released") return true;
   return swap.curr.content.next_auto_resume_at_unix_ms != null;
 }
 
-// For "in flight, past the offer phase" we look at the previous event when the
-// current is Released — `prev` carries the actual swap-machine state.
+// For Released events `prev` carries the actual swap-machine state.
 function effectivePhaseEvent(swap: SwapState) {
   if (swap.curr.type !== "Released") return swap.curr;
   return swap.prev;
@@ -199,12 +196,8 @@ export function useSwapInfosSortedByDate() {
   return sortBy(swapInfos, (swap) => -parseDateString(swap.start_date));
 }
 
-/// Swaps that are resumable per the on-disk state (`isBobStateNameRunningSwap`)
-/// but have no entry in the redux swap slice — i.e. no state-machine task in
-/// this session has touched them. The Swaps page surfaces these so the user
-/// can resume them without leaving the page. Swaps that *do* have a redux
-/// entry (running, retry-backoff, or terminally released) are left to their
-/// existing in-flight panel.
+/// Swaps that are resumable per the on-disk state but have no entry in the
+/// redux swap slice, i.e. no state-machine task in this session has touched them.
 export function useIdleResumableSwapInfos(): GetSwapInfoResponseExt[] {
   const saneSwapInfos = useSaneSwapInfos();
   const swaps = useAppSelector((state) => state.swap.swaps);

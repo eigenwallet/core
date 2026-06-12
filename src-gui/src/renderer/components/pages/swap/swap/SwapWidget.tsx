@@ -48,17 +48,14 @@ export default function SwapWidget({ mode }: { mode: SwapWidgetMode }) {
   useRedirectOnOfferAccepted(mode);
   const matchingSwaps = useAppSelector((state) => {
     const filtered = Object.values(state.swap.swaps).filter((swap) => {
-      // For released swaps the meaningful state is `prev` (curr is just the
-      // generic "Released" marker). We keep them visible until acknowledged.
+      // For released swaps `prev` carries the meaningful state.
       const phaseEvent = swap.curr.type === "Released" ? swap.prev : swap.curr;
       if (phaseEvent == null) return false;
       return mode === "offers"
         ? isOfferPhase(phaseEvent)
         : !isOfferPhase(phaseEvent);
     });
-    // Newest first. A swap may exist in the redux swap slice before its
-    // SwapInfo row has been fetched - if any swap is missing info, leave the
-    // list in its current order; the sort kicks in once everything is loaded.
+    // Newest first; only once every swap's SwapInfo has been fetched.
     const swapInfos = state.rpc.state.swapInfos;
     if (swapInfos == null) return filtered;
     if (filtered.some((swap) => swapInfos[swap.swapId] == null)) {
@@ -70,8 +67,6 @@ export default function SwapWidget({ mode }: { mode: SwapWidgetMode }) {
     );
   });
 
-  // Idle resumable swaps belong only on the "swaps" tab — they are by
-  // definition past the offer phase (funds locked).
   const idleResumableSwaps = useIdleResumableSwapInfos();
   const swapInfos = useAppSelector((state) => state.rpc.state.swapInfos);
 
@@ -88,13 +83,7 @@ export default function SwapWidget({ mode }: { mode: SwapWidgetMode }) {
       state: s,
       swapId: s.swapId,
     }));
-    // Dedupe defensively: a swap that has any entry in the redux swap slice
-    // (running, retry-backoff, or terminally Released) is already covered by
-    // an active panel, so we must not also surface an "idle resumable" panel
-    // for it. The hook itself already filters these out, but the active list
-    // also includes redux entries that *don't* round-trip through the hook
-    // filter (e.g. swaps still being driven by an in-flight retry banner),
-    // so we re-check here.
+    // A swap with an active panel must not also get an "idle resumable" panel.
     const activeIds = new Set(entries.map((e) => e.swapId));
     for (const info of idleResumableSwaps) {
       if (activeIds.has(info.swap_id)) continue;
@@ -108,9 +97,6 @@ export default function SwapWidget({ mode }: { mode: SwapWidgetMode }) {
     );
   })();
 
-  // The offers tab shows the InitPage placeholder when no offer is in flight,
-  // so the user can start a new swap. The swaps tab simply renders nothing
-  // when there is no in-progress or resumable swap to show.
   const showOfferPlaceholder =
     mode === "offers" && combinedEntries.length === 0;
 
@@ -147,10 +133,8 @@ export default function SwapWidget({ mode }: { mode: SwapWidgetMode }) {
   );
 }
 
-// When a swap on the offers tab transitions out of the offer phase (i.e. the
-// user accepted an offer and we're now locking funds), pull them over to
-// /swap so they don't have to navigate manually. We track which swap ids
-// we've already redirected for so a re-render can't bounce them back.
+// Redirects to /swap when a swap on the offers tab leaves the offer phase.
+// Tracks already-redirected swap ids so a re-render can't bounce the user back.
 function useRedirectOnOfferAccepted(mode: SwapWidgetMode) {
   const navigate = useNavigate();
   const swaps = useAppSelector((state) => state.swap.swaps);
@@ -232,9 +216,7 @@ function SwapStatePanel({ swap }: { swap: SwapState | null }) {
         display: "flex",
         flexDirection: "column",
         borderRadius: 2,
-        // Clip TimelockButton's alert to the paper's rounded corners so it
-        // visually attaches to the top of the box rather than floating
-        // inside it.
+        // Clips TimelockButton's alert to the paper's rounded corners.
         overflow: "hidden",
         ...(swap != null && {
           borderTop: `2px solid ${swapIdColor(swap.swapId, 0.85)}`,
@@ -286,7 +268,6 @@ function SwapStatePanel({ swap }: { swap: SwapState | null }) {
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              // Edge-to-edge top divider matching the header's bottom border.
               mx: -2,
               mb: -2,
               px: 2,
@@ -324,11 +305,8 @@ function SwapStatePanel({ swap }: { swap: SwapState | null }) {
   );
 }
 
-// A resumable swap that is not currently being driven by a state machine —
-// shown alongside active swaps on the Swaps page so the user can resume it
-// without navigating to the History view. Once the user clicks Resume the
-// state machine starts emitting progress events and the swap migrates to a
-// regular `SwapStatePanel`.
+// A resumable swap that is not currently being driven by a state machine.
+// Once resumed, progress events migrate it to a regular `SwapStatePanel`.
 function IdleResumableSwapPanel({ swap }: { swap: GetSwapInfoResponseExt }) {
   return (
     <Paper
@@ -404,9 +382,8 @@ function IdleResumableSwapPanel({ swap }: { swap: GetSwapInfoResponseExt }) {
   );
 }
 
-// Header showing the swap's BTC -> XMR amounts. Reads from the swapInfo
-// (which is fetched lazily after the swap_id appears), so we render nothing
-// until the amounts are known to avoid a flash of "undefined -> undefined".
+// Header showing the swap's BTC -> XMR amounts. Renders nothing until the
+// lazily-fetched swapInfo is available.
 function SwapAmountHeader({ swapId }: { swapId: string }) {
   const swapInfo = useSwapInfo(swapId);
   if (swapInfo == null) return null;
@@ -419,8 +396,6 @@ function SwapAmountHeader({ swapId }: { swapId: string }) {
         justifyContent: "center",
         gap: 0.75,
         color: "text.secondary",
-        // Extend edge-to-edge by undoing the parent Box's horizontal
-        // padding, then re-adding our own; gives a clean full-width divider.
         mx: -2,
         mt: -2,
         px: 2,

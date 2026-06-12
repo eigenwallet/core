@@ -749,11 +749,8 @@ impl BobParams {
         Ok((swap, event_loop))
     }
 
-    /// Build two `bob::Swap` instances that share a single event loop.
-    ///
-    /// This is the setup used to exercise truly-concurrent swaps against the
-    /// same Alice: both swaps drive their networking through the same swarm
-    /// and the same on-disk database.
+    /// Build two `bob::Swap` instances that share a single event loop and
+    /// on-disk database, for exercising concurrent swaps against the same Alice.
     pub async fn new_two_concurrent_swaps(
         &self,
         btc_amount: bitcoin::Amount,

@@ -120,8 +120,7 @@ impl Watcher {
                     continue;
                 }
 
-                // If the swap is already running, we can skip the refund.
-                // The refund will be handled by that swap's state machine.
+                // A running swap's state machine handles its own refund.
                 if self.swap_manager.is_running(swap_id).await {
                     continue;
                 }

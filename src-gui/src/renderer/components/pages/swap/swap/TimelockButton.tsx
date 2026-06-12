@@ -15,13 +15,9 @@ export default function TimelockButton({ swapId }: { swapId: string }) {
   if (!isGetSwapInfoResponseRunningSwap(swap)) return null;
   if (timelock == null) return null;
 
-  // Only show once the Bitcoin lock has more than three confirmations —
-  // before that the swap is still in its normal early phase and the
-  // "running for a while" hint is premature. We derive the confirmation
-  // count from the timelock state: in `None`, `blocks_left` counts down
-  // from `swap.cancel_timelock`, so confirmations = `cancel_timelock -
-  // blocks_left`. Any other state means the cancel timelock has expired,
-  // so we're well past 3 confirmations and should always show.
+  // Only show once the Bitcoin lock has more than three confirmations; before
+  // that the "running for a while" hint is premature. In `None`, `blocks_left`
+  // counts down from `cancel_timelock`; any other state is past expiry.
   const btcLockConfirmations =
     timelock.type === "None"
       ? swap.cancel_timelock - timelock.content.blocks_left
@@ -38,8 +34,7 @@ export default function TimelockButton({ swapId }: { swapId: string }) {
         action={<KeyboardArrowRightIcon fontSize="small" />}
         sx={{
           cursor: "pointer",
-          // Sit flush against the parent Paper's rounded top edge: the
-          // parent clips us so we don't need our own border-radius.
+          // The parent Paper clips us against its rounded top edge.
           borderRadius: 0,
           py: 0.5,
           px: 2,

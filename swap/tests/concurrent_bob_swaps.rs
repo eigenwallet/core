@@ -8,10 +8,8 @@ use swap::protocol::bob::BobState;
 use swap::protocol::{alice, bob};
 
 /// Two Bob swaps against the same Alice, driven by a single shared event loop.
-///
-/// Swap 1 is started first; only once it has reached [`BobState::BtcLocked`]
-/// does swap 2 begin. Both swaps must subsequently progress in parallel and
-/// reach [`BobState::XmrRedeemed`] / [`AliceState::BtcRedeemed`].
+/// Swap 2 starts once swap 1 has locked its Bitcoin; both must then progress
+/// in parallel to redemption.
 #[tokio::test]
 async fn concurrent_bob_swaps() {
     harness::setup_test(SlowCancelConfig, None, None, |mut ctx| async move {
@@ -25,8 +23,7 @@ async fn concurrent_bob_swaps() {
         let alice_swap_1 = ctx.alice_next_swap().await;
         let alice_swap_1 = tokio::spawn(alice::run(alice_swap_1, FixedRate::default()));
 
-        // Wait for swap 1 to reach `BtcLocked` (or any subsequent state) before
-        // starting swap 2.
+        // Wait for swap 1 to reach `BtcLocked` or any subsequent state.
         loop {
             let state: BobState = swap_1_db.get_state(swap_1_id).await?.try_into()?;
             if !matches!(

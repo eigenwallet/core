@@ -123,7 +123,6 @@ export async function setupBackgroundTasks(): Promise<void> {
   // Fetch all alerts
   updateAlerts();
 
-  // Kick off resume-all-swaps; it will retry itself until the context is ready
   resumeAllSwapsUntilSuccess();
 
   // Setup Tauri event listeners

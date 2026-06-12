@@ -3,8 +3,7 @@ import { useSwapInfosSortedByDate } from "store/hooks";
 import SwapStatusAlert from "./SwapStatusAlert/SwapStatusAlert";
 
 export default function SwapTxLockAlertsBox() {
-  // We specifically choose ALL swaps here. SwapStatusAlert renders nothing for
-  // swaps without a relevant timelock alert (no funds locked / already done).
+  // All swaps; SwapStatusAlert renders nothing for those without a timelock alert.
   const swaps = useSwapInfosSortedByDate();
 
   return (

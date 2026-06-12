@@ -40,15 +40,12 @@ function getActiveStep(state: SwapState | null): PathStep | null {
   }
 
   const prevState = state.prev;
-  // A Released event carrying `next_auto_resume_at_unix_ms` is just a retry
-  // signal, not a real release — keep the stepper rendering as if the swap
-  // were still mid-flight in its previous state.
+  // A Released event with `next_auto_resume_at_unix_ms` set is a retry signal, not a real release.
   const isReleased =
     state.curr.type === "Released" &&
     state.curr.content.next_auto_resume_at_unix_ms == null;
 
-  // If the swap event is Released (terminal or retry) we use the previous
-  // state to display the correct step.
+  // For Released events (terminal or retry) the previous state carries the actual step.
   const latestState = state.curr.type === "Released" ? prevState : state.curr;
 
   // If the swap is released but we do not have a previous state we fallback

@@ -1090,10 +1090,8 @@ pub async fn buy_xmr(
 
     let address_len = bitcoin_wallet.new_address().await?.script_pubkey().len();
 
-    // The whole "select a maker + start the swap" sequence runs under the
-    // globally exclusive initiation lock so that no other initiation can
-    // observe partially-consumed wallet balance between selection and the
-    // bitcoin lock transaction. This matches the original `buy_xmr`.
+    // Maker selection and swap start run under the globally exclusive initiation
+    // lock so no other initiation can observe partially-consumed wallet balance.
     let manager = Arc::clone(&context.swap_manager);
     let body = {
         let bitcoin_wallet = Arc::clone(&bitcoin_wallet);
