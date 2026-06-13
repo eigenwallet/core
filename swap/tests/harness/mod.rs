@@ -195,6 +195,10 @@ ask_spread = "0"
         .unwrap()
         .port();
 
+    // Far above the mainnet default: regtest fee estimation demands
+    // ~0.0084 XMR for the Hermes transaction
+    let alice_hermes_funding_amount = monero::Amount::parse_monero("0.02").unwrap();
+
     let (alice_handle, alice_swap_handle, alice_rpc_server_handle) = start_alice(
         &alice_seed,
         alice_db_path.clone(),
@@ -203,6 +207,7 @@ ask_spread = "0"
         alice_bitcoin_wallet.clone(),
         alice_monero_wallet.clone(),
         developer_tip.clone(),
+        alice_hermes_funding_amount,
         refund_policy.clone().unwrap_or_default(),
         alice_rpc_port,
     )
@@ -284,6 +289,7 @@ ask_spread = "0"
         developer_tip_monero_wallet,
         developer_tip,
         refund_policy: refund_policy.unwrap_or_default(),
+        alice_hermes_funding_amount,
         monerod_container_id: containers._monerod_container.id().to_string(),
         monero,
     };
@@ -376,6 +382,7 @@ async fn start_alice(
     bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     developer_tip: TipConfig,
+    hermes_funding_amount: monero::Amount,
     refund_policy: RefundPolicy,
     rpc_port: u16,
 ) -> (
@@ -422,10 +429,6 @@ async fn start_alice(
     )
     .unwrap();
     swarm.listen_on(listen_address).unwrap();
-
-    // Far above the mainnet default: regtest fee estimation demands
-    // ~0.0084 XMR for the Hermes transaction
-    let hermes_funding_amount = monero::Amount::parse_monero("0.02").unwrap();
 
     let (event_loop, swap_handle, service) = asb::EventLoop::new(
         swarm,
@@ -802,6 +805,7 @@ pub struct TestContext {
     xmr_amount: monero::Amount,
     developer_tip: TipConfig,
     refund_policy: RefundPolicy,
+    alice_hermes_funding_amount: monero::Amount,
 
     alice_seed: Seed,
     alice_db_path: PathBuf,
@@ -846,6 +850,13 @@ impl TestContext {
         .await
     }
 
+    /// Disable the on-chain encrypted signature channel for Alice by setting
+    /// her Hermes funding to zero, then restart her so it takes effect.
+    pub async fn disable_alice_hermes(&mut self) {
+        self.alice_hermes_funding_amount = monero::Amount::ZERO;
+        self.restart_alice().await;
+    }
+
     pub async fn restart_alice(&mut self) {
         self.alice_handle.abort();
         // Abort the old RPC server to release the port before starting a new one
@@ -861,6 +872,7 @@ impl TestContext {
             self.alice_bitcoin_wallet.clone(),
             self.alice_monero_wallet.clone(),
             self.developer_tip.clone(),
+            self.alice_hermes_funding_amount,
             self.refund_policy.clone(),
             self.alice_rpc_port,
         )
@@ -895,6 +907,7 @@ impl TestContext {
             self.alice_bitcoin_wallet.clone(),
             self.alice_monero_wallet.clone(),
             self.developer_tip.clone(),
+            self.alice_hermes_funding_amount,
             self.refund_policy.clone(),
             self.alice_rpc_port,
         )
