@@ -25,6 +25,15 @@ pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
 /// prometheus-agent over the docker network.
 pub const CLOUDFLARED_METRICS_PORT: u16 = 2000;
 
+/// Port the `bitcoin-exporter` (jvstein/bitcoin-prometheus-exporter) serves its
+/// metrics on, scraped by the prometheus-agent over the docker network. This is
+/// the image's default (`METRICS_PORT`).
+pub const BITCOIN_EXPORTER_METRICS_PORT: u16 = 9332;
+
+/// Port `electrs` serves its built-in Prometheus metrics on (`--monitoring-addr`),
+/// scraped by the prometheus-agent over the docker network. This is electrs' default.
+pub const ELECTRS_MONITORING_PORT: u16 = 4224;
+
 pub struct OrchestratorInput {
     pub ports: OrchestratorPorts,
     pub networks: OrchestratorNetworks<monero_address::Network, bitcoin::Network>,
@@ -143,6 +152,7 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub cadvisor: T,
     pub prometheus_agent: T,
     pub gluetun: T,
+    pub bitcoin_exporter: T,
 }
 
 pub struct OrchestratorPorts {
@@ -301,7 +311,17 @@ fn build(input: OrchestratorInput) -> String {
         // flag!(input.want_tor; "--proxy=tor:{}", input.ports.tor_socks), // the shell program above does the equivalent of this
     ];
 
-    let command_bitcoind = command![
+    // When metrics shipping is enabled we add a static `-rpcauth` credential so
+    // the bitcoin-exporter can authenticate to bitcoind's RPC. `-rpcauth` does
+    // not suppress the `.cookie` file, so electrs keeps authenticating via the
+    // cookie unchanged. The plaintext password is reused below in the exporter's
+    // environment. See [`generate_bitcoind_rpcauth`].
+    let bitcoind_metrics_auth: Option<(String, String)> = input
+        .metrics
+        .is_some()
+        .then(|| generate_bitcoind_rpcauth("metrics"));
+
+    let mut command_bitcoind = command![
         "bitcoind",
         input.networks.bitcoin.to_flag(),
         flag!("-rpcallowip=0.0.0.0/0"),
@@ -317,6 +337,10 @@ fn build(input: OrchestratorInput) -> String {
         flag!("-txindex=1"),
     ];
 
+    if let Some((rpcauth, _)) = bitcoind_metrics_auth.as_ref() {
+        command_bitcoind.0.push(flag!("-rpcauth={}", rpcauth));
+    }
+
     let electrs_network: containers::electrs::Network = input.networks.clone().into();
 
     let command_electrs = command![
@@ -327,6 +351,9 @@ fn build(input: OrchestratorInput) -> String {
         flag!("--daemon-rpc-addr=bitcoind:{}", input.ports.bitcoind_rpc),
         flag!("--daemon-p2p-addr=bitcoind:{}", input.ports.bitcoind_p2p),
         flag!("--electrum-rpc-addr=0.0.0.0:{}", input.ports.electrs),
+        // When metrics shipping is enabled, expose electrs' built-in Prometheus
+        // endpoint on the docker network so the prometheus-agent can scrape it.
+        flag!(input.metrics.is_some(); "--monitoring-addr=0.0.0.0:{}", ELECTRS_MONITORING_PORT),
         flag!("--log-filters=INFO"),
     ];
 
@@ -435,8 +462,27 @@ fn build(input: OrchestratorInput) -> String {
     };
 
     let (metrics_segment, metrics_volume) = if input.metrics.is_some() {
+        let (_, exporter_password) = bitcoind_metrics_auth
+            .as_ref()
+            .expect("bitcoind metrics auth is generated whenever metrics are enabled");
+
         let metrics_segment = format!(
             "\
+  bitcoin-exporter:
+    container_name: bitcoin-exporter
+    {image_bitcoin_exporter}
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - bitcoind
+    environment:
+      - BITCOIN_RPC_HOST=bitcoind
+      - BITCOIN_RPC_PORT={bitcoind_rpc}
+      - BITCOIN_RPC_USER=metrics
+      - BITCOIN_RPC_PASSWORD={exporter_password}
+      - METRICS_PORT={bitcoin_exporter_metrics_port}
+    expose:
+      - {bitcoin_exporter_metrics_port}
   cadvisor:
     container_name: cadvisor
     {image_cadvisor}
@@ -469,9 +515,12 @@ fn build(input: OrchestratorInput) -> String {
       - 'prometheus-agent-data:/prometheus'
     command: [\"--config.file=/etc/prometheus/prometheus.yml\", \"--agent\", \"--storage.agent.path=/prometheus\"]\
 ",
+            image_bitcoin_exporter = input.images.bitcoin_exporter.to_image_attribute(),
             image_cadvisor = input.images.cadvisor.to_image_attribute(),
             image_prometheus_agent = input.images.prometheus_agent.to_image_attribute(),
             prometheus_config_file = PROMETHEUS_CONFIG_FILE,
+            bitcoind_rpc = input.ports.bitcoind_rpc,
+            bitcoin_exporter_metrics_port = BITCOIN_EXPORTER_METRICS_PORT,
         );
         (metrics_segment, "prometheus-agent-data:")
     } else {
@@ -593,6 +642,15 @@ fn build(input: OrchestratorInput) -> String {
     } else {
         (String::new(), "")
     };
+
+    // electrs' built-in Prometheus endpoint (enabled via `--monitoring-addr`
+    // above) is only exposed on the docker network when metrics shipping is on.
+    let electrs_monitoring_expose = if input.metrics.is_some() {
+        format!("\n      - {ELECTRS_MONITORING_PORT}")
+    } else {
+        String::new()
+    };
+
     let compose_str = format!(
         "\
 # This file was auto-generated by `orchestrator` on {date}
@@ -656,7 +714,7 @@ services:
       - 'bitcoind-data:/bitcoind-data'
       - 'electrs-data:/electrs-data'
     expose:
-      - {electrs_port}
+      - {electrs_port}{electrs_monitoring_expose}
     entrypoint: ''
     command: {command_electrs}
   {tor_segment}
@@ -734,6 +792,7 @@ volumes:
         port_bitcoind_rpc = input.ports.bitcoind_rpc,
         port_bitcoind_p2p = input.ports.bitcoind_p2p,
         electrs_port = input.ports.electrs,
+        electrs_monitoring_expose = electrs_monitoring_expose,
         rendezvous_node_port = input.ports.rendezvous_node_port,
         image_monerod = input.images.monerod.to_image_attribute(),
         image_electrs = input.images.electrs.to_image_attribute(),
@@ -847,9 +906,9 @@ scrape_configs:
     )
 }
 
-/// Builds `prometheus.yml`. Always scrapes cadvisor and the ASB's libp2p
-/// endpoint; also scrapes cloudflared's metrics endpoint when
-/// `scrape_cloudflared` is set.
+/// Builds `prometheus.yml`. Always scrapes cadvisor, the ASB's libp2p endpoint,
+/// the bitcoin-exporter (bitcoind metrics) and electrs' built-in endpoint; also
+/// scrapes cloudflared's metrics endpoint when `scrape_cloudflared` is set.
 pub fn build_prometheus_agent_yml(
     cfg: &MetricsConfig,
     asb_metrics_port: u16,
@@ -883,13 +942,21 @@ scrape_configs:
       - targets: ['cadvisor:8080']
   - job_name: asb
     static_configs:
-      - targets: ['asb:{asb_metrics_port}']{cloudflared_scrape}
+      - targets: ['asb:{asb_metrics_port}']
+  - job_name: bitcoind
+    static_configs:
+      - targets: ['bitcoin-exporter:{bitcoin_exporter_metrics_port}']
+  - job_name: electrs
+    static_configs:
+      - targets: ['electrs:{electrs_monitoring_port}']{cloudflared_scrape}
 
 remote_write:
   - url: {url}
     bearer_token: {token}
 ",
         instance = yaml_single_quote(&cfg.instance),
+        bitcoin_exporter_metrics_port = BITCOIN_EXPORTER_METRICS_PORT,
+        electrs_monitoring_port = ELECTRS_MONITORING_PORT,
         url = yaml_single_quote(&cfg.remote_write_url),
         token = yaml_single_quote(&cfg.token),
     )
@@ -966,6 +1033,46 @@ impl IntoImageAttribute for OrchestratorImage {
 /// compose performs variable interpolation even inside single quotes.
 fn yaml_compose_value(value: &str) -> String {
     format!("'{}'", value.replace('$', "$$").replace('\'', "''"))
+}
+
+/// Generates a bitcoind `-rpcauth` credential and the matching plaintext
+/// password, in the exact format produced by Bitcoin Core's
+/// `share/rpcauth/rpcauth.py`: `<user>:<salt_hex>$<hmac_sha256(salt_hex, password)>`.
+///
+/// We use `-rpcauth` rather than `-rpcpassword` on purpose: `-rpcpassword`
+/// suppresses bitcoind's `.cookie` file, but `-rpcauth` does not. electrs
+/// authenticates via that cookie (`--daemon-dir`), so this lets the metrics
+/// exporter authenticate with its own explicit credentials while electrs keeps
+/// working unchanged.
+///
+/// The password is alphanumeric so it is safe both as an HTTP Basic Auth header
+/// value (the exporter sends it that way) and inside the compose file without
+/// triggering variable interpolation (`$` is special to compose).
+fn generate_bitcoind_rpcauth(username: &str) -> (String, String) {
+    use hmac::{Hmac, Mac};
+    use rand::Rng;
+    use rand::distributions::Alphanumeric;
+    use sha2::Sha256;
+
+    let mut rng = rand::thread_rng();
+
+    // 16-byte salt, hex-encoded, exactly as rpcauth.py does.
+    let mut salt = [0u8; 16];
+    rng.fill(&mut salt[..]);
+    let salt = hex::encode(salt);
+
+    let password: String = (&mut rng)
+        .sample_iter(&Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
+
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(salt.as_bytes()).expect("HMAC accepts any key length");
+    mac.update(password.as_bytes());
+    let hash = hex::encode(mac.finalize().into_bytes());
+
+    (format!("{username}:{salt}${hash}"), password)
 }
 
 fn validate_compose(compose_str: &str) {
