@@ -1744,66 +1744,54 @@ async fn next_state(
 /// Construct the Hermes transaction: spends the funding output Alice attached
 /// to the lock transaction, with the encrypted signature embedded in tx_extra.
 ///
-/// Pends forever on failure (e.g. Alice did not fund the Hermes wallet).
+/// Retries indefinitely on transient errors. The surrounding `select!` keeps
+/// racing the p2p channel and the cancel/redeem watchers in the meantime.
 async fn construct_hermes_tx(
     monero_wallet: &monero::Wallets,
     state: &State4,
     env_config: &env::Config,
 ) -> monero_oxide_wallet::transaction::Transaction {
-    let result = async {
-        let message =
-            crate::protocol::hermes::encode_encrypted_signature(&state.tx_redeem_encsig())?;
-        let lock_tx_hash = state.lock_transfer_proof().tx_hash();
+    let message = crate::protocol::hermes::encode_encrypted_signature(&state.tx_redeem_encsig())
+        .expect("the encrypted signature always fits into a Hermes message");
+    let lock_tx_hash = state.lock_transfer_proof().tx_hash();
 
-        // The funding output only becomes spendable once the lock transaction
-        // is fully confirmed
-        monero_wallet
-            .wait_until_confirmed(
-                &lock_tx_hash,
-                env_config.monero_finality_confirmations,
-                None::<fn((monero::TxHash, u64, u64))>,
-            )
-            .await
-            .context("Failed to wait for the Hermes funding output to become spendable")?;
+    retry(
+        "Constructing Hermes transaction",
+        || async {
+            // The funding output only becomes spendable once the lock
+            // transaction is fully confirmed
+            monero_wallet
+                .wait_until_confirmed(
+                    &lock_tx_hash,
+                    env_config.monero_finality_confirmations,
+                    None::<fn((monero::TxHash, u64, u64))>,
+                )
+                .await
+                .context("Failed to wait for the Hermes funding output to become spendable")
+                .map_err(backoff::Error::transient)?;
 
-        retry(
-            "Constructing Hermes transaction",
-            || async {
-                let data = message.to_arbitrary_data(
-                    zeroize::Zeroizing::new(state.private_view_key().0.scalar),
-                    &mut rand::rngs::OsRng,
-                );
-
-                monero_wallet
-                    .construct_data_tx(
-                        &lock_tx_hash,
-                        state.hermes_wallet_spend_key(),
-                        state.private_view_key(),
-                        state.hermes_wallet_address(env_config.monero_network),
-                        data,
-                        None,
-                    )
-                    .await
-                    .map_err(backoff::Error::transient)
-            },
-            None,
-            Duration::from_secs(60),
-        )
-        .await
-    }
-    .await;
-
-    match result {
-        Ok(hermes_tx) => hermes_tx,
-        Err(error) => {
-            tracing::warn!(
-                ?error,
-                "Failed to construct the Hermes transaction. Relying on the p2p channel"
+            let data = message.to_arbitrary_data(
+                zeroize::Zeroizing::new(state.private_view_key().0.scalar),
+                &mut rand::rngs::OsRng,
             );
 
-            std::future::pending().await
-        }
-    }
+            monero_wallet
+                .construct_data_tx(
+                    &lock_tx_hash,
+                    state.hermes_wallet_spend_key(),
+                    state.private_view_key(),
+                    state.hermes_wallet_address(env_config.monero_network),
+                    data,
+                    None,
+                )
+                .await
+                .map_err(backoff::Error::transient)
+        },
+        None,
+        Duration::from_secs(60),
+    )
+    .await
+    .expect("we never stop retrying to construct the Hermes transaction")
 }
 
 /// Publish the Hermes transaction, skipping the publish if it is already
