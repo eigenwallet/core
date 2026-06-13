@@ -287,6 +287,9 @@ fn main() {
             cadvisor: OrchestratorImage::Registry(images::CADVISOR_IMAGE.to_string()),
             prometheus_agent: OrchestratorImage::Registry(images::PROMETHEUS_IMAGE.to_string()),
             gluetun: OrchestratorImage::Registry(images::GLUETUN_IMAGE.to_string()),
+            bitcoin_exporter: OrchestratorImage::Registry(
+                images::BITCOIN_PROMETHEUS_EXPORTER_IMAGE.to_string(),
+            ),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),
@@ -677,7 +680,8 @@ fn print_metrics_instructions(metrics: &MetricsConfig) {
     println!("  - Instance label (host): {}", metrics.instance);
     println!("  - Remote write URL:      {}", metrics.remote_write_url);
     println!("  - Config written to:     {}", PROMETHEUS_CONFIG_FILE);
-    println!("  - Ships: per-container cpu/memory/pids/network/fs via cadvisor");
+    println!("  - Ships: per-container cpu/memory/pids/network/fs via cadvisor,");
+    println!("           bitcoind metrics via bitcoin-exporter, and electrs metrics");
     println!("  - Verify after `docker compose up -d`:");
     println!("      docker compose logs --tail 50 prometheus-agent");
 }
