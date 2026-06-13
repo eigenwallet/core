@@ -34,7 +34,39 @@ pub struct OrchestratorInput {
     pub cloudflared: Option<CloudflaredConfig>,
     pub promtail: Option<PromtailConfig>,
     pub metrics: Option<MetricsConfig>,
+    pub gluetun: Option<GluetunConfig>,
 }
+
+/// WireGuard VPN (gluetun) configuration.
+///
+/// When set, the orchestrator adds a `gluetun` service to the compose file
+/// and runs the ASB inside its network namespace, so all ASB traffic leaves
+/// through the WireGuard tunnel (with gluetun's firewall as kill switch).
+/// The other containers keep their normal networking.
+///
+/// Gluetun is pointed at Docker's embedded DNS so the ASB can resolve the
+/// `monerod` / `electrs` service names from inside gluetun's network namespace;
+/// gluetun's `asb` network alias lets the other containers dial the ASB by
+/// hostname even though it has no network identity of its own.
+///
+/// If the chosen provider does not support port forwarding, the ASB is not
+/// reachable over clearnet TCP — inbound connections require a Tor hidden
+/// service or a Cloudflare Tunnel.
+#[derive(Clone)]
+pub struct GluetunConfig {
+    /// Gluetun VPN service provider name (see
+    /// <https://github.com/qdm12/gluetun-wiki>).
+    pub vpn_service_provider: String,
+    /// WireGuard private key from the provider's WireGuard configuration.
+    pub wireguard_private_key: String,
+    /// WireGuard interface address from the same configuration.
+    pub wireguard_addresses: String,
+}
+
+/// The compose network uses a fixed subnet so gluetun's outbound firewall can
+/// allow the docker network explicitly (`FIREWALL_OUTBOUND_SUBNETS`) — traffic
+/// to the other containers must bypass the VPN kill switch.
+pub const DOCKER_SUBNET: &str = "172.28.0.0/24";
 
 /// Cloudflare Tunnel configuration.
 ///
@@ -110,6 +142,7 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub docker_socket_proxy: T,
     pub cadvisor: T,
     pub prometheus_agent: T,
+    pub gluetun: T,
 }
 
 pub struct OrchestratorPorts {
@@ -179,7 +212,6 @@ impl OrchestratorDirectories {
     pub fn asb_config_path_on_host_as_path_buf(&self) -> PathBuf {
         PathBuf::from(self.asb_config_path_on_host())
     }
-
 }
 
 /// See: https://docs.docker.com/reference/compose-file/build/#illustrative-example
@@ -446,6 +478,90 @@ fn build(input: OrchestratorInput) -> String {
         (String::new(), "")
     };
 
+    let gluetun_segment = if let Some(gluetun) = input.gluetun.as_ref() {
+        // Everything that dials the ASB enters the shared namespace through
+        // gluetun's docker interface, so its firewall must accept those
+        // ports explicitly.
+        let mut input_ports = vec![input.ports.asb_libp2p, input.ports.asb_rpc_port];
+        if input.metrics.is_some() {
+            input_ports.push(input.ports.asb_metrics_port);
+        }
+        if let Some(cf) = input.cloudflared.as_ref() {
+            input_ports.push(cf.internal_port);
+        }
+        let firewall_input_ports = input_ports
+            .iter()
+            .map(u16::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+
+        format!(
+            "\
+  gluetun:
+    container_name: gluetun
+    {image_gluetun}
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      default:
+        aliases:
+          - asb
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1
+    environment:
+      VPN_SERVICE_PROVIDER: {vpn_service_provider}
+      VPN_TYPE: wireguard
+      WIREGUARD_PRIVATE_KEY: {wireguard_private_key}
+      WIREGUARD_ADDRESSES: {wireguard_addresses}
+      FIREWALL_OUTBOUND_SUBNETS: {subnet}
+      FIREWALL_INPUT_PORTS: '{firewall_input_ports}'
+      DNS_ADDRESS: 127.0.0.11
+    ports:
+      - '0.0.0.0:{asb_port}:{asb_port}'\
+",
+            image_gluetun = input.images.gluetun.to_image_attribute(),
+            vpn_service_provider = yaml_compose_value(&gluetun.vpn_service_provider),
+            wireguard_private_key = yaml_compose_value(&gluetun.wireguard_private_key),
+            wireguard_addresses = yaml_compose_value(&gluetun.wireguard_addresses),
+            subnet = DOCKER_SUBNET,
+            asb_port = input.ports.asb_libp2p,
+        )
+    } else {
+        String::new()
+    };
+
+    // gluetun owns the shared network namespace: the net sysctl must sit on it
+    // (Docker rejects net sysctls on a namespace-sharing container) and the ASB
+    // waits for the tunnel to be healthy so it cannot leak traffic outside it.
+    let asb_sysctls_and_depends_on = if input.gluetun.is_some() {
+        "depends_on:\n      electrs:\n        condition: service_started\n      gluetun:\n        condition: service_healthy"
+    } else {
+        "sysctls:\n      - net.ipv4.tcp_tw_reuse=1\n    depends_on:\n      - electrs"
+    };
+
+    let networks_segment = if input.gluetun.is_some() {
+        format!(
+            "networks:\n  default:\n    ipam:\n      config:\n        - subnet: {DOCKER_SUBNET}\n"
+        )
+    } else {
+        String::new()
+    };
+
+    // The ASB shares gluetun's namespace and so cannot publish ports; gluetun
+    // publishes the libp2p port for it.
+    let asb_network = if input.gluetun.is_some() {
+        r#"network_mode: "service:gluetun""#.to_string()
+    } else {
+        format!(
+            "ports:\n      - '0.0.0.0:{port}:{port}'",
+            port = input.ports.asb_libp2p
+        )
+    };
+
     let (tor_segment, tor_volume) = if input.want_tor {
         // This image comes with an empty /etc/tor/, so this is the entire config
         let command_tor = command![
@@ -547,6 +663,7 @@ services:
   {cloudflared_segment}
   {promtail_segment}
   {metrics_segment}
+  {gluetun_segment}
   asb:
     container_name: asb
     {image_asb}
@@ -554,10 +671,7 @@ services:
     logging: *default-logging
     cap_add:
       - SYS_PTRACE
-    sysctls:
-      - net.ipv4.tcp_tw_reuse=1
-    depends_on:
-      - electrs
+    {asb_sysctls_and_depends_on}
     volumes:
       - '{asb_config_path_on_host}:{asb_config_path_inside_container}'
       # makes `docker compose up` fail if the keyfile is missing
@@ -568,8 +682,7 @@ services:
         bind:
           create_host_path: false
       - 'asb-data:{asb_data_dir}'
-    ports:
-      - '0.0.0.0:{asb_port}:{asb_port}'
+    {asb_network}
     entrypoint: ''
     command: {command_asb}
   asb-controller:
@@ -614,14 +727,13 @@ volumes:
   {tor_volume}
   {promtail_volume}
   {metrics_volume}
-",
+{networks_segment}",
         log_max_size = DOCKER_LOG_MAX_SIZE,
         log_max_file = DOCKER_LOG_MAX_FILE,
         port_monerod_rpc = input.ports.monerod_rpc,
         port_bitcoind_rpc = input.ports.bitcoind_rpc,
         port_bitcoind_p2p = input.ports.bitcoind_p2p,
         electrs_port = input.ports.electrs,
-        asb_port = input.ports.asb_libp2p,
         rendezvous_node_port = input.ports.rendezvous_node_port,
         image_monerod = input.images.monerod.to_image_attribute(),
         image_electrs = input.images.electrs.to_image_attribute(),
@@ -848,6 +960,12 @@ impl IntoImageAttribute for OrchestratorImage {
             ),
         }
     }
+}
+
+/// Single-quotes a value for use in the compose file. `$` is doubled because
+/// compose performs variable interpolation even inside single quotes.
+fn yaml_compose_value(value: &str) -> String {
+    format!("'{}'", value.replace('$', "$$").replace('\'', "''"))
 }
 
 fn validate_compose(compose_str: &str) {
