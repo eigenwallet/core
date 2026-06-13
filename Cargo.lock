@@ -3056,7 +3056,6 @@ dependencies = [
 name = "electrum-pool"
 version = "0.1.0"
 dependencies = [
- "backoff",
  "bdk_electrum",
  "bitcoin 0.32.8",
  "futures",
