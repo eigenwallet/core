@@ -1155,17 +1155,19 @@ fn build_transfer_destinations(
         .to_u64()
         .context("Developer tip amount should not overflow")?;
 
+    let mut destinations = vec![(lock_address, lock_amount)];
+
     if tip_amount_piconero >= MIN_USEFUL_TIP_AMOUNT_PICONERO {
         let tip_amount = monero_oxide_ext::Amount::from_pico(tip_amount_piconero);
-
-        Ok(vec![
-            (lock_address, lock_amount),
-            (tip.address, tip_amount),
-            hermes_funding,
-        ])
-    } else {
-        Ok(vec![(lock_address, lock_amount), hermes_funding])
+        destinations.push((tip.address, tip_amount));
     }
+
+    // A zero Hermes funding disables the on-chain encrypted signature channel
+    if hermes_funding.1.as_pico() > 0 {
+        destinations.push(hermes_funding);
+    }
+
+    Ok(destinations)
 }
 
 /// This function is used to check if Alice is in a state where it is clear that she has already received the encrypted signature from Bob.
@@ -1214,6 +1216,21 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].1, lock_amount);
         assert_eq!(*result.last().unwrap(), test_hermes_funding());
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_omits_zero_hermes_funding() {
+        let lock_amount = monero_oxide_ext::Amount::from_pico(1_000_000_000_000); // 1 XMR
+        let tip = TipConfig {
+            ratio: Decimal::ZERO,
+            address: test_address(),
+        };
+        let hermes_funding = (test_address(), monero_oxide_ext::Amount::ZERO);
+
+        let result =
+            build_transfer_destinations(test_address(), lock_amount, hermes_funding, tip).unwrap();
+
+        assert_eq!(result, vec![(test_address(), lock_amount)]);
     }
 
     #[test]
