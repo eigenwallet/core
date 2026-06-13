@@ -25,13 +25,12 @@ pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
 /// prometheus-agent over the docker network.
 pub const CLOUDFLARED_METRICS_PORT: u16 = 2000;
 
-/// Port the `bitcoin-exporter` (jvstein/bitcoin-prometheus-exporter) serves its
-/// metrics on, scraped by the prometheus-agent over the docker network. This is
-/// the image's default (`METRICS_PORT`).
+/// Port the `bitcoin-exporter` serves bitcoind metrics on (its default
+/// `METRICS_PORT`), scraped by the prometheus-agent.
 pub const BITCOIN_EXPORTER_METRICS_PORT: u16 = 9332;
 
-/// Port `electrs` serves its built-in Prometheus metrics on (`--monitoring-addr`),
-/// scraped by the prometheus-agent over the docker network. This is electrs' default.
+/// Port `electrs` serves its built-in Prometheus metrics on (its
+/// `--monitoring-addr` default), scraped by the prometheus-agent.
 pub const ELECTRS_MONITORING_PORT: u16 = 4224;
 
 pub struct OrchestratorInput {
@@ -311,11 +310,9 @@ fn build(input: OrchestratorInput) -> String {
         // flag!(input.want_tor; "--proxy=tor:{}", input.ports.tor_socks), // the shell program above does the equivalent of this
     ];
 
-    // When metrics shipping is enabled we add a static `-rpcauth` credential so
-    // the bitcoin-exporter can authenticate to bitcoind's RPC. `-rpcauth` does
-    // not suppress the `.cookie` file, so electrs keeps authenticating via the
-    // cookie unchanged. The plaintext password is reused below in the exporter's
-    // environment. See [`generate_bitcoind_rpcauth`].
+    // With metrics enabled, bitcoind gets a static `-rpcauth` credential the
+    // bitcoin-exporter authenticates with; the password is reused in the
+    // exporter's environment below. See [`generate_bitcoind_rpcauth`].
     let bitcoind_metrics_auth: Option<(String, String)> = input
         .metrics
         .is_some()
@@ -351,8 +348,7 @@ fn build(input: OrchestratorInput) -> String {
         flag!("--daemon-rpc-addr=bitcoind:{}", input.ports.bitcoind_rpc),
         flag!("--daemon-p2p-addr=bitcoind:{}", input.ports.bitcoind_p2p),
         flag!("--electrum-rpc-addr=0.0.0.0:{}", input.ports.electrs),
-        // When metrics shipping is enabled, expose electrs' built-in Prometheus
-        // endpoint on the docker network so the prometheus-agent can scrape it.
+        // electrs' built-in Prometheus endpoint, for the prometheus-agent to scrape.
         flag!(input.metrics.is_some(); "--monitoring-addr=0.0.0.0:{}", ELECTRS_MONITORING_PORT),
         flag!("--log-filters=INFO"),
     ];
@@ -643,8 +639,7 @@ fn build(input: OrchestratorInput) -> String {
         (String::new(), "")
     };
 
-    // electrs' built-in Prometheus endpoint (enabled via `--monitoring-addr`
-    // above) is only exposed on the docker network when metrics shipping is on.
+    // Expose electrs' monitoring port (enabled above) only when metrics are on.
     let electrs_monitoring_expose = if input.metrics.is_some() {
         format!("\n      - {ELECTRS_MONITORING_PORT}")
     } else {
@@ -907,8 +902,8 @@ scrape_configs:
 }
 
 /// Builds `prometheus.yml`. Always scrapes cadvisor, the ASB's libp2p endpoint,
-/// the bitcoin-exporter (bitcoind metrics) and electrs' built-in endpoint; also
-/// scrapes cloudflared's metrics endpoint when `scrape_cloudflared` is set.
+/// the bitcoin-exporter and electrs; also scrapes cloudflared when
+/// `scrape_cloudflared` is set.
 pub fn build_prometheus_agent_yml(
     cfg: &MetricsConfig,
     asb_metrics_port: u16,
@@ -1036,18 +1031,14 @@ fn yaml_compose_value(value: &str) -> String {
 }
 
 /// Generates a bitcoind `-rpcauth` credential and the matching plaintext
-/// password, in the exact format produced by Bitcoin Core's
-/// `share/rpcauth/rpcauth.py`: `<user>:<salt_hex>$<hmac_sha256(salt_hex, password)>`.
+/// password, in Bitcoin Core's `rpcauth.py` format
+/// `<user>:<salt_hex>$<hmac_sha256(salt_hex, password)>`.
 ///
-/// We use `-rpcauth` rather than `-rpcpassword` on purpose: `-rpcpassword`
-/// suppresses bitcoind's `.cookie` file, but `-rpcauth` does not. electrs
-/// authenticates via that cookie (`--daemon-dir`), so this lets the metrics
-/// exporter authenticate with its own explicit credentials while electrs keeps
-/// working unchanged.
-///
-/// The password is alphanumeric so it is safe both as an HTTP Basic Auth header
-/// value (the exporter sends it that way) and inside the compose file without
-/// triggering variable interpolation (`$` is special to compose).
+/// We use `-rpcauth` rather than `-rpcpassword` because `-rpcpassword`
+/// suppresses bitcoind's `.cookie` file (which electrs authenticates with via
+/// `--daemon-dir`), whereas `-rpcauth` leaves it intact. The password is
+/// alphanumeric so it is safe as an HTTP Basic Auth header and in the compose
+/// file (where `$` would otherwise be interpolated).
 fn generate_bitcoind_rpcauth(username: &str) -> (String, String) {
     use hmac::{Hmac, Mac};
     use rand::Rng;
