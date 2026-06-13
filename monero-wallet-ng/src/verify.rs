@@ -71,8 +71,9 @@ pub async fn verify_transfer<P: ProvidesTransactions>(
     Ok(has_expected_amount_output)
 }
 
-/// The total amount the given view pair receives in a transaction, or `None`
-/// if it receives no outputs.
+/// The amount of the largest output the given view pair receives in a
+/// transaction, or `None` if it receives no outputs. This mirrors what a sweep
+/// of the transaction can spend, which always picks the single largest output.
 pub async fn received_amount<P: ProvidesTransactions>(
     provider: &P,
     tx_id: [u8; 32],
@@ -87,12 +88,10 @@ pub async fn received_amount<P: ProvidesTransactions>(
     let scannable_block = create_scannable_block_for_tx(tx_id, tx);
     let outputs = scanner.scan(scannable_block)?.ignore_additional_timelock();
 
-    let amount: u64 = outputs
+    Ok(outputs
         .iter()
         .map(|output| output.commitment().amount)
-        .sum();
-
-    Ok((!outputs.is_empty()).then_some(amount))
+        .max())
 }
 
 /// Create a fake ScannableBlock containing a single transaction.

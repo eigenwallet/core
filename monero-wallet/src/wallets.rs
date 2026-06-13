@@ -460,8 +460,9 @@ impl Wallets {
         Ok(result)
     }
 
-    /// The total amount the given view pair receives in `tx_hash`, or `None`
-    /// if it receives no outputs.
+    /// The amount of the largest output the given view pair receives in
+    /// `tx_hash`, or `None` if it receives no outputs. This mirrors what a
+    /// sweep of the transaction can spend.
     pub async fn received_amount(
         &self,
         tx_hash: &TxHash,
