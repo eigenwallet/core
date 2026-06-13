@@ -54,6 +54,9 @@ fn make_input(
             cadvisor: OrchestratorImage::Registry(images::CADVISOR_IMAGE.to_string()),
             prometheus_agent: OrchestratorImage::Registry(images::PROMETHEUS_IMAGE.to_string()),
             gluetun: OrchestratorImage::Registry(images::GLUETUN_IMAGE.to_string()),
+            bitcoin_exporter: OrchestratorImage::Registry(
+                images::BITCOIN_PROMETHEUS_EXPORTER_IMAGE.to_string(),
+            ),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),
@@ -144,10 +147,22 @@ fn test_orchestrator_spec_generation() {
     assert!(metrics_compose.contains("container_name: prometheus-agent"));
     assert!(metrics_compose.contains("prometheus-agent-data:"));
 
-    // Without metrics, neither service is generated.
+    // bitcoind metrics are scraped via the jvstein bitcoin-exporter, which
+    // authenticates with a static `-rpcauth` credential added to bitcoind (the
+    // cookie stays intact for electrs). electrs exposes its own Prometheus
+    // endpoint via `--monitoring-addr`.
+    assert!(metrics_compose.contains("container_name: bitcoin-exporter"));
+    assert!(metrics_compose.contains("BITCOIN_RPC_HOST=bitcoind"));
+    assert!(metrics_compose.contains("\"-rpcauth=metrics:"));
+    assert!(metrics_compose.contains("--monitoring-addr=0.0.0.0:4224"));
+
+    // Without metrics, none of the metrics services or endpoints are generated.
     let plain = make_input(false, None, None, None, None).to_spec();
     assert!(!plain.contains("cadvisor"));
     assert!(!plain.contains("prometheus-agent"));
+    assert!(!plain.contains("bitcoin-exporter"));
+    assert!(!plain.contains("-rpcauth"));
+    assert!(!plain.contains("--monitoring-addr"));
 }
 
 #[test]
@@ -273,6 +288,26 @@ fn test_prometheus_agent_yml_is_valid_and_wired() {
         parsed["scrape_configs"][1]["static_configs"][0]["targets"][0].as_str(),
         Some("asb:9945")
     );
+
+    // The agent scrapes bitcoind (via the bitcoin-exporter) and electrs' own
+    // built-in Prometheus endpoint.
+    assert_eq!(
+        parsed["scrape_configs"][2]["job_name"].as_str(),
+        Some("bitcoind")
+    );
+    assert_eq!(
+        parsed["scrape_configs"][2]["static_configs"][0]["targets"][0].as_str(),
+        Some("bitcoin-exporter:9332")
+    );
+    assert_eq!(
+        parsed["scrape_configs"][3]["job_name"].as_str(),
+        Some("electrs")
+    );
+    assert_eq!(
+        parsed["scrape_configs"][3]["static_configs"][0]["targets"][0].as_str(),
+        Some("electrs:4224")
+    );
+
     let remote = &parsed["remote_write"][0];
     assert_eq!(
         remote["url"].as_str(),
@@ -280,8 +315,9 @@ fn test_prometheus_agent_yml_is_valid_and_wired() {
     );
     assert_eq!(remote["bearer_token"].as_str(), Some("test-token"));
 
-    // Without the tunnel, cadvisor and asb are the only scrape targets.
-    assert!(parsed["scrape_configs"][2].is_null());
+    // Without the tunnel, cloudflared is not scraped (cadvisor, asb, bitcoind,
+    // electrs are the only targets).
+    assert!(parsed["scrape_configs"][4].is_null());
 }
 
 #[test]
@@ -290,12 +326,14 @@ fn test_prometheus_agent_scrapes_cloudflared_when_enabled() {
     let parsed: serde_yaml::Value =
         serde_yaml::from_str(&yml).expect("prometheus.yml must be valid YAML");
 
+    // cloudflared is appended after the always-present cadvisor, asb, bitcoind
+    // and electrs jobs.
     assert_eq!(
-        parsed["scrape_configs"][2]["job_name"].as_str(),
+        parsed["scrape_configs"][4]["job_name"].as_str(),
         Some("cloudflared")
     );
     assert_eq!(
-        parsed["scrape_configs"][2]["static_configs"][0]["targets"][0].as_str(),
+        parsed["scrape_configs"][4]["static_configs"][0]["targets"][0].as_str(),
         Some("cloudflared:2000")
     );
 }
