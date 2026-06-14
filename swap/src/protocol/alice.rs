@@ -19,6 +19,7 @@ pub struct Swap {
     pub monero_wallet: Arc<monero::Wallets>,
     pub env_config: Config,
     pub developer_tip: TipConfig,
+    pub hermes_funding_amount: monero::Amount,
     pub swap_id: Uuid,
     pub db: Arc<dyn Database + Send + Sync>,
 }

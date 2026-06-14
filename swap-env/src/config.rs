@@ -194,6 +194,11 @@ pub struct Maker {
     /// that will be donated to the devepment fund as part of the Monero lock transaction.
     #[serde(default = "default_developer_tip")]
     pub developer_tip: Decimal,
+    /// Amount of Monero (in XMR) attached to the Monero lock transaction to
+    /// fund the Hermes transaction, which transmits the encrypted signature
+    /// to the taker on-chain. Burnt entirely as that transaction's fee.
+    #[serde(default = "default_hermes_funding_xmr")]
+    pub hermes_funding_xmr: Decimal,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -250,6 +255,11 @@ pub fn default_price_ticker_validity_duration_secs() -> u64 {
 
 fn default_developer_tip() -> Decimal {
     Decimal::ZERO
+}
+
+pub fn default_hermes_funding_xmr() -> Decimal {
+    // 0.0001 XMR, roughly twice the typical network fee of a Hermes transaction
+    Decimal::new(1, 4)
 }
 
 pub fn default_btc_redeem_fee_multiplier() -> Decimal {
@@ -447,6 +457,7 @@ pub fn query_user_for_initial_config_with_network(
             external_bitcoin_redeem_address: None,
             btc_redeem_fee_multiplier: default_btc_redeem_fee_multiplier(),
             developer_tip,
+            hermes_funding_xmr: default_hermes_funding_xmr(),
             refund_policy: defaults.refund_policy,
         },
     })

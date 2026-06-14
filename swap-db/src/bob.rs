@@ -33,9 +33,19 @@ pub enum Bob {
         state: bob::State3,
         lock_transfer_proof: TransferProofMaybeWithTxKey,
         monero_wallet_restore_blockheight: BlockHeight,
+        #[serde(default)]
+        hermes_amount: Option<swap_core::monero::Amount>,
     },
     XmrLocked {
         state4: bob::State4,
+    },
+    ConstructingHermesTx {
+        state4: bob::State4,
+    },
+    PublishingHermesTx {
+        state4: bob::State4,
+        #[serde(with = "swap_serde::monero::transaction")]
+        hermes_tx: monero_oxide_wallet::transaction::Transaction,
     },
     EncSigSent {
         state4: bob::State4,
@@ -127,12 +137,19 @@ impl From<BobState> for Bob {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
+                hermes_amount,
             } => Bob::XmrLockTransactionSeen {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
+                hermes_amount,
             },
             BobState::XmrLocked(state4) => Bob::XmrLocked { state4 },
+            BobState::ConstructingHermesTx(state4) => Bob::ConstructingHermesTx { state4 },
+            BobState::PublishingHermesTx { state, hermes_tx } => Bob::PublishingHermesTx {
+                state4: state,
+                hermes_tx,
+            },
             BobState::EncSigSent(state4) => Bob::EncSigSent { state4 },
             BobState::BtcRedeemed(state5) => Bob::BtcRedeemed(state5),
             BobState::XmrRedeemConstructed {
@@ -232,12 +249,19 @@ impl From<Bob> for BobState {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
+                hermes_amount,
             } => BobState::XmrLockTransactionSeen {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
+                hermes_amount,
             },
             Bob::XmrLocked { state4 } => BobState::XmrLocked(state4),
+            Bob::ConstructingHermesTx { state4 } => BobState::ConstructingHermesTx(state4),
+            Bob::PublishingHermesTx { state4, hermes_tx } => BobState::PublishingHermesTx {
+                state: state4,
+                hermes_tx,
+            },
             Bob::EncSigSent { state4 } => BobState::EncSigSent(state4),
             Bob::BtcRedeemed(state5) => BobState::BtcRedeemed(state5),
             Bob::XmrRedeemConstructed {
@@ -301,6 +325,8 @@ impl fmt::Display for Bob {
             }
             Bob::XmrLockTransactionSeen { .. } => f.write_str("XMR lock transaction seen"),
             Bob::XmrLocked { .. } => f.write_str("Monero locked"),
+            Bob::ConstructingHermesTx { .. } => f.write_str("Hermes transaction being constructed"),
+            Bob::PublishingHermesTx { .. } => f.write_str("Hermes transaction constructed"),
             Bob::WaitingForCancelTimelockExpiration { .. } => {
                 f.write_str("Waiting for cancel timelock expiration")
             }

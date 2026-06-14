@@ -1,4 +1,5 @@
 pub mod confirmations;
+pub mod hermes;
 pub mod retry;
 pub mod rpc;
 pub mod scanner;

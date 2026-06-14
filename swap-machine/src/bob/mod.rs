@@ -24,6 +24,11 @@ use swap_core::monero::{ScalarExt, TransferProofMaybeWithTxKey};
 use swap_serde::bitcoin::address_serde;
 use uuid::Uuid;
 
+/// Hermes funding below this is considered insufficient to pay the Hermes
+/// transaction's fee, and no Hermes transaction is published (0.00005 XMR,
+/// roughly the typical network fee of such a transaction).
+pub const HERMES_FUNDING_LOWER_BOUND_PICONERO: u64 = 50_000_000;
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum BobState {
     Started {
@@ -60,10 +65,25 @@ pub enum BobState {
         state: State3,
         lock_transfer_proof: TransferProofMaybeWithTxKey,
         monero_wallet_restore_blockheight: BlockHeight,
+        /// What Alice attached to the lock transaction to fund the Hermes
+        /// transaction. None if she attached no Hermes output.
+        #[serde(default)]
+        hermes_amount: Option<monero::Amount>,
     },
     /// Bob has verified that the correct amount of Monero has been locked and fully confirmed.
     /// It is safe to transmit the encrypted signature to Alice.
     XmrLocked(State4),
+    /// We are constructing the Hermes transaction which transmits the
+    /// encrypted signature to Alice on-chain.
+    ConstructingHermesTx(State4),
+    /// We have constructed the Hermes transaction but have not yet
+    /// published it.
+    PublishingHermesTx {
+        state: State4,
+        /// The signed transaction to publish, serialized as wire-format hex.
+        #[serde(with = "swap_serde::monero::transaction")]
+        hermes_tx: monero_oxide_wallet::transaction::Transaction,
+    },
     EncSigSent(State4),
     BtcRedeemed(State5),
     WaitingForCancelTimelockExpiration {
@@ -183,6 +203,8 @@ impl fmt::Display for BobState {
             }
             BobState::XmrLockTransactionSeen { .. } => write!(f, "xmr lock transaction seen"),
             BobState::XmrLocked(..) => write!(f, "xmr is locked"),
+            BobState::ConstructingHermesTx(..) => write!(f, "hermes tx is being constructed"),
+            BobState::PublishingHermesTx { .. } => write!(f, "hermes tx is constructed"),
             BobState::EncSigSent(..) => write!(f, "encrypted signature is sent"),
             BobState::BtcRedeemed(..) => write!(f, "btc is redeemed"),
             BobState::WaitingForCancelTimelockExpiration { .. } => {
@@ -253,7 +275,10 @@ impl BobState {
             | BobState::WaitingForCancelTimelockExpiration { state, .. } => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
-            BobState::XmrLocked(state) | BobState::EncSigSent(state) => {
+            BobState::XmrLocked(state)
+            | BobState::ConstructingHermesTx(state)
+            | BobState::PublishingHermesTx { state, .. }
+            | BobState::EncSigSent(state) => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
             BobState::CancelTimelockExpired(state)
@@ -800,10 +825,20 @@ impl State3 {
         self.xmr
     }
 
+    /// View keys of the Hermes wallet (spend key `s_b`, view key `v`).
+    pub fn hermes_view_keys(&self) -> (monero_oxide_ext::PublicKey, monero::PrivateViewKey) {
+        let S_b_monero = monero_oxide_ext::PublicKey::from_private_key(
+            &monero_oxide_ext::PrivateKey::from_scalar(self.s_b),
+        );
+
+        (S_b_monero, self.v)
+    }
+
     pub fn xmr_locked(
         self,
         monero_wallet_restore_blockheight: BlockHeight,
         lock_transfer_proof: TransferProofMaybeWithTxKey,
+        hermes_amount: Option<monero::Amount>,
     ) -> State4 {
         State4 {
             A: self.A,
@@ -823,6 +858,7 @@ impl State3 {
             refund_signatures: self.refund_signatures,
             monero_wallet_restore_blockheight,
             lock_transfer_proof,
+            hermes_amount,
             tx_redeem_fee: self.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
@@ -961,6 +997,10 @@ pub struct State4 {
     refund_signatures: RefundSignatures,
     monero_wallet_restore_blockheight: BlockHeight,
     lock_transfer_proof: TransferProofMaybeWithTxKey,
+    /// What Alice attached to the lock transaction to fund the Hermes
+    /// transaction. None if she attached no Hermes output.
+    #[serde(default)]
+    hermes_amount: Option<monero::Amount>,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
@@ -1012,6 +1052,43 @@ impl State4 {
         let tx_redeem =
             bitcoin::TxRedeem::new(&self.tx_lock, &self.redeem_address, self.tx_redeem_fee);
         self.b.encsign(self.S_a_bitcoin, tx_redeem.digest())
+    }
+
+    pub fn lock_transfer_proof(&self) -> TransferProofMaybeWithTxKey {
+        self.lock_transfer_proof.clone()
+    }
+
+    pub fn private_view_key(&self) -> monero::PrivateViewKey {
+        self.v
+    }
+
+    /// Whether Alice attached enough Monero to the lock transaction to pay
+    /// the Hermes transaction's fee.
+    pub fn hermes_funding_sufficient(&self) -> bool {
+        self.hermes_amount
+            .is_some_and(|amount| amount.as_pico() > HERMES_FUNDING_LOWER_BOUND_PICONERO)
+    }
+
+    /// Spend key of the Hermes wallet: our Monero spend key share `s_b`.
+    pub fn hermes_wallet_spend_key(&self) -> monero_oxide_ext::PrivateKey {
+        monero_oxide_ext::PrivateKey { scalar: self.s_b }
+    }
+
+    /// Address of the Hermes wallet, funded by Alice via the Monero lock
+    /// transaction and spent by us for the Hermes transaction.
+    pub fn hermes_wallet_address(
+        &self,
+        network: monero_address::Network,
+    ) -> monero_address::MoneroAddress {
+        let public_spend_key =
+            monero_oxide_ext::PublicKey::from_private_key(&self.hermes_wallet_spend_key());
+
+        monero_address::MoneroAddress::new(
+            network,
+            monero_address::AddressType::Legacy,
+            public_spend_key.decompress(),
+            self.v.public().0.decompress(),
+        )
     }
 
     pub async fn watch_for_redeem_btc(
