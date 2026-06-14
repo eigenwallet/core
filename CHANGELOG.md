@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.9.2] - 2026-06-13
 
+- Added a set of new community maintained rendezvous points. Please configure your makers to register at them:`/dns4/discovery.eigenwallet.org/tcp/443/wss/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw`,
+  `/onion3/3xl2zfur4tpebogsrgn3l7l2illzkhwi3755jplmycmn4q77nxsrl6qd:8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw`,
+  `/dns4/rendezvous.atomicworld.fun/tcp/443/wss/p2p/12D3KooWMc39w7bZz4RLmJKuUiK9YkbKoEHACZWcL71XNns5dPuD`,
+  `/onion3/m2iuwp3fvdlqtlqqaz3egrzjl5uehmdhjgmzhznvjoudljl2xzjaomyd:8890/p2p/12D3KooWMc39w7bZz4RLmJKuUiK9YkbKoEHACZWcL71XNns5dPuD`,
+  `/dns4/dht.stealthswap.ninja/tcp/443/wss/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov`,
+  `/onion3/m6rboz5lv4wxldgybgox4pr4s6xci3h2exi5nogxaox762xji2gokuad:8891/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov`,
+  `/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE`,
+  `/onion3/av2jauifny7dgpvzhsnhra3cwivf6ofaefxvwhhuh5y7hsolabehhaad:8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE`,
+
 ## [4.9.1] - 2026-06-12
 
 ## [4.9.0] - 2026-06-10
