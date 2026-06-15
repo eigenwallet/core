@@ -93,6 +93,12 @@ pub enum BobState {
         #[serde(with = "swap_serde::monero::transaction")]
         hermes_tx: monero_oxide_wallet::transaction::Transaction,
     },
+    HermesTxConfirmed {
+        state: State4,
+        sent_enc_sig_over_p2p: bool,
+        #[serde(with = "swap_serde::monero::transaction")]
+        hermes_tx: monero_oxide_wallet::transaction::Transaction,
+    },
     EncSigSent {
         state: State4,
         #[serde(default, with = "swap_serde::monero::transaction::option")]
@@ -221,6 +227,7 @@ impl fmt::Display for BobState {
             }
             BobState::HermesTxConstructed { .. } => write!(f, "hermes tx is constructed"),
             BobState::HermesTxPublished { .. } => write!(f, "hermes tx is published"),
+            BobState::HermesTxConfirmed { .. } => write!(f, "hermes tx is confirmed"),
             BobState::EncSigSent { .. } => write!(f, "encrypted signature is sent"),
             BobState::BtcRedeemed(..) => write!(f, "btc is redeemed"),
             BobState::WaitingForCancelTimelockExpiration { .. } => {
@@ -295,6 +302,7 @@ impl BobState {
             | BobState::ConstructingHermesTx { state, .. }
             | BobState::HermesTxConstructed { state, .. }
             | BobState::HermesTxPublished { state, .. }
+            | BobState::HermesTxConfirmed { state, .. }
             | BobState::EncSigSent { state, .. } => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }

@@ -55,6 +55,12 @@ pub enum Bob {
         #[serde(with = "swap_serde::monero::transaction")]
         hermes_tx: monero_oxide_wallet::transaction::Transaction,
     },
+    HermesTxConfirmed {
+        state4: bob::State4,
+        sent_enc_sig_over_p2p: bool,
+        #[serde(with = "swap_serde::monero::transaction")]
+        hermes_tx: monero_oxide_wallet::transaction::Transaction,
+    },
     EncSigSent {
         state4: bob::State4,
         #[serde(default, with = "swap_serde::monero::transaction::option")]
@@ -176,6 +182,15 @@ impl From<BobState> for Bob {
                 sent_enc_sig_over_p2p,
                 hermes_tx,
             } => Bob::HermesTxPublished {
+                state4: state,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            },
+            BobState::HermesTxConfirmed {
+                state,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            } => Bob::HermesTxConfirmed {
                 state4: state,
                 sent_enc_sig_over_p2p,
                 hermes_tx,
@@ -315,6 +330,15 @@ impl From<Bob> for BobState {
                 sent_enc_sig_over_p2p,
                 hermes_tx,
             },
+            Bob::HermesTxConfirmed {
+                state4,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            } => BobState::HermesTxConfirmed {
+                state: state4,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            },
             Bob::EncSigSent { state4, hermes_tx } => BobState::EncSigSent {
                 state: state4,
                 hermes_tx,
@@ -384,6 +408,7 @@ impl fmt::Display for Bob {
             Bob::ConstructingHermesTx { .. } => f.write_str("Hermes transaction being constructed"),
             Bob::HermesTxConstructed { .. } => f.write_str("Hermes transaction constructed"),
             Bob::HermesTxPublished { .. } => f.write_str("Hermes transaction published"),
+            Bob::HermesTxConfirmed { .. } => f.write_str("Hermes transaction confirmed"),
             Bob::WaitingForCancelTimelockExpiration { .. } => {
                 f.write_str("Waiting for cancel timelock expiration")
             }

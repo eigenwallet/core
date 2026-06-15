@@ -65,6 +65,7 @@ pub async fn cancel(
         BobState::ConstructingHermesTx { state, .. } => state.cancel(),
         BobState::HermesTxConstructed { state, .. } => state.cancel(),
         BobState::HermesTxPublished { state, .. } => state.cancel(),
+        BobState::HermesTxConfirmed { state, .. } => state.cancel(),
         BobState::EncSigSent { state, .. } => state.cancel(),
         BobState::WaitingForCancelTimelockExpiration {
             state,
@@ -210,6 +211,7 @@ pub async fn refund(
         BobState::ConstructingHermesTx { state, .. } => state.cancel(),
         BobState::HermesTxConstructed { state, .. } => state.cancel(),
         BobState::HermesTxPublished { state, .. } => state.cancel(),
+        BobState::HermesTxConfirmed { state, .. } => state.cancel(),
         BobState::EncSigSent { state, .. } => state.cancel(),
         BobState::WaitingForCancelTimelockExpiration {
             state,
