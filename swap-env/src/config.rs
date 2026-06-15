@@ -195,8 +195,7 @@ pub struct Maker {
     #[serde(default = "default_developer_tip")]
     pub developer_tip: Decimal,
     /// Amount of Monero (in piconero) attached to the Monero lock transaction to
-    /// fund the Hermes transaction, which transmits the encrypted signature
-    /// to the taker on-chain. Burnt entirely as that transaction's fee.
+    /// fund the Hermes transaction.
     #[serde(default = "default_hermes_funding_amount_piconero")]
     pub hermes_funding_amount_piconero: u64,
 }

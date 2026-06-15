@@ -398,7 +398,7 @@ where
                         state3,
                     }
                 }
-                enc_sig = watch_for_encrypted_signature_via_hermes(&monero_wallet, &state3, monero_wallet_restore_blockheight) => {
+                enc_sig = infallible_watch_for_encrypted_signature_via_hermes(&monero_wallet, &state3, monero_wallet_restore_blockheight) => {
                     tracing::info!("Received encrypted signature via Hermes");
 
                     AliceState::EncSigLearned {
@@ -447,7 +447,7 @@ where
                         state3,
                     }
                 }
-                enc_sig = watch_for_encrypted_signature_via_hermes(&monero_wallet, &state3, monero_wallet_restore_blockheight) => {
+                enc_sig = infallible_watch_for_encrypted_signature_via_hermes(&monero_wallet, &state3, monero_wallet_restore_blockheight) => {
                     tracing::info!("Received encrypted signature via Hermes");
 
                     AliceState::EncSigLearned {
@@ -1095,36 +1095,34 @@ impl XmrRefundable for Box<State3> {
 }
 
 /// Watch the Hermes wallet for the encrypted signature Bob transmits on-chain.
-/// Pends forever on failure.
-async fn watch_for_encrypted_signature_via_hermes(
+/// Retries indefinitely on transient errors.
+async fn infallible_watch_for_encrypted_signature_via_hermes(
     monero_wallet: &monero::Wallets,
     state3: &State3,
     monero_wallet_restore_blockheight: BlockHeight,
 ) -> swap_core::bitcoin::EncryptedSignature {
-    let result = async {
-        let message = monero_wallet
-            .wait_for_hermes_message(
-                state3.hermes_wallet_public_spend_key(),
-                state3.v,
-                monero_wallet_restore_blockheight,
-            )
-            .await?;
+    retry(
+        "Watching for the encrypted signature via Hermes",
+        || async {
+            let message = monero_wallet
+                .wait_for_hermes_message(
+                    state3.hermes_wallet_public_spend_key(),
+                    state3.v,
+                    monero_wallet_restore_blockheight,
+                )
+                .await
+                .context("Failed to wait for the Hermes message")
+                .map_err(backoff::Error::transient)?;
 
-        crate::protocol::hermes::decode_encrypted_signature(&message)
-    }
-    .await;
-
-    match result {
-        Ok(enc_sig) => enc_sig,
-        Err(error) => {
-            tracing::warn!(
-                ?error,
-                "Failed to watch for the encrypted signature via Hermes. Relying on the p2p channel"
-            );
-
-            std::future::pending().await
-        }
-    }
+            crate::protocol::hermes::decode_encrypted_signature(&message)
+                .context("Failed to decode the encrypted signature from the Hermes message")
+                .map_err(backoff::Error::transient)
+        },
+        None,
+        Duration::from_secs(60),
+    )
+    .await
+    .expect("we never stop retrying to watch for the encrypted signature via Hermes")
 }
 
 /// Build transfer destinations for the Monero lock transaction: the lock
