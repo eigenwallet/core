@@ -954,8 +954,12 @@ impl IntoImageAttribute for OrchestratorImage {
     fn to_image_attribute(self) -> String {
         match self {
             OrchestratorImage::Registry(image) => format!("image: {image}"),
+            // `network: "host"` makes the image build's `RUN` steps use host
+            // networking. The BuildKit build network (MTU/bridge/IPv6) can fail
+            // to reach the Rust toolchain CDN (static.rust-lang.org / Fastly)
+            // and time out, while the host network reaches it fine.
             OrchestratorImage::Build(input) => format!(
-                r#"build: {{ context: "{}", dockerfile: "{}" }}"#,
+                r#"build: {{ context: "{}", dockerfile: "{}", network: "host" }}"#,
                 input.context, input.dockerfile
             ),
         }
@@ -972,4 +976,30 @@ fn validate_compose(compose_str: &str) {
     serde_yaml::from_str::<Compose>(compose_str).unwrap_or_else(|_| {
         panic!("Expected generated compose spec to be valid. But it was not. This is the spec: \n\n{compose_str}")
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Source-built services must use host networking for their `RUN` steps,
+    /// and the resulting build block must still parse as a valid compose spec.
+    #[test]
+    fn build_image_attribute_uses_host_network_and_validates() {
+        let attribute = OrchestratorImage::Build(DockerBuildInput {
+            context: ".".to_string(),
+            dockerfile: "swap-asb/Dockerfile",
+        })
+        .to_image_attribute();
+
+        assert!(
+            attribute.contains(r#"network: "host""#),
+            "build block should opt into host networking, got: {attribute}"
+        );
+
+        let compose_str = format!(
+            "name: t\nservices:\n  asb:\n    {attribute}\n    command: [\"asb\"]\n"
+        );
+        validate_compose(&compose_str);
+    }
 }
