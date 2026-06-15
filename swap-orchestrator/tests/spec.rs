@@ -147,10 +147,6 @@ fn test_orchestrator_spec_generation() {
     assert!(metrics_compose.contains("container_name: prometheus-agent"));
     assert!(metrics_compose.contains("prometheus-agent-data:"));
 
-    // bitcoind metrics are scraped via the jvstein bitcoin-exporter, which
-    // authenticates with a static `-rpcauth` credential added to bitcoind (the
-    // cookie stays intact for electrs). electrs exposes its own Prometheus
-    // endpoint via `--monitoring-addr`.
     assert!(metrics_compose.contains("container_name: bitcoin-exporter"));
     assert!(metrics_compose.contains("BITCOIN_RPC_HOST=bitcoind"));
     assert!(metrics_compose.contains("\"-rpcauth=metrics:"));
@@ -289,8 +285,6 @@ fn test_prometheus_agent_yml_is_valid_and_wired() {
         Some("asb:9945")
     );
 
-    // The agent scrapes bitcoind (via the bitcoin-exporter) and electrs' own
-    // built-in Prometheus endpoint.
     assert_eq!(
         parsed["scrape_configs"][2]["job_name"].as_str(),
         Some("bitcoind")
@@ -315,8 +309,7 @@ fn test_prometheus_agent_yml_is_valid_and_wired() {
     );
     assert_eq!(remote["bearer_token"].as_str(), Some("test-token"));
 
-    // Without the tunnel, cloudflared is not scraped (cadvisor, asb, bitcoind,
-    // electrs are the only targets).
+    // Without the tunnel, cloudflared is not scraped.
     assert!(parsed["scrape_configs"][4].is_null());
 }
 
@@ -326,8 +319,7 @@ fn test_prometheus_agent_scrapes_cloudflared_when_enabled() {
     let parsed: serde_yaml::Value =
         serde_yaml::from_str(&yml).expect("prometheus.yml must be valid YAML");
 
-    // cloudflared is appended after the always-present cadvisor, asb, bitcoind
-    // and electrs jobs.
+    // cloudflared is appended after the four always-present jobs.
     assert_eq!(
         parsed["scrape_configs"][4]["job_name"].as_str(),
         Some("cloudflared")
