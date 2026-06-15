@@ -955,7 +955,7 @@ impl IntoImageAttribute for OrchestratorImage {
         match self {
             OrchestratorImage::Registry(image) => format!("image: {image}"),
             OrchestratorImage::Build(input) => format!(
-                r#"build: {{ context: "{}", dockerfile: "{}" }}"#,
+                r#"build: {{ context: "{}", dockerfile: "{}", network: "host" }}"#,
                 input.context, input.dockerfile
             ),
         }
