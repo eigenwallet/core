@@ -41,14 +41,24 @@ pub enum Bob {
     },
     ConstructingHermesTx {
         state4: bob::State4,
+        sent_enc_sig_over_p2p: bool,
     },
-    PublishingHermesTx {
+    HermesTxConstructed {
         state4: bob::State4,
+        sent_enc_sig_over_p2p: bool,
+        #[serde(with = "swap_serde::monero::transaction")]
+        hermes_tx: monero_oxide_wallet::transaction::Transaction,
+    },
+    HermesTxPublished {
+        state4: bob::State4,
+        sent_enc_sig_over_p2p: bool,
         #[serde(with = "swap_serde::monero::transaction")]
         hermes_tx: monero_oxide_wallet::transaction::Transaction,
     },
     EncSigSent {
         state4: bob::State4,
+        #[serde(default, with = "swap_serde::monero::transaction::option")]
+        hermes_tx: Option<monero_oxide_wallet::transaction::Transaction>,
     },
     BtcPunished {
         state: bob::State6,
@@ -145,12 +155,35 @@ impl From<BobState> for Bob {
                 hermes_amount,
             },
             BobState::XmrLocked(state4) => Bob::XmrLocked { state4 },
-            BobState::ConstructingHermesTx(state4) => Bob::ConstructingHermesTx { state4 },
-            BobState::PublishingHermesTx { state, hermes_tx } => Bob::PublishingHermesTx {
+            BobState::ConstructingHermesTx {
+                state,
+                sent_enc_sig_over_p2p,
+            } => Bob::ConstructingHermesTx {
+                state4: state,
+                sent_enc_sig_over_p2p,
+            },
+            BobState::HermesTxConstructed {
+                state,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            } => Bob::HermesTxConstructed {
+                state4: state,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            },
+            BobState::HermesTxPublished {
+                state,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            } => Bob::HermesTxPublished {
+                state4: state,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            },
+            BobState::EncSigSent { state, hermes_tx } => Bob::EncSigSent {
                 state4: state,
                 hermes_tx,
             },
-            BobState::EncSigSent(state4) => Bob::EncSigSent { state4 },
             BobState::BtcRedeemed(state5) => Bob::BtcRedeemed(state5),
             BobState::XmrRedeemConstructed {
                 state,
@@ -257,12 +290,35 @@ impl From<Bob> for BobState {
                 hermes_amount,
             },
             Bob::XmrLocked { state4 } => BobState::XmrLocked(state4),
-            Bob::ConstructingHermesTx { state4 } => BobState::ConstructingHermesTx(state4),
-            Bob::PublishingHermesTx { state4, hermes_tx } => BobState::PublishingHermesTx {
+            Bob::ConstructingHermesTx {
+                state4,
+                sent_enc_sig_over_p2p,
+            } => BobState::ConstructingHermesTx {
+                state: state4,
+                sent_enc_sig_over_p2p,
+            },
+            Bob::HermesTxConstructed {
+                state4,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            } => BobState::HermesTxConstructed {
+                state: state4,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            },
+            Bob::HermesTxPublished {
+                state4,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            } => BobState::HermesTxPublished {
+                state: state4,
+                sent_enc_sig_over_p2p,
+                hermes_tx,
+            },
+            Bob::EncSigSent { state4, hermes_tx } => BobState::EncSigSent {
                 state: state4,
                 hermes_tx,
             },
-            Bob::EncSigSent { state4 } => BobState::EncSigSent(state4),
             Bob::BtcRedeemed(state5) => BobState::BtcRedeemed(state5),
             Bob::XmrRedeemConstructed {
                 state,
@@ -326,7 +382,8 @@ impl fmt::Display for Bob {
             Bob::XmrLockTransactionSeen { .. } => f.write_str("XMR lock transaction seen"),
             Bob::XmrLocked { .. } => f.write_str("Monero locked"),
             Bob::ConstructingHermesTx { .. } => f.write_str("Hermes transaction being constructed"),
-            Bob::PublishingHermesTx { .. } => f.write_str("Hermes transaction constructed"),
+            Bob::HermesTxConstructed { .. } => f.write_str("Hermes transaction constructed"),
+            Bob::HermesTxPublished { .. } => f.write_str("Hermes transaction published"),
             Bob::WaitingForCancelTimelockExpiration { .. } => {
                 f.write_str("Waiting for cancel timelock expiration")
             }

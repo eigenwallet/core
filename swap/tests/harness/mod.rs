@@ -1669,7 +1669,7 @@ pub mod bob_run_until {
     }
 
     pub fn is_encsig_sent(state: &BobState) -> bool {
-        matches!(state, BobState::EncSigSent(..))
+        matches!(state, BobState::EncSigSent { .. })
     }
 
     pub fn is_btc_partially_refunded(state: &BobState) -> bool {

@@ -378,7 +378,8 @@ fn main() {
                 min_buy_btc,
                 max_buy_btc,
                 ask_spread,
-                hermes_funding_xmr: swap_env::config::default_hermes_funding_xmr(),
+                hermes_funding_amount_piconero:
+                    swap_env::config::default_hermes_funding_amount_piconero(),
                 price_ticker_ws_url_kraken: defaults.price_ticker_ws_url_kraken,
                 price_ticker_ws_url_bitfinex: defaults.price_ticker_ws_url_bitfinex,
                 price_ticker_rest_url_kucoin: defaults.price_ticker_rest_url_kucoin,

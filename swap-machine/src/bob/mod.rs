@@ -25,8 +25,7 @@ use swap_serde::bitcoin::address_serde;
 use uuid::Uuid;
 
 /// Hermes funding below this is considered insufficient to pay the Hermes
-/// transaction's fee, and no Hermes transaction is published (0.00005 XMR,
-/// roughly the typical network fee of such a transaction).
+/// transaction's fee, and no Hermes transaction is published.
 pub const HERMES_FUNDING_LOWER_BOUND_PICONERO: u64 = 50_000_000;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -75,16 +74,30 @@ pub enum BobState {
     XmrLocked(State4),
     /// We are constructing the Hermes transaction which transmits the
     /// encrypted signature to Alice on-chain.
-    ConstructingHermesTx(State4),
+    ConstructingHermesTx {
+        state: State4,
+        sent_enc_sig_over_p2p: bool,
+    },
     /// We have constructed the Hermes transaction but have not yet
     /// published it.
-    PublishingHermesTx {
+    HermesTxConstructed {
         state: State4,
+        sent_enc_sig_over_p2p: bool,
         /// The signed transaction to publish, serialized as wire-format hex.
         #[serde(with = "swap_serde::monero::transaction")]
         hermes_tx: monero_oxide_wallet::transaction::Transaction,
     },
-    EncSigSent(State4),
+    HermesTxPublished {
+        state: State4,
+        sent_enc_sig_over_p2p: bool,
+        #[serde(with = "swap_serde::monero::transaction")]
+        hermes_tx: monero_oxide_wallet::transaction::Transaction,
+    },
+    EncSigSent {
+        state: State4,
+        #[serde(default, with = "swap_serde::monero::transaction::option")]
+        hermes_tx: Option<monero_oxide_wallet::transaction::Transaction>,
+    },
     BtcRedeemed(State5),
     WaitingForCancelTimelockExpiration {
         state: State3,
@@ -203,9 +216,12 @@ impl fmt::Display for BobState {
             }
             BobState::XmrLockTransactionSeen { .. } => write!(f, "xmr lock transaction seen"),
             BobState::XmrLocked(..) => write!(f, "xmr is locked"),
-            BobState::ConstructingHermesTx(..) => write!(f, "hermes tx is being constructed"),
-            BobState::PublishingHermesTx { .. } => write!(f, "hermes tx is constructed"),
-            BobState::EncSigSent(..) => write!(f, "encrypted signature is sent"),
+            BobState::ConstructingHermesTx { .. } => {
+                write!(f, "hermes tx is being constructed")
+            }
+            BobState::HermesTxConstructed { .. } => write!(f, "hermes tx is constructed"),
+            BobState::HermesTxPublished { .. } => write!(f, "hermes tx is published"),
+            BobState::EncSigSent { .. } => write!(f, "encrypted signature is sent"),
             BobState::BtcRedeemed(..) => write!(f, "btc is redeemed"),
             BobState::WaitingForCancelTimelockExpiration { .. } => {
                 write!(f, "waiting for cancel timelock expiration")
@@ -276,9 +292,10 @@ impl BobState {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
             BobState::XmrLocked(state)
-            | BobState::ConstructingHermesTx(state)
-            | BobState::PublishingHermesTx { state, .. }
-            | BobState::EncSigSent(state) => {
+            | BobState::ConstructingHermesTx { state, .. }
+            | BobState::HermesTxConstructed { state, .. }
+            | BobState::HermesTxPublished { state, .. }
+            | BobState::EncSigSent { state, .. } => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
             BobState::CancelTimelockExpired(state)

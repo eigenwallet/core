@@ -368,8 +368,7 @@ pub async fn main() -> Result<()> {
             };
 
             let hermes_funding_amount =
-                monero::Amount::parse_monero(&config.maker.hermes_funding_xmr.to_string())
-                    .context("Invalid maker.hermes_funding_xmr in config")?;
+                monero::Amount::from_pico(config.maker.hermes_funding_amount_piconero);
 
             let (metrics, _metrics_server) =
                 match (config.network.prometheus_port, metrics_registry) {

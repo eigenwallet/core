@@ -62,9 +62,10 @@ pub async fn cancel(
             ..
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLocked(state4) => state4.cancel(),
-        BobState::ConstructingHermesTx(state4) => state4.cancel(),
-        BobState::PublishingHermesTx { state, .. } => state.cancel(),
-        BobState::EncSigSent(state4) => state4.cancel(),
+        BobState::ConstructingHermesTx { state, .. } => state.cancel(),
+        BobState::HermesTxConstructed { state, .. } => state.cancel(),
+        BobState::HermesTxPublished { state, .. } => state.cancel(),
+        BobState::EncSigSent { state, .. } => state.cancel(),
         BobState::WaitingForCancelTimelockExpiration {
             state,
             monero_wallet_restore_blockheight,
@@ -206,9 +207,10 @@ pub async fn refund(
             ..
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLocked(state4) => state4.cancel(),
-        BobState::ConstructingHermesTx(state4) => state4.cancel(),
-        BobState::PublishingHermesTx { state, .. } => state.cancel(),
-        BobState::EncSigSent(state4) => state4.cancel(),
+        BobState::ConstructingHermesTx { state, .. } => state.cancel(),
+        BobState::HermesTxConstructed { state, .. } => state.cancel(),
+        BobState::HermesTxPublished { state, .. } => state.cancel(),
+        BobState::EncSigSent { state, .. } => state.cancel(),
         BobState::WaitingForCancelTimelockExpiration {
             state,
             monero_wallet_restore_blockheight,

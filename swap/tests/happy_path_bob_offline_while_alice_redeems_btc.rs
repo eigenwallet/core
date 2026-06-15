@@ -27,7 +27,7 @@ async fn given_bob_restarts_while_alice_redeems_btc() {
 
             let (bob_swap, _) = ctx.stop_and_resume_bob_from_db(bob_handle, swap_id).await;
 
-            if let BobState::EncSigSent(state4) = bob_swap.state.clone() {
+            if let BobState::EncSigSent { state: state4, .. } = bob_swap.state.clone() {
                 bob_swap
                     .bitcoin_wallet
                     .subscribe_to(Box::new(state4.tx_lock))
