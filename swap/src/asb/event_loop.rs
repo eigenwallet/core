@@ -691,6 +691,7 @@ where
         let db = self.db.clone();
         let monero_wallet = self.monero_wallet.clone();
         let monero_wallet_for_proof = self.monero_wallet.clone();
+        let monero_wallet_for_health = self.monero_wallet.clone();
         let bitcoin_wallet = self.bitcoin_wallet.clone();
         let peer_id = self.peer_id();
 
@@ -730,7 +731,19 @@ where
                     .await
             };
 
-            let result = match bitcoin_health_check_with_retry(bitcoin_wallet).await {
+            // Quote zero unless both the Bitcoin and Monero backends are reachable.
+            let health_check = async {
+                bitcoin_health_check_with_retry(bitcoin_wallet)
+                    .await
+                    .context("Bitcoin wallet health check failed")?;
+                monero_wallet_for_health
+                    .rpc_health_check()
+                    .await
+                    .context("Monero daemon RPC health check failed")?;
+                Ok::<(), anyhow::Error>(())
+            };
+
+            let result = match health_check.await {
                 Ok(()) => {
                     make_quote(
                         min_buy,
@@ -744,7 +757,7 @@ where
                     )
                     .await
                 }
-                Err(err) => Err(Arc::new(err.context("Bitcoin wallet health check failed"))),
+                Err(err) => Err(Arc::new(err)),
             };
 
             // Insert the computed quote into the cache
@@ -1341,10 +1354,15 @@ async fn capture_wallet_snapshot(
 ) -> Result<WalletSnapshot> {
     let start_time = Instant::now();
 
+    // Don't back a swap setup against an unreachable Bitcoin or Monero backend.
     bitcoin_wallet
         .health_check()
         .await
         .context("Bitcoin wallet health check failed while capturing wallet snapshot")?;
+    monero_wallet
+        .rpc_health_check()
+        .await
+        .context("Monero daemon RPC health check failed while capturing wallet snapshot")?;
 
     let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await?;
     let total_balance = monero_wallet.main_wallet().await.total_balance().await?;

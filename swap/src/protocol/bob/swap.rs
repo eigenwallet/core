@@ -123,6 +123,25 @@ async fn next_state(
             change_address,
             tx_lock_fee,
         } => {
+            // Verify the Monero daemon RPC is reachable before starting the swap.
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::CheckingMoneroNodeConnectivity,
+            );
+            retry(
+                "Monero daemon RPC health check",
+                || async {
+                    monero_wallet
+                        .rpc_health_check()
+                        .await
+                        .map_err(backoff::Error::transient)
+                },
+                Duration::from_secs(45),
+                None,
+            )
+            .await
+            .context("Monero daemon RPC health check failed; cannot start swap")?;
+
             let tx_cancel_fee = bitcoin_wallet
                 .estimate_fee(TxCancel::weight(), Some(btc_amount))
                 .await?;
@@ -807,6 +826,7 @@ async fn next_state(
                     monero_wallet
                         .rpc_client()
                         .await
+                        .map_err(backoff::Error::transient)?
                         .publish_transaction(&xmr_redeem_tx)
                         .await
                         .context("Failed to publish Monero redeem transaction")
@@ -1332,6 +1352,7 @@ async fn next_state(
                             monero_wallet
                                 .rpc_client()
                                 .await
+                                .map_err(backoff::Error::transient)?
                                 .publish_transaction(&xmr_redeem_tx)
                                 .await
                                 .context("Failed to publish Monero redeem transaction")

@@ -427,6 +427,7 @@ export function haveFundsBeenLocked(
 
   switch (event.type) {
     case "Resuming":
+    case "CheckingMoneroNodeConnectivity":
     case "ReceivedQuote":
     case "WaitingForBtcDeposit":
     case "SwapSetupInflight":

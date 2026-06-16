@@ -207,6 +207,7 @@ function getActiveStep(state: SwapState | null): PathStep | null {
       ];
 
     case "Resuming":
+    case "CheckingMoneroNodeConnectivity":
       return null;
     default:
       return fallbackStep("No step is assigned to the current state");
