@@ -49,9 +49,8 @@ pub static CADVISOR_IMAGE: &str = "gcr.io/cadvisor/cadvisor@sha256:3de2bd5203120
 pub static PROMETHEUS_IMAGE: &str =
     "prom/prometheus@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218";
 
-/// gluetun v3.41.1 (https://hub.docker.com/r/qmcgaw/gluetun)
-pub static GLUETUN_IMAGE: &str =
-    "qmcgaw/gluetun@sha256:1a5bf4b4820a879cdf8d93d7ef0d2d963af56670c9ebff8981860b6804ebc8ab";
+/// bitcoin-prometheus-exporter v0.9.0 (https://github.com/jvstein/bitcoin-prometheus-exporter)
+pub static BITCOIN_PROMETHEUS_EXPORTER_IMAGE: &str = "jvstein/bitcoin-prometheus-exporter@sha256:358132b6967554f4d30a43847bfc5fd941719eb257b2820cf8ebd16405733843";
 
 /// Build-context URL for the source-built images. A `gh_token` is inlined into
 /// the URL userinfo so Docker can fetch a private repository — note this writes

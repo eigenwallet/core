@@ -25,6 +25,12 @@ pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
 /// prometheus-agent over the docker network.
 pub const CLOUDFLARED_METRICS_PORT: u16 = 2000;
 
+/// `bitcoin-exporter`'s default `METRICS_PORT`.
+pub const BITCOIN_EXPORTER_METRICS_PORT: u16 = 9332;
+
+/// `electrs`' default `--monitoring-addr` port.
+pub const ELECTRS_MONITORING_PORT: u16 = 4224;
+
 pub struct OrchestratorInput {
     pub ports: OrchestratorPorts,
     pub networks: OrchestratorNetworks<monero_address::Network, bitcoin::Network>,
@@ -34,39 +40,7 @@ pub struct OrchestratorInput {
     pub cloudflared: Option<CloudflaredConfig>,
     pub promtail: Option<PromtailConfig>,
     pub metrics: Option<MetricsConfig>,
-    pub gluetun: Option<GluetunConfig>,
 }
-
-/// WireGuard VPN (gluetun) configuration.
-///
-/// When set, the orchestrator adds a `gluetun` service to the compose file
-/// and runs the ASB inside its network namespace, so all ASB traffic leaves
-/// through the WireGuard tunnel (with gluetun's firewall as kill switch).
-/// The other containers keep their normal networking.
-///
-/// Gluetun is pointed at Docker's embedded DNS so the ASB can resolve the
-/// `monerod` / `electrs` service names from inside gluetun's network namespace;
-/// gluetun's `asb` network alias lets the other containers dial the ASB by
-/// hostname even though it has no network identity of its own.
-///
-/// If the chosen provider does not support port forwarding, the ASB is not
-/// reachable over clearnet TCP — inbound connections require a Tor hidden
-/// service or a Cloudflare Tunnel.
-#[derive(Clone)]
-pub struct GluetunConfig {
-    /// Gluetun VPN service provider name (see
-    /// <https://github.com/qdm12/gluetun-wiki>).
-    pub vpn_service_provider: String,
-    /// WireGuard private key from the provider's WireGuard configuration.
-    pub wireguard_private_key: String,
-    /// WireGuard interface address from the same configuration.
-    pub wireguard_addresses: String,
-}
-
-/// The compose network uses a fixed subnet so gluetun's outbound firewall can
-/// allow the docker network explicitly (`FIREWALL_OUTBOUND_SUBNETS`) — traffic
-/// to the other containers must bypass the VPN kill switch.
-pub const DOCKER_SUBNET: &str = "172.28.0.0/24";
 
 /// Cloudflare Tunnel configuration.
 ///
@@ -142,7 +116,7 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub docker_socket_proxy: T,
     pub cadvisor: T,
     pub prometheus_agent: T,
-    pub gluetun: T,
+    pub bitcoin_exporter: T,
 }
 
 pub struct OrchestratorPorts {
@@ -301,7 +275,14 @@ fn build(input: OrchestratorInput) -> String {
         // flag!(input.want_tor; "--proxy=tor:{}", input.ports.tor_socks), // the shell program above does the equivalent of this
     ];
 
-    let command_bitcoind = command![
+    // bitcoind `-rpcauth` credential the bitcoin-exporter authenticates with;
+    // the plaintext password is reused in the exporter's environment below.
+    let bitcoind_metrics_auth: Option<(String, String)> = input
+        .metrics
+        .is_some()
+        .then(|| generate_bitcoind_rpcauth("metrics"));
+
+    let mut command_bitcoind = command![
         "bitcoind",
         input.networks.bitcoin.to_flag(),
         flag!("-rpcallowip=0.0.0.0/0"),
@@ -317,6 +298,10 @@ fn build(input: OrchestratorInput) -> String {
         flag!("-txindex=1"),
     ];
 
+    if let Some((rpcauth, _)) = bitcoind_metrics_auth.as_ref() {
+        command_bitcoind.0.push(flag!("-rpcauth={}", rpcauth));
+    }
+
     let electrs_network: containers::electrs::Network = input.networks.clone().into();
 
     let command_electrs = command![
@@ -327,6 +312,7 @@ fn build(input: OrchestratorInput) -> String {
         flag!("--daemon-rpc-addr=bitcoind:{}", input.ports.bitcoind_rpc),
         flag!("--daemon-p2p-addr=bitcoind:{}", input.ports.bitcoind_p2p),
         flag!("--electrum-rpc-addr=0.0.0.0:{}", input.ports.electrs),
+        flag!(input.metrics.is_some(); "--monitoring-addr=0.0.0.0:{}", ELECTRS_MONITORING_PORT),
         flag!("--log-filters=INFO"),
     ];
 
@@ -435,8 +421,27 @@ fn build(input: OrchestratorInput) -> String {
     };
 
     let (metrics_segment, metrics_volume) = if input.metrics.is_some() {
+        let (_, exporter_password) = bitcoind_metrics_auth
+            .as_ref()
+            .expect("bitcoind metrics auth is generated whenever metrics are enabled");
+
         let metrics_segment = format!(
             "\
+  bitcoin-exporter:
+    container_name: bitcoin-exporter
+    {image_bitcoin_exporter}
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - bitcoind
+    environment:
+      - BITCOIN_RPC_HOST=bitcoind
+      - BITCOIN_RPC_PORT={bitcoind_rpc}
+      - BITCOIN_RPC_USER=metrics
+      - BITCOIN_RPC_PASSWORD={exporter_password}
+      - METRICS_PORT={bitcoin_exporter_metrics_port}
+    expose:
+      - {bitcoin_exporter_metrics_port}
   cadvisor:
     container_name: cadvisor
     {image_cadvisor}
@@ -469,97 +474,16 @@ fn build(input: OrchestratorInput) -> String {
       - 'prometheus-agent-data:/prometheus'
     command: [\"--config.file=/etc/prometheus/prometheus.yml\", \"--agent\", \"--storage.agent.path=/prometheus\"]\
 ",
+            image_bitcoin_exporter = input.images.bitcoin_exporter.to_image_attribute(),
             image_cadvisor = input.images.cadvisor.to_image_attribute(),
             image_prometheus_agent = input.images.prometheus_agent.to_image_attribute(),
             prometheus_config_file = PROMETHEUS_CONFIG_FILE,
+            bitcoind_rpc = input.ports.bitcoind_rpc,
+            bitcoin_exporter_metrics_port = BITCOIN_EXPORTER_METRICS_PORT,
         );
         (metrics_segment, "prometheus-agent-data:")
     } else {
         (String::new(), "")
-    };
-
-    let gluetun_segment = if let Some(gluetun) = input.gluetun.as_ref() {
-        // Everything that dials the ASB enters the shared namespace through
-        // gluetun's docker interface, so its firewall must accept those
-        // ports explicitly.
-        let mut input_ports = vec![input.ports.asb_libp2p, input.ports.asb_rpc_port];
-        if input.metrics.is_some() {
-            input_ports.push(input.ports.asb_metrics_port);
-        }
-        if let Some(cf) = input.cloudflared.as_ref() {
-            input_ports.push(cf.internal_port);
-        }
-        let firewall_input_ports = input_ports
-            .iter()
-            .map(u16::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-
-        format!(
-            "\
-  gluetun:
-    container_name: gluetun
-    {image_gluetun}
-    restart: unless-stopped
-    logging: *default-logging
-    networks:
-      default:
-        aliases:
-          - asb
-    cap_add:
-      - NET_ADMIN
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    sysctls:
-      - net.ipv4.tcp_tw_reuse=1
-    environment:
-      VPN_SERVICE_PROVIDER: {vpn_service_provider}
-      VPN_TYPE: wireguard
-      WIREGUARD_PRIVATE_KEY: {wireguard_private_key}
-      WIREGUARD_ADDRESSES: {wireguard_addresses}
-      FIREWALL_OUTBOUND_SUBNETS: {subnet}
-      FIREWALL_INPUT_PORTS: '{firewall_input_ports}'
-      DNS_ADDRESS: 127.0.0.11
-    ports:
-      - '0.0.0.0:{asb_port}:{asb_port}'\
-",
-            image_gluetun = input.images.gluetun.to_image_attribute(),
-            vpn_service_provider = yaml_compose_value(&gluetun.vpn_service_provider),
-            wireguard_private_key = yaml_compose_value(&gluetun.wireguard_private_key),
-            wireguard_addresses = yaml_compose_value(&gluetun.wireguard_addresses),
-            subnet = DOCKER_SUBNET,
-            asb_port = input.ports.asb_libp2p,
-        )
-    } else {
-        String::new()
-    };
-
-    // gluetun owns the shared network namespace: the net sysctl must sit on it
-    // (Docker rejects net sysctls on a namespace-sharing container) and the ASB
-    // waits for the tunnel to be healthy so it cannot leak traffic outside it.
-    let asb_sysctls_and_depends_on = if input.gluetun.is_some() {
-        "depends_on:\n      electrs:\n        condition: service_started\n      gluetun:\n        condition: service_healthy"
-    } else {
-        "sysctls:\n      - net.ipv4.tcp_tw_reuse=1\n    depends_on:\n      - electrs"
-    };
-
-    let networks_segment = if input.gluetun.is_some() {
-        format!(
-            "networks:\n  default:\n    ipam:\n      config:\n        - subnet: {DOCKER_SUBNET}\n"
-        )
-    } else {
-        String::new()
-    };
-
-    // The ASB shares gluetun's namespace and so cannot publish ports; gluetun
-    // publishes the libp2p port for it.
-    let asb_network = if input.gluetun.is_some() {
-        r#"network_mode: "service:gluetun""#.to_string()
-    } else {
-        format!(
-            "ports:\n      - '0.0.0.0:{port}:{port}'",
-            port = input.ports.asb_libp2p
-        )
     };
 
     let (tor_segment, tor_volume) = if input.want_tor {
@@ -593,6 +517,13 @@ fn build(input: OrchestratorInput) -> String {
     } else {
         (String::new(), "")
     };
+
+    let electrs_monitoring_expose = if input.metrics.is_some() {
+        format!("\n      - {ELECTRS_MONITORING_PORT}")
+    } else {
+        String::new()
+    };
+
     let compose_str = format!(
         "\
 # This file was auto-generated by `orchestrator` on {date}
@@ -656,14 +587,13 @@ services:
       - 'bitcoind-data:/bitcoind-data'
       - 'electrs-data:/electrs-data'
     expose:
-      - {electrs_port}
+      - {electrs_port}{electrs_monitoring_expose}
     entrypoint: ''
     command: {command_electrs}
   {tor_segment}
   {cloudflared_segment}
   {promtail_segment}
   {metrics_segment}
-  {gluetun_segment}
   asb:
     container_name: asb
     {image_asb}
@@ -671,7 +601,10 @@ services:
     logging: *default-logging
     cap_add:
       - SYS_PTRACE
-    {asb_sysctls_and_depends_on}
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1
+    depends_on:
+      - electrs
     volumes:
       - '{asb_config_path_on_host}:{asb_config_path_inside_container}'
       # makes `docker compose up` fail if the keyfile is missing
@@ -682,7 +615,8 @@ services:
         bind:
           create_host_path: false
       - 'asb-data:{asb_data_dir}'
-    {asb_network}
+    ports:
+      - '0.0.0.0:{asb_libp2p_port}:{asb_libp2p_port}'
     entrypoint: ''
     command: {command_asb}
   asb-controller:
@@ -727,13 +661,15 @@ volumes:
   {tor_volume}
   {promtail_volume}
   {metrics_volume}
-{networks_segment}",
+",
         log_max_size = DOCKER_LOG_MAX_SIZE,
         log_max_file = DOCKER_LOG_MAX_FILE,
         port_monerod_rpc = input.ports.monerod_rpc,
         port_bitcoind_rpc = input.ports.bitcoind_rpc,
         port_bitcoind_p2p = input.ports.bitcoind_p2p,
         electrs_port = input.ports.electrs,
+        electrs_monitoring_expose = electrs_monitoring_expose,
+        asb_libp2p_port = input.ports.asb_libp2p,
         rendezvous_node_port = input.ports.rendezvous_node_port,
         image_monerod = input.images.monerod.to_image_attribute(),
         image_electrs = input.images.electrs.to_image_attribute(),
@@ -847,8 +783,8 @@ scrape_configs:
     )
 }
 
-/// Builds `prometheus.yml`. Always scrapes cadvisor and the ASB's libp2p
-/// endpoint; also scrapes cloudflared's metrics endpoint when
+/// Builds `prometheus.yml`. Always scrapes cadvisor, the ASB's libp2p endpoint,
+/// the bitcoin-exporter and electrs; also scrapes cloudflared when
 /// `scrape_cloudflared` is set.
 pub fn build_prometheus_agent_yml(
     cfg: &MetricsConfig,
@@ -883,13 +819,21 @@ scrape_configs:
       - targets: ['cadvisor:8080']
   - job_name: asb
     static_configs:
-      - targets: ['asb:{asb_metrics_port}']{cloudflared_scrape}
+      - targets: ['asb:{asb_metrics_port}']
+  - job_name: bitcoind
+    static_configs:
+      - targets: ['bitcoin-exporter:{bitcoin_exporter_metrics_port}']
+  - job_name: electrs
+    static_configs:
+      - targets: ['electrs:{electrs_monitoring_port}']{cloudflared_scrape}
 
 remote_write:
   - url: {url}
     bearer_token: {token}
 ",
         instance = yaml_single_quote(&cfg.instance),
+        bitcoin_exporter_metrics_port = BITCOIN_EXPORTER_METRICS_PORT,
+        electrs_monitoring_port = ELECTRS_MONITORING_PORT,
         url = yaml_single_quote(&cfg.remote_write_url),
         token = yaml_single_quote(&cfg.token),
     )
@@ -962,10 +906,39 @@ impl IntoImageAttribute for OrchestratorImage {
     }
 }
 
-/// Single-quotes a value for use in the compose file. `$` is doubled because
-/// compose performs variable interpolation even inside single quotes.
-fn yaml_compose_value(value: &str) -> String {
-    format!("'{}'", value.replace('$', "$$").replace('\'', "''"))
+/// Generates a bitcoind `-rpcauth` credential and the matching plaintext
+/// password, in Bitcoin Core's `rpcauth.py` format
+/// `<user>:<salt_hex>$<hmac_sha256(salt_hex, password)>`.
+///
+/// `-rpcauth` rather than `-rpcpassword` because the latter suppresses
+/// bitcoind's `.cookie` file, which electrs authenticates with. The password
+/// is alphanumeric so it is safe in an HTTP Basic Auth header and the compose
+/// file.
+fn generate_bitcoind_rpcauth(username: &str) -> (String, String) {
+    use hmac::{Hmac, Mac};
+    use rand::Rng;
+    use rand::distributions::Alphanumeric;
+    use sha2::Sha256;
+
+    let mut rng = rand::thread_rng();
+
+    // 16-byte salt, hex-encoded, exactly as rpcauth.py does.
+    let mut salt = [0u8; 16];
+    rng.fill(&mut salt[..]);
+    let salt = hex::encode(salt);
+
+    let password: String = (&mut rng)
+        .sample_iter(&Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
+
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(salt.as_bytes()).expect("HMAC accepts any key length");
+    mac.update(password.as_bytes());
+    let hash = hex::encode(mac.finalize().into_bytes());
+
+    (format!("{username}:{salt}${hash}"), password)
 }
 
 fn validate_compose(compose_str: &str) {
