@@ -1068,7 +1068,9 @@ pub enum TauriSwapProgressEvent {
     InflightEncSig,
     EncryptedSignatureSent,
     ConstructingMoneroRedeem,
-    PublishingMoneroRedeem,
+    PublishingMoneroRedeem {
+        xmr_redeem_tx_hex: String,
+    },
     WaitingForXmrConfirmationsBeforeRedeem {
         #[typeshare(serialized_as = "string")]
         xmr_lock_txid: monero::TxHash,
@@ -1081,6 +1083,7 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "Vec<string>")]
         xmr_redeem_txids: Vec<monero::TxHash>,
         xmr_receive_pool: MoneroAddressPool,
+        xmr_redeem_tx_hex: String,
     },
     XmrRedeemed {
         #[typeshare(serialized_as = "Vec<string>")]

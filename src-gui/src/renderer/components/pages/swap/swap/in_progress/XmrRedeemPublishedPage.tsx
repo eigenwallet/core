@@ -1,5 +1,7 @@
 import { DialogContentText } from "@mui/material";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
+import MoneroRawTransactionButton from "renderer/components/other/MoneroRawTransactionButton";
+import { captionLinkSx } from "renderer/components/other/captionLinkSx";
 import { SwapMoneroRecoveryButton } from "renderer/components/pages/history/table/SwapMoneroRecoveryButton";
 import { useActiveSwapInfo } from "store/hooks";
 import MoneroTransactionInfoBox from "../components/MoneroTransactionInfoBox";
@@ -21,14 +23,12 @@ export default function XmrRedeemPublishedPage(
         txId={xmr_redeem_txid}
         additionalContent={null}
         loading
+        secondaryAction={
+          <MoneroRawTransactionButton txHex={state.xmr_redeem_tx_hex} />
+        }
       />
       {swap && (
-        <SwapMoneroRecoveryButton
-          swap={swap}
-          variant="text"
-          size="small"
-          sx={(theme) => ({ color: theme.palette.text.secondary })}
-        >
+        <SwapMoneroRecoveryButton swap={swap} variant="text" sx={captionLinkSx}>
           Redeem manually
         </SwapMoneroRecoveryButton>
       )}

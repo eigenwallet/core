@@ -29,6 +29,10 @@ use uuid::Uuid;
 
 const PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS: u64 = 60 * 3;
 
+/// How often we re-publish the Monero redeem transaction while waiting for it to confirm.
+/// The daemon may forget about the transaction (e.g. after a restart) before it is mined.
+const XMR_REDEEM_REPUBLISH_INTERVAL: Duration = Duration::from_secs(60);
+
 /// Identifies states that have already processed the transfer proof.
 /// This is used to be able to acknowledge the transfer proof multiple times (if it was already processed).
 /// This is necessary because sometimes our acknowledgement might not reach Alice.
@@ -806,8 +810,12 @@ async fn next_state(
         } => {
             let xmr_redeem_tx_hash = monero::TxHash::from_tx(&xmr_redeem_tx);
 
-            event_emitter
-                .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::PublishingMoneroRedeem);
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::PublishingMoneroRedeem {
+                    xmr_redeem_tx_hex: hex::encode(xmr_redeem_tx.serialize()),
+                },
+            );
 
             retry(
                 "Publishing Monero redeem transaction",
@@ -856,17 +864,57 @@ async fn next_state(
                 TauriSwapProgressEvent::XmrRedeemPublished {
                     xmr_redeem_txids: vec![xmr_redeem_tx_hash.clone()],
                     xmr_receive_pool: monero_receive_pool.clone(),
+                    xmr_redeem_tx_hex: hex::encode(xmr_redeem_tx.serialize()),
                 },
             );
 
-            monero_wallet
-                .wait_until_confirmed(
+            // Re-publish the redeem transaction periodically while waiting for it to confirm,
+            // in case the daemon forgot about it before it was mined.
+            let republish = async {
+                loop {
+                    tokio::time::sleep(XMR_REDEEM_REPUBLISH_INTERVAL).await;
+
+                    let _ = retry(
+                        "Re-publishing Monero redeem transaction",
+                        || async {
+                            let is_present = monero_wallet
+                                .is_transaction_present(&xmr_redeem_tx_hash)
+                                .await
+                                .context("Failed to check whether Monero redeem transaction is still present on chain")
+                                .map_err(backoff::Error::transient)?;
+
+                            if is_present {
+                                return Ok(());
+                            }
+
+                            tracing::warn!(%swap_id, %xmr_redeem_tx_hash, "Monero redeem transaction is no longer present on chain, re-publishing");
+
+                            monero_wallet
+                                .rpc_client()
+                                .await
+                                .map_err(backoff::Error::transient)?
+                                .publish_transaction(&xmr_redeem_tx)
+                                .await
+                                .context("Failed to re-publish Monero redeem transaction")
+                                .map_err(backoff::Error::transient)
+                        },
+                        None,
+                        None,
+                    )
+                    .await;
+                }
+            };
+
+            select! {
+                result = monero_wallet.wait_until_confirmed(
                     &xmr_redeem_tx_hash,
                     1,
                     None::<fn((monero::TxHash, u64, u64))>,
-                )
-                .await
-                .context("Failed to wait for Monero redeem transaction confirmation")?;
+                ) => {
+                    result.context("Failed to wait for Monero redeem transaction confirmation")?;
+                }
+                _ = republish => {}
+            }
 
             event_emitter.emit_swap_progress_event(
                 swap_id,
@@ -1282,7 +1330,7 @@ async fn next_state(
             .await
             .context("Failed to wait for Bitcoin amnesty transaction to be confirmed")?
         }
-        BobState::BtcPunished { state, tx_lock_id } => {
+        BobState::BtcPunished { state, tx_lock_id: _ } => {
             tracing::info!("You have been punished for not refunding in time");
             event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcPunished);
             event_emitter.emit_swap_progress_event(
@@ -1303,8 +1351,23 @@ async fn next_state(
                         "Alice has accepted our request to cooperatively redeem the XMR"
                     );
 
-                    // TODO: Somehow validate this key!
-                    let state5 = state.attempt_cooperative_redeem(s_a, lock_transfer_proof.into());
+                    let state5 = match state
+                        .attempt_cooperative_redeem(s_a, lock_transfer_proof.into())
+                    {
+                        Ok(state5) => state5,
+                        Err(error) => {
+                            event_emitter.emit_swap_progress_event(
+                                swap_id,
+                                TauriSwapProgressEvent::CooperativeRedeemRejected {
+                                    reason: error.to_string(),
+                                },
+                            );
+
+                            return Err(error).context(
+                                "Alice revealed an invalid key for cooperative XMR redeem",
+                            );
+                        }
+                    };
 
                     // TODO: Extract this into an infallible function with a trait
                     // TODO: This is duplicated in the transition from BtcRedeemed to XmrRedeemed
@@ -1337,9 +1400,9 @@ async fn next_state(
                         .context("Failed to wait for Monero lock transaction to be confirmed")?;
 
                     match retry(
-                        "Redeeming Monero",
+                        "Constructing Monero redeem transaction",
                         || async {
-                            let xmr_redeem_tx = state5
+                            state5
                                 .clone()
                                 .construct_xmr_redeem_transaction(
                                     &monero_wallet,
@@ -1347,38 +1410,20 @@ async fn next_state(
                                     monero_receive_pool.clone(),
                                 )
                                 .await
-                                .map_err(backoff::Error::transient)?;
-
-                            monero_wallet
-                                .rpc_client()
-                                .await
-                                .map_err(backoff::Error::transient)?
-                                .publish_transaction(&xmr_redeem_tx)
-                                .await
-                                .context("Failed to publish Monero redeem transaction")
-                                .map_err(backoff::Error::transient)?;
-
-                            Ok(xmr_redeem_tx)
+                                .map_err(backoff::Error::transient)
                         },
                         // TODO: Once we validate the key, make this infallible
                         Some(Duration::from_secs(5 * 60)),
                         None,
                     )
                     .await
-                    .context("Failed to redeem Monero")
+                    .context("Failed to construct Monero redeem transaction")
                     {
                         Ok(xmr_redeem_tx) => {
-                            let xmr_redeem_tx_hash = monero::TxHash::from_tx(&xmr_redeem_tx);
-
-                            event_emitter.emit_swap_progress_event(
-                                swap_id,
-                                TauriSwapProgressEvent::XmrRedeemPublished {
-                                    xmr_redeem_txids: vec![xmr_redeem_tx_hash],
-                                    xmr_receive_pool: monero_receive_pool.clone(),
-                                },
-                            );
-
-                            return Ok(BobState::XmrRedeemed { tx_lock_id });
+                            return Ok(BobState::XmrRedeemConstructed {
+                                state: state5,
+                                xmr_redeem_tx,
+                            });
                         }
                         Err(error) => {
                             event_emitter.emit_swap_progress_event(

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Allow user to copy raw hex of the Monero redeem transaction to broadcast externally.
+- GUI: Continuously republish the Monero redeem transaction while we are waiting for it to confirm.
+
 ## [4.9.5] - 2026-06-16
 
 ## [4.9.4] - 2026-06-16

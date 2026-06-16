@@ -99,7 +99,10 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     case "ConstructingMoneroRedeem":
       return <ConstructingMoneroRedeemPage />;
     case "PublishingMoneroRedeem":
-      return <PublishingMoneroRedeemPage />;
+      if (state.curr.type === "PublishingMoneroRedeem") {
+        return <PublishingMoneroRedeemPage {...state.curr.content} />;
+      }
+      break;
     case "XmrRedeemPublished":
       if (state.curr.type === "XmrRedeemPublished") {
         return <XmrRedeemPublishedPage {...state.curr.content} />;

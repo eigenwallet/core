@@ -16,6 +16,8 @@ const MOCK_XMR_LOCK_TXID =
   "a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8";
 const MOCK_XMR_REDEEM_TXID =
   "b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9";
+const MOCK_XMR_REDEEM_TX_HEX =
+  "0200010200089fef8e01a1c2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8";
 const MOCK_BTC_CANCEL_TXID =
   "c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0";
 const MOCK_BTC_REFUND_TXID =
@@ -200,12 +202,16 @@ const happyPath: TauriSwapProgressEvent[] = [
   { type: "InflightEncSig" },
   { type: "EncryptedSignatureSent" },
   { type: "ConstructingMoneroRedeem" },
-  { type: "PublishingMoneroRedeem" },
+  {
+    type: "PublishingMoneroRedeem",
+    content: { xmr_redeem_tx_hex: MOCK_XMR_REDEEM_TX_HEX },
+  },
   {
     type: "XmrRedeemPublished",
     content: {
       xmr_redeem_txids: [MOCK_XMR_REDEEM_TXID],
       xmr_receive_pool: MOCK_RECEIVE_POOL,
+      xmr_redeem_tx_hex: MOCK_XMR_REDEEM_TX_HEX,
     },
   },
   {
@@ -223,12 +229,16 @@ const cooperativeRedeem: TauriSwapProgressEvent[] = [
   { type: "AttemptingCooperativeRedeem" },
   { type: "CooperativeRedeemAccepted" },
   { type: "ConstructingMoneroRedeem" },
-  { type: "PublishingMoneroRedeem" },
+  {
+    type: "PublishingMoneroRedeem",
+    content: { xmr_redeem_tx_hex: MOCK_XMR_REDEEM_TX_HEX },
+  },
   {
     type: "XmrRedeemPublished",
     content: {
       xmr_redeem_txids: [MOCK_XMR_REDEEM_TXID],
       xmr_receive_pool: MOCK_RECEIVE_POOL,
+      xmr_redeem_tx_hex: MOCK_XMR_REDEEM_TX_HEX,
     },
   },
   {
