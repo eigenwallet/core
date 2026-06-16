@@ -7,7 +7,7 @@ mod prompt;
 use swap_orchestrator as _;
 
 use crate::compose::{
-    ASB_DATA_DIR, CloudflaredConfig, DOCKER_COMPOSE_FILE, GluetunConfig, IntoSpec, MetricsConfig,
+    ASB_DATA_DIR, CloudflaredConfig, DOCKER_COMPOSE_FILE, IntoSpec, MetricsConfig,
     OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
     OrchestratorNetworks, PROMETHEUS_CONFIG_FILE, PROMTAIL_CONFIG_FILE, PromtailConfig,
     build_prometheus_agent_yml, build_promtail_yml,
@@ -33,15 +33,6 @@ const CLOUDFLARE_ENV_VARS: [&str; 4] = [
     "CLOUDFLARE_TUNNEL_EXTERNAL_HOST",
     "CLOUDFLARE_TUNNEL_EXTERNAL_PORT",
     "CLOUDFLARE_TUNNEL_INTERNAL_PORT",
-];
-
-/// Environment variables that together configure the WireGuard VPN (gluetun)
-/// integration. Either all must be set, or none — a partial set is a hard
-/// error.
-const GLUETUN_ENV_VARS: [&str; 3] = [
-    "GLUETUN_VPN_SERVICE_PROVIDER",
-    "GLUETUN_WIREGUARD_PRIVATE_KEY",
-    "GLUETUN_WIREGUARD_ADDRESSES",
 ];
 
 /// Environment variables that together configure the Promtail log shipper.
@@ -97,42 +88,6 @@ fn read_cloudflared_config_from_env() -> Option<CloudflaredConfig> {
         external_host,
         external_port,
         internal_port,
-    })
-}
-
-/// Reads the WireGuard VPN (gluetun) configuration from the environment.
-///
-/// Returns `None` if none of the variables are set. Returns `Some(..)` if
-/// all are set. Panics on a partial set — a half-configured VPN would
-/// silently ship a deployment without the tunnel.
-fn read_gluetun_config_from_env() -> Option<GluetunConfig> {
-    let present: Vec<&str> = GLUETUN_ENV_VARS
-        .iter()
-        .copied()
-        .filter(|name| std::env::var(name).is_ok())
-        .collect();
-
-    if present.is_empty() {
-        return None;
-    }
-
-    if present.len() != GLUETUN_ENV_VARS.len() {
-        let missing: Vec<&str> = GLUETUN_ENV_VARS
-            .iter()
-            .copied()
-            .filter(|name| std::env::var(name).is_err())
-            .collect();
-        panic!(
-            "WireGuard VPN (gluetun) is partially configured. The following variables are set: {:?}, but these are missing: {:?}. Set all three or none.",
-            present, missing
-        );
-    }
-
-    Some(GluetunConfig {
-        vpn_service_provider: std::env::var("GLUETUN_VPN_SERVICE_PROVIDER").expect("checked above"),
-        wireguard_private_key: std::env::var("GLUETUN_WIREGUARD_PRIVATE_KEY")
-            .expect("checked above"),
-        wireguard_addresses: std::env::var("GLUETUN_WIREGUARD_ADDRESSES").expect("checked above"),
     })
 }
 
@@ -232,7 +187,6 @@ fn main() {
     // Cloudflare integration above.
     let promtail_config = read_promtail_config_from_env();
     let metrics_config = read_metrics_config_from_env(promtail_config.as_ref());
-    let gluetun_config = read_gluetun_config_from_env();
     // Opt-in: inlined into the build-context URL so Docker can fetch a private repo.
     let gh_token = read_gh_token_from_env();
     let source_build_context = images::source_build_context(gh_token.as_deref());
@@ -286,7 +240,6 @@ fn main() {
             ),
             cadvisor: OrchestratorImage::Registry(images::CADVISOR_IMAGE.to_string()),
             prometheus_agent: OrchestratorImage::Registry(images::PROMETHEUS_IMAGE.to_string()),
-            gluetun: OrchestratorImage::Registry(images::GLUETUN_IMAGE.to_string()),
             bitcoin_exporter: OrchestratorImage::Registry(
                 images::BITCOIN_PROMETHEUS_EXPORTER_IMAGE.to_string(),
             ),
@@ -298,7 +251,6 @@ fn main() {
         cloudflared: cloudflared_config.clone(),
         promtail: promtail_config.clone(),
         metrics: metrics_config.clone(),
-        gluetun: gluetun_config.clone(),
     };
 
     // If the config file already exists and be de-serialized,
@@ -524,23 +476,6 @@ fn main() {
     if let Some(metrics) = metrics_config.as_ref() {
         print_metrics_instructions(metrics);
     }
-
-    if gluetun_config.is_some() {
-        print_gluetun_instructions();
-    }
-}
-
-/// Prints the operator-facing summary for the Mullvad VPN (gluetun) setup.
-fn print_gluetun_instructions() {
-    println!();
-    println!("Mullvad VPN (gluetun) is enabled — all asb traffic leaves through the tunnel.");
-    println!(
-        "  - Mullvad has no port forwarding, so the asb is NOT reachable over clearnet TCP; use a"
-    );
-    println!("    Tor hidden service and/or a Cloudflare Tunnel for inbound connections.");
-    println!(
-        "  - Verify the tunnel: docker compose exec gluetun wget -qO- https://am.i.mullvad.net/connected"
-    );
 }
 
 /// Reads the ASB config from disk, inserts the WebSocket listen address and
