@@ -52,12 +52,17 @@ impl XmrRedeemable for State5 {
             "Sweeping lock output across receive pool"
         );
 
+        let inner_retry = backoff::ExponentialBackoffBuilder::new()
+            .with_max_elapsed_time(Some(std::time::Duration::from_secs(45)))
+            .build();
+
         let tx = monero_wallet
             .construct_sweep_to(
                 &self.lock_transfer_proof.tx_hash(),
                 spend_key,
                 view_key,
                 destinations,
+                Some(inner_retry),
             )
             .await
             .context("Failed to construct Monero redeem transaction")?;

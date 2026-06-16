@@ -308,6 +308,20 @@ impl Wallets {
         Ok(())
     }
 
+    pub async fn is_transaction_present(&self, tx_hash: &TxHash) -> Result<bool> {
+        use monero_wallet_ng::rpc::{ProvidesTransactionStatus, TransactionStatus};
+
+        let rpc_client = self.rpc_client().await?;
+        let tx_id = tx_hash_to_bytes(tx_hash)?;
+
+        let status = rpc_client
+            .transaction_status(tx_id)
+            .await
+            .context("Failed to query Monero transaction status")?;
+
+        Ok(!matches!(status, TransactionStatus::Unknown))
+    }
+
     pub async fn direct_rpc_block_height(&self) -> Result<u64> {
         use monero_daemon_rpc::prelude::ProvidesBlockchainMeta;
         let rpc_client = self.rpc_client().await?;
@@ -337,6 +351,7 @@ impl Wallets {
         spend_key: monero_oxide_ext::PrivateKey,
         view_key: PrivateViewKey,
         destinations: Vec<(monero_address::MoneroAddress, f64)>,
+        inner_retry: Option<backoff::ExponentialBackoff>,
     ) -> Result<Transaction<NotPruned>> {
         let rpc_client = self.rpc_client().await?;
         let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
@@ -350,6 +365,7 @@ impl Wallets {
             view_scalar,
             tx_id,
             destinations,
+            inner_retry,
         )
         .await
         .context("Failed to construct sweep transaction to destinations")
@@ -362,6 +378,7 @@ impl Wallets {
         spend_key: monero_oxide_ext::PrivateKey,
         view_key: PrivateViewKey,
         destination: monero_address::MoneroAddress,
+        inner_retry: Option<backoff::ExponentialBackoff>,
     ) -> Result<Transaction<NotPruned>> {
         let rpc_client = self.rpc_client().await?;
         let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
@@ -375,6 +392,7 @@ impl Wallets {
             view_scalar,
             tx_id,
             destination,
+            inner_retry,
         )
         .await
         .context("Failed to construct sweep transaction to destination")

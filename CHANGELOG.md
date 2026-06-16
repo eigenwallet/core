@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.9.3] - 2026-06-15
+
+## [4.9.2] - 2026-06-13
+
+- Added a set of new community maintained rendezvous points. Please configure your makers to register at them:`/dns4/discovery.eigenwallet.org/tcp/443/wss/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw`,
+  `/onion3/3xl2zfur4tpebogsrgn3l7l2illzkhwi3755jplmycmn4q77nxsrl6qd:8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw`,
+  `/dns4/rendezvous.atomicworld.fun/tcp/443/wss/p2p/12D3KooWMc39w7bZz4RLmJKuUiK9YkbKoEHACZWcL71XNns5dPuD`,
+  `/onion3/m2iuwp3fvdlqtlqqaz3egrzjl5uehmdhjgmzhznvjoudljl2xzjaomyd:8890/p2p/12D3KooWMc39w7bZz4RLmJKuUiK9YkbKoEHACZWcL71XNns5dPuD`,
+  `/dns4/dht.stealthswap.ninja/tcp/443/wss/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov`,
+  `/onion3/m6rboz5lv4wxldgybgox4pr4s6xci3h2exi5nogxaox762xji2gokuad:8891/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov`,
+  `/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE`,
+  `/onion3/av2jauifny7dgpvzhsnhra3cwivf6ofaefxvwhhuh5y7hsolabehhaad:8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE`,
+
+## [4.9.1] - 2026-06-12
+
+## [4.9.0] - 2026-06-10
+
+- ASB+CONTROLLER: The JSON-RPC server now requires authentication. The ASB verifies a password against a hashed keyfile (`--rpc-auth-file`), and `asb-controller` prompts for the password on startup. Generate the keyfile with `orchestrator gen-rpc-auth`. Clients authenticate by sending the password with every request in an `Authorization: Bearer <password>` header.
+- ASB+GUI: Skip publishing the Monero redeem/refund transaction if it is already present on chain (e.g. after a restart)
+
+## [4.8.4] - 2026-06-09
+
+## [4.8.3] - 2026-06-08
+
+- Reliably retry Monero redeem step
+
+## [4.8.2] - 2026-06-06
+
+## [4.8.1] - 2026-06-05
+
+## [4.8.0] - 2026-06-05
+
+## [4.7.11] - 2026-06-05
+
 - GUI: Fix flickering of offers
 - Remove three dead rendezvous points
 
@@ -975,7 +1009,17 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.7.10...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.9.3...HEAD
+[4.9.3]: https://github.com/eigenwallet/core/compare/4.9.2...4.9.3
+[4.9.2]: https://github.com/eigenwallet/core/compare/4.9.1...4.9.2
+[4.9.1]: https://github.com/eigenwallet/core/compare/4.9.0...4.9.1
+[4.9.0]: https://github.com/eigenwallet/core/compare/4.8.4...4.9.0
+[4.8.4]: https://github.com/eigenwallet/core/compare/4.8.3...4.8.4
+[4.8.3]: https://github.com/eigenwallet/core/compare/4.8.2...4.8.3
+[4.8.2]: https://github.com/eigenwallet/core/compare/4.8.1...4.8.2
+[4.8.1]: https://github.com/eigenwallet/core/compare/4.8.0...4.8.1
+[4.8.0]: https://github.com/eigenwallet/core/compare/4.7.11...4.8.0
+[4.7.11]: https://github.com/eigenwallet/core/compare/4.7.10...4.7.11
 [4.7.10]: https://github.com/eigenwallet/core/compare/3.7.10...4.7.10
 [3.7.10]: https://github.com/eigenwallet/core/compare/4.7.9...3.7.10
 [4.7.9]: https://github.com/eigenwallet/core/compare/4.7.8...4.7.9

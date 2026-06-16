@@ -418,12 +418,14 @@ async fn start_alice(
         3,
         168,
         db.clone(),
+        None,
     )
     .unwrap();
     swarm.listen_on(listen_address).unwrap();
 
     let (event_loop, swap_handle, service) = asb::EventLoop::new(
         swarm,
+        None,
         env_config,
         bitcoin_wallet.clone(),
         monero_wallet.clone(),
@@ -443,6 +445,7 @@ async fn start_alice(
     let rpc_server_handle = asb::rpc::RpcServer::start(
         "127.0.0.1".to_string(),
         rpc_port,
+        None,
         bitcoin_wallet,
         monero_wallet,
         service,

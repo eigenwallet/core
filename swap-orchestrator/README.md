@@ -42,6 +42,10 @@ Run the command below to start the wizard. It’ll guide you through a bunch of 
 
 To also ship the `asb` tracing logs and the `bitcoind`/`monerod`/`electrs` container logs to a Loki endpoint, set `PROMTAIL_LOKI_PUSH_URL`, `PROMTAIL_LOKI_PUSH_TOKEN`, and `PROMTAIL_INSTANCE` before running the orchestrator — this adds `promtail` and `docker-socket-proxy` services to the generated `docker-compose.yml`. All streams are labelled with `host=<instance>`; the daemon logs additionally carry `job=node` and `container=<name>`.
 
+To route all `asb` traffic through a WireGuard VPN, set `GLUETUN_VPN_SERVICE_PROVIDER` (one of gluetun's [supported providers](https://github.com/qdm12/gluetun-wiki)), `GLUETUN_WIREGUARD_PRIVATE_KEY`, and `GLUETUN_WIREGUARD_ADDRESSES` (the latter two from your WireGuard configuration) before running the orchestrator — this adds a [gluetun](https://github.com/qdm12/gluetun) service to the generated `docker-compose.yml` and runs the `asb` container inside its network namespace, with gluetun's firewall acting as a kill switch. The other containers (`bitcoind`, `monerod`, `electrs`) are not routed through the VPN. Note that if your VPN does not support port forwarding, the `asb` will not be reachable over clearnet TCP — use a Tor hidden service and/or a Cloudflare Tunnel for inbound connections.
+
+To additionally ship per-container resource metrics (cpu, memory, pids, network, fs) to a Prometheus `remote_write` endpoint, set `METRICS_REMOTE_WRITE_URL` — this adds `cadvisor` and `prometheus-agent` services to the generated `docker-compose.yml`. Metrics reuse the Promtail bearer token and `host=<instance>` label (so metrics and logs share one Grafana selector), so the `PROMTAIL_*` variables must be set as well. The central collector (`scripts/logging`) gates the metrics endpoint with the same token as the Loki push, behind the same Cloudflare tunnel.
+
 If the `asb`/`asb-controller`/`rendezvous-node` images are built from a **private** GitHub repository, set `GH_TOKEN` to a token with read access before running the orchestrator. The token is inlined into the build-context URL in the generated `docker-compose.yml` so `docker compose build` can clone the repository.
 
 ```bash
@@ -53,6 +57,16 @@ To build the images, run this command. Also run this after upgrading the `orches
 ```bash
 docker compose build --no-cache # --no-cache fixes a git caching issue (error: tag clobbered)
 ```
+
+### Set the JSON-RPC password
+
+The `asb` authenticates its JSON-RPC endpoint, and refuses to start it without an auth keyfile. Before starting the environment, generate one:
+
+```bash
+./orchestrator gen-rpc-auth
+```
+
+This prompts for a strong password and writes a hashed verifier to `./rpc-auth` (mounted read-only into the `asb` container); the password itself is never stored. Keep the password — you enter it when attaching to `asb-controller`.
 
 To start the environment, run a command [such as](https://docs.docker.com/reference/cli/docker/compose/up/):
 
@@ -75,10 +89,12 @@ To view high-verbosity logs of the asb, peek inside the `asb-tracing-logger` con
 docker compose logs -f --tail 100 asb-tracing-logger
 ```
 
-Once the `asb` is running properly you can get a shell
+Once the `asb` is running properly you can get a shell. It prompts for the RPC password you set with `gen-rpc-auth` before granting access.
 
 ```bash
 $ docker compose attach asb-controller
+
+ASB RPC password: ********
 
 ASB Control Shell - Type 'help' for commands, 'quit' to exit
 

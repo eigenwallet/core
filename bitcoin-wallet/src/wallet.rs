@@ -127,15 +127,19 @@ pub struct Client {
     inner: Arc<ElectrumBalancer>,
     /// The history of transactions for each script.
     script_history: Arc<TokioRwLock<BTreeMap<ScriptBuf, Vec<GetHistoryRes>>>>,
-    /// The subscriptions to the status of transactions.
-    subscriptions: Arc<TokioMutex<HashMap<(Txid, ScriptBuf), Subscription>>>,
+    /// The status-update channels we poll, keyed by the watched transaction and script.
+    subscriptions: Arc<TokioMutex<HashMap<(Txid, ScriptBuf), watch::Sender<ScriptStatus>>>>,
     /// The time of the last sync.
     last_sync: Arc<SyncMutex<Instant>>,
     /// How often we sync with the server.
     sync_interval: Duration,
+    /// How long a subscription is kept alive after its last receiver is dropped.
+    subscription_idle_timeout: Duration,
     /// The height of the latest block we know about.
     latest_block_height: Arc<SyncMutex<BlockHeight>>,
 }
+
+const DEFAULT_SUBSCRIPTION_IDLE_TIMEOUT: Duration = Duration::from_secs(4 * 60);
 
 /// Holds the configuration parameters for creating a Bitcoin wallet.
 /// The actual Wallet<Connection> will be constructed from this configuration.
@@ -159,6 +163,8 @@ pub struct WalletConfig<Seed: BitcoinWalletSeed> {
     finality_confirmations: u32,
     target_block: u32,
     sync_interval: Duration,
+    #[builder(default = "DEFAULT_SUBSCRIPTION_IDLE_TIMEOUT")]
+    subscription_idle_timeout: Duration,
     #[builder(default)]
     tauri_handle: TauriHandle,
     #[builder(default = "true")]
@@ -174,9 +180,10 @@ impl<Seed: BitcoinWalletSeed> WalletBuilder<Seed> {
             .validate_config()
             .map_err(|e| anyhow!("Builder validation failed: {e}"))?;
 
-        let client = Client::new(&config.electrum_rpc_urls, config.sync_interval)
+        let mut client = Client::new(&config.electrum_rpc_urls, config.sync_interval)
             .await
             .context("Failed to create Electrum client")?;
+        client.subscription_idle_timeout = config.subscription_idle_timeout;
 
         match &config.persister {
             PersisterConfig::SqliteFile { data_dir } => {
@@ -803,6 +810,7 @@ impl Wallet {
     pub async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
         let txid = tx.id();
         let script = tx.script();
+        let idle_timeout = self.electrum_client.subscription_idle_timeout;
 
         let initial_status = match self.electrum_client.status_of_script(&tx, false).await {
             Ok(status) => Some(status),
@@ -814,14 +822,16 @@ impl Wallet {
 
         let mut subscriptions = self.electrum_client.subscriptions.lock().await;
 
-        let sub = subscriptions
+        let sender = subscriptions
             .entry((txid, script.clone()))
             .or_insert_with(|| {
-                let (sender, receiver) = watch::channel(ScriptStatus::Unseen);
+                let (sender, _) = watch::channel(ScriptStatus::Unseen);
                 let client = self.electrum_client.clone();
+                let task_sender = sender.clone();
 
                 tokio::spawn(async move {
                     let mut last_status = initial_status;
+                    let mut idle_since: Option<Instant> = None;
 
                     loop {
                         let new_status = client
@@ -832,32 +842,46 @@ impl Wallet {
                                 ScriptStatus::Retrying
                             });
 
-                        if new_status != ScriptStatus::Retrying
-                        {
+                        if new_status != ScriptStatus::Retrying {
                             last_status = Some(trace_status_change(txid, last_status, new_status));
+                            let _ = task_sender.send(new_status);
+                        }
 
-                            let all_receivers_gone = sender.send(new_status).is_err();
+                        if task_sender.receiver_count() > 0 {
+                            idle_since = None;
+                        } else if idle_since.get_or_insert_with(Instant::now).elapsed()
+                            >= idle_timeout
+                        {
+                            let mut subscriptions = client.subscriptions.lock().await;
 
-                            if all_receivers_gone {
-                                tracing::debug!(%txid, "All receivers gone, removing subscription");
-                                client.subscriptions.lock().await.remove(&(txid, script));
+                            if subscriptions
+                                .get(&(txid, script.clone()))
+                                .is_some_and(|sender| sender.receiver_count() == 0)
+                            {
+                                tracing::debug!(%txid, ?idle_timeout, "No subscribers for transaction status, dropping subscription");
+                                subscriptions.remove(&(txid, script));
                                 return;
                             }
+
+                            idle_since = None;
                         }
 
                         tokio::time::sleep(Duration::from_secs(5)).await;
                     }
                 }.instrument(debug_span!("BitcoinWalletSubscription")));
 
-                Subscription {
-                    receiver,
-                    finality_confirmations: self.finality_confirmations,
-                    txid,
-                }
-            })
-            .clone();
+                sender
+            });
 
-        sub
+        Subscription {
+            receiver: sender.subscribe(),
+            finality_confirmations: self.finality_confirmations,
+            txid,
+        }
+    }
+
+    pub async fn active_subscription_count(&self) -> usize {
+        self.electrum_client.subscriptions.lock().await.len()
     }
 
     pub async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
@@ -1094,6 +1118,13 @@ impl Wallet {
         )
         .await
         .context("Failed to sync Bitcoin wallet after retries")
+    }
+
+    pub async fn health_check(&self) -> Result<()> {
+        self.electrum_client
+            .update_block_height()
+            .await
+            .context("Bitcoin wallet failed to reach the Electrum backend")
     }
 
     /// Calculate the fee for a given transaction.
@@ -1624,6 +1655,7 @@ impl Client {
             script_history: Arc::new(TokioRwLock::new(BTreeMap::new())),
             last_sync: Arc::new(SyncMutex::new(initial_last_sync)),
             sync_interval,
+            subscription_idle_timeout: DEFAULT_SUBSCRIPTION_IDLE_TIMEOUT,
             latest_block_height: Arc::new(SyncMutex::new(BlockHeight::from(0))),
             subscriptions: Arc::new(TokioMutex::new(HashMap::new())),
         })
@@ -1663,7 +1695,7 @@ impl Client {
     }
 
     /// Update the block height.
-    async fn update_block_height(&self) -> Result<()> {
+    pub async fn update_block_height(&self) -> Result<()> {
         let latest_block = self
             .inner
             .call_async("block_headers_subscribe", |client| {
@@ -2164,6 +2196,10 @@ impl BitcoinWallet for Wallet {
 
     async fn sync(&self) -> Result<()> {
         Wallet::sync(self).await
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        Wallet::health_check(self).await
     }
 
     async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
@@ -2973,6 +3009,10 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     async fn sync(&self) -> Result<()> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn health_check(&self) -> Result<()> {
         unimplemented!("stub method called erroneously")
     }
 

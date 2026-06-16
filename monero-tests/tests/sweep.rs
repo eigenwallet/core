@@ -57,6 +57,7 @@ async fn sweep_moves_largest_output_to_destination() -> anyhow::Result<()> {
         source_view,
         funding_txid,
         vec![(dest_address, 1.0)],
+        None,
     )
     .await?;
     daemon.publish_transaction(&signed).await?;
@@ -121,6 +122,7 @@ async fn sweep_splits_output_across_multiple_destinations() -> anyhow::Result<()
         source_view,
         funding_txid,
         vec![(dest_a_address, ratio_a), (dest_b_address, ratio_b)],
+        None,
     )
     .await?;
     daemon.publish_transaction(&signed).await?;

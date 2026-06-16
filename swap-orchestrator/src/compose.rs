@@ -7,10 +7,23 @@ use std::{
     path::PathBuf,
 };
 
+/// Per-container docker `json-file` log rotation, referenced by every service.
+/// `max-file * max-size` is the hard cap on a container's daemon logs before the
+/// oldest file is dropped (5 * 1g = 5GB).
+pub const DOCKER_LOG_MAX_SIZE: &str = "1g";
+pub const DOCKER_LOG_MAX_FILE: &str = "5";
+
 pub const ASB_DATA_DIR: &str = "/asb-data";
 pub const ASB_CONFIG_FILE: &str = "config.toml";
+pub const ASB_RPC_AUTH_FILE_ON_HOST: &str = "./rpc-auth";
+pub const ASB_RPC_AUTH_FILE_IN_CONTAINER: &str = "/rpc-auth";
 pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
 pub const PROMTAIL_CONFIG_FILE: &str = "./promtail.yml";
+pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
+
+/// Port `cloudflared` serves its built-in Prometheus metrics on, scraped by the
+/// prometheus-agent over the docker network.
+pub const CLOUDFLARED_METRICS_PORT: u16 = 2000;
 
 pub struct OrchestratorInput {
     pub ports: OrchestratorPorts,
@@ -20,7 +33,40 @@ pub struct OrchestratorInput {
     pub want_tor: bool,
     pub cloudflared: Option<CloudflaredConfig>,
     pub promtail: Option<PromtailConfig>,
+    pub metrics: Option<MetricsConfig>,
+    pub gluetun: Option<GluetunConfig>,
 }
+
+/// WireGuard VPN (gluetun) configuration.
+///
+/// When set, the orchestrator adds a `gluetun` service to the compose file
+/// and runs the ASB inside its network namespace, so all ASB traffic leaves
+/// through the WireGuard tunnel (with gluetun's firewall as kill switch).
+/// The other containers keep their normal networking.
+///
+/// Gluetun is pointed at Docker's embedded DNS so the ASB can resolve the
+/// `monerod` / `electrs` service names from inside gluetun's network namespace;
+/// gluetun's `asb` network alias lets the other containers dial the ASB by
+/// hostname even though it has no network identity of its own.
+///
+/// If the chosen provider does not support port forwarding, the ASB is not
+/// reachable over clearnet TCP — inbound connections require a Tor hidden
+/// service or a Cloudflare Tunnel.
+#[derive(Clone)]
+pub struct GluetunConfig {
+    /// Gluetun VPN service provider name (see
+    /// <https://github.com/qdm12/gluetun-wiki>).
+    pub vpn_service_provider: String,
+    /// WireGuard private key from the provider's WireGuard configuration.
+    pub wireguard_private_key: String,
+    /// WireGuard interface address from the same configuration.
+    pub wireguard_addresses: String,
+}
+
+/// The compose network uses a fixed subnet so gluetun's outbound firewall can
+/// allow the docker network explicitly (`FIREWALL_OUTBOUND_SUBNETS`) — traffic
+/// to the other containers must bypass the VPN kill switch.
+pub const DOCKER_SUBNET: &str = "172.28.0.0/24";
 
 /// Cloudflare Tunnel configuration.
 ///
@@ -65,6 +111,13 @@ pub struct PromtailConfig {
     pub instance: String,
 }
 
+#[derive(Clone)]
+pub struct MetricsConfig {
+    pub remote_write_url: String,
+    pub token: String,
+    pub instance: String,
+}
+
 pub struct OrchestratorDirectories {
     pub asb_data_dir: PathBuf,
 }
@@ -87,6 +140,9 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub cloudflared: T,
     pub promtail: T,
     pub docker_socket_proxy: T,
+    pub cadvisor: T,
+    pub prometheus_agent: T,
+    pub gluetun: T,
 }
 
 pub struct OrchestratorPorts {
@@ -97,6 +153,7 @@ pub struct OrchestratorPorts {
     pub tor_socks: u16,
     pub asb_libp2p: u16,
     pub asb_rpc_port: u16,
+    pub asb_metrics_port: u16,
     pub rendezvous_node_port: u16,
 }
 
@@ -111,6 +168,7 @@ impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for O
                 tor_socks: 9050,
                 asb_libp2p: 9939,
                 asb_rpc_port: 9944,
+                asb_metrics_port: 9945,
                 rendezvous_node_port: 8888,
             },
             (monero_address::Network::Stagenet, bitcoin::Network::Testnet) => OrchestratorPorts {
@@ -121,6 +179,7 @@ impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for O
                 tor_socks: 9050,
                 asb_libp2p: 9839,
                 asb_rpc_port: 9944,
+                asb_metrics_port: 9945,
                 rendezvous_node_port: 8888,
             },
             _ => panic!("Unsupported Bitcoin / Monero network combination"),
@@ -210,6 +269,7 @@ fn build(input: OrchestratorInput) -> String {
         flag!("start"),
         flag!("--rpc-bind-port={}", input.ports.asb_rpc_port),
         flag!("--rpc-bind-host=0.0.0.0"),
+        flag!("--rpc-auth-file={}", ASB_RPC_AUTH_FILE_IN_CONTAINER),
     ];
 
     // monerod's --proxy addr:port and --tx-proxy tor,addr;port can only take numeric addr,
@@ -298,6 +358,8 @@ fn build(input: OrchestratorInput) -> String {
             "cloudflared",
             flag!("--no-autoupdate"),
             flag!("tunnel"),
+            flag!("--metrics"),
+            flag!("0.0.0.0:{}", CLOUDFLARED_METRICS_PORT),
             flag!("run"),
             flag!("--token"),
             flag!("{}", cf.token),
@@ -309,12 +371,16 @@ fn build(input: OrchestratorInput) -> String {
     container_name: cloudflared
     {image_cloudflared}
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - asb
+    expose:
+      - {port_cloudflared_metrics}
     entrypoint: ''
     command: {command_cloudflared}\
 ",
             image_cloudflared = input.images.cloudflared.to_image_attribute(),
+            port_cloudflared_metrics = CLOUDFLARED_METRICS_PORT,
         )
     } else {
         String::new()
@@ -337,6 +403,7 @@ fn build(input: OrchestratorInput) -> String {
     container_name: docker-socket-proxy
     {image_docker_socket_proxy}
     restart: unless-stopped
+    logging: *default-logging
     environment:
       - CONTAINERS=1
       - NETWORKS=1
@@ -348,6 +415,7 @@ fn build(input: OrchestratorInput) -> String {
     container_name: promtail
     {image_promtail}
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - asb
       - docker-socket-proxy
@@ -366,6 +434,134 @@ fn build(input: OrchestratorInput) -> String {
         (String::new(), "")
     };
 
+    let (metrics_segment, metrics_volume) = if input.metrics.is_some() {
+        let metrics_segment = format!(
+            "\
+  cadvisor:
+    container_name: cadvisor
+    {image_cadvisor}
+    restart: unless-stopped
+    logging: *default-logging
+    privileged: true
+    cgroup: host
+    command:
+      # Workaround for cadvisor#3860
+      - '--disable_metrics=disk'
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - '/:/rootfs:ro'
+      - '/var/run:/var/run:ro'
+      - '/sys:/sys:ro'
+      - '/var/lib/docker/:/var/lib/docker:ro'
+      - '/dev/disk/:/dev/disk:ro'
+    expose:
+      - 8080
+  prometheus-agent:
+    container_name: prometheus-agent
+    {image_prometheus_agent}
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - cadvisor
+    volumes:
+      - '{prometheus_config_file}:/etc/prometheus/prometheus.yml:ro'
+      - 'prometheus-agent-data:/prometheus'
+    command: [\"--config.file=/etc/prometheus/prometheus.yml\", \"--agent\", \"--storage.agent.path=/prometheus\"]\
+",
+            image_cadvisor = input.images.cadvisor.to_image_attribute(),
+            image_prometheus_agent = input.images.prometheus_agent.to_image_attribute(),
+            prometheus_config_file = PROMETHEUS_CONFIG_FILE,
+        );
+        (metrics_segment, "prometheus-agent-data:")
+    } else {
+        (String::new(), "")
+    };
+
+    let gluetun_segment = if let Some(gluetun) = input.gluetun.as_ref() {
+        // Everything that dials the ASB enters the shared namespace through
+        // gluetun's docker interface, so its firewall must accept those
+        // ports explicitly.
+        let mut input_ports = vec![input.ports.asb_libp2p, input.ports.asb_rpc_port];
+        if input.metrics.is_some() {
+            input_ports.push(input.ports.asb_metrics_port);
+        }
+        if let Some(cf) = input.cloudflared.as_ref() {
+            input_ports.push(cf.internal_port);
+        }
+        let firewall_input_ports = input_ports
+            .iter()
+            .map(u16::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+
+        format!(
+            "\
+  gluetun:
+    container_name: gluetun
+    {image_gluetun}
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      default:
+        aliases:
+          - asb
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1
+    environment:
+      VPN_SERVICE_PROVIDER: {vpn_service_provider}
+      VPN_TYPE: wireguard
+      WIREGUARD_PRIVATE_KEY: {wireguard_private_key}
+      WIREGUARD_ADDRESSES: {wireguard_addresses}
+      FIREWALL_OUTBOUND_SUBNETS: {subnet}
+      FIREWALL_INPUT_PORTS: '{firewall_input_ports}'
+      DNS_ADDRESS: 127.0.0.11
+    ports:
+      - '0.0.0.0:{asb_port}:{asb_port}'\
+",
+            image_gluetun = input.images.gluetun.to_image_attribute(),
+            vpn_service_provider = yaml_compose_value(&gluetun.vpn_service_provider),
+            wireguard_private_key = yaml_compose_value(&gluetun.wireguard_private_key),
+            wireguard_addresses = yaml_compose_value(&gluetun.wireguard_addresses),
+            subnet = DOCKER_SUBNET,
+            asb_port = input.ports.asb_libp2p,
+        )
+    } else {
+        String::new()
+    };
+
+    // gluetun owns the shared network namespace: the net sysctl must sit on it
+    // (Docker rejects net sysctls on a namespace-sharing container) and the ASB
+    // waits for the tunnel to be healthy so it cannot leak traffic outside it.
+    let asb_sysctls_and_depends_on = if input.gluetun.is_some() {
+        "depends_on:\n      electrs:\n        condition: service_started\n      gluetun:\n        condition: service_healthy"
+    } else {
+        "sysctls:\n      - net.ipv4.tcp_tw_reuse=1\n    depends_on:\n      - electrs"
+    };
+
+    let networks_segment = if input.gluetun.is_some() {
+        format!(
+            "networks:\n  default:\n    ipam:\n      config:\n        - subnet: {DOCKER_SUBNET}\n"
+        )
+    } else {
+        String::new()
+    };
+
+    // The ASB shares gluetun's namespace and so cannot publish ports; gluetun
+    // publishes the libp2p port for it.
+    let asb_network = if input.gluetun.is_some() {
+        r#"network_mode: "service:gluetun""#.to_string()
+    } else {
+        format!(
+            "ports:\n      - '0.0.0.0:{port}:{port}'",
+            port = input.ports.asb_libp2p
+        )
+    };
+
     let (tor_segment, tor_volume) = if input.want_tor {
         // This image comes with an empty /etc/tor/, so this is the entire config
         let command_tor = command![
@@ -382,6 +578,7 @@ fn build(input: OrchestratorInput) -> String {
     container_name: tor
     {image_tor}
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - 'tor-data:/var/lib/tor/'
     expose:
@@ -416,11 +613,17 @@ fn build(input: OrchestratorInput) -> String {
 #
 # Please check for new releases regularly. Breaking network changes are rare, but they do happen from time to time.
 name: {project_name}
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '{log_max_size}'
+    max-file: '{log_max_file}'
 services:
   monerod:
     container_name: monerod
     {image_monerod}
     restart: unless-stopped
+    logging: *default-logging
     user: root
     volumes:
       - 'monerod-data:/monerod-data/'
@@ -432,6 +635,7 @@ services:
     container_name: bitcoind
     {image_bitcoind}
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - 'bitcoind-data:/bitcoind-data/'
     expose:
@@ -444,6 +648,7 @@ services:
     container_name: electrs
     {image_electrs}
     restart: unless-stopped
+    logging: *default-logging
     user: root
     depends_on:
       - bitcoind
@@ -457,19 +662,27 @@ services:
   {tor_segment}
   {cloudflared_segment}
   {promtail_segment}
+  {metrics_segment}
+  {gluetun_segment}
   asb:
     container_name: asb
     {image_asb}
     restart: unless-stopped
+    logging: *default-logging
     cap_add:
       - SYS_PTRACE
-    depends_on:
-      - electrs
+    {asb_sysctls_and_depends_on}
     volumes:
       - '{asb_config_path_on_host}:{asb_config_path_inside_container}'
+      # makes `docker compose up` fail if the keyfile is missing
+      - type: bind
+        source: '{asb_rpc_auth_file_on_host}'
+        target: '{asb_rpc_auth_file_in_container}'
+        read_only: true
+        bind:
+          create_host_path: false
       - 'asb-data:{asb_data_dir}'
-    ports:
-      - '0.0.0.0:{asb_port}:{asb_port}'
+    {asb_network}
     entrypoint: ''
     command: {command_asb}
   asb-controller:
@@ -478,6 +691,7 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - asb
     entrypoint: ''
@@ -486,6 +700,7 @@ services:
     container_name: asb-tracing-logger
     {image_asb_tracing_logger}
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - asb
     volumes:
@@ -496,6 +711,7 @@ services:
     container_name: rendezvous-node
     {image_rendezvous_node}
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - 'rendezvous-data:/rendezvous-data'
     ports:
@@ -510,12 +726,14 @@ volumes:
   rendezvous-data:
   {tor_volume}
   {promtail_volume}
-",
+  {metrics_volume}
+{networks_segment}",
+        log_max_size = DOCKER_LOG_MAX_SIZE,
+        log_max_file = DOCKER_LOG_MAX_FILE,
         port_monerod_rpc = input.ports.monerod_rpc,
         port_bitcoind_rpc = input.ports.bitcoind_rpc,
         port_bitcoind_p2p = input.ports.bitcoind_p2p,
         electrs_port = input.ports.electrs,
-        asb_port = input.ports.asb_libp2p,
         rendezvous_node_port = input.ports.rendezvous_node_port,
         image_monerod = input.images.monerod.to_image_attribute(),
         image_electrs = input.images.electrs.to_image_attribute(),
@@ -528,6 +746,8 @@ volumes:
         asb_data_dir = input.directories.asb_data_dir.display(),
         asb_config_path_on_host = input.directories.asb_config_path_on_host(),
         asb_config_path_inside_container = input.directories.asb_config_path_inside_container().display(),
+        asb_rpc_auth_file_on_host = ASB_RPC_AUTH_FILE_ON_HOST,
+        asb_rpc_auth_file_in_container = ASB_RPC_AUTH_FILE_IN_CONTAINER,
     );
 
     validate_compose(&compose_str);
@@ -627,6 +847,54 @@ scrape_configs:
     )
 }
 
+/// Builds `prometheus.yml`. Always scrapes cadvisor and the ASB's libp2p
+/// endpoint; also scrapes cloudflared's metrics endpoint when
+/// `scrape_cloudflared` is set.
+pub fn build_prometheus_agent_yml(
+    cfg: &MetricsConfig,
+    asb_metrics_port: u16,
+    scrape_cloudflared: bool,
+) -> String {
+    fn yaml_single_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "''"))
+    }
+
+    let cloudflared_scrape = if scrape_cloudflared {
+        format!(
+            "
+  - job_name: cloudflared
+    static_configs:
+      - targets: ['cloudflared:{CLOUDFLARED_METRICS_PORT}']"
+        )
+    } else {
+        String::new()
+    };
+
+    format!(
+        "\
+global:
+  scrape_interval: 30s
+  external_labels:
+    host: {instance}
+
+scrape_configs:
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']
+  - job_name: asb
+    static_configs:
+      - targets: ['asb:{asb_metrics_port}']{cloudflared_scrape}
+
+remote_write:
+  - url: {url}
+    bearer_token: {token}
+",
+        instance = yaml_single_quote(&cfg.instance),
+        url = yaml_single_quote(&cfg.remote_write_url),
+        token = yaml_single_quote(&cfg.token),
+    )
+}
+
 pub struct Flags(Vec<Flag>);
 
 /// Displays a list of flags into the "Exec form" supported by Docker
@@ -687,11 +955,17 @@ impl IntoImageAttribute for OrchestratorImage {
         match self {
             OrchestratorImage::Registry(image) => format!("image: {image}"),
             OrchestratorImage::Build(input) => format!(
-                r#"build: {{ context: "{}", dockerfile: "{}" }}"#,
+                r#"build: {{ context: "{}", dockerfile: "{}", network: "host" }}"#,
                 input.context, input.dockerfile
             ),
         }
     }
+}
+
+/// Single-quotes a value for use in the compose file. `$` is doubled because
+/// compose performs variable interpolation even inside single quotes.
+fn yaml_compose_value(value: &str) -> String {
+    format!("'{}'", value.replace('$', "$$").replace('\'', "''"))
 }
 
 fn validate_compose(compose_str: &str) {

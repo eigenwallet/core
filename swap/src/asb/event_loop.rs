@@ -1,6 +1,6 @@
 use self::quote::{
-    QUOTE_CACHE_TTL, QuoteCacheKey, make_quote, reserve_proof_with_timeout,
-    unlocked_monero_balance_with_timeout,
+    QUOTE_CACHE_TTL, QuoteCacheKey, bitcoin_health_check_with_retry, make_quote,
+    reserve_proof_with_timeout, unlocked_monero_balance_with_timeout,
 };
 use crate::asb::{Behaviour, OutEvent};
 use crate::monero;
@@ -17,6 +17,7 @@ use bitcoin_wallet::BitcoinWallet;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{FuturesUnordered, StreamExt};
+use libp2p::metrics::{Metrics, Recorder};
 use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
@@ -47,6 +48,7 @@ where
     LR: LatestRate + Send + 'static + Debug + Clone,
 {
     swarm: libp2p::Swarm<Behaviour<LR>>,
+    metrics: Option<Metrics>,
     env_config: env::Config,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
@@ -179,6 +181,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         swarm: Swarm<Behaviour<LR>>,
+        metrics: Option<Metrics>,
         env_config: env::Config,
         bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
@@ -202,6 +205,7 @@ where
 
         let event_loop = EventLoop {
             swarm,
+            metrics,
             env_config,
             bitcoin_wallet,
             monero_wallet,
@@ -292,6 +296,10 @@ where
         loop {
             tokio::select! {
                 swarm_event = self.swarm.select_next_some() => {
+                    if let Some(metrics) = &self.metrics {
+                        metrics.record(&swarm_event);
+                    }
+
                     match swarm_event {
                         SwarmEvent::Behaviour(OutEvent::SwapSetupInitiated { mut send_wallet_snapshot }) => {
                             let bitcoin_wallet = self.bitcoin_wallet.clone();
@@ -341,6 +349,11 @@ where
                                         unknown_swap_id = %swap_id,
                                         from = %peer,
                                         "Ignoring encrypted signature for unknown swap");
+
+                                    if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
+                                        tracing::debug!(%peer, "Disconnected peer for malicious encrypted signature request")
+                                    }
+
                                     continue;
                                 }
                             };
@@ -352,6 +365,11 @@ where
                                     expected_from = %swap_peer,
                                     "Ignoring malicious encrypted signature which was not expected from this peer",
                                     );
+
+                                if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
+                                    tracing::debug!(%peer, "Disconnected peer for malicious encrypted signature request")
+                                }
+
                                 continue;
                             }
 
@@ -471,6 +489,16 @@ where
                         }
                         SwarmEvent::ConnectionClosed { peer_id: peer, num_established: 0, endpoint, cause: None, connection_id } => {
                             tracing::trace!(%peer, address = %endpoint.get_remote_address(), %connection_id,  "Successfully closed connection");
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Ping(ping_event)) => {
+                            if let Some(metrics) = &self.metrics {
+                                metrics.record(&ping_event);
+                            }
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Identify(identify_event)) => {
+                            if let Some(metrics) = &self.metrics {
+                                metrics.record(identify_event.as_ref());
+                            }
                         }
                         SwarmEvent::NewListenAddr{address, .. } => {
                             let multiaddr = format!("{address}/p2p/{}", self.swarm.local_peer_id());
@@ -664,6 +692,7 @@ where
         let monero_wallet = self.monero_wallet.clone();
         let monero_wallet_for_proof = self.monero_wallet.clone();
         let monero_wallet_for_health = self.monero_wallet.clone();
+        let bitcoin_wallet = self.bitcoin_wallet.clone();
         let peer_id = self.peer_id();
 
         async move {
@@ -702,8 +731,19 @@ where
                     .await
             };
 
-            // Quote zero when the daemon RPC is unreachable.
-            let result = match monero_wallet_for_health.rpc_health_check().await {
+            // Quote zero unless both the Bitcoin and Monero backends are reachable.
+            let health_check = async {
+                bitcoin_health_check_with_retry(bitcoin_wallet)
+                    .await
+                    .context("Bitcoin wallet health check failed")?;
+                monero_wallet_for_health
+                    .rpc_health_check()
+                    .await
+                    .context("Monero daemon RPC health check failed")?;
+                Ok::<(), anyhow::Error>(())
+            };
+
+            let result = match health_check.await {
                 Ok(()) => {
                     make_quote(
                         min_buy,
@@ -717,7 +757,7 @@ where
                     )
                     .await
                 }
-                Err(err) => Err(Arc::new(err.context("Monero daemon RPC health check failed"))),
+                Err(err) => Err(Arc::new(err)),
             };
 
             // Insert the computed quote into the cache
@@ -810,6 +850,11 @@ where
                         },
                     )
                     .map_err(|_| anyhow!("Couldn't reject cooperative redeem request"))?;
+
+                if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
+                    tracing::debug!(%peer, "Disconnected peer for malicious cooperative Monero redeem request")
+                }
+
                 bail!("swap not found")
             }
         };
@@ -834,6 +879,11 @@ where
                     },
                 )
                 .map_err(|_| anyhow!("Failed to reject cooperative XMR redeem request"))?;
+
+            if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
+                tracing::debug!(%peer, "Disconnected peer for malicious cooperative Monero redeem request")
+            }
+
             bail!("malicious request (wrong peer)")
         }
 
@@ -863,6 +913,11 @@ where
                 .map_err(|_| {
                     anyhow!("Failed to send rejection for cooperative Monero redeem request")
                 })?;
+
+            if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
+                tracing::debug!(%peer, "Disconnected peer for malicious cooperative Monero redeem request")
+            }
+
             bail!("swap in invalid state")
         };
 
@@ -1299,7 +1354,11 @@ async fn capture_wallet_snapshot(
 ) -> Result<WalletSnapshot> {
     let start_time = Instant::now();
 
-    // Don't back a swap setup against an unreachable daemon.
+    // Don't back a swap setup against an unreachable Bitcoin or Monero backend.
+    bitcoin_wallet
+        .health_check()
+        .await
+        .context("Bitcoin wallet health check failed while capturing wallet snapshot")?;
     monero_wallet
         .rpc_health_check()
         .await
@@ -1578,6 +1637,7 @@ mod service {
 mod quote {
     use crate::monero::{Amount, AmountExt};
     use anyhow::{Context, anyhow};
+    use bitcoin_wallet::BitcoinWallet;
     use rust_decimal::Decimal;
     use std::{
         sync::Arc,
@@ -1772,6 +1832,37 @@ mod quote {
 
     /// This is how long we maximally wait for the wallet operation
     const MONERO_WALLET_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
+
+    /// How long we keep retrying the Bitcoin wallet health check before failing the quote.
+    const BITCOIN_WALLET_HEALTH_CHECK_MAX_ELAPSED: Duration = Duration::from_secs(60);
+
+    /// Checks that the Bitcoin wallet can reach its Electrum backend, retrying on failure.
+    pub async fn bitcoin_health_check_with_retry(
+        wallet: Arc<dyn BitcoinWallet>,
+    ) -> Result<(), anyhow::Error> {
+        let backoff = backoff::ExponentialBackoffBuilder::new()
+            .with_max_elapsed_time(Some(BITCOIN_WALLET_HEALTH_CHECK_MAX_ELAPSED))
+            .with_max_interval(Duration::from_secs(15))
+            .build();
+
+        backoff::future::retry_notify(
+            backoff,
+            || async {
+                wallet
+                    .health_check()
+                    .await
+                    .map_err(backoff::Error::transient)
+            },
+            |e, wait_time: Duration| {
+                tracing::warn!(
+                    error = ?e,
+                    "Bitcoin wallet health check failed. We will retry in {} seconds",
+                    wait_time.as_secs()
+                )
+            },
+        )
+        .await
+    }
 
     /// Returns the unlocked Monero balance from the wallet
     pub async fn unlocked_monero_balance_with_timeout(

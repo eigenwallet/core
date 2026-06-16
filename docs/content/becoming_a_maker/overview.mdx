@@ -233,7 +233,7 @@ This includes:
 These addresses are specified using the multiaddr format ([link](https://multiformats.io/multiaddr)).
 A multiaddr combines all necessary information into a single string.
 
-For example, the first rendezvous point's multiaddr specifies the rendezvous point at the DNS address `discover.unstoppableswap.net`, on port `8888` with the peer ID `12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE`.
+For example, the first rendezvous point's multiaddr specifies the rendezvous point at the DNS address `discovery.eigenwallet.org`, on port `443` (websocket over TLS) with the peer ID `12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw`.
 </Callout>
 
 ```toml filename="config_mainnet.toml"
@@ -245,12 +245,10 @@ listen = ["/ip4/0.0.0.0/tcp/9939"]
 
 # the rendezvous points the asb will connect to (address, port and peer id)
 rendezvous_point = [
-    "/dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
-    "/dns4/discover2.unstoppableswap.net/tcp/8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw",
-    "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU",
-    "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT",
-    "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp",
-    "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa"
+    "/dns4/discovery.eigenwallet.org/tcp/443/wss/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw",
+    "/dns4/rendezvous.atomicworld.fun/tcp/443/wss/p2p/12D3KooWMc39w7bZz4RLmJKuUiK9YkbKoEHACZWcL71XNns5dPuD",
+    "/dns4/dht.stealthswap.ninja/tcp/443/wss/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov",
+    "/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE"
 ]
 
 # the external addresses the asb will advertise to the rendezvous points (only address)
@@ -264,6 +262,7 @@ external_addresses = [
 | `listen` | The ip and port the asb will listen on. The IP address `0.0.0.0` means the asb will listen on all IP addresses. Remember that the asb service is running in a docker container. Make sure the port is the same as in the `.env` file. | This multiaddr should only include an IP address and a port number. |
 | `rendezvous_point` | A list of rendezvous points the asb will connect to. | These multiaddrs should include an address (e.g. IPv4, IPv6, DNS), a port number and a peer ID. |
 | `external_addresses` | A list of external addresses the asb will advertise to the rendezvous points. If you registered a domain, you can add it here. If you enabled the onion service, it will be included automatically, so you don't need to specify the onion address. | These multiaddrs should only include an address (e.g. IPv4, IPv6, DNS). |
+| `prometheus_port` | Optional. When set, the asb serves libp2p Prometheus metrics over HTTP at `/metrics` on this port. When omitted, the metrics endpoint is disabled. | A port number. |
 
 
 Et, voilà!
@@ -305,14 +304,10 @@ dir = "/asb-data/"
 [network]
 listen = ["/ip4/0.0.0.0/tcp/9939"]
 rendezvous_point = [
-    "/dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
-    "/dns4/discover2.unstoppableswap.net/tcp/8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw",
-    "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU",
-    "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT",
-    "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp",
-    "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa",
-    "/dns4/aswap.click/tcp/8888/p2p/12D3KooWQzW52mdsLHTMu1EPiz3APumG6vGwpCuyy494MAQoEa5X",
-    "/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk"
+    "/dns4/discovery.eigenwallet.org/tcp/443/wss/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw",
+    "/dns4/rendezvous.atomicworld.fun/tcp/443/wss/p2p/12D3KooWMc39w7bZz4RLmJKuUiK9YkbKoEHACZWcL71XNns5dPuD",
+    "/dns4/dht.stealthswap.ninja/tcp/443/wss/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov",
+    "/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE"
 ]
 external_addresses = []
 ```

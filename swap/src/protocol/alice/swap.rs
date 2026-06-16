@@ -753,6 +753,17 @@ where
             retry(
                 "Publishing Monero refund transaction",
                 || async {
+                    let is_present = monero_wallet
+                        .is_transaction_present(&xmr_refund_tx_hash)
+                        .await
+                        .context("Failed to check whether Monero refund transaction is already present on chain")
+                        .map_err(backoff::Error::transient)?;
+
+                    if is_present {
+                        tracing::info!(%swap_id, %xmr_refund_tx_hash, "Monero refund transaction is already present on chain, skipping publish");
+                        return Ok(());
+                    }
+
                     monero_wallet
                         .rpc_client()
                         .await
@@ -1023,7 +1034,13 @@ impl XmrRefundable for State3 {
         tracing::debug!(%swap_id, %main_address, "Sweeping lock output to redeem address");
 
         let tx = monero_wallet
-            .construct_sweep_to_single(&transfer_proof.tx_hash(), spend_key, view_key, main_address)
+            .construct_sweep_to_single(
+                &transfer_proof.tx_hash(),
+                spend_key,
+                view_key,
+                main_address,
+                None,
+            )
             .await
             .context("Failed to construct Monero refund transaction")?;
 

@@ -105,6 +105,7 @@ function MoneroRecoveryKeysDialog({
 
 export function SwapMoneroRecoveryButton({
   swap,
+  children,
   ...props
 }: { swap: GetSwapInfoResponseExt } & ButtonProps) {
   const isRecoverable =
@@ -127,7 +128,7 @@ export function SwapMoneroRecoveryButton({
         }}
         {...props}
       >
-        Display Monero Recovery Keys
+        {children}
       </PromiseInvokeButton>
       <MoneroRecoveryKeysDialog {...swap} />
     </>

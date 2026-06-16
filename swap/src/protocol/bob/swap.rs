@@ -812,6 +812,17 @@ async fn next_state(
             retry(
                 "Publishing Monero redeem transaction",
                 || async {
+                    let is_present = monero_wallet
+                        .is_transaction_present(&xmr_redeem_tx_hash)
+                        .await
+                        .context("Failed to check whether Monero redeem transaction is already present on chain")
+                        .map_err(backoff::Error::transient)?;
+
+                    if is_present {
+                        tracing::info!(%swap_id, %xmr_redeem_tx_hash, "Monero redeem transaction is already present on chain, skipping publish");
+                        return Ok(());
+                    }
+
                     monero_wallet
                         .rpc_client()
                         .await

@@ -7,8 +7,8 @@ import { isTestnet } from "store/config";
 // const MIN_ASB_VERSION = "2.0.0-beta.1"; // First version with support for tx_early_refund
 // const MIN_ASB_VERSION = "3.2.0-rc.1";
 // const VERSION_FLOOR = "4.0.0"; // First version with partial refund path - completely incompatible
-const VERSION_FLOOR_SOFT = "4.6.6"; // First version where both parties reject swaps with mismatched fee estimates
-const VERSION_FLOOR_HARD = "4.6.6";
+const VERSION_FLOOR_SOFT = "4.8.0"; // First version where both parties reject swaps with mismatched fee estimates
+const VERSION_FLOOR_HARD = "4.8.0";
 
 export function isMakerOnCorrectNetwork(
   provider: ExtendedMakerStatus,
@@ -17,8 +17,8 @@ export function isMakerOnCorrectNetwork(
 }
 
 /** Check whether a maker version is old and might not support newer features. */
-export function isMakerVersionOld(version: string | undefined): boolean {
-  if (version === undefined) return false;
+export function isMakerVersionOld(version: string | null | undefined): boolean {
+  if (version == null) return false;
   // This checks if the version is less than the minimum version
   // we use .compare(...) instead of .satisfies(...) because satisfies(...)
   // does not work with pre-release versions
@@ -26,16 +26,16 @@ export function isMakerVersionOld(version: string | undefined): boolean {
 }
 
 /** Check whether a maker version is too old and is known to be completely incompatile. */
-export function isMakerVersionTooOld(version: string | undefined): boolean {
-  if (version === undefined) return false;
+export function isMakerVersionTooOld(version: string | null | undefined): boolean {
+  if (version == null) return false;
   return semver.compare(version, VERSION_FLOOR_HARD) === -1;
 }
 
 /** Check whether a maker is running at or above the GUI's bundled version. */
 export function isMakerVersionLatest(
-  version: string | undefined,
-  guiVersion: string | undefined,
+  version: string | null | undefined,
+  guiVersion: string | null | undefined,
 ): boolean {
-  if (version === undefined || guiVersion === undefined) return false;
+  if (version == null || guiVersion == null) return false;
   return semver.compare(version, guiVersion) >= 0;
 }
