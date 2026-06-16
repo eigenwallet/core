@@ -756,6 +756,7 @@ where
                     monero_wallet
                         .rpc_client()
                         .await
+                        .map_err(backoff::Error::transient)?
                         .publish_transaction(&xmr_refund_tx)
                         .await
                         .context("Failed to publish Monero refund transaction")

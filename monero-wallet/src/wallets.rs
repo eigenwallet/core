@@ -33,8 +33,8 @@ pub struct Wallets {
     wallet_dir: PathBuf,
     /// The network we're on.
     network: Network,
-    /// The monero node we connect to.
-    daemon: Arc<RwLock<(Daemon, MoneroDaemon<SimpleRequestTransport>)>>,
+    /// The monero node we connect to. The RPC client is connected lazily.
+    daemon: Arc<RwLock<(Daemon, Option<MoneroDaemon<SimpleRequestTransport>>)>>,
     /// Keep the main wallet open and synced.
     main_wallet: Arc<Wallet>,
     /// Since Network::Regtest isn't a thing we have to use an extra flag.
@@ -101,10 +101,7 @@ impl Wallets {
                 .context("Failed to install tauri wallet listener")?;
         }
 
-        let rpc_client = SimpleRequestTransport::new(daemon.to_url_string())
-            .await
-            .context("Failed to initialize rpc client")?;
-        let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
+        let daemon = Arc::new(RwLock::new((daemon, None)));
 
         let wallets = Self {
             wallet_dir,
@@ -163,8 +160,7 @@ impl Wallets {
                 .await?;
         }
 
-        let rpc_client = SimpleRequestTransport::new(daemon.to_url_string()).await?;
-        let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
+        let daemon = Arc::new(RwLock::new((daemon, None)));
 
         let wallets = Self {
             wallet_dir,
@@ -184,11 +180,8 @@ impl Wallets {
     }
 
     pub async fn change_monero_node(&self, new_daemon: Daemon) -> Result<()> {
-        {
-            let mut daemon = self.daemon.write().await;
-            let rpc_client = SimpleRequestTransport::new(new_daemon.to_url_string()).await?;
-            *daemon = (new_daemon.clone(), rpc_client);
-        }
+        // Reconnect lazily on next use.
+        *self.daemon.write().await = (new_daemon.clone(), None);
 
         self.main_wallet
             .call(move |wallet| wallet.set_daemon(&new_daemon))
@@ -286,15 +279,38 @@ impl Wallets {
 }
 
 impl Wallets {
-    /// Get a clone of the RPC client for direct daemon communication.
-    pub async fn rpc_client(&self) -> MoneroDaemon<SimpleRequestTransport> {
-        let (_daemon, rpc_client) = self.daemon.read().await.clone();
-        rpc_client
+    /// Get the RPC client for direct daemon communication, connecting lazily on
+    /// first use (and after a node change) so an unreachable node never blocks init.
+    pub async fn rpc_client(&self) -> Result<MoneroDaemon<SimpleRequestTransport>> {
+        if let Some(rpc_client) = &self.daemon.read().await.1 {
+            return Ok(rpc_client.clone());
+        }
+
+        let mut guard = self.daemon.write().await;
+        if let Some(rpc_client) = &guard.1 {
+            return Ok(rpc_client.clone());
+        }
+
+        let rpc_client = SimpleRequestTransport::new(guard.0.to_url_string())
+            .await
+            .context("Failed to connect to Monero daemon")?;
+        guard.1 = Some(rpc_client.clone());
+
+        Ok(rpc_client)
+    }
+
+    /// Check that the daemon RPC is reachable, connecting if necessary.
+    pub async fn rpc_health_check(&self) -> Result<()> {
+        self.direct_rpc_block_height()
+            .await
+            .context("Monero daemon RPC health check failed")?;
+
+        Ok(())
     }
 
     pub async fn direct_rpc_block_height(&self) -> Result<u64> {
         use monero_daemon_rpc::prelude::ProvidesBlockchainMeta;
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
 
         let height = rpc_client
             .latest_block_number()
@@ -322,7 +338,7 @@ impl Wallets {
         view_key: PrivateViewKey,
         destinations: Vec<(monero_address::MoneroAddress, f64)>,
     ) -> Result<Transaction<NotPruned>> {
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
         let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
 
         let spend_scalar = Zeroizing::new(spend_key.scalar);
@@ -347,7 +363,7 @@ impl Wallets {
         view_key: PrivateViewKey,
         destination: monero_address::MoneroAddress,
     ) -> Result<Transaction<NotPruned>> {
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
         let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
 
         let spend_scalar = Zeroizing::new(spend_key.scalar);
@@ -375,7 +391,7 @@ impl Wallets {
         private_view_key: PrivateViewKey,
         expected_amount: Amount,
     ) -> Result<bool> {
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
 
         let tx_id = tx_hash_to_bytes(tx_hash)?;
         let public_spend_key = public_spend_key.decompress();
@@ -410,7 +426,7 @@ impl Wallets {
     ) -> Result<()> {
         use monero_wallet_ng::confirmations;
 
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
         let tx_id = tx_hash_to_bytes(tx_hash)?;
         let subscription = confirmations::subscribe(rpc_client, tx_id, POLL_INTERVAL);
 
@@ -456,7 +472,7 @@ impl Wallets {
     ) -> Result<TxHash> {
         use monero_wallet_ng::scanner;
 
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
 
         let public_spend_key = public_spend_key.decompress();
         let private_view_key = Zeroizing::new(private_view_key.0.scalar);

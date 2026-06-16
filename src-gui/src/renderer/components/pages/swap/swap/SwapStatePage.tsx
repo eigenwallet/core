@@ -48,6 +48,10 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
   switch (type) {
     case "Resuming":
       return <CircularProgressWithSubtitle description="Resuming swap..." />;
+    case "CheckingMoneroNodeConnectivity":
+      return (
+        <CircularProgressWithSubtitle description="Checking Monero node connectivity..." />
+      );
     case "ReceivedQuote":
       return <ReceivedQuotePage />;
     case "WaitingForBtcDeposit":

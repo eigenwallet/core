@@ -663,6 +663,7 @@ where
         let db = self.db.clone();
         let monero_wallet = self.monero_wallet.clone();
         let monero_wallet_for_proof = self.monero_wallet.clone();
+        let monero_wallet_for_health = self.monero_wallet.clone();
         let peer_id = self.peer_id();
 
         async move {
@@ -701,17 +702,23 @@ where
                     .await
             };
 
-            let result = make_quote(
-                min_buy,
-                max_buy,
-                rate,
-                get_unlocked_balance,
-                get_reserved_items,
-                get_reserve_proof,
-                developer_tip,
-                refund_policy,
-            )
-            .await;
+            // Quote zero when the daemon RPC is unreachable.
+            let result = match monero_wallet_for_health.rpc_health_check().await {
+                Ok(()) => {
+                    make_quote(
+                        min_buy,
+                        max_buy,
+                        rate,
+                        get_unlocked_balance,
+                        get_reserved_items,
+                        get_reserve_proof,
+                        developer_tip,
+                        refund_policy,
+                    )
+                    .await
+                }
+                Err(err) => Err(Arc::new(err.context("Monero daemon RPC health check failed"))),
+            };
 
             // Insert the computed quote into the cache
             // Need to clone it as insert takes ownership
@@ -1291,6 +1298,12 @@ async fn capture_wallet_snapshot(
     transfer_amount: bitcoin::Amount,
 ) -> Result<WalletSnapshot> {
     let start_time = Instant::now();
+
+    // Don't back a swap setup against an unreachable daemon.
+    monero_wallet
+        .rpc_health_check()
+        .await
+        .context("Monero daemon RPC health check failed while capturing wallet snapshot")?;
 
     let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await?;
     let total_balance = monero_wallet.main_wallet().await.total_balance().await?;

@@ -1098,78 +1098,100 @@ pub async fn buy_xmr(
     // because we need to be able to cancel the determine_btc_to_swap(..)
     context.swap_lock.acquire_swap_lock(swap_id).await?;
 
-    let select_offer_result = tokio::select! {
-        result = determine_btc_to_swap(
-            quotes_rx,
-            bitcoin_wallet.new_address(),
-            {
-                let wallet = Arc::clone(&bitcoin_wallet_for_closures);
-                move || {
-                    let w = wallet.clone();
-                    async move { w.balance().await }
-                }
-            },
-            {
-                let wallet = Arc::clone(&bitcoin_wallet_for_closures);
-                move || {
-                    let w = wallet.clone();
-                    async move { w.max_giveable(address_len).await }
-                }
-            },
-            {
-                let wallet = Arc::clone(&bitcoin_wallet_for_closures);
-                move || {
-                    let w = wallet.clone();
-                    async move { w.sync().await }
-                }
-            },
-            tauri_handle_for_determine,
-            swap_id,
-            |quote_with_address| {
-                let tauri_handle_clone = tauri_handle_for_selection.clone();
-                Box::new(async move {
-                    let details = SelectMakerDetails {
-                        swap_id,
-                        btc_amount_to_swap: quote_with_address.quote.max_quantity,
-                        maker: quote_with_address,
-                    };
+    // Everything between acquiring the swap lock and spawning the swap task is
+    // fallible. Run it in one block and release the lock on any failure, so an
+    // error never leaves the lock held and blocking future swaps. `Ok(None)`
+    // means a force-suspension already released the lock.
+    let prepared = async {
+        let select_offer_result = tokio::select! {
+            result = determine_btc_to_swap(
+                quotes_rx,
+                bitcoin_wallet.new_address(),
+                {
+                    let wallet = Arc::clone(&bitcoin_wallet_for_closures);
+                    move || {
+                        let w = wallet.clone();
+                        async move { w.balance().await }
+                    }
+                },
+                {
+                    let wallet = Arc::clone(&bitcoin_wallet_for_closures);
+                    move || {
+                        let w = wallet.clone();
+                        async move { w.max_giveable(address_len).await }
+                    }
+                },
+                {
+                    let wallet = Arc::clone(&bitcoin_wallet_for_closures);
+                    move || {
+                        let w = wallet.clone();
+                        async move { w.sync().await }
+                    }
+                },
+                tauri_handle_for_determine,
+                swap_id,
+                |quote_with_address| {
+                    let tauri_handle_clone = tauri_handle_for_selection.clone();
+                    Box::new(async move {
+                        let details = SelectMakerDetails {
+                            swap_id,
+                            btc_amount_to_swap: quote_with_address.quote.max_quantity,
+                            maker: quote_with_address,
+                        };
 
-                    tauri_handle_clone.request_maker_selection(details, 300).await
-                }) as Box<dyn Future<Output = Result<bool>> + Send>
-            },
-        ) => {
-            Some(result?)
-        }
-        _ = context.swap_lock.listen_for_swap_force_suspension() => {
-            context.swap_lock.release_swap_lock().await.expect("Shutdown signal received but failed to release swap lock. The swap process has been terminated but the swap lock is still active.");
-
-            if let Some(handle) = tauri_handle_for_suspension {
-                handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
+                        tauri_handle_clone.request_maker_selection(details, 300).await
+                    }) as Box<dyn Future<Output = Result<bool>> + Send>
+                },
+            ) => {
+                Some(result?)
             }
+            _ = context.swap_lock.listen_for_swap_force_suspension() => {
+                context.swap_lock.release_swap_lock().await.expect("Shutdown signal received but failed to release swap lock. The swap process has been terminated but the swap lock is still active.");
 
-            None
-        },
+                if let Some(handle) = tauri_handle_for_suspension {
+                    handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
+                }
+
+                None
+            },
+        };
+
+        let Some((seller_multiaddr, seller_peer_id, quote, tx_lock_amount, tx_lock_fee)) =
+            select_offer_result
+        else {
+            return Ok(None);
+        };
+
+        // Insert the peer_id into the database
+        db.insert_peer_id(swap_id, seller_peer_id).await?;
+
+        db.insert_address(seller_peer_id, seller_multiaddr.clone())
+            .await?;
+
+        db.insert_monero_address_pool(swap_id, monero_receive_pool.clone())
+            .await?;
+
+        // Add the seller's address to the swarm
+        event_loop_handle
+            .queue_peer_address(seller_peer_id, seller_multiaddr.clone())
+            .await?;
+
+        Ok::<_, anyhow::Error>(Some((seller_peer_id, quote, tx_lock_amount, tx_lock_fee)))
+    }
+    .await;
+
+    let (seller_peer_id, quote, tx_lock_amount, tx_lock_fee) = match prepared {
+        Ok(Some(data)) => data,
+        Ok(None) => return Ok(()),
+        Err(err) => {
+            context
+                .swap_lock
+                .release_swap_lock()
+                .await
+                .expect("Could not release swap lock");
+            return Err(err);
+        }
     };
-
-    let Some((seller_multiaddr, seller_peer_id, quote, tx_lock_amount, tx_lock_fee)) =
-        select_offer_result
-    else {
-        return Ok(());
-    };
-
-    // Insert the peer_id into the database
-    db.insert_peer_id(swap_id, seller_peer_id).await?;
-
-    db.insert_address(seller_peer_id, seller_multiaddr.clone())
-        .await?;
-
-    db.insert_monero_address_pool(swap_id, monero_receive_pool.clone())
-        .await?;
-
-    // Add the seller's address to the swarm
-    event_loop_handle
-        .queue_peer_address(seller_peer_id, seller_multiaddr.clone())
-        .await?;
 
     tauri_handle.emit_swap_progress_event(
         swap_id,
