@@ -16,7 +16,7 @@ pub trait MoneroTauriHandle: Send + Sync {
     fn sync_progress(&self, current_block: u64, target_block: u64, progress_percentage: f32);
 }
 
-pub(crate) struct TauriWalletListener {
+pub struct TauriWalletListener {
     balance_throttle: Throttle<()>,
     history_throttle: Throttle<()>,
     sync_throttle: Throttle<()>,
