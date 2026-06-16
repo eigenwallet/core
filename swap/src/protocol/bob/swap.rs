@@ -38,10 +38,7 @@ pub fn has_already_processed_transfer_proof(state: &BobState) -> bool {
     matches!(
         state,
         |BobState::XmrLockTransactionSeen { .. }| BobState::XmrLocked(..)
-            | BobState::ConstructingHermesTx { .. }
-            | BobState::HermesTxConstructed { .. }
-            | BobState::HermesTxPublished { .. }
-            | BobState::HermesTxConfirmed { .. }
+            | BobState::EncSigReadyToBeSent { .. }
             | BobState::EncSigSent { .. }
             | BobState::BtcRedeemed(..)
             | BobState::XmrRedeemConstructed { .. }
@@ -656,9 +653,10 @@ async fn next_state(
             }
 
             if state.hermes_funding_sufficient() {
-                return Ok(BobState::ConstructingHermesTx {
+                return Ok(BobState::EncSigReadyToBeSent {
                     state,
-                    sent_enc_sig_over_p2p: false,
+                    hermes: HermesProgress::Constructing,
+                    p2p_sent: false,
                 });
             }
 
@@ -697,55 +695,20 @@ async fn next_state(
                 },
             }
         }
-        BobState::ConstructingHermesTx {
+        BobState::EncSigReadyToBeSent {
             state,
-            sent_enc_sig_over_p2p,
+            hermes,
+            p2p_sent,
         } => {
-            let (tx_lock_status, tx_early_refund_status): (
-                bitcoin_wallet::Subscription,
-                bitcoin_wallet::Subscription,
-            ) = tokio::join!(
-                bitcoin_wallet.subscribe_to(Box::new(state.tx_lock.clone())),
-                bitcoin_wallet.subscribe_to(Box::new(state.construct_tx_early_refund()))
-            );
-
-            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::InflightEncSig);
-
-            select! {
-                hermes_tx = construct_hermes_tx(&monero_wallet, &state, &env_config) => {
-                    BobState::HermesTxConstructed {
-                        state: state.clone(),
-                        sent_enc_sig_over_p2p,
-                        hermes_tx,
-                    }
-                },
-                _ = send_encrypted_signature_p2p_if_needed(
-                    event_loop_handle,
-                    &state,
-                    sent_enc_sig_over_p2p,
-                ) => {
-                    BobState::ConstructingHermesTx {
-                        state: state.clone(),
-                        sent_enc_sig_over_p2p: true,
-                    }
-                },
-                state5 = state.infallible_wait_for_btc_redeem(&*bitcoin_wallet) => {
-                    BobState::BtcRedeemed(state5)
-                },
-                result = tx_lock_status.wait_until_confirmed_with(state.cancel_timelock) => {
-                    result?;
-                    BobState::CancelTimelockExpired(state.clone().cancel())
-                }
-                _ = tx_early_refund_status.wait_until_seen() => {
-                    BobState::BtcEarlyRefundPublished(state.clone().cancel())
-                },
+            // Both orthogonal channels must complete: Hermes confirmed and
+            // sent over p2p.
+            if let (HermesProgress::Confirmed(hermes_tx), true) = (&hermes, p2p_sent) {
+                return Ok(BobState::EncSigSent {
+                    state,
+                    hermes_tx: Some(hermes_tx.clone()),
+                });
             }
-        }
-        BobState::HermesTxConstructed {
-            state,
-            sent_enc_sig_over_p2p,
-            hermes_tx,
-        } => {
+
             let (tx_lock_status, tx_early_refund_status): (
                 bitcoin_wallet::Subscription,
                 bitcoin_wallet::Subscription,
@@ -757,124 +720,23 @@ async fn next_state(
             event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::InflightEncSig);
 
             select! {
-                result = publish_hermes_tx(&monero_wallet, &hermes_tx) => {
-                    result?;
-                    BobState::HermesTxPublished {
+                // Region A: advance the on-chain Hermes channel.
+                next_hermes = advance_hermes(&monero_wallet, &state, &env_config, &hermes) => {
+                    BobState::EncSigReadyToBeSent {
                         state: state.clone(),
-                        sent_enc_sig_over_p2p,
-                        hermes_tx: hermes_tx.clone(),
+                        hermes: next_hermes?,
+                        p2p_sent,
                     }
                 },
-                _ = send_encrypted_signature_p2p_if_needed(
-                    event_loop_handle,
-                    &state,
-                    sent_enc_sig_over_p2p,
-                ) => {
-                    BobState::HermesTxConstructed {
+                // Region B: send over p2p (exactly once).
+                _ = send_encrypted_signature_p2p_if_needed(event_loop_handle, &state, p2p_sent) => {
+                    BobState::EncSigReadyToBeSent {
                         state: state.clone(),
-                        sent_enc_sig_over_p2p: true,
-                        hermes_tx: hermes_tx.clone(),
+                        hermes: hermes.clone(),
+                        p2p_sent: true,
                     }
                 },
-                state5 = state.infallible_wait_for_btc_redeem(&*bitcoin_wallet) => {
-                    BobState::BtcRedeemed(state5)
-                },
-                result = tx_lock_status.wait_until_confirmed_with(state.cancel_timelock) => {
-                    result?;
-                    BobState::CancelTimelockExpired(state.clone().cancel())
-                }
-                _ = tx_early_refund_status.wait_until_seen() => {
-                    BobState::BtcEarlyRefundPublished(state.clone().cancel())
-                },
-            }
-        }
-        BobState::HermesTxPublished {
-            state,
-            sent_enc_sig_over_p2p,
-            hermes_tx,
-        } => {
-            let (tx_lock_status, tx_early_refund_status): (
-                bitcoin_wallet::Subscription,
-                bitcoin_wallet::Subscription,
-            ) = tokio::join!(
-                bitcoin_wallet.subscribe_to(Box::new(state.tx_lock.clone())),
-                bitcoin_wallet.subscribe_to(Box::new(state.construct_tx_early_refund()))
-            );
-
-            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::InflightEncSig);
-
-            select! {
-                result = wait_for_hermes_tx_confirmation(
-                    &monero_wallet,
-                    &hermes_tx,
-                ) => {
-                    result?;
-                    BobState::HermesTxConfirmed {
-                        state: state.clone(),
-                        sent_enc_sig_over_p2p,
-                        hermes_tx: hermes_tx.clone(),
-                    }
-                },
-                _ = send_encrypted_signature_p2p_if_needed(
-                    event_loop_handle,
-                    &state,
-                    sent_enc_sig_over_p2p,
-                ) => {
-                    BobState::HermesTxPublished {
-                        state: state.clone(),
-                        sent_enc_sig_over_p2p: true,
-                        hermes_tx: hermes_tx.clone(),
-                    }
-                },
-                state5 = state.infallible_wait_for_btc_redeem(&*bitcoin_wallet) => {
-                    BobState::BtcRedeemed(state5)
-                },
-                result = tx_lock_status.wait_until_confirmed_with(state.cancel_timelock) => {
-                    result?;
-                    BobState::CancelTimelockExpired(state.clone().cancel())
-                }
-                _ = tx_early_refund_status.wait_until_seen() => {
-                    BobState::BtcEarlyRefundPublished(state.clone().cancel())
-                },
-            }
-        }
-        BobState::HermesTxConfirmed {
-            state,
-            sent_enc_sig_over_p2p,
-            hermes_tx,
-        } => {
-            let (tx_lock_status, tx_early_refund_status): (
-                bitcoin_wallet::Subscription,
-                bitcoin_wallet::Subscription,
-            ) = tokio::join!(
-                bitcoin_wallet.subscribe_to(Box::new(state.tx_lock.clone())),
-                bitcoin_wallet.subscribe_to(Box::new(state.construct_tx_early_refund()))
-            );
-
-            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::InflightEncSig);
-
-            select! {
-                _ = async {
-                    if !sent_enc_sig_over_p2p {
-                        std::future::pending::<()>().await;
-                    }
-                } => {
-                    BobState::EncSigSent {
-                        state: state.clone(),
-                        hermes_tx: Some(hermes_tx.clone()),
-                    }
-                },
-                _ = send_encrypted_signature_p2p_if_needed(
-                    event_loop_handle,
-                    &state,
-                    sent_enc_sig_over_p2p,
-                ) => {
-                    BobState::HermesTxConfirmed {
-                        state: state.clone(),
-                        sent_enc_sig_over_p2p: true,
-                        hermes_tx: hermes_tx.clone(),
-                    }
-                },
+                // Escape transitions shared by every configuration of the AND-state.
                 state5 = state.infallible_wait_for_btc_redeem(&*bitcoin_wallet) => {
                     BobState::BtcRedeemed(state5)
                 },
@@ -2011,3 +1873,29 @@ async fn send_encrypted_signature_p2p_if_needed(
     tracing::info!("Sent encrypted signature over p2p");
 }
 
+/// Advance the on-chain Hermes channel by one step:
+/// `Constructing` → `Constructed` → `Published` → `Confirmed`. Once `Confirmed`
+/// nothing remains, so this never resolves; the `EncSigReadyToBeSent` arm exits
+/// via its join check once p2p has also sent.
+async fn advance_hermes(
+    monero_wallet: &monero::Wallets,
+    state: &State4,
+    env_config: &env::Config,
+    hermes: &HermesProgress,
+) -> Result<HermesProgress> {
+    match hermes {
+        HermesProgress::Constructing => {
+            let hermes_tx = construct_hermes_tx(monero_wallet, state, env_config).await;
+            Ok(HermesProgress::Constructed(hermes_tx))
+        }
+        HermesProgress::Constructed(hermes_tx) => {
+            publish_hermes_tx(monero_wallet, hermes_tx).await?;
+            Ok(HermesProgress::Published(hermes_tx.clone()))
+        }
+        HermesProgress::Published(hermes_tx) => {
+            wait_for_hermes_tx_confirmation(monero_wallet, hermes_tx).await?;
+            Ok(HermesProgress::Confirmed(hermes_tx.clone()))
+        }
+        HermesProgress::Confirmed(_) => std::future::pending::<Result<HermesProgress>>().await,
+    }
+}

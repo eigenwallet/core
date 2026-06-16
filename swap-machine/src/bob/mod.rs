@@ -28,6 +28,33 @@ use uuid::Uuid;
 /// transaction's fee, and no Hermes transaction is published.
 pub const HERMES_FUNDING_LOWER_BOUND_PICONERO: u64 = 50_000_000;
 
+/// Progress of the on-chain Hermes channel: construct, publish, then confirm
+/// the transaction. Orthogonal to the p2p channel; see
+/// [`BobState::EncSigReadyToBeSent`].
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub enum HermesProgress {
+    /// Building the transaction.
+    Constructing,
+    /// Signed, not yet published.
+    Constructed(#[serde(with = "swap_serde::monero::transaction")] monero_oxide_wallet::transaction::Transaction),
+    /// Broadcast, not yet confirmed.
+    Published(#[serde(with = "swap_serde::monero::transaction")] monero_oxide_wallet::transaction::Transaction),
+    /// Confirmed on-chain.
+    Confirmed(#[serde(with = "swap_serde::monero::transaction")] monero_oxide_wallet::transaction::Transaction),
+}
+
+impl HermesProgress {
+    /// The constructed Hermes transaction, once it exists.
+    pub fn tx(&self) -> Option<&monero_oxide_wallet::transaction::Transaction> {
+        match self {
+            HermesProgress::Constructing => None,
+            HermesProgress::Constructed(tx)
+            | HermesProgress::Published(tx)
+            | HermesProgress::Confirmed(tx) => Some(tx),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum BobState {
     Started {
@@ -72,32 +99,16 @@ pub enum BobState {
     /// Bob has verified that the correct amount of Monero has been locked and fully confirmed.
     /// It is safe to transmit the encrypted signature to Alice.
     XmrLocked(State4),
-    /// We are constructing the Hermes transaction which transmits the
-    /// encrypted signature to Alice on-chain.
-    ConstructingHermesTx {
+    /// The encrypted signature is ready; we deliver it over two orthogonal
+    /// channels concurrently: the on-chain Hermes channel (`hermes`) and the
+    /// p2p channel (`p2p_sent`). We leave for `EncSigSent` once both complete.
+    EncSigReadyToBeSent {
         state: State4,
-        sent_enc_sig_over_p2p: bool,
-    },
-    /// We have constructed the Hermes transaction but have not yet
-    /// published it.
-    HermesTxConstructed {
-        state: State4,
-        sent_enc_sig_over_p2p: bool,
-        /// The signed transaction to publish, serialized as wire-format hex.
-        #[serde(with = "swap_serde::monero::transaction")]
-        hermes_tx: monero_oxide_wallet::transaction::Transaction,
-    },
-    HermesTxPublished {
-        state: State4,
-        sent_enc_sig_over_p2p: bool,
-        #[serde(with = "swap_serde::monero::transaction")]
-        hermes_tx: monero_oxide_wallet::transaction::Transaction,
-    },
-    HermesTxConfirmed {
-        state: State4,
-        sent_enc_sig_over_p2p: bool,
-        #[serde(with = "swap_serde::monero::transaction")]
-        hermes_tx: monero_oxide_wallet::transaction::Transaction,
+        /// Progress of the on-chain Hermes channel.
+        hermes: HermesProgress,
+        /// Whether we have already sent it over p2p.
+        #[serde(default)]
+        p2p_sent: bool,
     },
     EncSigSent {
         state: State4,
@@ -222,12 +233,7 @@ impl fmt::Display for BobState {
             }
             BobState::XmrLockTransactionSeen { .. } => write!(f, "xmr lock transaction seen"),
             BobState::XmrLocked(..) => write!(f, "xmr is locked"),
-            BobState::ConstructingHermesTx { .. } => {
-                write!(f, "hermes tx is being constructed")
-            }
-            BobState::HermesTxConstructed { .. } => write!(f, "hermes tx is constructed"),
-            BobState::HermesTxPublished { .. } => write!(f, "hermes tx is published"),
-            BobState::HermesTxConfirmed { .. } => write!(f, "hermes tx is confirmed"),
+            BobState::EncSigReadyToBeSent { .. } => write!(f, "encrypted signature ready to be sent"),
             BobState::EncSigSent { .. } => write!(f, "encrypted signature is sent"),
             BobState::BtcRedeemed(..) => write!(f, "btc is redeemed"),
             BobState::WaitingForCancelTimelockExpiration { .. } => {
@@ -299,10 +305,7 @@ impl BobState {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
             BobState::XmrLocked(state)
-            | BobState::ConstructingHermesTx { state, .. }
-            | BobState::HermesTxConstructed { state, .. }
-            | BobState::HermesTxPublished { state, .. }
-            | BobState::HermesTxConfirmed { state, .. }
+            | BobState::EncSigReadyToBeSent { state, .. }
             | BobState::EncSigSent { state, .. } => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }

@@ -39,27 +39,11 @@ pub enum Bob {
     XmrLocked {
         state4: bob::State4,
     },
-    ConstructingHermesTx {
+    EncSigReadyToBeSent {
         state4: bob::State4,
-        sent_enc_sig_over_p2p: bool,
-    },
-    HermesTxConstructed {
-        state4: bob::State4,
-        sent_enc_sig_over_p2p: bool,
-        #[serde(with = "swap_serde::monero::transaction")]
-        hermes_tx: monero_oxide_wallet::transaction::Transaction,
-    },
-    HermesTxPublished {
-        state4: bob::State4,
-        sent_enc_sig_over_p2p: bool,
-        #[serde(with = "swap_serde::monero::transaction")]
-        hermes_tx: monero_oxide_wallet::transaction::Transaction,
-    },
-    HermesTxConfirmed {
-        state4: bob::State4,
-        sent_enc_sig_over_p2p: bool,
-        #[serde(with = "swap_serde::monero::transaction")]
-        hermes_tx: monero_oxide_wallet::transaction::Transaction,
+        hermes: bob::HermesProgress,
+        #[serde(default)]
+        p2p_sent: bool,
     },
     EncSigSent {
         state4: bob::State4,
@@ -161,39 +145,14 @@ impl From<BobState> for Bob {
                 hermes_amount,
             },
             BobState::XmrLocked(state4) => Bob::XmrLocked { state4 },
-            BobState::ConstructingHermesTx {
+            BobState::EncSigReadyToBeSent {
                 state,
-                sent_enc_sig_over_p2p,
-            } => Bob::ConstructingHermesTx {
+                hermes,
+                p2p_sent,
+            } => Bob::EncSigReadyToBeSent {
                 state4: state,
-                sent_enc_sig_over_p2p,
-            },
-            BobState::HermesTxConstructed {
-                state,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
-            } => Bob::HermesTxConstructed {
-                state4: state,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
-            },
-            BobState::HermesTxPublished {
-                state,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
-            } => Bob::HermesTxPublished {
-                state4: state,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
-            },
-            BobState::HermesTxConfirmed {
-                state,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
-            } => Bob::HermesTxConfirmed {
-                state4: state,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
+                hermes,
+                p2p_sent,
             },
             BobState::EncSigSent { state, hermes_tx } => Bob::EncSigSent {
                 state4: state,
@@ -305,39 +264,14 @@ impl From<Bob> for BobState {
                 hermes_amount,
             },
             Bob::XmrLocked { state4 } => BobState::XmrLocked(state4),
-            Bob::ConstructingHermesTx {
+            Bob::EncSigReadyToBeSent {
                 state4,
-                sent_enc_sig_over_p2p,
-            } => BobState::ConstructingHermesTx {
+                hermes,
+                p2p_sent,
+            } => BobState::EncSigReadyToBeSent {
                 state: state4,
-                sent_enc_sig_over_p2p,
-            },
-            Bob::HermesTxConstructed {
-                state4,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
-            } => BobState::HermesTxConstructed {
-                state: state4,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
-            },
-            Bob::HermesTxPublished {
-                state4,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
-            } => BobState::HermesTxPublished {
-                state: state4,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
-            },
-            Bob::HermesTxConfirmed {
-                state4,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
-            } => BobState::HermesTxConfirmed {
-                state: state4,
-                sent_enc_sig_over_p2p,
-                hermes_tx,
+                hermes,
+                p2p_sent,
             },
             Bob::EncSigSent { state4, hermes_tx } => BobState::EncSigSent {
                 state: state4,
@@ -405,10 +339,9 @@ impl fmt::Display for Bob {
             }
             Bob::XmrLockTransactionSeen { .. } => f.write_str("XMR lock transaction seen"),
             Bob::XmrLocked { .. } => f.write_str("Monero locked"),
-            Bob::ConstructingHermesTx { .. } => f.write_str("Hermes transaction being constructed"),
-            Bob::HermesTxConstructed { .. } => f.write_str("Hermes transaction constructed"),
-            Bob::HermesTxPublished { .. } => f.write_str("Hermes transaction published"),
-            Bob::HermesTxConfirmed { .. } => f.write_str("Hermes transaction confirmed"),
+            Bob::EncSigReadyToBeSent { .. } => {
+                f.write_str("Encrypted signature ready to be sent")
+            }
             Bob::WaitingForCancelTimelockExpiration { .. } => {
                 f.write_str("Waiting for cancel timelock expiration")
             }
