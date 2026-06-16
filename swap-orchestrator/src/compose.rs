@@ -403,7 +403,6 @@ fn build(input: OrchestratorInput) -> String {
     restart: unless-stopped
     logging: *default-logging
     depends_on:
-      - asb
       - docker-socket-proxy
     volumes:
       - '{promtail_config_file}:/etc/promtail/promtail.yml:ro'
