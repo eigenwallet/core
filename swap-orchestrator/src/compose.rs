@@ -358,8 +358,6 @@ fn build(input: OrchestratorInput) -> String {
     {image_cloudflared}
     restart: unless-stopped
     logging: *default-logging
-    depends_on:
-      - asb
     expose:
       - {port_cloudflared_metrics}
     entrypoint: ''
@@ -466,8 +464,6 @@ fn build(input: OrchestratorInput) -> String {
     {image_prometheus_agent}
     restart: unless-stopped
     logging: *default-logging
-    depends_on:
-      - cadvisor
     volumes:
       - '{prometheus_config_file}:/etc/prometheus/prometheus.yml:ro'
       - 'prometheus-agent-data:/prometheus'
