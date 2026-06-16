@@ -42,8 +42,12 @@ pub static PROMTAIL_IMAGE: &str =
 /// docker-socket-proxy 0.3.0 (https://hub.docker.com/r/tecnativa/docker-socket-proxy)
 pub static DOCKER_SOCKET_PROXY_IMAGE: &str = "tecnativa/docker-socket-proxy@sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2";
 
-/// cadvisor v0.49.1 (https://github.com/google/cadvisor/pkgs/container/cadvisor)
-pub static CADVISOR_IMAGE: &str = "gcr.io/cadvisor/cadvisor@sha256:3cde6faf0791ebf7b41d6f8ae7145466fed712ea6f252c935294d2608b1af388";
+/// cadvisor v0.55.1 (https://github.com/google/cadvisor/pkgs/container/cadvisor)
+/// Bumped from v0.49.1: its Docker client spoke API 1.41, which Docker 29 rejects
+/// (min 1.44), so the docker factory failed to register and container metrics came
+/// through with no name/label. v0.55.1 negotiates >=1.44. Pairs with the existing
+/// `--disable_metrics=disk` (cadvisor#3860 overlayfs workaround) in compose.rs.
+pub static CADVISOR_IMAGE: &str = "gcr.io/cadvisor/cadvisor@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57";
 
 /// prometheus v3.1.0 (https://hub.docker.com/r/prom/prometheus)
 pub static PROMETHEUS_IMAGE: &str =
