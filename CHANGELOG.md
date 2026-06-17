@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.9.6] - 2026-06-17
+
 - GUI: Allow user to copy raw hex of the Monero redeem transaction to broadcast externally.
 - GUI: Continuously republish the Monero redeem transaction while we are waiting for it to confirm.
 
@@ -1016,7 +1018,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.9.5...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.9.6...HEAD
+[4.9.6]: https://github.com/eigenwallet/core/compare/4.9.5...4.9.6
 [4.9.5]: https://github.com/eigenwallet/core/compare/4.9.4...4.9.5
 [4.9.4]: https://github.com/eigenwallet/core/compare/4.9.3...4.9.4
 [4.9.3]: https://github.com/eigenwallet/core/compare/4.9.2...4.9.3
