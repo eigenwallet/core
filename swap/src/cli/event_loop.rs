@@ -16,7 +16,7 @@ use futures::{FutureExt, StreamExt};
 use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
-use libp2p_tor::TorDialPriorityTracker;
+use libp2p_tor::{TorDialPriority, TorDialPriorityTracker};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -442,6 +442,14 @@ impl EventLoop {
                         }
                         SwarmEvent::Behaviour(OutEvent::Observe(event)) => {
                             self.tauri_handle.emit_peer_connection_change(event.peer_id, event.update);
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Discovery(crate::network::rendezvous::discovery::Event::DiscoveredPeer { peer_id })) => {
+                            // A peer rediscovered via rendezvous is reachable right now, so bump
+                            // it out of the low-priority bucket it may have been put in when
+                            // restored from the database (highest priority wins).
+                            if let Some(tor_priority_tracker) = &self.tor_priority_tracker {
+                                tor_priority_tracker.set_peer_priority(peer_id, TorDialPriority::Normal);
+                            }
                         }
                         _ => {}
                     }

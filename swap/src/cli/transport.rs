@@ -14,12 +14,15 @@ use libp2p_tor::{
 };
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
-// High-priority Tor dials get more concurrency and tighter spacing than
-// normal ones.
+// High-priority Tor dials get more concurrency and tighter spacing than normal
+// ones; low-priority dials (peers merely restored from the database) get the
+// smallest budget so they never crowd out fresher, higher-priority dials.
 const TOR_DIAL_HIGH_PRIORITY_MAX_CONCURRENT: usize = 5;
 const TOR_DIAL_HIGH_PRIORITY_MIN_DELAY: Duration = Duration::from_millis(100);
 const TOR_DIAL_NORMAL_PRIORITY_MAX_CONCURRENT: usize = 2;
 const TOR_DIAL_NORMAL_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(1);
+const TOR_DIAL_LOW_PRIORITY_MAX_CONCURRENT: usize = 1;
+const TOR_DIAL_LOW_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(2);
 
 fn new_tor_dial_limiter() -> (TorDialLimiter, TorDialPriorityTracker) {
     let priority_tracker = TorDialPriorityTracker::default();
@@ -34,8 +37,13 @@ fn new_tor_dial_limiter() -> (TorDialLimiter, TorDialPriorityTracker) {
             .expect("TOR_DIAL_NORMAL_PRIORITY_MAX_CONCURRENT to be non-zero"),
         min_delay: TOR_DIAL_NORMAL_PRIORITY_MIN_DELAY,
     };
+    let low = TorDialPriorityConfig {
+        max_concurrent: NonZeroUsize::new(TOR_DIAL_LOW_PRIORITY_MAX_CONCURRENT)
+            .expect("TOR_DIAL_LOW_PRIORITY_MAX_CONCURRENT to be non-zero"),
+        min_delay: TOR_DIAL_LOW_PRIORITY_MIN_DELAY,
+    };
 
-    let dial_limiter = TorDialLimiter::new(priority_tracker.clone(), high, normal);
+    let dial_limiter = TorDialLimiter::new(priority_tracker.clone(), high, normal, low);
 
     (dial_limiter, priority_tracker)
 }
