@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + ASB: Speed up Bitcoin wallet calls by waiting for less than all Electrum servers to respond.
+
 ## [4.9.6] - 2026-06-17
 
 - GUI: Allow user to copy raw hex of the Monero redeem transaction to broadcast externally.
