@@ -1,7 +1,6 @@
 use bdk_electrum::BdkElectrumClient;
 use bdk_electrum::electrum_client::{Client, ConfigBuilder, ElectrumApi, Error};
 use bitcoin::Transaction;
-use futures::future::join_all;
 use futures::stream::{FuturesUnordered, StreamExt};
 use once_cell::sync::OnceCell;
 use std::sync::{Arc, RwLock};
@@ -307,100 +306,6 @@ where
         Err(MultiError::new(errors, context))
     }
 
-    /// Execute the given closure on **all** Electrum nodes in parallel.
-    ///
-    /// The closure is executed in a blocking task for each client.
-    /// The resulting `Result`s are collected and returned in the same
-    /// order as the nodes were provided during construction.
-    #[instrument(level = "debug", skip(self, f), fields(operation = kind, total_clients = self.client_count()))]
-    pub async fn join_all<F, T>(&self, kind: &str, f: F) -> Result<Vec<Result<T, Error>>, Error>
-    where
-        F: Fn(&C) -> Result<T, Error> + Send + Sync + Clone + 'static,
-        T: Send + 'static,
-    {
-        let start_time = Instant::now();
-        trace!(
-            operation = kind,
-            total_clients = self.client_count(),
-            "Executing parallel requests on electrum clients"
-        );
-
-        // Create a task for each potential client
-        let tasks = {
-            (0..self.client_count())
-                .map(|idx| {
-                    let f = f.clone();
-                    let balancer = self.clone();
-
-                    tokio::spawn(async move {
-                        match balancer.get_or_init_client_async(idx).await {
-                            Ok(client) => tokio::task::spawn_blocking(move || f(&client))
-                                .await
-                                .map_err(|e| {
-                                    Error::IOError(std::io::Error::other(format!("{e:?}")))
-                                })?,
-                            Err(e) => Err(e),
-                        }
-                    })
-                })
-                .collect::<Vec<_>>()
-        };
-
-        // Spawn the threads and wait until they all finish
-        let spawn_results = join_all(tasks).await;
-
-        let mut results: Vec<Result<T, Error>> = Vec::new();
-        for (task_idx, res) in spawn_results.into_iter().enumerate() {
-            match res {
-                Ok(r) => results.push(r),
-                Err(err) if err.is_cancelled() => {
-                    // We one task is cancelled, we do not continue
-                    // Most likely our function got cancelled
-                    return Err(Error::IOError(std::io::Error::other("Task cancelled")));
-                }
-                Err(e) => {
-                    trace!(task_index = task_idx, error = ?e, "Failed to spawn thread for parallel request");
-                }
-            }
-        }
-
-        let success_count = results.iter().filter(|r| r.is_ok()).count();
-        let failure_count = results.len() - success_count;
-
-        // Collect errors for detailed logging
-        let errors: Vec<(usize, &Error)> = results
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, result)| {
-                if let Err(e) = result {
-                    Some((idx, e))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if failure_count > 0 {
-            trace!(
-                total_duration_ms = start_time.elapsed().as_millis(),
-                successful_requests = success_count,
-                failed_requests = failure_count,
-                total_requests = results.len(),
-                errors = ?errors,
-                "Parallel execution completed with errors"
-            );
-        } else {
-            trace!(
-                total_duration_ms = start_time.elapsed().as_millis(),
-                successful_requests = success_count,
-                total_requests = results.len(),
-                "Parallel execution completed successfully"
-            );
-        }
-
-        Ok(results)
-    }
-
     /// Execute the given closure on all Electrum nodes in parallel, returning
     /// as soon as `min_parallel_responses` nodes have responded successfully
     /// and the primary (first) node has produced a result.
@@ -617,7 +522,7 @@ impl Default for ElectrumBalancerConfig {
     fn default() -> Self {
         Self {
             request_timeout: 15,
-            min_retries: 10,
+            min_retries: 5,
             min_parallel_responses: 2,
         }
     }
@@ -1168,46 +1073,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_join_all() {
-        let urls = vec![
-            "tcp://localhost:50001".to_string(),
-            "tcp://localhost:50002".to_string(),
-            "tcp://localhost:50003".to_string(),
-        ];
-
-        let factory = Arc::new(MockElectrumClientFactory::new());
-        factory.add_client(MockElectrumClient::new(urls[0].clone()));
-        factory.add_client(
-            MockElectrumClient::new(urls[1].clone()).with_failure(MockErrorType::IOError),
-        );
-        factory.add_client(MockElectrumClient::new(urls[2].clone()));
-
-        let balancer = ElectrumBalancer::new_with_factory(urls, factory.clone())
-            .await
-            .unwrap();
-
-        let results = balancer
-            .join_all("transaction_broadcast", |client| {
-                client.transaction_broadcast(&create_dummy_transaction())
-            })
-            .await;
-
-        assert!(results.is_ok());
-        let results = results.unwrap();
-        assert_eq!(results.len(), 3);
-
-        // First and third should succeed, second should fail
-        assert!(results[0].is_ok());
-        assert!(results[1].is_err());
-        assert!(results[2].is_ok());
-
-        // All clients should have been called
-        assert_eq!(factory.get_client(0).unwrap().call_count(), 1);
-        assert_eq!(factory.get_client(1).unwrap().call_count(), 1);
-        assert_eq!(factory.get_client(2).unwrap().call_count(), 1);
-    }
-
-    #[tokio::test]
     async fn test_broadcast_all() {
         let urls = vec![
             "tcp://localhost:50001".to_string(),
@@ -1391,7 +1256,13 @@ mod tests {
         factory
             .add_client(MockElectrumClient::new(urls[2].clone()).with_delay(Duration::from_secs(2)));
 
-        let balancer = ElectrumBalancer::new_with_factory(urls, factory.clone())
+        let config = ElectrumBalancerConfig {
+            request_timeout: 5,
+            min_retries: 0,
+            min_parallel_responses: 2,
+        };
+
+        let balancer = ElectrumBalancer::new_with_config_and_factory(urls, config, factory.clone())
             .await
             .unwrap();
 
@@ -1424,7 +1295,13 @@ mod tests {
         factory.add_client(MockElectrumClient::new(urls[1].clone()));
         factory.add_client(MockElectrumClient::new(urls[2].clone()));
 
-        let balancer = ElectrumBalancer::new_with_factory(urls, factory.clone())
+        let config = ElectrumBalancerConfig {
+            request_timeout: 5,
+            min_retries: 0,
+            min_parallel_responses: 2,
+        };
+
+        let balancer = ElectrumBalancer::new_with_config_and_factory(urls, config, factory.clone())
             .await
             .unwrap();
 

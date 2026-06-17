@@ -1936,12 +1936,11 @@ impl Client {
 
     /// Get a transaction from the Electrum servers.
     ///
-    /// A transaction returned by any single server is proof of its existence
-    /// (it is self-authenticating via its txid). Concluding that a transaction
-    /// does *not* exist requires `min_parallel_responses` servers to
-    /// independently report it as not found — or, if fewer servers are
-    /// reachable, every reachable server (at least one). If no server gives a
-    /// valid answer, an error is returned.
+    /// A transaction returned by any single server is taken as proof of its
+    /// existence. Concluding that a transaction does *not* exist requires
+    /// `min_parallel_responses` servers to independently report it as not
+    /// found — or, if fewer servers are reachable, every reachable server (at
+    /// least one). If no server gives a valid answer, an error is returned.
     pub async fn get_tx(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
         let results = self
             .inner
