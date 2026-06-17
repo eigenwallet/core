@@ -41,6 +41,7 @@ thiserror = { workspace = true }
 curve25519-dalek = { workspace = true, features = ["rand_core"] }
 data-encoding = { workspace = true }
 ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
+hex = { workspace = true }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 # Randomness
