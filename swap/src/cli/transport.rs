@@ -22,7 +22,7 @@ const TOR_DIAL_HIGH_PRIORITY_MIN_DELAY: Duration = Duration::from_millis(100);
 const TOR_DIAL_NORMAL_PRIORITY_MAX_CONCURRENT: usize = 2;
 const TOR_DIAL_NORMAL_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(1);
 const TOR_DIAL_LOW_PRIORITY_MAX_CONCURRENT: usize = 1;
-const TOR_DIAL_LOW_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(2);
+const TOR_DIAL_LOW_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(3);
 
 fn new_tor_dial_limiter() -> (TorDialLimiter, TorDialPriorityTracker) {
     let priority_tracker = TorDialPriorityTracker::default();
