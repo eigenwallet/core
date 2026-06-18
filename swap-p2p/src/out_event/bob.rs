@@ -67,7 +67,7 @@ pub enum OutEvent {
         protocol: String,
     },
     Redial(redial::Event),
-    /// A peer was discovered (or rediscovered) via a rendezvous node.
+    /// A peer was discovered via a rendezvous node.
     Discovery(rendezvous::discovery::Event),
     /// "Fallback" variant that allows the event mapping code to swallow certain
     /// events that we don't want the caller to deal with.

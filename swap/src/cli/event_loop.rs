@@ -444,9 +444,6 @@ impl EventLoop {
                             self.tauri_handle.emit_peer_connection_change(event.peer_id, event.update);
                         }
                         SwarmEvent::Behaviour(OutEvent::Discovery(crate::network::rendezvous::discovery::Event::DiscoveredPeer { peer_id })) => {
-                            // A peer rediscovered via rendezvous is reachable right now, so bump
-                            // it out of the low-priority bucket it may have been put in when
-                            // restored from the database (highest priority wins).
                             if let Some(tor_priority_tracker) = &self.tor_priority_tracker {
                                 tor_priority_tracker.set_peer_priority(peer_id, TorDialPriority::Normal);
                             }

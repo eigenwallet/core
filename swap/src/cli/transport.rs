@@ -14,15 +14,14 @@ use libp2p_tor::{
 };
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
-// High-priority Tor dials get more concurrency and tighter spacing than normal
-// ones; low-priority dials (peers merely restored from the database) get the
-// smallest budget so they never crowd out fresher, higher-priority dials.
+// Higher priority gets more concurrency and tighter spacing; low priority gets
+// the smallest budget.
 const TOR_DIAL_HIGH_PRIORITY_MAX_CONCURRENT: usize = 5;
 const TOR_DIAL_HIGH_PRIORITY_MIN_DELAY: Duration = Duration::from_millis(100);
 const TOR_DIAL_NORMAL_PRIORITY_MAX_CONCURRENT: usize = 2;
 const TOR_DIAL_NORMAL_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(1);
 const TOR_DIAL_LOW_PRIORITY_MAX_CONCURRENT: usize = 1;
-const TOR_DIAL_LOW_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(3);
+const TOR_DIAL_LOW_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(4);
 
 fn new_tor_dial_limiter() -> (TorDialLimiter, TorDialPriorityTracker) {
     let priority_tracker = TorDialPriorityTracker::default();

@@ -857,11 +857,7 @@ mod builder {
                     }
                 }
 
-                // Add addresses of peers that we have previously connected to to the swarm.
-                // These are given low dial priority: we have no fresh signal that they are
-                // reachable right now, so they must not crowd out higher-priority dials. If
-                // such a peer is later rediscovered via rendezvous it is bumped to normal,
-                // and rendezvous points are already marked high above (highest priority wins).
+                // Add addresses of peers that we have previously connected to to the swarm
                 for (peer_id, addrs) in db.get_all_peer_addresses().await.context(
                     "Failed to retrieve peer addresses from database to insert into swarm",
                 )? {
