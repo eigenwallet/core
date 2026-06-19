@@ -1,6 +1,6 @@
 {
   "productName": "eigenwallet",
-  "version": "4.9.6",
+  "version": "4.10.0",
   "identifier": "net.unstoppableswap.gui",
   "build": {
     "devUrl": "http://localhost:1420",
