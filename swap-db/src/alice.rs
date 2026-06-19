@@ -20,6 +20,13 @@ pub enum Alice {
     BtcLocked {
         state3: alice::State3,
     },
+    XmrLockTransactionConstructed {
+        monero_wallet_restore_blockheight: BlockHeight,
+        #[serde(with = "swap_serde::monero::transaction")]
+        xmr_lock_tx: monero_oxide_wallet::transaction::Transaction,
+        transfer_proof: TransferProof,
+        state3: alice::State3,
+    },
     XmrLockTransactionSent {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
@@ -169,6 +176,17 @@ impl From<AliceState> for Alice {
                 Alice::BtcLockTransactionSeen { state3: *state3 }
             }
             AliceState::BtcLocked { state3 } => Alice::BtcLocked { state3: *state3 },
+            AliceState::XmrLockTransactionConstructed {
+                monero_wallet_restore_blockheight,
+                xmr_lock_tx,
+                transfer_proof,
+                state3,
+            } => Alice::XmrLockTransactionConstructed {
+                monero_wallet_restore_blockheight,
+                xmr_lock_tx,
+                transfer_proof,
+                state3: *state3,
+            },
             AliceState::XmrLockTransactionSent {
                 monero_wallet_restore_blockheight,
                 transfer_proof,
@@ -342,6 +360,17 @@ impl From<Alice> for AliceState {
                 state3: Box::new(state3),
             },
             Alice::BtcLocked { state3 } => AliceState::BtcLocked {
+                state3: Box::new(state3),
+            },
+            Alice::XmrLockTransactionConstructed {
+                monero_wallet_restore_blockheight,
+                xmr_lock_tx,
+                transfer_proof,
+                state3,
+            } => AliceState::XmrLockTransactionConstructed {
+                monero_wallet_restore_blockheight,
+                xmr_lock_tx,
+                transfer_proof,
                 state3: Box::new(state3),
             },
             Alice::XmrLockTransactionSent {
@@ -519,6 +548,9 @@ impl fmt::Display for Alice {
                 write!(f, "Bitcoin lock transaction in mempool")
             }
             Alice::BtcLocked { .. } => f.write_str("Bitcoin locked"),
+            Alice::XmrLockTransactionConstructed { .. } => {
+                f.write_str("Monero lock transaction constructed")
+            }
             Alice::XmrLockTransactionSent { .. } => f.write_str("Monero lock transaction sent"),
             Alice::XmrLocked { .. } => f.write_str("Monero locked"),
             Alice::XmrLockTransferProofSent { .. } => {
