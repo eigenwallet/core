@@ -20,7 +20,8 @@ pub async fn safely_abort(swap_id: Uuid, db: Arc<dyn Database>) -> Result<AliceS
             Ok(state)
         }
 
-        AliceState::XmrLockTransactionSent { .. }
+        AliceState::XmrLockTransactionConstructed { .. }
+        | AliceState::XmrLockTransactionSent { .. }
         | AliceState::XmrLocked { .. }
         | AliceState::XmrLockTransferProofSent { .. }
         | AliceState::EncSigLearned { .. }

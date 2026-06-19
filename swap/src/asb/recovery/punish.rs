@@ -22,7 +22,8 @@ pub async fn punish(
 
     let (state3, transfer_proof) = match state {
         // Punish potentially possible (no knowledge of cancel transaction)
-        AliceState::XmrLockTransactionSent {state3, transfer_proof, ..}
+        AliceState::XmrLockTransactionConstructed {state3, transfer_proof, ..}
+        | AliceState::XmrLockTransactionSent {state3, transfer_proof, ..}
         | AliceState::XmrLocked {state3, transfer_proof, ..}
         | AliceState::XmrLockTransferProofSent {state3, transfer_proof, ..}
         | AliceState::EncSigLearned {state3, transfer_proof, ..}

@@ -114,6 +114,11 @@ namespace Monero
         return std::make_unique<std::string>(err);
     }
 
+    inline std::unique_ptr<std::string> pendingTransactionRawTxHex(const PendingTransaction &tx, const std::string &tx_hash)
+    {
+        return std::make_unique<std::string>(tx.rawTxHex(tx_hash));
+    }
+
     /**
      * Wrapper for Wallet::checkTxKey to accommodate passing std::string by reference.
      * The original API takes the tx_key parameter by value which is not compatible
