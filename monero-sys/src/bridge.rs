@@ -300,6 +300,11 @@ pub mod ffi {
             tx_hash: &CxxString,
         ) -> Result<UniquePtr<CxxVector<TxKey>>>;
 
+        fn pendingTransactionRawTxHex(
+            tx: &PendingTransaction,
+            tx_hash: &CxxString,
+        ) -> Result<UniquePtr<CxxString>>;
+
         /// Get the fee of a pending transaction.
         fn pendingTransactionFee(tx: &PendingTransaction) -> Result<u64>;
 
