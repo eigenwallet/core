@@ -861,6 +861,9 @@ mod builder {
                 for (peer_id, addrs) in db.get_all_peer_addresses().await.context(
                     "Failed to retrieve peer addresses from database to insert into swarm",
                 )? {
+                    if let Some(tor_priority_tracker) = &tor_priority_tracker {
+                        tor_priority_tracker.mark_low_priority(peer_id);
+                    }
                     for addr in addrs {
                         swarm.add_peer_address(peer_id, addr);
                     }

@@ -7,7 +7,7 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{
-    sync::{mpsc, oneshot},
+    sync::{Notify, mpsc, oneshot},
     time::Instant,
 };
 
@@ -17,8 +17,10 @@ pub enum TorDialLimiterError {
     Closed,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// Variant order is significant: `Ord` keeps the highest priority ever set.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TorDialPriority {
+    Low,
     #[default]
     Normal,
     High,
@@ -27,34 +29,46 @@ pub enum TorDialPriority {
 #[derive(Debug, Clone, Default)]
 pub struct TorDialPriorityTracker {
     peer_priorities: Arc<RwLock<HashMap<PeerId, TorDialPriority>>>,
+    /// Notified whenever a stored priority is raised, so the limiter wakes and
+    /// re-buckets any already-queued dial for the promoted peer.
+    promotions: Arc<Notify>,
 }
 
 impl TorDialPriorityTracker {
+    /// Only ever raises the stored priority, never lowers it.
     pub fn set_peer_priority(&self, peer_id: PeerId, priority: TorDialPriority) {
-        let mut peer_priorities = self
-            .peer_priorities
-            .write()
-            .expect("Tor dial priority tracker lock to not be poisoned");
+        let promoted = {
+            let mut peer_priorities = self
+                .peer_priorities
+                .write()
+                .expect("Tor dial priority tracker lock to not be poisoned");
 
-        if priority == TorDialPriority::Normal {
-            peer_priorities.remove(&peer_id);
-            return;
+            match peer_priorities.get_mut(&peer_id) {
+                Some(current) if priority > *current => {
+                    *current = priority;
+                    true
+                }
+                Some(_) => false,
+                None => {
+                    peer_priorities.insert(peer_id, priority);
+                    // Absent peers are dialed at `Normal`, so only a higher mark
+                    // can promote a dial that is already queued for this peer.
+                    priority > TorDialPriority::Normal
+                }
+            }
+        };
+
+        if promoted {
+            self.promotions.notify_one();
         }
+    }
 
-        peer_priorities.insert(peer_id, priority);
+    pub fn mark_low_priority(&self, peer_id: PeerId) {
+        self.set_peer_priority(peer_id, TorDialPriority::Low);
     }
 
     pub fn mark_high_priority(&self, peer_id: PeerId) {
         self.set_peer_priority(peer_id, TorDialPriority::High);
-    }
-
-    pub fn remove_peer_priority(&self, peer_id: &PeerId) {
-        let mut peer_priorities = self
-            .peer_priorities
-            .write()
-            .expect("Tor dial priority tracker lock to not be poisoned");
-
-        peer_priorities.remove(peer_id);
     }
 
     #[must_use]
@@ -90,16 +104,16 @@ pub struct TorDialLimiter {
 }
 
 impl TorDialLimiter {
-    /// Creates a limiter with an independent queue per priority. Each priority
-    /// has its own concurrency limit and its own minimum delay between dial
-    /// starts; the two priorities do not compete for a shared budget.
+    /// One queue per priority. `high` and `normal` are independent; `low` is
+    /// subordinate and only starts while no high or normal dial is waiting.
     ///
-    /// This must be called from a Tokio runtime.
+    /// Must be called from a Tokio runtime.
     #[must_use]
     pub fn new(
         priority_tracker: TorDialPriorityTracker,
         high: TorDialPriorityConfig,
         normal: TorDialPriorityConfig,
+        low: TorDialPriorityConfig,
     ) -> Self {
         let (request_sender, request_receiver) = mpsc::unbounded_channel();
         let (release_sender, release_receiver) = mpsc::unbounded_channel();
@@ -111,6 +125,7 @@ impl TorDialLimiter {
             priority_tracker.clone(),
             high,
             normal,
+            low,
         ));
 
         Self {
@@ -241,6 +256,43 @@ impl PriorityQueue {
     }
 }
 
+/// Moves queued dials whose priority was raised after enqueue into their
+/// current queue. Only promotions happen (priorities never drop): normal→high
+/// first, then low→{normal,high}. In-flight counts and spacing stay with each
+/// queue; only waiting requests move.
+fn promote_queued(
+    priority_tracker: &TorDialPriorityTracker,
+    high_queue: &mut PriorityQueue,
+    normal_queue: &mut PriorityQueue,
+    low_queue: &mut PriorityQueue,
+) {
+    let mut i = 0;
+    while i < normal_queue.queue.len() {
+        let peer_id = normal_queue.queue[i].peer_id;
+        if priority_tracker.peer_priority(peer_id.as_ref()) == TorDialPriority::High {
+            let request = normal_queue.queue.remove(i).expect("index in bounds");
+            high_queue.queue.push_back(request);
+        } else {
+            i += 1;
+        }
+    }
+
+    let mut i = 0;
+    while i < low_queue.queue.len() {
+        let peer_id = low_queue.queue[i].peer_id;
+        let target = match priority_tracker.peer_priority(peer_id.as_ref()) {
+            TorDialPriority::High => &mut *high_queue,
+            TorDialPriority::Normal => &mut *normal_queue,
+            TorDialPriority::Low => {
+                i += 1;
+                continue;
+            }
+        };
+        let request = low_queue.queue.remove(i).expect("index in bounds");
+        target.queue.push_back(request);
+    }
+}
+
 async fn run_limiter(
     mut request_receiver: mpsc::UnboundedReceiver<DialRequest>,
     mut release_receiver: mpsc::UnboundedReceiver<TorDialPriority>,
@@ -248,15 +300,36 @@ async fn run_limiter(
     priority_tracker: TorDialPriorityTracker,
     high: TorDialPriorityConfig,
     normal: TorDialPriorityConfig,
+    low: TorDialPriorityConfig,
 ) {
     let now = Instant::now();
     let mut high_queue = PriorityQueue::new(high, now);
     let mut normal_queue = PriorityQueue::new(normal, now);
+    let mut low_queue = PriorityQueue::new(low, now);
     let mut request_closed = false;
 
     loop {
+        // A peer's priority is captured when its dial is enqueued, but it can be
+        // raised afterwards (e.g. rediscovered via rendezvous, or a swap starts).
+        // Re-resolve queued dials so a promoted peer moves to its higher queue
+        // instead of staying stuck under the old gating and budget. Priorities
+        // only ever rise, so a request can only move to a higher queue.
+        promote_queued(
+            &priority_tracker,
+            &mut high_queue,
+            &mut normal_queue,
+            &mut low_queue,
+        );
+
         high_queue.release_ready(TorDialPriority::High, &release_sender);
         normal_queue.release_ready(TorDialPriority::Normal, &release_sender);
+
+        // Low dials only start once no high or normal dial is waiting.
+        let higher_priority_waiting =
+            !high_queue.queue.is_empty() || !normal_queue.queue.is_empty();
+        if !higher_priority_waiting {
+            low_queue.release_ready(TorDialPriority::Low, &release_sender);
+        }
 
         // Every limiter handle is gone, so no slot will ever free up again.
         // Abandon the backlog; dropping the queues makes pending `wait()`
@@ -265,10 +338,19 @@ async fn run_limiter(
             return;
         }
 
-        let next_wake = [high_queue.next_wake(), normal_queue.next_wake()]
-            .into_iter()
-            .flatten()
-            .min();
+        // Low is gated off while higher queues wait, so skip its wake-up; their
+        // activity wakes us and lets low through once they drain.
+        let low_next_wake = (!higher_priority_waiting)
+            .then(|| low_queue.next_wake())
+            .flatten();
+        let next_wake = [
+            high_queue.next_wake(),
+            normal_queue.next_wake(),
+            low_next_wake,
+        ]
+        .into_iter()
+        .flatten()
+        .min();
 
         tokio::select! {
             request = request_receiver.recv(), if !request_closed => {
@@ -278,6 +360,7 @@ async fn run_limiter(
                         match priority {
                             TorDialPriority::High => high_queue.queue.push_back(request),
                             TorDialPriority::Normal => normal_queue.queue.push_back(request),
+                            TorDialPriority::Low => low_queue.queue.push_back(request),
                         }
                     }
                     None => request_closed = true,
@@ -287,10 +370,12 @@ async fn run_limiter(
                 let queue = match priority {
                     TorDialPriority::High => &mut high_queue,
                     TorDialPriority::Normal => &mut normal_queue,
+                    TorDialPriority::Low => &mut low_queue,
                 };
                 debug_assert!(queue.in_flight > 0, "release without a matching in-flight dial");
                 queue.in_flight = queue.in_flight.saturating_sub(1);
             }
+            () = priority_tracker.promotions.notified() => {}
             () = wait_until(next_wake) => {}
         }
     }
@@ -323,12 +408,14 @@ mod tests {
         }
     }
 
-    /// High = 2 concurrent / 0.5s spacing, Normal = 1 concurrent / 4s spacing.
+    /// High = 2 concurrent / 0.5s spacing, Normal = 1 concurrent / 4s spacing,
+    /// Low = 1 concurrent / 8s spacing.
     fn limiter(priority_tracker: TorDialPriorityTracker) -> TorDialLimiter {
         TorDialLimiter::new(
             priority_tracker,
             config(2, Duration::from_millis(500)),
             config(1, Duration::from_secs(4)),
+            config(1, Duration::from_secs(8)),
         )
     }
 
@@ -428,5 +515,126 @@ mod tests {
 
         drop(normal);
         let _ = high_waiter.await.unwrap();
+    }
+
+    #[test]
+    fn highest_set_priority_wins_regardless_of_order() {
+        let tracker = TorDialPriorityTracker::default();
+        let peer = PeerId::random();
+
+        // First low, then bumped up.
+        tracker.mark_low_priority(peer);
+        assert_eq!(tracker.peer_priority(Some(&peer)), TorDialPriority::Low);
+
+        tracker.set_peer_priority(peer, TorDialPriority::Normal);
+        assert_eq!(tracker.peer_priority(Some(&peer)), TorDialPriority::Normal);
+
+        tracker.mark_high_priority(peer);
+        assert_eq!(tracker.peer_priority(Some(&peer)), TorDialPriority::High);
+
+        // A lower priority never overrides a higher one already set.
+        tracker.set_peer_priority(peer, TorDialPriority::Normal);
+        tracker.mark_low_priority(peer);
+        assert_eq!(tracker.peer_priority(Some(&peer)), TorDialPriority::High);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn low_dials_do_not_block_normal_dials() {
+        let priority_tracker = TorDialPriorityTracker::default();
+        let limiter = limiter(priority_tracker.clone());
+
+        // Saturate the low queue (concurrency 1).
+        let low_peer = PeerId::random();
+        priority_tracker.mark_low_priority(low_peer);
+        let low = limiter.wait(Some(low_peer)).await.unwrap();
+
+        let low_waiter = tokio::spawn({
+            let limiter = limiter.clone();
+            async move { limiter.wait(Some(low_peer)).await.unwrap() }
+        });
+
+        // A normal dial proceeds despite the low queue being saturated.
+        let normal_waiter = tokio::spawn({
+            let limiter = limiter.clone();
+            async move { limiter.wait(None).await.unwrap() }
+        });
+
+        settle().await;
+        assert!(normal_waiter.is_finished());
+        assert!(!low_waiter.is_finished());
+
+        drop(low);
+        let _ = normal_waiter.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn queued_low_dial_is_promoted_when_priority_is_raised() {
+        let priority_tracker = TorDialPriorityTracker::default();
+        let limiter = limiter(priority_tracker.clone());
+
+        // Occupy the normal slot and queue another normal dial so the low queue
+        // stays gated off.
+        let normal = limiter.wait(None).await.unwrap();
+        let normal_waiter = tokio::spawn({
+            let limiter = limiter.clone();
+            async move { limiter.wait(None).await.unwrap() }
+        });
+
+        // A low dial that cannot start while a normal dial is waiting.
+        let peer = PeerId::random();
+        priority_tracker.mark_low_priority(peer);
+        let waiter = tokio::spawn({
+            let limiter = limiter.clone();
+            async move { limiter.wait(Some(peer)).await.unwrap() }
+        });
+
+        settle().await;
+        assert!(!waiter.is_finished());
+
+        // Raise its priority to high; the queued request is re-bucketed and now
+        // starts on the high queue despite the busy normal queue.
+        priority_tracker.mark_high_priority(peer);
+        settle().await;
+        assert!(waiter.is_finished());
+
+        drop(normal);
+        tokio::time::advance(Duration::from_secs(4)).await;
+        let _ = normal_waiter.await.unwrap();
+        let _ = waiter.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn low_dials_wait_until_no_normal_dial_is_queued() {
+        let priority_tracker = TorDialPriorityTracker::default();
+        let limiter = limiter(priority_tracker.clone());
+
+        // Occupy the normal slot, then queue another so the normal queue is non-empty.
+        let normal = limiter.wait(None).await.unwrap();
+        let normal_waiter = tokio::spawn({
+            let limiter = limiter.clone();
+            async move { limiter.wait(None).await.unwrap() }
+        });
+
+        // Held back while a normal dial is waiting, despite a free low slot.
+        let low_peer = PeerId::random();
+        priority_tracker.mark_low_priority(low_peer);
+        let low_waiter = tokio::spawn({
+            let limiter = limiter.clone();
+            async move { limiter.wait(Some(low_peer)).await.unwrap() }
+        });
+
+        settle().await;
+        assert!(!normal_waiter.is_finished());
+        assert!(!low_waiter.is_finished());
+
+        // Drain the normal queue, which lets the low dial proceed.
+        drop(normal);
+        tokio::time::advance(Duration::from_secs(4)).await;
+        settle().await;
+        assert!(normal_waiter.is_finished());
+        assert!(low_waiter.is_finished());
+
+        let _ = normal_waiter.await.unwrap();
+        let _ = low_waiter.await.unwrap();
     }
 }
