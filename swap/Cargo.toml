@@ -94,6 +94,11 @@ prometheus-client = "0.22"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["validate-request"] }
 
+# Profiling (Grafana Pyroscope)
+jemalloc_pprof = { workspace = true }
+pprof = { workspace = true }
+protobuf = { workspace = true }
+
 # Tokio
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }
 tokio-util = { workspace = true }

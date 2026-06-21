@@ -52,6 +52,10 @@ pub static PROMETHEUS_IMAGE: &str =
 /// bitcoin-prometheus-exporter v0.9.0 (https://github.com/jvstein/bitcoin-prometheus-exporter)
 pub static BITCOIN_PROMETHEUS_EXPORTER_IMAGE: &str = "jvstein/bitcoin-prometheus-exporter@sha256:358132b6967554f4d30a43847bfc5fd941719eb257b2820cf8ebd16405733843";
 
+/// grafana/alloy v1.10.0 (https://hub.docker.com/r/grafana/alloy)
+pub static ALLOY_IMAGE: &str =
+    "grafana/alloy@sha256:1bc130e909116a4bf950eb5187a346007d3b796f96832b529acb14a64e41230f";
+
 /// Build-context URL for the source-built images. A `gh_token` is inlined into
 /// the URL userinfo so Docker can fetch a private repository — note this writes
 /// the token into `docker-compose.yml` in plaintext.

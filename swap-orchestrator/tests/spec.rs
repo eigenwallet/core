@@ -55,6 +55,7 @@ fn make_input(
             bitcoin_exporter: OrchestratorImage::Registry(
                 images::BITCOIN_PROMETHEUS_EXPORTER_IMAGE.to_string(),
             ),
+            alloy: OrchestratorImage::Registry(images::ALLOY_IMAGE.to_string()),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),
@@ -63,6 +64,7 @@ fn make_input(
         cloudflared,
         promtail,
         metrics,
+        pyroscope: None,
     }
 }
 

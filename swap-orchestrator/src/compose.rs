@@ -20,6 +20,7 @@ pub const ASB_RPC_AUTH_FILE_IN_CONTAINER: &str = "/rpc-auth";
 pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
 pub const PROMTAIL_CONFIG_FILE: &str = "./promtail.yml";
 pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
+pub const ALLOY_CONFIG_FILE: &str = "./alloy.alloy";
 
 /// Port `cloudflared` serves its built-in Prometheus metrics on, scraped by the
 /// prometheus-agent over the docker network.
@@ -40,6 +41,7 @@ pub struct OrchestratorInput {
     pub cloudflared: Option<CloudflaredConfig>,
     pub promtail: Option<PromtailConfig>,
     pub metrics: Option<MetricsConfig>,
+    pub pyroscope: Option<PyroscopeConfig>,
 }
 
 /// Cloudflare Tunnel configuration.
@@ -92,6 +94,19 @@ pub struct MetricsConfig {
     pub instance: String,
 }
 
+/// Grafana Pyroscope profiling. When set, the orchestrator adds an `alloy`
+/// service that scrapes the ASB pprof endpoints and pushes profiles to a
+/// central Pyroscope ingest endpoint, configured via a generated `alloy.alloy`.
+#[derive(Clone)]
+pub struct PyroscopeConfig {
+    /// Pyroscope ingest endpoint, e.g. `https://pyroscope-asb.example.com`.
+    pub pyroscope_push_url: String,
+    /// Bearer token; baked into `alloy.alloy` only, never `docker-compose.yml`.
+    pub push_token: String,
+    /// Host identifier, exported as the `instance` label.
+    pub instance: String,
+}
+
 pub struct OrchestratorDirectories {
     pub asb_data_dir: PathBuf,
 }
@@ -117,6 +132,7 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub cadvisor: T,
     pub prometheus_agent: T,
     pub bitcoin_exporter: T,
+    pub alloy: T,
 }
 
 pub struct OrchestratorPorts {
@@ -481,6 +497,29 @@ fn build(input: OrchestratorInput) -> String {
         (String::new(), "")
     };
 
+    let (alloy_segment, alloy_volume) = if input.pyroscope.is_some() {
+        let alloy_segment = format!(
+            "\
+  alloy:
+    container_name: alloy
+    {image_alloy}
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - asb
+    volumes:
+      - '{alloy_config_file}:/etc/alloy/config.alloy:ro'
+      - 'alloy-data:/var/lib/alloy/data'
+    command: [\"run\", \"--storage.path=/var/lib/alloy/data\", \"/etc/alloy/config.alloy\"]\
+",
+            image_alloy = input.images.alloy.to_image_attribute(),
+            alloy_config_file = ALLOY_CONFIG_FILE,
+        );
+        (alloy_segment, "alloy-data:")
+    } else {
+        (String::new(), "")
+    };
+
     let (tor_segment, tor_volume) = if input.want_tor {
         // This image comes with an empty /etc/tor/, so this is the entire config
         let command_tor = command![
@@ -515,6 +554,20 @@ fn build(input: OrchestratorInput) -> String {
 
     let electrs_monitoring_expose = if input.metrics.is_some() {
         format!("\n      - {ELECTRS_MONITORING_PORT}")
+    } else {
+        String::new()
+    };
+
+    // Expose the metrics port for Alloy to scrape and arm jemalloc heap sampling.
+    let asb_profiling_segment = if input.pyroscope.is_some() {
+        format!(
+            "
+    environment:
+      - MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:19
+    expose:
+      - {asb_metrics_port}",
+            asb_metrics_port = input.ports.asb_metrics_port,
+        )
     } else {
         String::new()
     };
@@ -589,11 +642,12 @@ services:
   {cloudflared_segment}
   {promtail_segment}
   {metrics_segment}
+  {alloy_segment}
   asb:
     container_name: asb
     {image_asb}
     restart: unless-stopped
-    logging: *default-logging
+    logging: *default-logging{asb_profiling_segment}
     cap_add:
       - SYS_PTRACE
     sysctls:
@@ -656,6 +710,7 @@ volumes:
   {tor_volume}
   {promtail_volume}
   {metrics_volume}
+  {alloy_volume}
 ",
         log_max_size = DOCKER_LOG_MAX_SIZE,
         log_max_file = DOCKER_LOG_MAX_FILE,
@@ -831,6 +886,51 @@ remote_write:
         electrs_monitoring_port = ELECTRS_MONITORING_PORT,
         url = yaml_single_quote(&cfg.remote_write_url),
         token = yaml_single_quote(&cfg.token),
+    )
+}
+
+/// Builds `alloy.alloy` (River syntax): scrape the ASB pprof endpoints on
+/// `asb:<asb_metrics_port>` and push to the Pyroscope endpoint.
+pub fn build_alloy_config(cfg: &PyroscopeConfig, asb_metrics_port: u16) -> String {
+    fn river_string(value: &str) -> String {
+        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+    }
+
+    format!(
+        "\
+pyroscope.write \"asb\" {{
+  endpoint {{
+    url = {url}
+    bearer_token = {token}
+  }}
+}}
+
+pyroscope.scrape \"asb\" {{
+  targets = [
+    {{\"__address__\" = \"asb:{asb_metrics_port}\", \"service_name\" = \"asb\", \"instance\" = {instance}}},
+  ]
+  forward_to = [pyroscope.write.asb.receiver]
+
+  profiling_config {{
+    profile.process_cpu {{
+      enabled = true
+      path    = \"/debug/pprof/profile\"
+      delta   = true
+    }}
+    profile.memory {{
+      enabled = true
+      path    = \"/debug/pprof/heap\"
+      delta   = false
+    }}
+    profile.goroutine {{ enabled = false }}
+    profile.block {{ enabled = false }}
+    profile.mutex {{ enabled = false }}
+  }}
+}}
+",
+        url = river_string(&cfg.pyroscope_push_url),
+        token = river_string(&cfg.push_token),
+        instance = river_string(&cfg.instance),
     )
 }
 
