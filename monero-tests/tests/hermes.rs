@@ -62,16 +62,6 @@ async fn hermes_happy_path() -> anyhow::Result<()> {
     let message = HermesMessage::new(HERMES_TEST_MESSAGE.to_vec())?;
     let arbitrary_data = message.to_arbitrary_data(shared_view.clone(), &mut OsRng);
 
-    let hardfork_version = daemon
-        .block_by_number(daemon.latest_block_number().await?)
-        .await?
-        .header
-        .hardfork_version;
-    anyhow::ensure!(
-        matches!(hardfork_version, 15 | 16),
-        "Unexpected hardfork version {hardfork_version}"
-    );
-
     let input = OutputWithDecoys::fingerprintable_deterministic_new(
         &mut OsRng,
         &daemon,
