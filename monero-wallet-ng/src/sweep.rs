@@ -146,13 +146,20 @@ where
         return Err(BuildSweepError::from(DestinationsError::Empty).into());
     }
 
-    let (input, fee_rate) = select_input_and_fee_rate(
+    let input = select_input(
         &provider,
         &private_spend_key,
         private_view_key,
         tx_id,
-        inner_retry,
+        inner_retry.clone(),
     )
+    .await?;
+
+    let fee_rate = with_retry(inner_retry, "Sweep fee-rate lookup", || async {
+        provider
+            .fee_rate(FeePriority::Normal, MAX_FEE_PER_WEIGHT)
+            .await
+    })
     .await?;
 
     // Generate a random outgoing view key
@@ -191,7 +198,7 @@ where
         + Send
         + Sync,
 {
-    let (input, fee_rate) = select_input_and_fee_rate(
+    let input = select_input(
         &provider,
         &private_spend_key,
         private_view_key,
@@ -205,6 +212,11 @@ where
 
     // 0-amount burner output to satisfy Monero's 2-output minimum
     let burner = burner_address(destination.network(), &outgoing_view_key);
+
+    // The entire input is consumed as fee (no change output), so the fee rate
+    // only sets the minimum required fee. A minimal rate keeps that minimum
+    // trivially below the input amount.
+    let fee_rate = FeeRate::new(1, 1).expect("1 per-weight with mask 1 is a valid fee rate");
 
     let tx = SignableTransaction::new(
         RctType::ClsagBulletproofPlus,
@@ -224,14 +236,14 @@ where
 }
 
 /// Locate the largest output of `tx_id` belonging to the view pair and select
-/// decoys and a fee rate for spending it.
-async fn select_input_and_fee_rate<P>(
+/// decoys for spending it.
+async fn select_input<P>(
     provider: &P,
     private_spend_key: &Zeroizing<Scalar>,
     private_view_key: Zeroizing<Scalar>,
     tx_id: [u8; 32],
     inner_retry: Option<backoff::ExponentialBackoff>,
-) -> Result<(OutputWithDecoys, FeeRate), SweepError>
+) -> Result<OutputWithDecoys, SweepError>
 where
     P: ProvidesScannableBlocks
         + ProvidesBlockchainMeta
@@ -290,7 +302,7 @@ where
         || async { provider.latest_block_number().await },
     )
     .await?;
-    let input = with_retry(inner_retry.clone(), "Sweep decoy selection", || async {
+    let input = with_retry(inner_retry, "Sweep decoy selection", || async {
         OutputWithDecoys::new(
             &mut OsRng,
             provider,
@@ -302,14 +314,7 @@ where
     })
     .await?;
 
-    let fee_rate = with_retry(inner_retry, "Sweep fee-rate lookup", || async {
-        provider
-            .fee_rate(FeePriority::Normal, MAX_FEE_PER_WEIGHT)
-            .await
-    })
-    .await?;
-
-    Ok((input, fee_rate))
+    Ok(input)
 }
 
 /// Build and sign a sweep transaction that spends `input` across `destinations`.

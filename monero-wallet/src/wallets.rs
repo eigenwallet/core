@@ -410,7 +410,7 @@ impl Wallets {
         data: Vec<Vec<u8>>,
         inner_retry: Option<backoff::ExponentialBackoff>,
     ) -> Result<Transaction<NotPruned>> {
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
         let tx_id = tx_hash_to_bytes(funding_tx_hash)?;
 
         let spend_scalar = Zeroizing::new(spend_key.scalar);
@@ -469,7 +469,7 @@ impl Wallets {
         public_spend_key: monero_oxide_ext::PublicKey,
         private_view_key: PrivateViewKey,
     ) -> Result<Option<Amount>> {
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
 
         let tx_id = tx_hash_to_bytes(tx_hash)?;
         let public_spend_key = public_spend_key.decompress();
@@ -592,7 +592,7 @@ impl Wallets {
         use monero_wallet_ng::hermes::HermesMessage;
         use monero_wallet_ng::scanner;
 
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
 
         let public_spend_key = public_spend_key.decompress();
         let view_scalar = Zeroizing::new(private_view_key.0.scalar);
