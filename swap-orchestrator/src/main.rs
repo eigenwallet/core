@@ -7,10 +7,11 @@ mod prompt;
 use swap_orchestrator as _;
 
 use crate::compose::{
-    ASB_DATA_DIR, CloudflaredConfig, DOCKER_COMPOSE_FILE, IntoSpec, MetricsConfig,
-    OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
-    OrchestratorNetworks, PROMETHEUS_CONFIG_FILE, PROMTAIL_CONFIG_FILE, PromtailConfig,
-    build_prometheus_agent_yml, build_promtail_yml,
+    ALLOY_CONFIG_FILE, ASB_DATA_DIR, CloudflaredConfig, DOCKER_COMPOSE_FILE, IntoSpec,
+    MetricsConfig, OrchestratorDirectories, OrchestratorImage, OrchestratorImages,
+    OrchestratorInput, OrchestratorNetworks, PROMETHEUS_CONFIG_FILE, PROMTAIL_CONFIG_FILE,
+    PromtailConfig, PyroscopeConfig, build_alloy_config, build_prometheus_agent_yml,
+    build_promtail_yml,
 };
 use libp2p::Multiaddr;
 use libp2p::multiaddr::Protocol;
@@ -163,6 +164,27 @@ fn read_metrics_config_from_env(promtail: Option<&PromtailConfig>) -> Option<Met
     })
 }
 
+/// Opt-in via `PYROSCOPE_PUSH_URL`; reuses the Promtail token and instance.
+fn read_pyroscope_config_from_env(promtail: Option<&PromtailConfig>) -> Option<PyroscopeConfig> {
+    let pyroscope_push_url = std::env::var("PYROSCOPE_PUSH_URL").ok()?;
+
+    if pyroscope_push_url.trim().is_empty() {
+        panic!("PYROSCOPE_PUSH_URL must not be empty.");
+    }
+
+    let promtail = promtail.unwrap_or_else(|| {
+        panic!(
+            "PYROSCOPE_PUSH_URL is set but Promtail is not configured. Profiling reuses the Promtail bearer token and instance label, so set the PROMTAIL_* variables as well."
+        )
+    });
+
+    Some(PyroscopeConfig {
+        pyroscope_push_url,
+        push_token: promtail.loki_push_token.clone(),
+        instance: promtail.instance.clone(),
+    })
+}
+
 /// `GH_TOKEN` for fetching a private build-context repository; `None` if unset
 /// or empty. See [`images::source_build_context`].
 fn read_gh_token_from_env() -> Option<String> {
@@ -187,6 +209,7 @@ fn main() {
     // Cloudflare integration above.
     let promtail_config = read_promtail_config_from_env();
     let metrics_config = read_metrics_config_from_env(promtail_config.as_ref());
+    let pyroscope_config = read_pyroscope_config_from_env(promtail_config.as_ref());
     // Opt-in: inlined into the build-context URL so Docker can fetch a private repo.
     let gh_token = read_gh_token_from_env();
     let source_build_context = images::source_build_context(gh_token.as_deref());
@@ -243,6 +266,7 @@ fn main() {
             bitcoin_exporter: OrchestratorImage::Registry(
                 images::BITCOIN_PROMETHEUS_EXPORTER_IMAGE.to_string(),
             ),
+            alloy: OrchestratorImage::Registry(images::ALLOY_IMAGE.to_string()),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),
@@ -251,6 +275,7 @@ fn main() {
         cloudflared: cloudflared_config.clone(),
         promtail: promtail_config.clone(),
         metrics: metrics_config.clone(),
+        pyroscope: pyroscope_config.clone(),
     };
 
     // If the config file already exists and be de-serialized,
@@ -346,7 +371,11 @@ fn main() {
                 listen: listen_addresses,
                 rendezvous_point: rendezvous_points,
                 external_addresses: vec![],
-                prometheus_port: None,
+                // Profiling needs the metrics server, so enable it alongside.
+                prometheus_port: pyroscope_config
+                    .as_ref()
+                    .map(|_| recipe.ports.asb_metrics_port),
+                profiling: pyroscope_config.is_some(),
             },
             bitcoin: Bitcoin {
                 electrum_rpc_urls: match electrum_server_type {
@@ -441,6 +470,14 @@ fn main() {
         .expect("Failed to write prometheus.yml");
     }
 
+    if let Some(pyroscope) = pyroscope_config.as_ref() {
+        std::fs::write(
+            ALLOY_CONFIG_FILE,
+            build_alloy_config(pyroscope, recipe.ports.asb_metrics_port),
+        )
+        .expect("Failed to write alloy.alloy");
+    }
+
     // Write the compose to ./docker-compose.yml
     let compose = recipe.to_spec();
     std::fs::write(DOCKER_COMPOSE_FILE, compose).expect("Failed to write docker-compose.yml");
@@ -475,6 +512,10 @@ fn main() {
 
     if let Some(metrics) = metrics_config.as_ref() {
         print_metrics_instructions(metrics);
+    }
+
+    if let Some(pyroscope) = pyroscope_config.as_ref() {
+        print_pyroscope_instructions(pyroscope);
     }
 }
 
@@ -619,6 +660,17 @@ fn print_metrics_instructions(metrics: &MetricsConfig) {
     println!("           bitcoind metrics via bitcoin-exporter, and electrs metrics");
     println!("  - Verify after `docker compose up -d`:");
     println!("      docker compose logs --tail 50 prometheus-agent");
+}
+
+fn print_pyroscope_instructions(pyroscope: &PyroscopeConfig) {
+    println!();
+    println!("Pyroscope continuous profiling is enabled.");
+    println!("  - Instance label:    {}", pyroscope.instance);
+    println!("  - Pyroscope URL:     {}", pyroscope.pyroscope_push_url);
+    println!("  - Config written to: {}", ALLOY_CONFIG_FILE);
+    println!("  - Scrapes: asb CPU (/debug/pprof/profile) + jemalloc heap (/debug/pprof/heap)");
+    println!("  - Verify after `docker compose up -d`:");
+    println!("      docker compose logs --tail 50 alloy");
 }
 
 fn unix_epoch_secs() -> u64 {

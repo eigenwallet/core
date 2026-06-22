@@ -51,6 +51,10 @@ pub struct Network {
     /// `/metrics`. When unset, the metrics endpoint is disabled.
     #[serde(default)]
     pub prometheus_port: Option<u16>,
+    /// Serve pprof CPU and jemalloc heap profiles at `/debug/pprof/*` for
+    /// Grafana Pyroscope. Requires `prometheus_port`.
+    #[serde(default)]
+    pub profiling: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -412,6 +416,7 @@ pub fn query_user_for_initial_config_with_network(
             rendezvous_point: rendezvous_points,
             external_addresses: vec![],
             prometheus_port: None,
+            profiling: false,
         },
         bitcoin: Bitcoin {
             electrum_rpc_urls,

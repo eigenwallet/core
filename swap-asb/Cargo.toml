@@ -41,6 +41,10 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 serde_json = { workspace = true }
 structopt = "0.3"
 
+# jemalloc global allocator (heap profiling); unavailable on MSVC.
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { workspace = true }
+
 [build-dependencies]
 anyhow = { workspace = true }
 vergen = { workspace = true }

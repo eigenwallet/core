@@ -12,6 +12,11 @@
 #![forbid(unsafe_code)]
 #![allow(non_snake_case)]
 
+// jemalloc as the global allocator, required for heap profiling.
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 use anyhow::{Context, Result, bail};
 use comfy_table::Table;
 use libp2p::Swarm;
@@ -371,7 +376,9 @@ pub async fn main() -> Result<()> {
             {
                 (Some(port), Some(mut registry)) => {
                     let metrics = metrics::Metrics::new(&mut registry);
-                    let server = metrics::MetricsServer::start(port, registry).await?;
+                    let server =
+                        metrics::MetricsServer::start(port, registry, config.network.profiling)
+                            .await?;
                     (Some(metrics), Some(server))
                 }
                 _ => (None, None),
