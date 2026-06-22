@@ -74,7 +74,7 @@ pub async fn verify_transfer<P: ProvidesTransactions>(
 /// The amount of the largest output the given view pair receives in a
 /// transaction, or `None` if it receives no outputs. This mirrors what a sweep
 /// of the transaction can spend, which always picks the single largest output.
-pub async fn received_amount<P: ProvidesTransactions>(
+pub async fn largest_received_utxo<P: ProvidesTransactions>(
     provider: &P,
     tx_id: [u8; 32],
     public_spend_key: Point,

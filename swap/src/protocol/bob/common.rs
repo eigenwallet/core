@@ -189,7 +189,7 @@ impl VerifyXmrLockTransaction for State3 {
 
         let (hermes_spend_key, hermes_view_key) = self.hermes_view_keys();
         let hermes_amount = monero_wallet
-            .received_amount(&tx_hash, hermes_spend_key, hermes_view_key)
+            .largest_received_utxo(&tx_hash, hermes_spend_key, hermes_view_key)
             .await?;
 
         Ok(XmrLockTransactionValidity::Valid { hermes_amount })

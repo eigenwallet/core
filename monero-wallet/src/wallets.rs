@@ -463,7 +463,7 @@ impl Wallets {
     /// The amount of the largest output the given view pair receives in
     /// `tx_hash`, or `None` if it receives no outputs. This mirrors what a
     /// sweep of the transaction can spend.
-    pub async fn received_amount(
+    pub async fn largest_received_utxo(
         &self,
         tx_hash: &TxHash,
         public_spend_key: monero_oxide_ext::PublicKey,
@@ -475,7 +475,7 @@ impl Wallets {
         let public_spend_key = public_spend_key.decompress();
         let private_view_key = Zeroizing::new(private_view_key.0.scalar);
 
-        let amount = monero_wallet_ng::verify::received_amount(
+        let amount = monero_wallet_ng::verify::largest_received_utxo(
             &rpc_client,
             tx_id,
             public_spend_key,
