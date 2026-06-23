@@ -95,9 +95,23 @@ pub async fn run_until(
         )
         .await?;
 
-        swap.db
-            .insert_latest_state(swap.id, next_state.clone().into())
-            .await?;
+        retry(
+            "Persisting latest Bob state",
+            || {
+                let db = swap.db.clone();
+                let state = next_state.clone();
+
+                async move {
+                    db.insert_latest_state(swap.id, state.into())
+                        .await
+                        .map_err(backoff::Error::transient)
+                }
+            },
+            None,
+            None,
+        )
+        .await
+        .expect("we never stop retrying to persist the latest Bob state");
 
         if is_run_at_most_once(&current_state) && next_state == current_state {
             break;

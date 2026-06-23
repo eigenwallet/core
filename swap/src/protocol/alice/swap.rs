@@ -54,9 +54,23 @@ where
         )
         .await?;
 
-        swap.db
-            .insert_latest_state(swap.swap_id, current_state.clone().into())
-            .await?;
+        retry(
+            "Persisting latest Alice state",
+            || {
+                let db = swap.db.clone();
+                let state = current_state.clone();
+
+                async move {
+                    db.insert_latest_state(swap.swap_id, state.into())
+                        .await
+                        .map_err(backoff::Error::transient)
+                }
+            },
+            None,
+            None,
+        )
+        .await
+        .expect("we never stop retrying to persist the latest Alice state");
     }
 
     Ok(current_state)
