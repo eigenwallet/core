@@ -9,7 +9,6 @@ use jsonrpsee::types::error::ErrorCode;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
 use std::sync::Arc;
-use tower_http::validate_request::{ValidateRequest, ValidateRequestHeaderLayer};
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     ExternalBitcoinRedeemAddressResponse, MoneroAddressResponse, MoneroBalanceResponse,
@@ -20,6 +19,7 @@ use swap_controller_api::{
 };
 use swap_core::monero::PICONERO_OFFSET;
 use tokio_util::task::AbortOnDropHandle;
+use tower_http::validate_request::{ValidateRequest, ValidateRequestHeaderLayer};
 use uuid::Uuid;
 
 pub struct RpcServer {
@@ -36,8 +36,8 @@ impl RpcServer {
         event_loop_service: EventLoopService,
         db: Arc<dyn Database + Send + Sync>,
     ) -> Result<Self> {
-        let http_middleware = tower::ServiceBuilder::new()
-            .option_layer(auth_verifier.map(|verifier| {
+        let http_middleware =
+            tower::ServiceBuilder::new().option_layer(auth_verifier.map(|verifier| {
                 ValidateRequestHeaderLayer::custom(BearerPasswordAuth {
                     verifier: Arc::from(verifier),
                 })
@@ -387,8 +387,9 @@ impl AsbApiServer for RpcImpl {
         address: String,
     ) -> Result<(), ErrorObjectOwned> {
         let network = self.bitcoin_wallet.network();
-        let address = bitcoin_wallet::bitcoin_address::parse_and_validate_network(&address, network)
-            .into_json_rpc_result()?;
+        let address =
+            bitcoin_wallet::bitcoin_address::parse_and_validate_network(&address, network)
+                .into_json_rpc_result()?;
 
         self.event_loop_service
             .set_external_bitcoin_redeem_address(address)
