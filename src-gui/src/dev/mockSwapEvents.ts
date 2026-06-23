@@ -3,6 +3,7 @@ import {
   BidQuote,
   ExpiredTimelocks,
   GetSwapInfoResponse,
+  HermesProgressKind,
   LockBitcoinDetails,
   MoneroAddressPool,
   QuoteWithAddress,
@@ -198,9 +199,47 @@ const baseScenario: TauriSwapProgressEvent[] = [
 
 const happyPath: TauriSwapProgressEvent[] = [
   ...baseScenario,
-  { type: "PreflightEncSig" },
-  { type: "InflightEncSig" },
-  { type: "EncryptedSignatureSent" },
+  {
+    type: "InflightEncSig",
+    content: {
+      p2p_sent: false,
+      hermes: HermesProgressKind.None,
+    },
+  },
+  {
+    type: "InflightEncSig",
+    content: {
+      p2p_sent: false,
+      hermes: HermesProgressKind.Constructing,
+    },
+  },
+  {
+    type: "InflightEncSig",
+    content: {
+      p2p_sent: true,
+      hermes: HermesProgressKind.Constructed,
+    },
+  },
+  {
+    type: "InflightEncSig",
+    content: {
+      p2p_sent: true,
+      hermes: HermesProgressKind.Published,
+    },
+  },
+  {
+    type: "InflightEncSig",
+    content: {
+      p2p_sent: true,
+      hermes: HermesProgressKind.Confirmed,
+    },
+  },
+  {
+    type: "EncryptedSignatureSent",
+    content: {
+      hermes_used: true,
+    },
+  },
   { type: "ConstructingMoneroRedeem" },
   {
     type: "PublishingMoneroRedeem",

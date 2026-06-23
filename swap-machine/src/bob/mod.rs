@@ -29,8 +29,7 @@ use uuid::Uuid;
 pub const HERMES_FUNDING_LOWER_BOUND_PICONERO: u64 = 50_000_000;
 
 /// Progress of the on-chain Hermes channel: construct, publish, then confirm
-/// the transaction. Orthogonal to the p2p channel; see
-/// [`BobState::EncSigReadyToBeSent`].
+/// the transaction.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum HermesProgress {
     /// Haven't determined yet if Hermes can be used.

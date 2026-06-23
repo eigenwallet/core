@@ -86,7 +86,6 @@ function getActiveStep(state: SwapState | null): PathStep | null {
 
     // Step 2: Waiting for encrypted signature to be sent to Alice
     // and for Alice to redeem the Bitcoin
-    case "PreflightEncSig":
     case "InflightEncSig":
     case "EncryptedSignatureSent":
       return [PathType.HAPPY_PATH, 2, isReleased];

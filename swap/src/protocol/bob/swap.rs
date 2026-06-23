@@ -617,7 +617,13 @@ async fn next_state(
             hermes,
             p2p_sent,
         } => {
-            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::InflightEncSig);
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::InflightEncSig {
+                    p2p_sent,
+                    hermes: (&hermes).into(),
+                },
+            );
 
             // If we sent the encrypted signature over both channels successfully, we are done
             if let (HermesProgress::Confirmed(hermes_tx), true) = (&hermes, p2p_sent) {
@@ -703,9 +709,13 @@ async fn next_state(
                 },
             }
         }
-        BobState::EncSigSent { state, .. } => {
-            event_emitter
-                .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::EncryptedSignatureSent);
+        BobState::EncSigSent { state, hermes_tx } => {
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::EncryptedSignatureSent {
+                    hermes_used: hermes_tx.is_some(),
+                },
+            );
 
             let bitcoin_wallet_for_retry = bitcoin_wallet.clone();
 
