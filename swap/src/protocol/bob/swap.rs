@@ -653,7 +653,9 @@ async fn next_state(
                     }
                 },
                 // Send the encrypted signature over p2p.
-                _ = send_encrypted_signature_p2p_if_needed(event_loop_handle, &state, p2p_sent), if !p2p_sent => {
+                _ = event_loop_handle.send_encrypted_signature(state.tx_redeem_encsig()), if !p2p_sent => {
+                    tracing::info!("Sent encrypted signature over p2p");
+
                     BobState::EncSigReadyToBeSent {
                         state: state.clone(),
                         hermes: hermes.clone(),
@@ -1724,7 +1726,7 @@ async fn construct_hermes_tx(
     env_config: &env::Config,
 ) -> Result<monero_oxide_wallet::transaction::Transaction> {
     let message = crate::protocol::hermes::encode_encrypted_signature(&state.tx_redeem_encsig())
-        .expect("the encrypted signature always fits into a Hermes message");
+        .context("Failed to encode the encrypted signature into a Hermes message")?;
     let lock_tx_hash = state.lock_transfer_proof().tx_hash();
 
     // The funding output only becomes spendable once the lock transaction is
@@ -1789,22 +1791,6 @@ async fn publish_hermes_tx(
     Ok(())
 }
 
-async fn send_encrypted_signature_p2p_if_needed(
-    event_loop_handle: &mut SwapEventLoopHandle,
-    state: &State4,
-    sent_enc_sig_over_p2p: bool,
-) {
-    if sent_enc_sig_over_p2p {
-        std::future::pending::<()>().await;
-    }
-
-    event_loop_handle
-        .send_encrypted_signature(state.tx_redeem_encsig())
-        .await;
-
-    tracing::info!("Sent encrypted signature over p2p");
-}
-
 /// Advance the on-chain Hermes channel by one step:
 /// `Constructing` → `Constructed` → `Published` → `Confirmed`. Once `Confirmed`
 /// nothing remains, so this never resolves; the `EncSigReadyToBeSent` arm exits
@@ -1825,9 +1811,7 @@ async fn advance_hermes(
         "Advancing the Hermes channel",
         || async {
             match hermes {
-                HermesProgress::None => {
-                    Ok(HermesProgress::Constructing)
-                }
+                HermesProgress::None => Ok(HermesProgress::Constructing),
                 HermesProgress::Constructing => {
                     let hermes_tx = construct_hermes_tx(monero_wallet, state, env_config)
                         .await

@@ -463,18 +463,13 @@ where
                     }
                 }
                 enc_sig = infallible_watch_for_encrypted_signature_via_hermes(&monero_wallet, &state3, monero_wallet_restore_blockheight) => {
-                    if state3.verify_tx_redeem_encsig(&enc_sig) {
-                        tracing::info!("Received valid encrypted signature via Hermes");
+                    tracing::info!("Received valid encrypted signature via Hermes");
 
-                        AliceState::EncSigLearned {
-                            monero_wallet_restore_blockheight,
-                            transfer_proof,
-                            encrypted_signature: Box::new(enc_sig),
-                            state3,
-                        }
-                    } else {
-                        tracing::error!("Received invalid encrypted signature via Hermes. Ignoring Hermes channel. Relying on p2p channel or waiting for cancel timelock to expire.");
-                        
+                    AliceState::EncSigLearned {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        encrypted_signature: Box::new(enc_sig),
+                        state3,
                     }
                 }
                 result = tx_lock_status.wait_until_confirmed_with(state3.cancel_timelock) => {

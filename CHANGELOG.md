@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- PROTOCOL: A new protcol called "Hermes" has been implemented. It allows taker and maker to communicate through the Monero blockchain. Monero transactions are used for passing messages. This is used for the taker to transmit the encrypted signature to the maker without requiring a network connection. This means a swap can now succeed without any p2p connection to the other party after the intitial swap setup.
+
 ## [4.10.2] - 2026-06-22
 
 ## [4.10.1] - 2026-06-20

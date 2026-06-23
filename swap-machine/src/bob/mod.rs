@@ -38,11 +38,20 @@ pub enum HermesProgress {
     /// Building the transaction.
     Constructing,
     /// Signed, not yet published.
-    Constructed(#[serde(with = "swap_serde::monero::transaction")] monero_oxide_wallet::transaction::Transaction),
+    Constructed(
+        #[serde(with = "swap_serde::monero::transaction")]
+        monero_oxide_wallet::transaction::Transaction,
+    ),
     /// Broadcast, not yet confirmed.
-    Published(#[serde(with = "swap_serde::monero::transaction")] monero_oxide_wallet::transaction::Transaction),
+    Published(
+        #[serde(with = "swap_serde::monero::transaction")]
+        monero_oxide_wallet::transaction::Transaction,
+    ),
     /// Confirmed on-chain.
-    Confirmed(#[serde(with = "swap_serde::monero::transaction")] monero_oxide_wallet::transaction::Transaction),
+    Confirmed(
+        #[serde(with = "swap_serde::monero::transaction")]
+        monero_oxide_wallet::transaction::Transaction,
+    ),
 }
 
 impl HermesProgress {
@@ -235,7 +244,9 @@ impl fmt::Display for BobState {
             }
             BobState::XmrLockTransactionSeen { .. } => write!(f, "xmr lock transaction seen"),
             BobState::XmrLocked(..) => write!(f, "xmr is locked"),
-            BobState::EncSigReadyToBeSent { .. } => write!(f, "encrypted signature ready to be sent"),
+            BobState::EncSigReadyToBeSent { .. } => {
+                write!(f, "encrypted signature ready to be sent")
+            }
             BobState::EncSigSent { .. } => write!(f, "encrypted signature is sent"),
             BobState::BtcRedeemed(..) => write!(f, "btc is redeemed"),
             BobState::WaitingForCancelTimelockExpiration { .. } => {

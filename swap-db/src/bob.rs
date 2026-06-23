@@ -339,9 +339,7 @@ impl fmt::Display for Bob {
             }
             Bob::XmrLockTransactionSeen { .. } => f.write_str("XMR lock transaction seen"),
             Bob::XmrLocked { .. } => f.write_str("Monero locked"),
-            Bob::EncSigReadyToBeSent { .. } => {
-                f.write_str("Encrypted signature ready to be sent")
-            }
+            Bob::EncSigReadyToBeSent { .. } => f.write_str("Encrypted signature ready to be sent"),
             Bob::WaitingForCancelTimelockExpiration { .. } => {
                 f.write_str("Waiting for cancel timelock expiration")
             }
