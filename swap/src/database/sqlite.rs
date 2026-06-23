@@ -10,14 +10,19 @@ use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
-use sqlx::sqlite::{Sqlite, SqliteConnectOptions};
-use sqlx::{ConnectOptions, Pool, SqlitePool};
+use sqlx::sqlite::{Sqlite, SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::{ConnectOptions, Pool};
 use std::path::Path;
 use std::str::FromStr;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::AccessMode;
+
+/// Number of connections opened eagerly at startup and held for the process
+/// lifetime, reserving the database's file descriptors before other subsystems
+/// can exhaust the limit.
+const DATABASE_POOL_SIZE: u32 = 32;
 
 pub struct SqliteDatabase {
     pool: Pool<Sqlite>,
@@ -36,7 +41,15 @@ impl SqliteDatabase {
         let options = SqliteConnectOptions::from_str(&path_str)?.read_only(read_only);
         let options = options.disable_statement_logging();
 
-        let pool = SqlitePool::connect_with(options.to_owned()).await?;
+        // Warm and hold the pool at startup so the database's file descriptors are
+        // reserved up front and survive later fd pressure from other subsystems.
+        let pool = SqlitePoolOptions::new()
+            .min_connections(DATABASE_POOL_SIZE)
+            .max_connections(DATABASE_POOL_SIZE)
+            .max_lifetime(None)
+            .idle_timeout(None)
+            .connect_with(options.to_owned())
+            .await?;
         let mut sqlite = Self {
             pool,
             tauri_handle: None,
