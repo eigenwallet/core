@@ -123,7 +123,11 @@ async fn next_state(
     event_emitter: Option<TauriHandle>,
     env_config: env::Config,
 ) -> Result<BobState> {
-    tracing::debug!(%state, "Advancing state");
+    if let Some(substate) = state.substate() {
+        tracing::debug!(%state, %substate, "Advancing state");
+    } else {
+        tracing::debug!(%state, "Advancing state");
+    }
 
     Ok(match state {
         BobState::Started {

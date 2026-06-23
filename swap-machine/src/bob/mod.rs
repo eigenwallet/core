@@ -65,6 +65,18 @@ impl HermesProgress {
     }
 }
 
+impl fmt::Display for HermesProgress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            HermesProgress::None => "none",
+            HermesProgress::Constructing => "constructing",
+            HermesProgress::Constructed(_) => "constructed",
+            HermesProgress::Published(_) => "published",
+            HermesProgress::Confirmed(_) => "confirmed",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum BobState {
     Started {
@@ -297,6 +309,17 @@ impl fmt::Display for RefundType {
 }
 
 impl BobState {
+    /// Progress within the current state, for states that have meaningful
+    /// internal progress; `None` for atomic states.
+    pub fn substate(&self) -> Option<String> {
+        match self {
+            BobState::EncSigReadyToBeSent {
+                hermes, p2p_sent, ..
+            } => Some(format!("p2p sent: {p2p_sent}, hermes: {hermes}")),
+            _ => None,
+        }
+    }
+
     /// Fetch the expired timelocks for the swap.
     /// Depending on the State, there are no locks to expire.
     pub async fn expired_timelocks(
