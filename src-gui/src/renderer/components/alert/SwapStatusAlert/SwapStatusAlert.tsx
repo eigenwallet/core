@@ -269,7 +269,9 @@ export function StateAlert({
     case BobStateName.XmrLockCandidateFound:
     case BobStateName.XmrLockTransactionSeen:
     case BobStateName.XmrLocked:
+    case BobStateName.EncSigReadyToBeSent:
     case BobStateName.EncSigSent:
+    case BobStateName.WaitingForCancelTimelockExpiration:
     case BobStateName.CancelTimelockExpired:
     // Even if the refund transactions have been published, it cannot be
     // guaranteed that they will be confirmed in time

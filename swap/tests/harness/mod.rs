@@ -24,7 +24,7 @@ use swap::monero::wallet::no_listener;
 use swap::monero::{MoneroAddressPool, Wallets};
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
-use swap::protocol::alice::{AliceState, Swap, TipConfig};
+use swap::protocol::alice::{AliceState, HermesFundingPolicy, Swap, TipConfig};
 use swap::protocol::bob::BobState;
 use swap::protocol::{Database, State, alice, bob};
 use swap::seed::Seed;
@@ -195,6 +195,10 @@ ask_spread = "0"
         .unwrap()
         .port();
 
+    // Far above the mainnet default: regtest fee estimation demands
+    // ~0.0084 XMR for the Hermes transaction
+    let alice_hermes_funding_amount = monero::Amount::parse_monero("0.02").unwrap();
+
     let (alice_handle, alice_swap_handle, alice_rpc_server_handle) = start_alice(
         &alice_seed,
         alice_db_path.clone(),
@@ -203,6 +207,7 @@ ask_spread = "0"
         alice_bitcoin_wallet.clone(),
         alice_monero_wallet.clone(),
         developer_tip.clone(),
+        alice_hermes_funding_amount,
         refund_policy.clone().unwrap_or_default(),
         alice_rpc_port,
     )
@@ -284,6 +289,7 @@ ask_spread = "0"
         developer_tip_monero_wallet,
         developer_tip,
         refund_policy: refund_policy.unwrap_or_default(),
+        alice_hermes_funding_amount,
         monerod_container_id: containers._monerod_container.id().to_string(),
         monero,
     };
@@ -376,6 +382,7 @@ async fn start_alice(
     bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     developer_tip: TipConfig,
+    hermes_funding_amount: monero::Amount,
     refund_policy: RefundPolicy,
     rpc_port: u16,
 ) -> (
@@ -399,6 +406,14 @@ async fn start_alice(
     let max_buy = bitcoin::Amount::from_sat(u64::MAX);
     let latest_rate = FixedRate::default();
     let resume_only = false;
+
+    // Tests fund Hermes for any swap size; `disable_alice_hermes` opts out by
+    // setting the funding amount to zero.
+    let hermes_funding_policy = HermesFundingPolicy {
+        enabled: true,
+        amount: hermes_funding_amount,
+        min_swap_amount: bitcoin::Amount::ZERO,
+    };
 
     let (mut swarm, _, _) = swarm::asb(
         seed,
@@ -436,6 +451,7 @@ async fn start_alice(
         None,
         swap_env::config::default_btc_redeem_fee_multiplier(),
         developer_tip,
+        hermes_funding_policy,
         refund_policy,
         None,
         db_path.with_extension("config.toml"),
@@ -797,6 +813,7 @@ pub struct TestContext {
     xmr_amount: monero::Amount,
     developer_tip: TipConfig,
     refund_policy: RefundPolicy,
+    alice_hermes_funding_amount: monero::Amount,
 
     alice_seed: Seed,
     alice_db_path: PathBuf,
@@ -841,6 +858,13 @@ impl TestContext {
         .await
     }
 
+    /// Disable the on-chain encrypted signature channel for Alice by setting
+    /// her Hermes funding to zero, then restart her so it takes effect.
+    pub async fn disable_alice_hermes(&mut self) {
+        self.alice_hermes_funding_amount = monero::Amount::ZERO;
+        self.restart_alice().await;
+    }
+
     pub async fn restart_alice(&mut self) {
         self.alice_handle.abort();
         // Abort the old RPC server to release the port before starting a new one
@@ -856,6 +880,42 @@ impl TestContext {
             self.alice_bitcoin_wallet.clone(),
             self.alice_monero_wallet.clone(),
             self.developer_tip.clone(),
+            self.alice_hermes_funding_amount,
+            self.refund_policy.clone(),
+            self.alice_rpc_port,
+        )
+        .await;
+
+        self.alice_handle = alice_handle;
+        self.alice_swap_handle = alice_swap_handle;
+        self.alice_rpc_server_handle = alice_rpc_server_handle;
+    }
+
+    /// Restart Alice on a fresh listen address, severing the p2p connection
+    /// for good: Bob keeps dialing the old address.
+    pub async fn restart_alice_unreachable(&mut self) {
+        self.alice_handle.abort();
+        self.alice_rpc_server_handle.abort();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let new_listen_port = std::net::TcpListener::bind(("127.0.0.1", 0))
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        self.alice_listen_address = format!("/ip4/127.0.0.1/tcp/{}", new_listen_port)
+            .parse()
+            .expect("failed to parse Alice's address");
+
+        let (alice_handle, alice_swap_handle, alice_rpc_server_handle) = start_alice(
+            &self.alice_seed,
+            self.alice_db_path.clone(),
+            self.alice_listen_address.clone(),
+            self.env_config,
+            self.alice_bitcoin_wallet.clone(),
+            self.alice_monero_wallet.clone(),
+            self.developer_tip.clone(),
+            self.alice_hermes_funding_amount,
             self.refund_policy.clone(),
             self.alice_rpc_port,
         )
@@ -868,7 +928,11 @@ impl TestContext {
 
     /// Stops Alice, mutates her persisted state for `swap_id`, writes it back, and
     /// restarts her. Used to simulate a corrupted/malicious swap from Alice's point of view.
-    pub async fn corrupt_alice_state(&mut self, swap_id: Uuid, modify: impl FnOnce(&mut AliceState)) {
+    pub async fn corrupt_alice_state(
+        &mut self,
+        swap_id: Uuid,
+        modify: impl FnOnce(&mut AliceState),
+    ) {
         // Stop Alice so we have exclusive access to her database.
         self.alice_handle.abort();
         self.alice_rpc_server_handle.abort();
@@ -1564,6 +1628,10 @@ struct Containers<'a> {
 pub mod alice_run_until {
     use swap::protocol::alice::AliceState;
 
+    pub fn is_btc_lock_transaction_seen(state: &AliceState) -> bool {
+        matches!(state, AliceState::BtcLockTransactionSeen { .. })
+    }
+
     pub fn is_xmr_lock_transaction_sent(state: &AliceState) -> bool {
         matches!(state, AliceState::XmrLockTransactionSent { .. })
     }
@@ -1609,7 +1677,7 @@ pub mod bob_run_until {
     }
 
     pub fn is_encsig_sent(state: &BobState) -> bool {
-        matches!(state, BobState::EncSigSent(..))
+        matches!(state, BobState::EncSigSent { .. })
     }
 
     pub fn is_btc_partially_refunded(state: &BobState) -> bool {

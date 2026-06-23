@@ -7,7 +7,7 @@ use crate::asb::{EventLoopHandle, LatestRate};
 use crate::common::retry;
 use crate::monero;
 use crate::monero::TransferProof;
-use crate::protocol::alice::{AliceState, Swap, TipConfig};
+use crate::protocol::alice::{AliceState, HermesFundingPolicy, Swap, TipConfig};
 use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{Context, Result, bail};
 use bitcoin_wallet::BitcoinWallet;
@@ -49,6 +49,7 @@ where
             swap.monero_wallet.clone(),
             &swap.env_config,
             swap.developer_tip.clone(),
+            swap.hermes_funding_policy,
             rate_service.clone(),
         )
         .await?;
@@ -69,6 +70,7 @@ async fn next_state<LR>(
     monero_wallet: Arc<monero::Wallets>,
     env_config: &Config,
     developer_tip: TipConfig,
+    hermes_funding_policy: HermesFundingPolicy,
     mut rate_service: LR,
 ) -> Result<AliceState>
 where
@@ -167,8 +169,18 @@ where
                         .lock_xmr_transfer_request()
                         .address_and_amount(env_config.monero_network);
 
-                    let destinations =
-                        build_transfer_destinations(lock_address, amount, developer_tip.clone())?;
+                    let hermes_funding_amount = hermes_funding_policy.funding_amount(state3.btc);
+
+                    let hermes_funding = state3
+                        .hermes_funding_transfer_request(hermes_funding_amount)
+                        .address_and_amount(env_config.monero_network);
+
+                    let destinations = build_transfer_destinations(
+                        lock_address,
+                        amount,
+                        hermes_funding,
+                        developer_tip.clone(),
+                    )?;
 
                     let constructed = monero_wallet
                         .construct_multi_destination_tx(&destinations)
@@ -441,12 +453,22 @@ where
                 // By listening for the encrypted signature here we can still proceed to the next state
                 // even if Bob does not respond with an acknowledgement but sends us the encrypted signature immediately.
                 enc_sig = event_loop_handle.recv_encrypted_signature() => {
-                    tracing::info!("Received encrypted signature");
+                    tracing::info!("Received encrypted signature via p2p channel. We haven't verified it yet.");
 
                     AliceState::EncSigLearned {
                         monero_wallet_restore_blockheight,
                         transfer_proof,
                         encrypted_signature: Box::new(enc_sig?),
+                        state3,
+                    }
+                }
+                enc_sig = infallible_watch_for_encrypted_signature_via_hermes(&monero_wallet, &state3, monero_wallet_restore_blockheight) => {
+                    tracing::info!("Received valid encrypted signature via Hermes");
+
+                    AliceState::EncSigLearned {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        encrypted_signature: Box::new(enc_sig),
                         state3,
                     }
                 }
@@ -470,7 +492,7 @@ where
                 .await;
 
             select! {
-                biased; // make sure the cancel timelock expiry future is polled first
+                biased;
                 result = tx_lock_status_subscription.wait_until_confirmed_with(state3.cancel_timelock) => {
                     result?;
                     AliceState::CancelTimelockExpired {
@@ -486,6 +508,16 @@ where
                         monero_wallet_restore_blockheight,
                         transfer_proof,
                         encrypted_signature: Box::new(enc_sig?),
+                        state3,
+                    }
+                }
+                enc_sig = infallible_watch_for_encrypted_signature_via_hermes(&monero_wallet, &state3, monero_wallet_restore_blockheight) => {
+                    tracing::info!("Received encrypted signature via Hermes");
+
+                    AliceState::EncSigLearned {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        encrypted_signature: Box::new(enc_sig),
                         state3,
                     }
                 }
@@ -1126,16 +1158,53 @@ impl XmrRefundable for Box<State3> {
     }
 }
 
-/// Build transfer destinations for the Monero lock transaction, optionally including a developer tip.
+/// Watch the Hermes wallet for the encrypted signature Bob transmits on-chain.
+/// Retries indefinitely on transient errors.
+async fn infallible_watch_for_encrypted_signature_via_hermes(
+    monero_wallet: &monero::Wallets,
+    state3: &State3,
+    monero_wallet_restore_blockheight: BlockHeight,
+) -> swap_core::bitcoin::EncryptedSignature {
+    retry(
+        "Watching for the encrypted signature via Hermes",
+        || async {
+            monero_wallet
+                .wait_for_hermes_message(
+                    state3.hermes_wallet_public_spend_key(),
+                    state3.v,
+                    monero_wallet_restore_blockheight,
+                    |message| {
+                        let enc_sig = crate::protocol::hermes::decode_encrypted_signature(message)
+                            .context("Failed to decode the encrypted signature")?;
+
+                        if !state3.verify_tx_redeem_encsig(&enc_sig) {
+                            anyhow::bail!("Encrypted signature does not verify against tx_redeem");
+                        }
+
+                        Ok(enc_sig)
+                    },
+                )
+                .await
+                .context("Failed to wait for the encrypted signature via Hermes")
+                .map_err(backoff::Error::transient)
+        },
+        None,
+        Duration::from_secs(60),
+    )
+    .await
+    .expect("we never stop retrying to watch for the encrypted signature via Hermes")
+}
+
+/// Build transfer destinations for the Monero lock transaction: the lock
+/// output, optionally a developer tip, and the Hermes funding output which Bob
+/// sweeps to transmit the encrypted signature on-chain.
 ///
-/// If the tip.ratio > 0 and the effective tip is >= MIN_USEFUL_TIP_AMOUNT_PICONERO:
-///     returns two destinations: one for the lock output, one for the tip output
-///
-/// Otherwise:
-///     returns one destination: for the lock output
+/// The tip output is only included if tip.ratio > 0 and the effective tip is
+/// >= MIN_USEFUL_TIP_AMOUNT_PICONERO.
 fn build_transfer_destinations(
     lock_address: monero_address::MoneroAddress,
     lock_amount: monero_oxide_ext::Amount,
+    hermes_funding: (monero_address::MoneroAddress, monero_oxide_ext::Amount),
     tip: TipConfig,
 ) -> anyhow::Result<Vec<(monero_address::MoneroAddress, monero_oxide_ext::Amount)>> {
     use rust_decimal::prelude::ToPrimitive;
@@ -1154,13 +1223,19 @@ fn build_transfer_destinations(
         .to_u64()
         .context("Developer tip amount should not overflow")?;
 
+    let mut destinations = vec![(lock_address, lock_amount)];
+
     if tip_amount_piconero >= MIN_USEFUL_TIP_AMOUNT_PICONERO {
         let tip_amount = monero_oxide_ext::Amount::from_pico(tip_amount_piconero);
-
-        Ok(vec![(lock_address, lock_amount), (tip.address, tip_amount)])
-    } else {
-        Ok(vec![(lock_address, lock_amount)])
+        destinations.push((tip.address, tip_amount));
     }
+
+    // A zero Hermes funding disables the on-chain encrypted signature channel
+    if hermes_funding.1.as_pico() > 0 {
+        destinations.push(hermes_funding);
+    }
+
+    Ok(destinations)
 }
 
 /// This function is used to check if Alice is in a state where it is clear that she has already received the encrypted signature from Bob.
@@ -1197,6 +1272,13 @@ mod tests {
         monero_address::MoneroAddress::from_str_with_unchecked_network(TEST_ADDRESS_STR).unwrap()
     }
 
+    fn test_hermes_funding() -> (monero_address::MoneroAddress, monero_oxide_ext::Amount) {
+        (
+            test_address(),
+            monero_oxide_ext::Amount::from_pico(20_000_000_000),
+        )
+    }
+
     #[test]
     fn test_build_transfer_destinations_without_tip() {
         let lock_amount = monero_oxide_ext::Amount::from_pico(1_000_000_000_000); // 1 XMR
@@ -1205,10 +1287,28 @@ mod tests {
             address: test_address(),
         };
 
-        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+        let result =
+            build_transfer_destinations(test_address(), lock_amount, test_hermes_funding(), tip)
+                .unwrap();
 
-        assert_eq!(result.len(), 1);
+        assert_eq!(result.len(), 2);
         assert_eq!(result[0].1, lock_amount);
+        assert_eq!(*result.last().unwrap(), test_hermes_funding());
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_omits_zero_hermes_funding() {
+        let lock_amount = monero_oxide_ext::Amount::from_pico(1_000_000_000_000); // 1 XMR
+        let tip = TipConfig {
+            ratio: Decimal::ZERO,
+            address: test_address(),
+        };
+        let hermes_funding = (test_address(), monero_oxide_ext::Amount::ZERO);
+
+        let result =
+            build_transfer_destinations(test_address(), lock_amount, hermes_funding, tip).unwrap();
+
+        assert_eq!(result, vec![(test_address(), lock_amount)]);
     }
 
     #[test]
@@ -1219,15 +1319,18 @@ mod tests {
             address: test_address(),
         };
 
-        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+        let result =
+            build_transfer_destinations(test_address(), lock_amount, test_hermes_funding(), tip)
+                .unwrap();
 
         // Tip = 10 XMR * 0.01 = 0.1 XMR = 100_000_000_000 pico >> 30_000_000 threshold
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), 3);
         assert_eq!(result[0].1, lock_amount);
         assert_eq!(
             result[1].1,
             monero_oxide_ext::Amount::from_pico(100_000_000_000)
         );
+        assert_eq!(*result.last().unwrap(), test_hermes_funding());
     }
 
     #[test]
@@ -1239,11 +1342,14 @@ mod tests {
             address: test_address(),
         };
 
-        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+        let result =
+            build_transfer_destinations(test_address(), lock_amount, test_hermes_funding(), tip)
+                .unwrap();
 
         // Tip = 0.002 XMR * 0.01 = 20_000_000 piconero < 30_000_000 threshold
-        assert_eq!(result.len(), 1);
+        assert_eq!(result.len(), 2);
         assert_eq!(result[0].1, lock_amount);
+        assert_eq!(*result.last().unwrap(), test_hermes_funding());
     }
 
     #[test]
@@ -1255,11 +1361,14 @@ mod tests {
             address: test_address(),
         };
 
-        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+        let result =
+            build_transfer_destinations(test_address(), lock_amount, test_hermes_funding(), tip)
+                .unwrap();
 
         // Tip = 100 * 0.1 = 10 piconero << 30_000_000 threshold
-        assert_eq!(result.len(), 1);
+        assert_eq!(result.len(), 2);
         assert_eq!(result[0].1, lock_amount);
+        assert_eq!(*result.last().unwrap(), test_hermes_funding());
     }
 
     #[test]
@@ -1270,14 +1379,17 @@ mod tests {
             address: test_address(),
         };
 
-        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+        let result =
+            build_transfer_destinations(test_address(), lock_amount, test_hermes_funding(), tip)
+                .unwrap();
 
         // Tip = 1 XMR * 0.005 = 0.005 XMR = 5_000_000_000 pico >> 30_000_000 threshold
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), 3);
         assert_eq!(result[0].1, lock_amount);
         assert_eq!(
             result[1].1,
             monero_oxide_ext::Amount::from_pico(5_000_000_000)
         );
+        assert_eq!(*result.last().unwrap(), test_hermes_funding());
     }
 }

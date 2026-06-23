@@ -146,10 +146,119 @@ where
         return Err(BuildSweepError::from(DestinationsError::Empty).into());
     }
 
-    // Locate the block that contains the transaction
-    let status = with_retry(inner_retry.clone(), "Sweep transaction-status lookup", || {
-        async { provider.transaction_status(tx_id).await }
+    let input = select_input(
+        &provider,
+        &private_spend_key,
+        private_view_key,
+        tx_id,
+        inner_retry.clone(),
+    )
+    .await?;
+
+    let fee_rate = with_retry(inner_retry, "Sweep fee-rate lookup", || async {
+        provider
+            .fee_rate(FeePriority::Normal, MAX_FEE_PER_WEIGHT)
+            .await
     })
+    .await?;
+
+    // Generate a random outgoing view key
+    let mut outgoing_view_key = Zeroizing::new([0u8; 32]);
+    OsRng.fill_bytes(outgoing_view_key.as_mut());
+
+    build_sweep_transaction(
+        input,
+        &destinations,
+        fee_rate,
+        outgoing_view_key,
+        &private_spend_key,
+    )
+    .map_err(Into::into)
+}
+
+/// Construct a transaction whose purpose is to carry `data` on-chain rather
+/// than to move funds: spends the largest output of `tx_id` belonging to the
+/// view pair, pays a single piconero to `destination` and the entire
+/// remainder as fee.
+pub async fn construct_data_tx<P>(
+    provider: P,
+    private_spend_key: Zeroizing<Scalar>,
+    private_view_key: Zeroizing<Scalar>,
+    tx_id: [u8; 32],
+    destination: MoneroAddress,
+    data: Vec<Vec<u8>>,
+    inner_retry: Option<backoff::ExponentialBackoff>,
+) -> Result<Transaction<NotPruned>, SweepError>
+where
+    P: ProvidesScannableBlocks
+        + ProvidesBlockchainMeta
+        + ProvidesDecoys
+        + ProvidesFeeRates
+        + ProvidesTransactionStatus
+        + Send
+        + Sync,
+{
+    let input = select_input(
+        &provider,
+        &private_spend_key,
+        private_view_key,
+        tx_id,
+        inner_retry,
+    )
+    .await?;
+
+    let mut outgoing_view_key = Zeroizing::new([0u8; 32]);
+    OsRng.fill_bytes(outgoing_view_key.as_mut());
+
+    // 0-amount burner output to satisfy Monero's 2-output minimum
+    let burner = burner_address(destination.network(), &outgoing_view_key);
+
+    // The entire input is consumed as fee (no change output), so the fee rate
+    // only sets the minimum required fee. A minimal rate keeps that minimum
+    // trivially below the input amount.
+    let fee_rate = FeeRate::new(1, 1).expect("1 per-weight with mask 1 is a valid fee rate");
+
+    let tx = SignableTransaction::new(
+        RctType::ClsagBulletproofPlus,
+        outgoing_view_key,
+        vec![input],
+        vec![(destination, 1), (burner, 0)],
+        // Without a change output the entire surplus is paid as fee
+        Change::fingerprintable(None),
+        data,
+        fee_rate,
+    )
+    .map_err(BuildSweepError::from)?
+    .sign(&mut OsRng, &private_spend_key)
+    .map_err(BuildSweepError::from)?;
+
+    Ok(tx)
+}
+
+/// Locate the largest output of `tx_id` belonging to the view pair and select
+/// decoys for spending it.
+async fn select_input<P>(
+    provider: &P,
+    private_spend_key: &Zeroizing<Scalar>,
+    private_view_key: Zeroizing<Scalar>,
+    tx_id: [u8; 32],
+    inner_retry: Option<backoff::ExponentialBackoff>,
+) -> Result<OutputWithDecoys, SweepError>
+where
+    P: ProvidesScannableBlocks
+        + ProvidesBlockchainMeta
+        + ProvidesDecoys
+        + ProvidesFeeRates
+        + ProvidesTransactionStatus
+        + Send
+        + Sync,
+{
+    // Locate the block that contains the transaction
+    let status = with_retry(
+        inner_retry.clone(),
+        "Sweep transaction-status lookup",
+        || async { provider.transaction_status(tx_id).await },
+    )
     .await?;
     let block_height = match status {
         TransactionStatus::InBlock { block_height } => block_height as usize,
@@ -159,20 +268,18 @@ where
 
     // Scanner for finding sweepable outputs
     let mut scanner = {
-        let public_spend_key = public_key(&private_spend_key);
-        let view_pair = ViewPair::new(public_spend_key, private_view_key.clone())?;
+        let public_spend_key = public_key(private_spend_key);
+        let view_pair = ViewPair::new(public_spend_key, private_view_key)?;
 
         Scanner::new(view_pair)
     };
 
     // Find the largest output belonging to the transaction
     let largest_output = {
-        let blocks = with_retry(inner_retry.clone(), "Sweep block fetch", || {
-            async {
-                provider
-                    .contiguous_scannable_blocks(block_height..=block_height)
-                    .await
-            }
+        let blocks = with_retry(inner_retry.clone(), "Sweep block fetch", || async {
+            provider
+                .contiguous_scannable_blocks(block_height..=block_height)
+                .await
         })
         .await?;
         let block = blocks
@@ -189,42 +296,25 @@ where
     };
 
     // Generate decoys for the input
-    let block_number = with_retry(inner_retry.clone(), "Sweep latest-block-number lookup", || {
-        async { provider.latest_block_number().await }
-    })
-    .await?;
-    let input = with_retry(inner_retry.clone(), "Sweep decoy selection", || {
-        async {
-            OutputWithDecoys::new(
-                &mut OsRng,
-                &provider,
-                RING_LEN,
-                block_number,
-                largest_output.clone(),
-            )
-            .await
-        }
-    })
-    .await?;
-
-    // Get the fee rate
-    let fee_rate = with_retry(inner_retry, "Sweep fee-rate lookup", || {
-        async { provider.fee_rate(FeePriority::Normal, MAX_FEE_PER_WEIGHT).await }
-    })
-    .await?;
-
-    // Generate a random outgoing view key
-    let mut outgoing_view_key = Zeroizing::new([0u8; 32]);
-    OsRng.fill_bytes(outgoing_view_key.as_mut());
-
-    build_sweep_transaction(
-        input,
-        &destinations,
-        fee_rate,
-        outgoing_view_key,
-        &private_spend_key,
+    let block_number = with_retry(
+        inner_retry.clone(),
+        "Sweep latest-block-number lookup",
+        || async { provider.latest_block_number().await },
     )
-    .map_err(Into::into)
+    .await?;
+    let input = with_retry(inner_retry, "Sweep decoy selection", || async {
+        OutputWithDecoys::new(
+            &mut OsRng,
+            provider,
+            RING_LEN,
+            block_number,
+            largest_output.clone(),
+        )
+        .await
+    })
+    .await?;
+
+    Ok(input)
 }
 
 /// Build and sign a sweep transaction that spends `input` across `destinations`.

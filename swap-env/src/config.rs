@@ -194,6 +194,20 @@ pub struct Maker {
     /// that will be donated to the devepment fund as part of the Monero lock transaction.
     #[serde(default = "default_developer_tip")]
     pub developer_tip: Decimal,
+    /// Amount of Monero (in piconero) attached to the Monero lock transaction to
+    /// fund the Hermes transaction.
+    #[serde(default = "default_hermes_funding_amount_piconero")]
+    pub hermes_funding_amount_piconero: u64,
+    /// Whether to fund the on-chain Hermes encrypted-signature channel at all.
+    /// Disabled by default.
+    #[serde(default = "default_hermes_enabled")]
+    pub hermes_enabled: bool,
+    /// Minimum swap size (in BTC) below which the Hermes amount is not funded.
+    #[serde(
+        with = "::bitcoin::amount::serde::as_btc",
+        default = "default_hermes_min_swap_amount"
+    )]
+    pub hermes_min_swap_amount: bitcoin::Amount,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -250,6 +264,19 @@ pub fn default_price_ticker_validity_duration_secs() -> u64 {
 
 fn default_developer_tip() -> Decimal {
     Decimal::ZERO
+}
+
+pub fn default_hermes_funding_amount_piconero() -> u64 {
+    // 0.0001 XMR, roughly twice the typical network fee of a Hermes transaction
+    100_000_000
+}
+
+pub fn default_hermes_enabled() -> bool {
+    false
+}
+
+pub fn default_hermes_min_swap_amount() -> bitcoin::Amount {
+    bitcoin::Amount::from_btc(0.01).expect("0.01 BTC to be a valid amount")
 }
 
 pub fn default_btc_redeem_fee_multiplier() -> Decimal {
@@ -447,6 +474,9 @@ pub fn query_user_for_initial_config_with_network(
             external_bitcoin_redeem_address: None,
             btc_redeem_fee_multiplier: default_btc_redeem_fee_multiplier(),
             developer_tip,
+            hermes_funding_amount_piconero: default_hermes_funding_amount_piconero(),
+            hermes_enabled: default_hermes_enabled(),
+            hermes_min_swap_amount: default_hermes_min_swap_amount(),
             refund_policy: defaults.refund_policy,
         },
     })

@@ -8,8 +8,10 @@ import { ReactNode } from "react";
 
 export default function CircularProgressWithSubtitle({
   description,
+  hideSpinner = false,
 }: {
   description: string | ReactNode;
+  hideSpinner?: boolean;
 }) {
   return (
     <Box
@@ -20,7 +22,7 @@ export default function CircularProgressWithSubtitle({
         flexDirection: "column",
       }}
     >
-      <CircularProgress size={50} />
+      {!hideSpinner && <CircularProgress size={50} />}
       <Typography
         variant="subtitle2"
         sx={{ paddingTop: 1, textAlign: "center" }}

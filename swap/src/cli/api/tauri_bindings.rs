@@ -4,6 +4,7 @@ use crate::cli::api::request::{
 };
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
+use crate::protocol::bob::HermesProgress;
 use crate::{monero, network::quote::BidQuote};
 use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
@@ -1016,6 +1017,30 @@ pub enum TauriContextStatusEvent {
     Failed,
 }
 
+/// Data-less mirror of [`HermesProgress`] used to report how far the on-chain
+/// Hermes channel has progressed to the frontend.
+#[typeshare]
+#[derive(Display, Clone, Serialize)]
+pub enum HermesProgressKind {
+    None,
+    Constructing,
+    Constructed,
+    Published,
+    Confirmed,
+}
+
+impl From<&HermesProgress> for HermesProgressKind {
+    fn from(progress: &HermesProgress) -> Self {
+        match progress {
+            HermesProgress::None => HermesProgressKind::None,
+            HermesProgress::Constructing => HermesProgressKind::Constructing,
+            HermesProgress::Constructed(_) => HermesProgressKind::Constructed,
+            HermesProgress::Published(_) => HermesProgressKind::Published,
+            HermesProgress::Confirmed(_) => HermesProgressKind::Confirmed,
+        }
+    }
+}
+
 #[derive(Serialize, Clone)]
 #[typeshare]
 pub struct TauriSwapProgressEventWrapper {
@@ -1064,9 +1089,15 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         xmr_lock_tx_target_confirmations: u64,
     },
-    PreflightEncSig,
-    InflightEncSig,
-    EncryptedSignatureSent,
+    InflightEncSig {
+        /// Whether the encrypted signature has been sent over p2p yet.
+        p2p_sent: bool,
+        /// How far the on-chain Hermes channel has progressed.
+        hermes: HermesProgressKind,
+    },
+    EncryptedSignatureSent {
+        hermes_used: bool,
+    },
     ConstructingMoneroRedeem,
     PublishingMoneroRedeem {
         xmr_redeem_tx_hex: String,

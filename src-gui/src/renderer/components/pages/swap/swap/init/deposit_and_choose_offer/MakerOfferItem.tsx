@@ -118,7 +118,6 @@ export default function MakerOfferItem({
             <Box
               component="img"
               src={priorityMaker.avatar}
-              alt={priorityMaker.label}
               sx={{
                 width: 40,
                 height: 40,
@@ -141,14 +140,7 @@ export default function MakerOfferItem({
           >
             {priorityMaker ? (
               <Typography variant="body1" noWrap>
-                <Box
-                  component="span"
-                  sx={{ fontWeight: 700, color: "primary.main" }}
-                >
-                  {priorityMaker.label}
-                </Box>
                 <Box component="span" sx={{ color: "text.secondary" }}>
-                  {" / "}
                   {peer_id}
                 </Box>
               </Typography>

@@ -49,7 +49,7 @@ impl Default for Backoff {
 ///
 /// When `inner_retry` is `Some`, every error returned by `operation` is treated
 /// as transient and retried according to the exponential-backoff policy until it
-/// gives up, at which point the final error is returned. 
+/// gives up, at which point the final error is returned.
 /// When `None`, `operation` is attempted exactly once and any error is returned immediately.
 pub async fn with_retry<T, E, F, Fut>(
     inner_retry: Option<backoff::ExponentialBackoff>,

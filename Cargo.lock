@@ -6664,6 +6664,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "backoff",
+ "chacha20",
  "curve25519-dalek",
  "hex",
  "monero-daemon-rpc",
@@ -10601,6 +10602,7 @@ dependencies = [
  "backoff",
  "bdk",
  "bdk_wallet",
+ "bincode 1.3.3",
  "bitcoin 0.32.8",
  "bitcoin-harness",
  "bitcoin-wallet",
@@ -10629,6 +10631,7 @@ dependencies = [
  "monero-sys",
  "monero-wallet 0.1.0",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
+ "monero-wallet-ng",
  "pem",
  "prometheus-client",
  "proptest",

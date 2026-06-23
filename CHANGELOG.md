@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- PROTOCOL: A new protcol called "Hermes" has been implemented. It allows taker and maker to communicate through the Monero blockchain. Monero transactions are used for passing messages. This is used for the taker to transmit the encrypted signature to the maker without requiring a network connection. This means a swap can now succeed without any p2p connection to the other party after the intitial swap setup.
+- ASB: Added new `[maker]` config options for the Hermes protocol:
+  - `hermes_enabled`: whether to fund the on-chain Hermes encrypted-signature channel at all (default: `false`).
+  - `hermes_funding_amount_piconero`: amount of Monero (in piconero) attached to the Monero lock transaction to fund the Hermes transaction (default: `100000000`, i.e. 0.0001 XMR).
+  - `hermes_min_swap_amount`: minimum swap size (in BTC) below which the Hermes amount is not funded (default: `0.01`).
+
 ## [4.10.2] - 2026-06-22
 
 ## [4.10.1] - 2026-06-20

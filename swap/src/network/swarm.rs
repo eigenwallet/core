@@ -8,7 +8,6 @@ use libp2p::Transport as _;
 use libp2p::connection_limits::ConnectionLimits;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::metrics::{BandwidthTransport, Registry};
-use swap_p2p::protocols::metered::RequestResponseMetrics;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{Multiaddr, Swarm, identity};
 use libp2p::{PeerId, SwarmBuilder};
@@ -19,6 +18,7 @@ use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
+use swap_p2p::protocols::metered::RequestResponseMetrics;
 use tor_hsservice::RunningOnionService;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 

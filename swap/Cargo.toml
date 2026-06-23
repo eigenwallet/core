@@ -35,6 +35,7 @@ libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service"] }
 # Error handling
 anyhow = { workspace = true }
 backoff = { workspace = true }
+bincode = "1"
 thiserror = { workspace = true }
 
 # Crypto / Decoding / Encoding
@@ -60,6 +61,7 @@ monero-oxide-wallet = { workspace = true }
 monero-rpc-pool = { path = "../monero-rpc-pool" }
 monero-seed = { git = "https://github.com/monero-oxide/monero-wallet-util.git", package = "monero-seed" }
 monero-sys = { path = "../monero-sys" }
+monero-wallet-ng = { path = "../monero-wallet-ng" }
 pem = "3.0"
 proptest = "1"
 regex = "1.10"

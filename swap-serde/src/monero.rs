@@ -217,6 +217,51 @@ pub mod transaction {
             deserializer.deserialize_bytes(BytesVisitor)
         }
     }
+
+    pub mod option {
+        use monero_oxide_wallet::transaction::{NotPruned, Transaction};
+        use serde::{Deserialize, Deserializer, Serializer, de};
+
+        pub fn serialize<S>(
+            tx: &Option<Transaction<NotPruned>>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            match tx {
+                Some(tx) => {
+                    let bytes = tx.serialize();
+                    if serializer.is_human_readable() {
+                        serializer.serialize_some(&data_encoding::HEXLOWER.encode(&bytes))
+                    } else {
+                        serializer.serialize_some(&bytes)
+                    }
+                }
+                None => serializer.serialize_none(),
+            }
+        }
+
+        pub fn deserialize<'de, D>(
+            deserializer: D,
+        ) -> Result<Option<Transaction<NotPruned>>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let bytes = if deserializer.is_human_readable() {
+                Option::<String>::deserialize(deserializer)?
+                    .map(|tx| data_encoding::HEXLOWER_PERMISSIVE.decode(tx.as_bytes()))
+                    .transpose()
+                    .map_err(de::Error::custom)?
+            } else {
+                Option::<Vec<u8>>::deserialize(deserializer)?
+            };
+
+            bytes
+                .map(|bytes| Transaction::read(&mut &*bytes).map_err(de::Error::custom))
+                .transpose()
+        }
+    }
 }
 
 pub mod scalar {

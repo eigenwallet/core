@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use uuid::Uuid;
@@ -10,7 +11,105 @@ use crate::cli::SwapEventLoopHandle;
 use crate::common::retry;
 use crate::monero;
 use crate::monero::MoneroAddressPool;
+use monero_interface::PublishTransaction;
 use monero_oxide_wallet::transaction::{NotPruned, Transaction};
+
+/// Wait until `tx` reaches `confirmation_target` confirmations, re-publishing it
+/// every `republish_interval` while we wait. The daemon may forget about the
+/// transaction before it is mined, so we rebroadcast it
+/// whenever it is no longer present on chain.
+async fn wait_for_monero_tx_confirmation(
+    monero_wallet: &monero::Wallets,
+    swap_id: Uuid,
+    kind: &str,
+    tx: &Transaction<NotPruned>,
+    confirmation_target: u64,
+    republish_interval: Duration,
+) -> Result<()> {
+    let tx_hash = monero::TxHash::from_tx(tx);
+
+    let republish = async {
+        loop {
+            tokio::time::sleep(republish_interval).await;
+
+            let _ = retry(
+                "Re-publishing Monero transaction",
+                || async {
+                    let is_present = monero_wallet
+                        .is_transaction_present(&tx_hash)
+                        .await
+                        .context(
+                            "Failed to check whether Monero transaction is still present on chain",
+                        )
+                        .map_err(backoff::Error::transient)?;
+
+                    if is_present {
+                        return Ok(());
+                    }
+
+                    tracing::warn!(%swap_id, %tx_hash, kind, "Monero transaction is no longer present on chain, re-publishing");
+
+                    monero_wallet
+                        .rpc_client()
+                        .await
+                        .map_err(backoff::Error::transient)?
+                        .publish_transaction(tx)
+                        .await
+                        .context("Failed to re-publish Monero transaction")
+                        .map_err(backoff::Error::transient)
+                },
+                None,
+                None,
+            )
+            .await;
+        }
+    };
+
+    tokio::select! {
+        result = monero_wallet.wait_until_confirmed(
+            &tx_hash,
+            confirmation_target,
+            None::<fn((monero::TxHash, u64, u64))>,
+        ) => {
+            result.context(format!("Failed to wait for Monero {kind} transaction confirmation"))?;
+        }
+        _ = republish => {}
+    }
+
+    Ok(())
+}
+
+/// Infallible variant of [`wait_for_monero_tx_confirmation`]: retries
+/// indefinitely so a closed confirmation subscription just re-subscribes instead
+/// of erroring.
+pub(super) async fn infallible_wait_for_monero_tx_confirmation(
+    monero_wallet: &monero::Wallets,
+    swap_id: Uuid,
+    kind: &str,
+    tx: &Transaction<NotPruned>,
+    confirmation_target: u64,
+    republish_interval: Duration,
+) {
+    retry(
+        "Waiting for Monero transaction confirmation",
+        || async {
+            wait_for_monero_tx_confirmation(
+                monero_wallet,
+                swap_id,
+                kind,
+                tx,
+                confirmation_target,
+                republish_interval,
+            )
+            .await
+            .map_err(backoff::Error::transient)
+        },
+        None,
+        None,
+    )
+    .await
+    .expect("we never stop retrying to wait for the Monero transaction confirmation")
+}
 
 pub(super) trait XmrRedeemable {
     async fn construct_xmr_redeem_transaction(
@@ -147,12 +246,22 @@ impl WaitForIncomingXmrLockTransaction for State3 {
     }
 }
 
+/// Outcome of validating a Monero lock transaction candidate.
+#[derive(Clone, Copy)]
+pub(super) enum XmrLockTransactionValidity {
+    Invalid,
+    Valid {
+        /// What Alice attached to fund the Hermes transaction, if anything.
+        hermes_amount: Option<monero::Amount>,
+    },
+}
+
 pub(super) trait VerifyXmrLockTransaction {
     async fn verify_xmr_lock_transaction(
         &self,
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
-    ) -> Result<bool>;
+    ) -> Result<XmrLockTransactionValidity>;
 }
 
 impl VerifyXmrLockTransaction for State3 {
@@ -160,18 +269,29 @@ impl VerifyXmrLockTransaction for State3 {
         &self,
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
-    ) -> Result<bool> {
+    ) -> Result<XmrLockTransactionValidity> {
         let (public_spend_key, private_view_key) = self.xmr_view_keys();
         let expected_amount = self.xmr_amount();
 
-        monero_wallet
+        let is_valid = monero_wallet
             .verify_transfer(
                 &tx_hash,
                 public_spend_key,
                 private_view_key,
                 expected_amount,
             )
-            .await
+            .await?;
+
+        if !is_valid {
+            return Ok(XmrLockTransactionValidity::Invalid);
+        }
+
+        let (hermes_spend_key, hermes_view_key) = self.hermes_view_keys();
+        let hermes_amount = monero_wallet
+            .largest_received_utxo(&tx_hash, hermes_spend_key, hermes_view_key)
+            .await?;
+
+        Ok(XmrLockTransactionValidity::Valid { hermes_amount })
     }
 }
 
@@ -180,7 +300,7 @@ pub(super) trait InfallibleVerifyXmrLockTransaction {
         self,
         monero_wallet: Arc<monero::Wallets>,
         tx_hash: monero::TxHash,
-    ) -> bool;
+    ) -> XmrLockTransactionValidity;
 }
 
 impl<T> InfallibleVerifyXmrLockTransaction for T
@@ -191,7 +311,7 @@ where
         self,
         monero_wallet: Arc<monero::Wallets>,
         tx_hash: monero::TxHash,
-    ) -> bool {
+    ) -> XmrLockTransactionValidity {
         let state_for_retry = self;
 
         retry(
@@ -294,6 +414,7 @@ pub(super) trait WaitForBtcRedeem {
     async fn infallible_wait_for_btc_redeem(
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
+        force_lookup_interval_secs: u64,
     ) -> State5;
 }
 
@@ -301,23 +422,58 @@ impl WaitForBtcRedeem for State4 {
     async fn infallible_wait_for_btc_redeem(
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
+        force_lookup_interval_secs: u64,
     ) -> State5 {
-        retry(
-            "Waiting for Bitcoin redeem transaction",
+        let force_lookup_interval = Duration::from_secs(force_lookup_interval_secs);
+
+        let watch_for_redeem = retry(
+            "Watching for Bitcoin redeem transaction",
             || {
                 let state = self.clone();
+
                 async move {
                     state
                         .watch_for_redeem_btc(bitcoin_wallet)
                         .await
+                        .context("Failed to watch for Bitcoin redeem transaction")
                         .map_err(backoff::Error::transient)
                 }
             },
             None,
             None,
-        )
-        .await
-        .expect("we never stop retrying to wait for Bitcoin redeem transaction")
+        );
+
+        let force_lookup = async {
+            loop {
+                if let Some(state5) = retry(
+                    "Checking for Bitcoin redeem transaction",
+                    || {
+                        let state = self.clone();
+
+                        async move {
+                            state
+                                .check_for_tx_redeem(bitcoin_wallet)
+                                .await
+                                .context("Failed to check for existence of tx_redeem")
+                                .map_err(backoff::Error::transient)
+                        }
+                    },
+                    None,
+                    None,
+                )
+                .await?
+                {
+                    return Ok::<_, anyhow::Error>(state5);
+                }
+
+                tokio::time::sleep(force_lookup_interval).await;
+            }
+        };
+
+        tokio::select! {
+            result = watch_for_redeem => result.expect("we never stop retrying to watch for Bitcoin redeem transaction"),
+            result = force_lookup => result.expect("we never stop retrying to check for existence of tx_redeem"),
+        }
     }
 }
 

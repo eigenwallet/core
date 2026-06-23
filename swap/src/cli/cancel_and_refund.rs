@@ -14,16 +14,46 @@ pub async fn cancel_and_refund(
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     db: Arc<dyn Database + Send + Sync>,
 ) -> Result<BobState> {
-    if let Err(err) = cancel(swap_id, bitcoin_wallet.clone(), db.clone()).await {
-        tracing::warn!(%err, "Could not cancel swap. Attempting to refund anyway");
-    };
+    match cancel(swap_id, bitcoin_wallet.clone(), db.clone()).await {
+        Ok((_, state)) => {
+            wait_for_cancel_tx_confirmation(swap_id, state, bitcoin_wallet.clone(), db.clone())
+                .await?;
+        }
+        Err(err) => {
+            tracing::warn!(%err, "Could not cancel swap. Attempting to refund anyway");
+        }
+    }
 
-    let state = match refund(swap_id, bitcoin_wallet, db).await {
-        Ok(s) => s,
-        Err(e) => bail!(e),
-    };
+    let state = refund(swap_id, bitcoin_wallet, db).await?;
 
     Ok(state)
+}
+
+async fn wait_for_cancel_tx_confirmation(
+    swap_id: Uuid,
+    state: BobState,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
+    db: Arc<dyn Database + Send + Sync>,
+) -> Result<()> {
+    let BobState::BtcCancelPublished(state6) = state else {
+        return Ok(());
+    };
+
+    let tx_cancel = state6.construct_tx_cancel()?;
+    let txid = tx_cancel.txid();
+    tracing::info!(%txid, "Waiting for cancel transaction to be confirmed");
+
+    bitcoin_wallet
+        .subscribe_to(Box::new(tx_cancel))
+        .await
+        .wait_until_final()
+        .await
+        .context("Failed waiting for TxCancel confirmation")?;
+
+    db.insert_latest_state(swap_id, BobState::BtcCancelled(state6).into())
+        .await?;
+
+    Ok(())
 }
 
 pub async fn cancel(
@@ -62,7 +92,8 @@ pub async fn cancel(
             ..
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLocked(state4) => state4.cancel(),
-        BobState::EncSigSent(state4) => state4.cancel(),
+        BobState::EncSigReadyToBeSent { state, .. } => state.cancel(),
+        BobState::EncSigSent { state, .. } => state.cancel(),
         BobState::WaitingForCancelTimelockExpiration {
             state,
             monero_wallet_restore_blockheight,
@@ -204,7 +235,8 @@ pub async fn refund(
             ..
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLocked(state4) => state4.cancel(),
-        BobState::EncSigSent(state4) => state4.cancel(),
+        BobState::EncSigReadyToBeSent { state, .. } => state.cancel(),
+        BobState::EncSigSent { state, .. } => state.cancel(),
         BobState::WaitingForCancelTimelockExpiration {
             state,
             monero_wallet_restore_blockheight,
