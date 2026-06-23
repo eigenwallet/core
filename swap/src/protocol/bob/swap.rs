@@ -9,7 +9,7 @@ use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::bob::common::{
     InfallibleVerifyXmrLockTransaction, InfallibleXmrRedeemable, RecvTransferProof,
     WaitForBtcRedeem, WaitForIncomingXmrLockTransaction, WaitForXmrLockTransactionConfirmation,
-    XmrLockTransactionValidity, XmrRedeemable, wait_for_monero_tx_confirmation,
+    XmrLockTransactionValidity, XmrRedeemable, infallible_wait_for_monero_tx_confirmation,
 };
 use crate::protocol::bob::*;
 use crate::protocol::{Database, bob};
@@ -930,7 +930,7 @@ async fn next_state(
                 },
             );
 
-            wait_for_monero_tx_confirmation(
+            infallible_wait_for_monero_tx_confirmation(
                 &monero_wallet,
                 swap_id,
                 "redeem",
@@ -938,8 +938,7 @@ async fn next_state(
                 1,
                 XMR_REDEEM_REPUBLISH_INTERVAL,
             )
-            .await
-            .context("Failed to confirm Monero redeem transaction")?;
+            .await;
 
             event_emitter.emit_swap_progress_event(
                 swap_id,
@@ -1889,7 +1888,7 @@ async fn advance_hermes(
                     Ok(HermesProgress::Published(hermes_tx.clone()))
                 }
                 HermesProgress::Published(hermes_tx) => {
-                    wait_for_monero_tx_confirmation(
+                    infallible_wait_for_monero_tx_confirmation(
                         monero_wallet,
                         swap_id,
                         "hermes",
@@ -1897,8 +1896,7 @@ async fn advance_hermes(
                         1,
                         HERMES_REPUBLISH_INTERVAL,
                     )
-                    .await
-                    .map_err(backoff::Error::transient)?;
+                    .await;
                     Ok(HermesProgress::Confirmed(hermes_tx.clone()))
                 }
                 HermesProgress::Confirmed(_) => {

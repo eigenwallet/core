@@ -18,7 +18,7 @@ use monero_oxide_wallet::transaction::{NotPruned, Transaction};
 /// every `republish_interval` while we wait. The daemon may forget about the
 /// transaction before it is mined, so we rebroadcast it
 /// whenever it is no longer present on chain.
-pub(super) async fn wait_for_monero_tx_confirmation(
+async fn wait_for_monero_tx_confirmation(
     monero_wallet: &monero::Wallets,
     swap_id: Uuid,
     kind: &str,
@@ -77,6 +77,38 @@ pub(super) async fn wait_for_monero_tx_confirmation(
     }
 
     Ok(())
+}
+
+/// Infallible variant of [`wait_for_monero_tx_confirmation`]: retries
+/// indefinitely so a closed confirmation subscription just re-subscribes instead
+/// of erroring.
+pub(super) async fn infallible_wait_for_monero_tx_confirmation(
+    monero_wallet: &monero::Wallets,
+    swap_id: Uuid,
+    kind: &str,
+    tx: &Transaction<NotPruned>,
+    confirmation_target: u64,
+    republish_interval: Duration,
+) {
+    retry(
+        "Waiting for Monero transaction confirmation",
+        || async {
+            wait_for_monero_tx_confirmation(
+                monero_wallet,
+                swap_id,
+                kind,
+                tx,
+                confirmation_target,
+                republish_interval,
+            )
+            .await
+            .map_err(backoff::Error::transient)
+        },
+        None,
+        None,
+    )
+    .await
+    .expect("we never stop retrying to wait for the Monero transaction confirmation")
 }
 
 pub(super) trait XmrRedeemable {
