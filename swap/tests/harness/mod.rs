@@ -24,7 +24,7 @@ use swap::monero::wallet::no_listener;
 use swap::monero::{MoneroAddressPool, Wallets};
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
-use swap::protocol::alice::{AliceState, Swap, TipConfig};
+use swap::protocol::alice::{AliceState, HermesFundingPolicy, Swap, TipConfig};
 use swap::protocol::bob::BobState;
 use swap::protocol::{Database, State, alice, bob};
 use swap::seed::Seed;
@@ -407,6 +407,14 @@ async fn start_alice(
     let latest_rate = FixedRate::default();
     let resume_only = false;
 
+    // Tests fund Hermes for any swap size; `disable_alice_hermes` opts out by
+    // setting the funding amount to zero.
+    let hermes_funding_policy = HermesFundingPolicy {
+        enabled: true,
+        amount: hermes_funding_amount,
+        min_swap_amount: bitcoin::Amount::ZERO,
+    };
+
     let (mut swarm, _, _) = swarm::asb(
         seed,
         min_buy,
@@ -443,7 +451,7 @@ async fn start_alice(
         None,
         swap_env::config::default_btc_redeem_fee_multiplier(),
         developer_tip,
-        hermes_funding_amount,
+        hermes_funding_policy,
         refund_policy,
         None,
         db_path.with_extension("config.toml"),

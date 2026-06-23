@@ -1064,7 +1064,7 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         xmr_lock_tx_target_confirmations: u64,
     },
-    PreflightEncSig,
+    PreflightEncSig, // TODO: Remove
     InflightEncSig,
     EncryptedSignatureSent,
     ConstructingMoneroRedeem,

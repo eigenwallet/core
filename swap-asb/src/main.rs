@@ -37,7 +37,7 @@ use swap::database::{AccessMode, open_db};
 use swap::monero;
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
-use swap::protocol::alice::{AliceState, TipConfig, run};
+use swap::protocol::alice::{AliceState, HermesFundingPolicy, TipConfig, run};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;
 use swap_env::config::{
@@ -367,8 +367,11 @@ pub async fn main() -> Result<()> {
                 }
             };
 
-            let hermes_funding_amount =
-                monero::Amount::from_pico(config.maker.hermes_funding_amount_piconero);
+            let hermes_funding_policy = HermesFundingPolicy {
+                enabled: config.maker.hermes_enabled,
+                amount: monero::Amount::from_pico(config.maker.hermes_funding_amount_piconero),
+                min_swap_amount: config.maker.hermes_min_swap_amount,
+            };
 
             let (metrics, _metrics_server) =
                 match (config.network.prometheus_port, metrics_registry) {
@@ -394,7 +397,7 @@ pub async fn main() -> Result<()> {
                 config.maker.external_bitcoin_redeem_address,
                 config.maker.btc_redeem_fee_multiplier,
                 tip_config,
-                hermes_funding_amount,
+                hermes_funding_policy,
                 config.maker.refund_policy,
                 onion_service_handle,
                 config_path.clone(),

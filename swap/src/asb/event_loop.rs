@@ -10,7 +10,7 @@ use crate::network::quote::{BidQuote, RefundPolicyWire};
 use crate::network::swap_setup::alice::WalletSnapshot;
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
-use crate::protocol::alice::{AliceState, State3, Swap, TipConfig};
+use crate::protocol::alice::{AliceState, HermesFundingPolicy, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
 use anyhow::{Context, Result, anyhow, bail};
 use bitcoin_wallet::BitcoinWallet;
@@ -59,7 +59,7 @@ where
     external_redeem_address: Option<bitcoin::Address>,
     btc_redeem_fee_multiplier: Decimal,
     developer_tip: TipConfig,
-    hermes_funding_amount: monero::Amount,
+    hermes_funding_policy: HermesFundingPolicy,
     refund_policy: RefundPolicy,
 
     config_path: PathBuf,
@@ -193,7 +193,7 @@ where
         external_redeem_address: Option<bitcoin::Address>,
         btc_redeem_fee_multiplier: Decimal,
         developer_tip: TipConfig,
-        hermes_funding_amount: monero::Amount,
+        hermes_funding_policy: HermesFundingPolicy,
         refund_policy: RefundPolicy,
         onion_service_handle: Option<Arc<RunningOnionService>>,
         config_path: PathBuf,
@@ -219,7 +219,7 @@ where
             external_redeem_address,
             btc_redeem_fee_multiplier,
             developer_tip,
-            hermes_funding_amount,
+            hermes_funding_policy,
             refund_policy,
             config_path,
             quote_cache,
@@ -286,7 +286,7 @@ where
                 state: state.try_into().expect("Alice state loaded from db"),
                 swap_id,
                 developer_tip: self.developer_tip.clone(),
-                hermes_funding_amount: self.hermes_funding_amount,
+                hermes_funding_policy: self.hermes_funding_policy,
             };
 
             match self.swap_sender.send(swap).await {
@@ -827,7 +827,7 @@ where
             state: initial_state,
             swap_id,
             developer_tip: self.developer_tip.clone(),
-            hermes_funding_amount: self.hermes_funding_amount,
+            hermes_funding_policy: self.hermes_funding_policy,
         };
 
         self.db
@@ -1057,7 +1057,7 @@ where
             state: new_state,
             swap_id,
             developer_tip: self.developer_tip.clone(),
-            hermes_funding_amount: self.hermes_funding_amount,
+            hermes_funding_policy: self.hermes_funding_policy,
         };
 
         // Send swap to be resumed
