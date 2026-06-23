@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.10.2] - 2026-06-22
+
+## [4.10.1] - 2026-06-20
+
+## [4.10.0] - 2026-06-19
+
+- GUI + ASB: Speed up Bitcoin wallet calls by waiting for less than all Electrum servers to respond.
+
+## [4.9.6] - 2026-06-17
+
+- GUI: Allow user to copy raw hex of the Monero redeem transaction to broadcast externally.
+- GUI: Continuously republish the Monero redeem transaction while we are waiting for it to confirm.
+
 ## [4.9.5] - 2026-06-16
 
 ## [4.9.4] - 2026-06-16
@@ -1013,7 +1026,11 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.9.5...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.10.2...HEAD
+[4.10.2]: https://github.com/eigenwallet/core/compare/4.10.1...4.10.2
+[4.10.1]: https://github.com/eigenwallet/core/compare/4.10.0...4.10.1
+[4.10.0]: https://github.com/eigenwallet/core/compare/4.9.6...4.10.0
+[4.9.6]: https://github.com/eigenwallet/core/compare/4.9.5...4.9.6
 [4.9.5]: https://github.com/eigenwallet/core/compare/4.9.4...4.9.5
 [4.9.4]: https://github.com/eigenwallet/core/compare/4.9.3...4.9.4
 [4.9.3]: https://github.com/eigenwallet/core/compare/4.9.2...4.9.3

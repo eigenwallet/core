@@ -4,7 +4,7 @@
 //! Mostly we do two things:
 //!  - wait for transactions to be confirmed
 //!  - send money from one wallet to another.
-pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
+pub use monero_sys::{Daemon, TxReceipt, WalletHandle as Wallet, WalletHandleListener};
 
 use anyhow::{Context, Result};
 use monero_address::Network;
@@ -427,6 +427,31 @@ impl Wallets {
         )
         .await
         .context("Failed to construct data transaction")
+    }
+
+    pub async fn construct_multi_destination_tx(
+        &self,
+        destinations: &[(monero_address::MoneroAddress, monero_oxide_ext::Amount)],
+    ) -> Result<(Transaction<NotPruned>, TxReceipt)> {
+        let (receipt, tx_hex) = self
+            .main_wallet()
+            .await
+            .construct_multi_destination_tx(destinations)
+            .await
+            .context("Failed to construct Monero transaction")?;
+
+        let tx = monero_wallet_ng::util::transaction_from_hex(&tx_hex)
+            .context("Failed to parse constructed Monero transaction")?;
+
+        let tx_hash = hex::encode(tx.hash());
+        anyhow::ensure!(
+            tx_hash == receipt.txid,
+            "Parsed Monero transaction hash {} does not match wallet-reported txid {}",
+            tx_hash,
+            receipt.txid
+        );
+
+        Ok((tx, receipt))
     }
 
     /// Verify a transfer using the new monero-wallet-ng implementation.

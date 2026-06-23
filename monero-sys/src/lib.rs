@@ -255,6 +255,8 @@ pub enum TransactionDirection {
 /// A wrapper around a pending transaction.
 ///
 /// Safety: do _not_ implement copy, send, sync, ...
+///
+/// Must be manually dropped via FfiWallet::dispose_pending_transaction.
 pub struct PendingTransactionHandle(*mut ffi::PendingTransaction);
 
 /// Struct containing a raw pointer to a transaction history.
@@ -620,6 +622,25 @@ impl WalletHandle {
         })
         .await?
         .map_err(|e| anyhow!("Failed to transfer funds after multiple attempts: {e:?}"))
+    }
+
+    pub async fn construct_multi_destination_tx(
+        &self,
+        destinations: &[(monero_address::MoneroAddress, monero_oxide_ext::Amount)],
+    ) -> anyhow::Result<(TxReceipt, String)> {
+        let destinations = destinations.to_vec();
+
+        retry_notify(backoff(None, None), || async {
+            let destinations = destinations.clone();
+
+            self.call(move |wallet| wallet.construct_multi_destination_tx(&destinations))
+            .await
+            .map_err(backoff::Error::transient)
+        }, |error, duration: Duration| {
+            tracing::error!(error=?error, "Failed to construct transaction, retrying in {} secs", duration.as_secs());
+        })
+        .await?
+        .map_err(|e| anyhow!("Failed to construct transaction after multiple attempts: {e:?}"))
     }
 
     /// Sweep all funds to an address.
@@ -2428,6 +2449,39 @@ impl FfiWallet {
         result
     }
 
+    pub fn construct_multi_destination_tx(
+        &mut self,
+        destinations: &[(monero_address::MoneroAddress, monero_oxide_ext::Amount)],
+    ) -> anyhow::Result<(TxReceipt, String)> {
+        self.ensure_synchronized_blocking()
+            .context("Cannot construct transaction when wallet is not synchronized")?;
+
+        let output_addresses = destinations
+            .iter()
+            .map(|(address, _)| *address)
+            .collect::<Vec<_>>();
+
+        let mut pending_tx = self.create_pending_transaction_multi_dest(destinations, false)?;
+
+        let built = (|| -> anyhow::Result<(TxReceipt, String)> {
+            let (txid, tx_keys) = pending_tx.validate_single_txid(&output_addresses).context(
+                "Failed to ensure transaction has one txid and at least one tx key before constructing",
+            )?;
+
+            let height = self.blockchain_height();
+
+            let tx_hex = pending_tx.raw_tx_hex(&txid)?;
+
+            Ok((TxReceipt { txid, tx_keys, height }, tx_hex))
+        })();
+
+        if let Err(e) = self.dispose_pending_transaction(pending_tx) {
+            tracing::error!(error=%e, "Failed to dispose pending transaction after constructing");
+        }
+
+        built
+    }
+
     /// Create a pending transaction without publishing it.
     /// Returns the pending transaction that can be inspected before publishing.
     fn create_pending_transaction_single_dest(
@@ -2670,10 +2724,7 @@ impl FfiWallet {
     /// Returns an error if the underlying FFI call fails. Callers decide whether
     /// to propagate it: where it would mask a more important result (e.g. after a
     /// publish attempt) it should be logged instead.
-    fn dispose_pending_transaction(
-        &mut self,
-        tx: PendingTransactionHandle,
-    ) -> anyhow::Result<()> {
+    fn dispose_pending_transaction(&mut self, tx: PendingTransactionHandle) -> anyhow::Result<()> {
         // Safety: we pass a valid pointer and we verified it's not used again since PendingTransaction is moved into this function
         unsafe {
             self.inner
@@ -3010,6 +3061,20 @@ impl PendingTransactionHandle {
         }
 
         Ok((txid, keys_map))
+    }
+
+    fn raw_tx_hex(&self, txid: &str) -> anyhow::Result<String> {
+        self.check_error()
+            .context("Pending transaction is in an error state")?;
+
+        let_cxx_string!(txid_cxx = txid);
+        let hex = ffi::pendingTransactionRawTxHex(self, &txid_cxx)
+            .context(
+                "Failed to get raw transaction hex from pending transaction: FFI call failed with exception",
+            )?
+            .to_string();
+
+        Ok(hex)
     }
 }
 

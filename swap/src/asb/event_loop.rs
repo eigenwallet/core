@@ -21,7 +21,7 @@ use libp2p::metrics::{Metrics, Recorder};
 use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
-use moka::future::Cache;
+use moka::sync::Cache;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use std::collections::HashMap;
@@ -101,7 +101,7 @@ where
 
     /// Response channels waiting for the in-flight quote computation to finish.
     /// Drained once the computation resolves.
-    pending_quote_channels: Vec<(ResponseChannel<BidQuote>, PeerId)>,
+    pending_quote_channels: HashMap<PeerId, ResponseChannel<BidQuote>>,
 
     /// Controller RPC responders waiting for the in-flight quote computation.
     /// Drained alongside `pending_quote_channels` when the computation resolves.
@@ -331,8 +331,14 @@ where
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
                         }
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
-                            self.pending_quote_channels.push((channel, peer));
-                            self.ensure_quote_computation_is_inflight();
+                            if let Some(quote) = self.fresh_quote() {
+                                if self.swarm.behaviour_mut().quote.send_response(channel, quote).is_err() {
+                                    tracing::debug!(%peer, "Failed to respond with quote");
+                                }
+                            } else {
+                                self.pending_quote_channels.insert(peer, channel);
+                                self.ensure_quote_computation_is_inflight();
+                            }
                         }
                         SwarmEvent::Behaviour(OutEvent::TransferProofAcknowledged { peer, id }) => {
                             tracing::debug!(%peer, "Bob acknowledged transfer proof");
@@ -549,7 +555,7 @@ where
 
                     tracing::trace!(?quote, num_requests = self.pending_quote_channels.len(), "Responding with quote to requests");
 
-                    for (channel, peer) in self.pending_quote_channels.drain(..) {
+                    for (peer, channel) in self.pending_quote_channels.drain() {
                         if self.swarm.behaviour_mut().quote.send_response(channel, quote.clone()).is_err() {
                             tracing::debug!(%peer, "Failed to respond with quote");
                         }
@@ -679,6 +685,17 @@ where
         }
     }
 
+    fn fresh_quote(&self) -> Option<BidQuote> {
+        let key = QuoteCacheKey {
+            min_buy: self.min_buy,
+            max_buy: self.max_buy,
+        };
+        match self.quote_cache.get(&key)? {
+            Ok(quote) => Some((*quote).clone()),
+            Err(_) => Some(BidQuote::ZERO),
+        }
+    }
+
     /// Get a quote from the cache or compute a new one.
     ///
     /// Returns a `'static` future so it can be stored in the event loop
@@ -705,7 +722,7 @@ where
             let key = QuoteCacheKey { min_buy, max_buy };
 
             // Check if we have a cached quote
-            if let Some(cached) = quote_cache.get(&key).await {
+            if let Some(cached) = quote_cache.get(&key) {
                 tracing::trace!("Got a request for a quote, using cached value.");
                 return cached;
             }
@@ -766,7 +783,7 @@ where
 
             // Insert the computed quote into the cache
             // Need to clone it as insert takes ownership
-            quote_cache.insert(key, result.clone()).await;
+            quote_cache.insert(key, result.clone());
 
             // If the quote failed, we log the error
             if let Err(err) = &result {

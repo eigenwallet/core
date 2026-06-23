@@ -887,6 +887,7 @@ impl State3 {
             monero_wallet_restore_blockheight,
             lock_transfer_proof,
             hermes_amount,
+            S_a_monero: Some(self.S_a_monero),
             tx_redeem_fee: self.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
@@ -923,6 +924,7 @@ impl State3 {
             punish_address: self.punish_address.clone(),
             xmr: self.xmr,
             btc_amnesty_amount: self.btc_amnesty_amount,
+            S_a_monero: Some(self.S_a_monero),
         }
     }
 
@@ -1007,6 +1009,8 @@ pub struct State4 {
     #[serde(with = "swap_serde::monero::scalar")]
     s_b: monero::Scalar,
     S_a_bitcoin: bitcoin::PublicKey,
+    #[serde(default)]
+    S_a_monero: Option<monero_oxide_ext::PublicKey>,
     v: monero::PrivateViewKey,
     xmr: monero::Amount,
     btc_amnesty_amount: Option<bitcoin::Amount>,
@@ -1198,6 +1202,7 @@ impl State4 {
             tx_cancel_fee: self.tx_cancel_fee,
             xmr: self.xmr,
             btc_amnesty_amount: self.btc_amnesty_amount,
+            S_a_monero: self.S_a_monero,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_reclaim_fee: self.tx_reclaim_fee,
             tx_withhold_fee: self.tx_withhold_fee,
@@ -1247,6 +1252,8 @@ pub struct State6 {
     #[serde(with = "swap_serde::monero::scalar")]
     s_b: monero::Scalar,
     v: monero::PrivateViewKey,
+    #[serde(default)]
+    S_a_monero: Option<monero_oxide_ext::PublicKey>,
     pub xmr: monero::Amount,
     /// How much of the locked Bitcoin will stay locked in case of a partial refund.
     /// May still be retrieve by publishing the `TxAmnesty` transaction.
@@ -1518,11 +1525,10 @@ impl State6 {
         &self,
         s_a: monero::Scalar,
         lock_transfer_proof: TransferProofMaybeWithTxKey,
-    ) -> State5 {
-        // TODO: Validate `s_a` here!
+    ) -> Result<State5> {
         let s_a = monero_oxide_ext::PrivateKey::from_scalar(s_a);
 
-        State5 {
+        let state5 = State5 {
             s_a,
             s_b: self.s_b,
             v: self.v,
@@ -1531,7 +1537,23 @@ impl State6 {
             tx_lock: self.tx_lock.clone(),
             monero_wallet_restore_blockheight: self.monero_wallet_restore_blockheight,
             lock_transfer_proof,
+        };
+
+        // The combined spend key `s_a + s_b` must resolve to the lock's shared public
+        // spend key `S_a + S_b`, otherwise Alice revealed a wrong key.
+        if let Some(S_a_monero) = self.S_a_monero {
+            let S_b_monero = monero_oxide_ext::PublicKey::from_private_key(
+                &monero_oxide_ext::PrivateKey::from_scalar(self.s_b),
+            );
+            let (spend_key, _) = state5.xmr_keys();
+
+            if monero_oxide_ext::PublicKey::from_private_key(&spend_key) != S_a_monero + S_b_monero
+            {
+                bail!("Alice revealed an incorrect cooperative redeem key");
+            }
         }
+
+        Ok(state5)
     }
 
     pub async fn check_for_tx_early_refund(

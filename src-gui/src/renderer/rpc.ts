@@ -224,7 +224,7 @@ export async function initializeContext() {
   // Get all Bitcoin nodes without checking availability
   // The backend ElectrumBalancer will handle load balancing and failover
   const bitcoinNodes =
-    store.getState().settings.nodes[network][Blockchain.Bitcoin];
+    store.getState().settings.nodesV2[network][Blockchain.Bitcoin];
 
   // For Monero nodes, determine whether to use pool or custom node
   const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
@@ -238,7 +238,7 @@ export async function initializeContext() {
   );
 
   const moneroNodeUrl =
-    store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
+    store.getState().settings.nodesV2[network][Blockchain.Monero][0] ?? null;
 
   // Check the state of the Monero node
   const moneroNodeConfig =
@@ -288,7 +288,7 @@ export async function updateAllNodeStatuses() {
       : [Blockchain.Bitcoin, Blockchain.Monero]
     )
       .map((blockchain) =>
-        settings.nodes[network][blockchain].map((node) =>
+        settings.nodesV2[network][blockchain].map((node) =>
           updateNodeStatus(node, blockchain, network),
         ),
       )
@@ -752,7 +752,7 @@ export async function getCurrentMoneroNodeConfig(): Promise<MoneroNodeConfig> {
   const network = getNetwork();
   const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
   const moneroNodeUrl =
-    store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
+    store.getState().settings.nodesV2[network][Blockchain.Monero][0] ?? null;
 
   const moneroNodeConfig =
     useMoneroRpcPool ||

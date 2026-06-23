@@ -1,6 +1,6 @@
 [package]
 name = "swap"
-version = "4.9.5"
+version = "4.10.2"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2024"
 description = "XMR/BTC trustless atomic swaps."
@@ -42,6 +42,7 @@ thiserror = { workspace = true }
 curve25519-dalek = { workspace = true, features = ["rand_core"] }
 data-encoding = { workspace = true }
 ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
+hex = { workspace = true }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 # Randomness

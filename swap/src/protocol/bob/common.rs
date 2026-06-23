@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use uuid::Uuid;
@@ -10,7 +11,73 @@ use crate::cli::SwapEventLoopHandle;
 use crate::common::retry;
 use crate::monero;
 use crate::monero::MoneroAddressPool;
+use monero_interface::PublishTransaction;
 use monero_oxide_wallet::transaction::{NotPruned, Transaction};
+
+/// Wait until `tx` reaches `confirmation_target` confirmations, re-publishing it
+/// every `republish_interval` while we wait. The daemon may forget about the
+/// transaction before it is mined, so we rebroadcast it
+/// whenever it is no longer present on chain.
+pub(super) async fn wait_for_monero_tx_confirmation(
+    monero_wallet: &monero::Wallets,
+    swap_id: Uuid,
+    kind: &str,
+    tx: &Transaction<NotPruned>,
+    confirmation_target: u64,
+    republish_interval: Duration,
+) -> Result<()> {
+    let tx_hash = monero::TxHash::from_tx(tx);
+
+    let republish = async {
+        loop {
+            tokio::time::sleep(republish_interval).await;
+
+            let _ = retry(
+                "Re-publishing Monero transaction",
+                || async {
+                    let is_present = monero_wallet
+                        .is_transaction_present(&tx_hash)
+                        .await
+                        .context(
+                            "Failed to check whether Monero transaction is still present on chain",
+                        )
+                        .map_err(backoff::Error::transient)?;
+
+                    if is_present {
+                        return Ok(());
+                    }
+
+                    tracing::warn!(%swap_id, %tx_hash, kind, "Monero transaction is no longer present on chain, re-publishing");
+
+                    monero_wallet
+                        .rpc_client()
+                        .await
+                        .map_err(backoff::Error::transient)?
+                        .publish_transaction(tx)
+                        .await
+                        .context("Failed to re-publish Monero transaction")
+                        .map_err(backoff::Error::transient)
+                },
+                None,
+                None,
+            )
+            .await;
+        }
+    };
+
+    tokio::select! {
+        result = monero_wallet.wait_until_confirmed(
+            &tx_hash,
+            confirmation_target,
+            None::<fn((monero::TxHash, u64, u64))>,
+        ) => {
+            result.context(format!("Failed to wait for Monero {kind} transaction confirmation"))?;
+        }
+        _ = republish => {}
+    }
+
+    Ok(())
+}
 
 pub(super) trait XmrRedeemable {
     async fn construct_xmr_redeem_transaction(

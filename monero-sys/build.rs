@@ -80,6 +80,11 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "Adds balancePerSubaddress() and unlockedBalancePerSubaddress() to wallet::WalletImpl in api/wallet.h",
         "patches/eigenwallet_0004_wallet_impl_balance_per_subaddress.patch"
     ),
+    embedded_patch!(
+        "eigenwallet_0005_pending_transaction_raw_tx_hex",
+        "Adds rawTxHex() to PendingTransaction in wallet2_api.h",
+        "patches/eigenwallet_0005_pending_transaction_raw_tx_hex.patch"
+    ),
 ];
 
 /// Find the workspace target directory from OUT_DIR

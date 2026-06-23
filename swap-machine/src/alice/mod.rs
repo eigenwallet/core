@@ -33,6 +33,12 @@ pub enum AliceState {
     BtcEarlyRefundable {
         state3: Box<State3>,
     },
+    XmrLockTransactionConstructed {
+        monero_wallet_restore_blockheight: BlockHeight,
+        xmr_lock_tx: monero_oxide_wallet::transaction::Transaction,
+        transfer_proof: TransferProof,
+        state3: Box<State3>,
+    },
     XmrLockTransactionSent {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
@@ -184,6 +190,9 @@ impl fmt::Display for AliceState {
                 write!(f, "bitcoin lock transaction in mempool")
             }
             AliceState::BtcLocked { .. } => write!(f, "btc is locked"),
+            AliceState::XmrLockTransactionConstructed { .. } => {
+                write!(f, "xmr lock transaction constructed")
+            }
             AliceState::XmrLockTransactionSent { .. } => write!(f, "xmr lock transaction sent"),
             AliceState::XmrLocked { .. } => write!(f, "xmr is locked"),
             AliceState::XmrLockTransferProofSent { .. } => {
@@ -1180,7 +1189,9 @@ impl ReservesMonero for AliceState {
             AliceState::Started { .. } => monero::Amount::ZERO,
             // These are the only states where we have to assume we will have to lock
             // our Monero, and we haven't done so yet.
-            AliceState::BtcLockTransactionSeen { state3 } | AliceState::BtcLocked { state3 } => {
+            AliceState::BtcLockTransactionSeen { state3 }
+            | AliceState::BtcLocked { state3 }
+            | AliceState::XmrLockTransactionConstructed { state3, .. } => {
                 // We reserve as much Monero as we need for the output of the lock transaction
                 // and as we need for the network fee
                 state3.xmr.min_conservative_balance_to_spend()
