@@ -418,69 +418,62 @@ pub(super) trait WaitForBtcRedeem {
     ) -> State5;
 }
 
-async fn wait_for_btc_redeem(
-    state: &State4,
-    bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
-    force_lookup_interval_secs: u64,
-) -> Result<State5> {
-    let force_lookup_interval = Duration::from_secs(force_lookup_interval_secs);
-
-    let force_lookup = async {
-        loop {
-            tokio::time::sleep(force_lookup_interval).await;
-
-            if let Some(state5) = retry(
-                "Checking for Bitcoin redeem transaction",
-                || {
-                    let state = state.clone();
-
-                    async move {
-                        state
-                            .check_for_tx_redeem(bitcoin_wallet)
-                            .await
-                            .context("Failed to check for existence of tx_redeem")
-                            .map_err(backoff::Error::transient)
-                    }
-                },
-                None,
-                None,
-            )
-            .await?
-            {
-                return Ok(state5);
-            }
-        }
-    };
-
-    tokio::select! {
-        result = state.watch_for_redeem_btc(bitcoin_wallet) => {
-            result.context("Failed to watch for Bitcoin redeem transaction")
-        }
-        result = force_lookup => result,
-    }
-}
-
 impl WaitForBtcRedeem for State4 {
     async fn infallible_wait_for_btc_redeem(
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
         force_lookup_interval_secs: u64,
     ) -> State5 {
-        retry(
-            "Waiting for Bitcoin redeem transaction",
+        let force_lookup_interval = Duration::from_secs(force_lookup_interval_secs);
+
+        let watch_for_redeem = retry(
+            "Watching for Bitcoin redeem transaction",
             || {
                 let state = self.clone();
+
                 async move {
-                    wait_for_btc_redeem(&state, bitcoin_wallet, force_lookup_interval_secs)
+                    state
+                        .watch_for_redeem_btc(bitcoin_wallet)
                         .await
+                        .context("Failed to watch for Bitcoin redeem transaction")
                         .map_err(backoff::Error::transient)
                 }
             },
             None,
             None,
-        )
-        .await
-        .expect("we never stop retrying to wait for Bitcoin redeem transaction")
+        );
+
+        let force_lookup = async {
+            loop {
+                if let Some(state5) = retry(
+                    "Checking for Bitcoin redeem transaction",
+                    || {
+                        let state = self.clone();
+
+                        async move {
+                            state
+                                .check_for_tx_redeem(bitcoin_wallet)
+                                .await
+                                .context("Failed to check for existence of tx_redeem")
+                                .map_err(backoff::Error::transient)
+                        }
+                    },
+                    None,
+                    None,
+                )
+                .await?
+                {
+                    return Ok(state5);
+                }
+
+                tokio::time::sleep(force_lookup_interval).await;
+            }
+        };
+
+        tokio::select! {
+            result = watch_for_redeem => result.expect("we never stop retrying to watch for Bitcoin redeem transaction"),
+            result = force_lookup => result.expect("we never stop retrying to check for existence of tx_redeem"),
+        }
     }
 }
 
