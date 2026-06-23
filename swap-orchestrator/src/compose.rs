@@ -598,6 +598,8 @@ services:
       - SYS_PTRACE
     sysctls:
       - net.ipv4.tcp_tw_reuse=1
+    ulimits:
+      nofile: 524288
     depends_on:
       - electrs
     volumes:
