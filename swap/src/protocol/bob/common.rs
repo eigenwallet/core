@@ -463,7 +463,7 @@ impl WaitForBtcRedeem for State4 {
                 )
                 .await?
                 {
-                    return Ok(state5);
+                    return Ok::<_, anyhow::Error>(state5);
                 }
 
                 tokio::time::sleep(force_lookup_interval).await;

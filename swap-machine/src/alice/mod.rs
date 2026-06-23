@@ -884,6 +884,21 @@ impl State3 {
         TxRedeem::new(&self.tx_lock, &self.redeem_address, self.tx_redeem_fee)
     }
 
+    pub fn verify_tx_redeem_encsig(
+        &self,
+        encrypted_signature: &swap_core::bitcoin::EncryptedSignature,
+    ) -> bool {
+        let tx_redeem = self.tx_redeem();
+
+        swap_core::bitcoin::verify_encsig(
+            self.B,
+            swap_core::bitcoin::PublicKey::from(self.s_a.to_secpfun_scalar()),
+            &tx_redeem.digest(),
+            encrypted_signature,
+        )
+        .is_ok()
+    }
+
     pub fn tx_early_refund(&self) -> TxEarlyRefund {
         swap_core::bitcoin::TxEarlyRefund::new(
             &self.tx_lock,

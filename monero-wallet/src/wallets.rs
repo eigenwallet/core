@@ -607,13 +607,21 @@ impl Wallets {
     }
 
     /// Scan the wallet of the given view pair from `restore_height` until an
-    /// output carrying a valid Hermes message is found.
-    pub async fn wait_for_hermes_message(
+    /// output carries a Hermes message that `extract` accepts, returning the
+    /// extracted value.
+    ///
+    /// Outputs that do not contain a Hermes message at all are skipped
+    /// silently. Outputs that do contain a Hermes message but are rejected by
+    /// `extract` are skipped too, but the rejection reason is debug-logged so we
+    /// can tell why an on-chain Hermes transaction was ignored. This keeps the
+    /// scanner moving past invalid messages instead of getting stuck on them.
+    pub async fn wait_for_hermes_message<T>(
         &self,
         public_spend_key: monero_oxide_ext::PublicKey,
         private_view_key: PrivateViewKey,
         restore_height: BlockHeight,
-    ) -> Result<monero_wallet_ng::hermes::HermesMessage> {
+        extract: impl Fn(&monero_wallet_ng::hermes::HermesMessage) -> Result<T>,
+    ) -> Result<T> {
         use monero_wallet_ng::hermes::HermesMessage;
         use monero_wallet_ng::scanner;
 
@@ -631,22 +639,40 @@ impl Wallets {
         )
         .context("Failed to create scanner")?;
 
-        let output = subscription
+        let mut extracted: Option<T> = None;
+
+        subscription
             .wait_until(|output| {
-                HermesMessage::from_wallet_output(output, view_scalar.clone()).is_ok()
+                // Outputs that aren't Hermes messages are the common case while
+                // scanning; skip them without logging to avoid spamming.
+                let Ok(message) = HermesMessage::from_wallet_output(output, view_scalar.clone())
+                else {
+                    return false;
+                };
+
+                match extract(&message) {
+                    Ok(value) => {
+                        tracing::debug!(
+                            tx_hash = %hex::encode(output.transaction()),
+                            "Found accepted Hermes message"
+                        );
+                        extracted = Some(value);
+                        true
+                    }
+                    Err(error) => {
+                        tracing::debug!(
+                            tx_hash = %hex::encode(output.transaction()),
+                            error = ?error,
+                            "Ignoring Hermes message rejected by filter"
+                        );
+                        false
+                    }
+                }
             })
             .await
-            .context("Scanner subscription closed before finding a Hermes message")?;
+            .context("Scanner subscription closed before finding an accepted Hermes message")?;
 
-        let message = HermesMessage::from_wallet_output(&output, view_scalar)
-            .expect("output was selected because it contains a valid Hermes message");
-
-        tracing::debug!(
-            tx_hash = %hex::encode(output.transaction()),
-            "Found Hermes message"
-        );
-
-        Ok(message)
+        Ok(extracted.expect("output was accepted because extract returned Ok"))
     }
 }
 

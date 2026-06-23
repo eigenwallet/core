@@ -606,9 +606,6 @@ async fn next_state(
                 "Monero lock transaction is fully confirmed. Sending encrypted signature to Alice to allow her to redeem the Bitcoin."
             );
 
-            event_emitter
-                .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::PreflightEncSig);
-
             BobState::EncSigReadyToBeSent {
                 state,
                 hermes: HermesProgress::None,
@@ -630,7 +627,7 @@ async fn next_state(
                 });
             }
 
-            // If we sent the encrypted signature over p2p but the Hermes channel is not sufficient, we are done
+            // If we sent the encrypted signature over p2p but the Hermes channel is not sufficiently funded, we are done
             if p2p_sent && !state.hermes_funding_sufficient() {
                 return Ok(BobState::EncSigSent {
                     state,
