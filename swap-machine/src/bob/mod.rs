@@ -33,6 +33,8 @@ pub const HERMES_FUNDING_LOWER_BOUND_PICONERO: u64 = 50_000_000;
 /// [`BobState::EncSigReadyToBeSent`].
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum HermesProgress {
+    /// Haven't determined yet if Hermes can be used.
+    None,
     /// Building the transaction.
     Constructing,
     /// Signed, not yet published.
@@ -47,7 +49,7 @@ impl HermesProgress {
     /// The constructed Hermes transaction, once it exists.
     pub fn tx(&self) -> Option<&monero_oxide_wallet::transaction::Transaction> {
         match self {
-            HermesProgress::Constructing => None,
+            HermesProgress::None | HermesProgress::Constructing => None,
             HermesProgress::Constructed(tx)
             | HermesProgress::Published(tx)
             | HermesProgress::Confirmed(tx) => Some(tx),
