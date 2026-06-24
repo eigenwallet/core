@@ -1910,13 +1910,6 @@ pub struct GetPendingApprovalsResponse {
     pub approvals: Vec<crate::cli::api::tauri_bindings::ApprovalRequest>,
 }
 
-#[typeshare]
-#[derive(Serialize, Deserialize, Debug)]
-pub struct DfxAuthenticateResponse {
-    pub access_token: String,
-    pub kyc_url: String,
-}
-
 // ChangeMoneroNode
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize)]
