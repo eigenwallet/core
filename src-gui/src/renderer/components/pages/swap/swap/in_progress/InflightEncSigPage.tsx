@@ -7,7 +7,7 @@ const HERMES_PROGRESS_LABEL: Record<HermesProgressKind, string | null> = {
   [HermesProgressKind.None]: null,
   [HermesProgressKind.Constructing]: "Constructing on-chain Hermes message",
   [HermesProgressKind.Constructed]: "Publishing on-chain Hermes message",
-  [HermesProgressKind.Published]: "Publishing on-chain Hermes message",
+  [HermesProgressKind.Published]: "Waiting for on-chain Hermes message to confirm",
   [HermesProgressKind.Confirmed]: "On-chain Hermes message confirmed",
 };
 
