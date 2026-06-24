@@ -45,7 +45,6 @@ import {
   SendMoneroResponse,
   GetMoneroSyncProgressResponse,
   GetPendingApprovalsResponse,
-  DfxAuthenticateResponse,
   RejectApprovalArgs,
   RejectApprovalResponse,
   SetRestoreHeightArgs,
@@ -729,10 +728,6 @@ export async function saveLogFiles(
   content: Record<string, string>,
 ): Promise<void> {
   await invokeUnsafe<void>("save_txt_files", { zipFileName, content });
-}
-
-export async function dfxAuthenticate(): Promise<DfxAuthenticateResponse> {
-  return await invokeNoArgs<DfxAuthenticateResponse>("dfx_authenticate");
 }
 
 export async function changeMoneroNode(
