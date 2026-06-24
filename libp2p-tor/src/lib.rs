@@ -197,7 +197,7 @@ impl TorTransport {
         builder: &TorClientBuilder<TokioRustlsRuntime>,
         conversion_mode: AddressConversion,
     ) -> Result<Self, TorError> {
-        let client = Arc::new(builder.create_unbootstrapped()?);
+        let client = builder.create_unbootstrapped()?;
 
         Ok(Self::from_client(client, conversion_mode))
     }
