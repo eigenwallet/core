@@ -60,7 +60,7 @@ pub async fn create_tor_client(
         .create_unbootstrapped_async()
         .await?;
 
-    Ok(Arc::new(tor_client))
+    Ok(tor_client)
 }
 
 /// Bootstraps an existing Tor client

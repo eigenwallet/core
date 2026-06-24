@@ -125,8 +125,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .create_unbootstrapped_async()
             .await?;
 
-        let client = std::sync::Arc::new(client);
-
         let client_clone = client.clone();
         client_clone
             .bootstrap()

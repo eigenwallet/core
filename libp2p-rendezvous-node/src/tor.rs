@@ -45,7 +45,7 @@ pub async fn create_tor_client(data_dir: &Path) -> Result<Arc<TorClient<TokioRus
         .await
         .context("Failed to create unbootstrapped Tor client")?;
 
-    Ok(Arc::new(tor_client))
+    Ok(tor_client)
 }
 
 /// Bootstraps an existing Tor client

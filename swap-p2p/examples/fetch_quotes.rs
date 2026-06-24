@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
             .config(config)
             .create_bootstrapped()
             .await?;
-        Some(Arc::new(tor_client))
+        Some(tor_client)
     } else {
         None
     };
