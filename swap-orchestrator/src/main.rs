@@ -369,6 +369,7 @@ fn main() {
                 network: monero_network,
                 // This means that we will use the default set in swap-env/src/env.rs
                 finality_confirmations: None,
+                trusted_daemon: false,
             },
             tor: TorConf {
                 register_hidden_service: tor_hidden_service,

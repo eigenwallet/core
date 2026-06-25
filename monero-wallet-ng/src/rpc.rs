@@ -8,6 +8,83 @@ use core::future::Future;
 
 use monero_daemon_rpc::{HttpTransport, MoneroDaemon};
 use monero_interface::InterfaceError;
+/// Spend status of a single key image, per the daemon's `is_key_image_spent` RPC.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyImageSpentStatus {
+    /// The key image has not been spent.
+    Unspent,
+    /// The key image was spent by a transaction confirmed in the blockchain.
+    SpentInBlockchain,
+    /// The key image was spent by a transaction currently in the mempool.
+    SpentInPool,
+}
+
+/// Query the spend status of key images directly, without submitting a transaction.
+///
+/// Unlike the `double_spend` flag from `send_raw_transaction`, this distinguishes a
+/// confirmed spend (`SpentInBlockchain`) from a transient pool spend (`SpentInPool`).
+pub trait IsKeyImageSpent: Sync {
+    /// Returns the spend status of each key image, in the same order as the input.
+    fn is_key_image_spent(
+        &self,
+        key_images: &[[u8; 32]],
+    ) -> impl Send + Future<Output = Result<Vec<KeyImageSpentStatus>, InterfaceError>>;
+}
+
+impl<T: HttpTransport> IsKeyImageSpent for MoneroDaemon<T> {
+    fn is_key_image_spent(
+        &self,
+        key_images: &[[u8; 32]],
+    ) -> impl Send + Future<Output = Result<Vec<KeyImageSpentStatus>, InterfaceError>> {
+        let key_images_hex: Vec<String> = key_images.iter().map(hex::encode).collect();
+
+        async move {
+            #[derive(serde::Deserialize)]
+            struct IsKeyImageSpentResponse {
+                status: String,
+                spent_status: Vec<u8>,
+            }
+
+            let params = serde_json::json!({ "key_images": key_images_hex }).to_string();
+
+            let response = self
+                .rpc_call(
+                    "is_key_image_spent",
+                    Some(params),
+                    // The response is a small array of integers.
+                    65536,
+                )
+                .await?;
+
+            let response: IsKeyImageSpentResponse =
+                serde_json::from_str(&response).map_err(|e| {
+                    InterfaceError::InvalidInterface(format!(
+                        "Failed to parse is_key_image_spent response: {e}"
+                    ))
+                })?;
+
+            if response.status != "OK" {
+                return Err(InterfaceError::InvalidInterface(format!(
+                    "is_key_image_spent returned status {}",
+                    response.status
+                )));
+            }
+
+            response
+                .spent_status
+                .into_iter()
+                .map(|status| match status {
+                    0 => Ok(KeyImageSpentStatus::Unspent),
+                    1 => Ok(KeyImageSpentStatus::SpentInBlockchain),
+                    2 => Ok(KeyImageSpentStatus::SpentInPool),
+                    other => Err(InterfaceError::InvalidInterface(format!(
+                        "Unknown key image spent status {other}"
+                    ))),
+                })
+                .collect()
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransactionStatusError {

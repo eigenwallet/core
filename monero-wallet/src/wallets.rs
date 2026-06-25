@@ -322,6 +322,35 @@ impl Wallets {
         Ok(!matches!(status, TransactionStatus::Unknown))
     }
 
+    /// Returns true if any of `tx`'s inputs has already been spent by a transaction confirmed
+    /// in the blockchain. Combined with `tx` itself not being present on-chain, this indicates
+    /// a different transaction spent our inputs (a confirmed double spend).
+    pub async fn has_input_confirmed_spent(&self, tx: &Transaction<NotPruned>) -> Result<bool> {
+        use monero_oxide_wallet::transaction::Input;
+        use monero_wallet_ng::rpc::{IsKeyImageSpent, KeyImageSpentStatus};
+
+        let key_images: Vec<[u8; 32]> = tx
+            .prefix()
+            .inputs
+            .iter()
+            .filter_map(|input| match input {
+                Input::ToKey { key_image, .. } => Some(key_image.to_bytes()),
+                Input::Gen(_) => None,
+            })
+            .collect();
+
+        let statuses = self
+            .rpc_client()
+            .await?
+            .is_key_image_spent(&key_images)
+            .await
+            .context("Failed to query key image spend status")?;
+
+        Ok(statuses
+            .iter()
+            .any(|status| matches!(status, KeyImageSpentStatus::SpentInBlockchain)))
+    }
+
     pub async fn direct_rpc_block_height(&self) -> Result<u64> {
         use monero_daemon_rpc::prelude::ProvidesBlockchainMeta;
         let rpc_client = self.rpc_client().await?;
