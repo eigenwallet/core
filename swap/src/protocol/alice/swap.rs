@@ -353,6 +353,28 @@ where
                         .map_err(backoff::Error::transient)?;
 
                     if !is_present {
+                        // A trusted daemon reporting one of our lock transaction's inputs as already
+                        // spent by a confirmed transaction (while our own transaction is absent from
+                        // the chain) means a different transaction took our inputs. Our lock
+                        // transaction can never confirm, so we rebuild it from scratch by returning to
+                        // BtcLocked. We only act on a trusted daemon, as a malicious one could
+                        // otherwise grief us into rebuilding indefinitely.
+                        if env_config.monero_trusted_daemon
+                            && monero_wallet
+                                .has_input_confirmed_spent(&xmr_lock_tx)
+                                .await
+                                .context("Failed to check whether the Monero lock transaction inputs were already spent")
+                                .map_err(backoff::Error::transient)?
+                        {
+                            tracing::warn!(
+                                %swap_id,
+                                %xmr_lock_tx_hash,
+                                "Trusted Monero daemon reports the lock transaction's inputs were already spent by a confirmed transaction. Rebuilding the lock transaction."
+                            );
+
+                            return Ok(AliceState::BtcLocked { state3: state3.clone() });
+                        }
+
                         if !cancel_timelock_not_expired(&state3, &*bitcoin_wallet)
                             .await
                             .context("Failed to check for expired timelocks before publishing Monero lock transaction")
