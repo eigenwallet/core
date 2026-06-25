@@ -558,6 +558,13 @@ fn execute_child_with_pipe(
 }
 
 /// Applies the [`EMBEDDED_PATCHES`] to the monero codebase.
+///
+/// Idempotent across rebuilds: for each target file we reconstruct the fully-patched content from
+/// the file's pristine (committed) version plus every patch that touches it, and write only when
+/// the working file differs. This avoids the unreliable reverse-application check (which breaks
+/// when two patches modify adjacent lines of the same file, shifting each other's context) and
+/// self-heals a partially-applied tree, while never rewriting an already-correct file — a rewrite
+/// would change its mtime and force a full C++ recompile.
 fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
     let monero_dir = Path::new(MONERO_CPP_DIR);
 
@@ -565,13 +572,16 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Monero directory not found. Please ensure the monero submodule is initialized and present.".into());
     }
 
+    // Group every file patch by target file, preserving the order patches are listed so they
+    // compose against the pristine source the same way they were authored.
+    let mut patches_by_file: Vec<(String, Vec<String>)> = Vec::new();
+
     for embedded in EMBEDDED_PATCHES {
         println!(
             "cargo:debug=Processing embedded patch: {} ({})",
             embedded.name, embedded.description
         );
 
-        // Split the patch into individual file patches
         let file_patches = split_patch_by_files(embedded.patch_unified)
             .map_err(|e| format!("Failed to split patch {}: {}", embedded.name, e))?;
 
@@ -579,51 +589,89 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("No file patches found in patch {}", embedded.name).into());
         }
 
-        println!(
-            "cargo:debug=Found {} file(s) in patch {}",
-            file_patches.len(),
-            embedded.name
-        );
-
-        // Apply each file patch individually
         for (file_path, patch_content) in file_patches {
-            println!("cargo:debug=Applying patch to file: {file_path}");
-
-            // Parse the individual file patch
-            let patch = diffy::Patch::from_str(&patch_content)
-                .map_err(|e| format!("Failed to parse patch for {file_path}: {e}"))?;
-
-            let target_path = monero_dir.join(&file_path);
-
-            if !target_path.exists() {
-                return Err(format!("Target file {file_path} not found!").into());
+            match patches_by_file.iter_mut().find(|(path, _)| *path == file_path) {
+                Some((_, contents)) => contents.push(patch_content),
+                None => patches_by_file.push((file_path, vec![patch_content])),
             }
+        }
+    }
 
-            let current = fs::read_to_string(&target_path)
-                .map_err(|e| format!("Failed to read {file_path}: {e}"))?;
+    for (file_path, patch_contents) in &patches_by_file {
+        let target_path = monero_dir.join(file_path);
 
-            // Check if patch is already applied by trying to reverse it
-            if diffy::apply(&current, &patch.reverse()).is_ok() {
-                println!("cargo:debug=Patch for {file_path} already applied – skipping",);
-                continue;
-            }
-
-            let patched = diffy::apply(&current, &patch)
-                .map_err(|e| format!("Failed to apply patch to {file_path}: {e}"))?;
-
-            fs::write(&target_path, patched)
-                .map_err(|e| format!("Failed to write {file_path}: {e}"))?;
-
-            println!("cargo:debug=Successfully applied patch to: {file_path}");
+        if !target_path.exists() {
+            return Err(format!("Target file {file_path} not found!").into());
         }
 
-        println!(
-            "cargo:debug=Successfully applied all file patches for: {} ({})",
-            embedded.name, embedded.description
-        );
+        // Reconstruct the expected fully-patched content by applying every patch for this file to
+        // its pristine version, so the decision below is a byte-exact content comparison.
+        let mut expected = pristine_file(monero_dir, file_path)?;
+        for patch_content in patch_contents {
+            let patch = diffy::Patch::from_str(patch_content)
+                .map_err(|e| format!("Failed to parse patch for {file_path}: {e}"))?;
+            expected = diffy::apply(&expected, &patch)
+                .map_err(|e| format!("Failed to apply patch to {file_path}: {e}"))?;
+        }
+
+        let current = fs::read_to_string(&target_path)
+            .map_err(|e| format!("Failed to read {file_path}: {e}"))?;
+
+        if current == expected {
+            println!("cargo:debug=Patches for {file_path} already applied – skipping");
+            continue;
+        }
+
+        fs::write(&target_path, &expected)
+            .map_err(|e| format!("Failed to write {file_path}: {e}"))?;
+
+        println!("cargo:debug=Successfully applied patches to: {file_path}");
     }
 
     Ok(())
+}
+
+/// Reads the pristine (committed) content of a patched file via `git show HEAD:<path>`, without
+/// touching the working tree. This is the source the embedded patches were authored against.
+///
+/// Some targets live in nested submodules (e.g. `external/randomx`), whose content isn't a blob in
+/// the monero repo's HEAD, so we resolve the repository that actually owns the file first and read
+/// the blob from there.
+fn pristine_file(monero_dir: &Path, rel_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let target = monero_dir.join(rel_path);
+
+    let repo_root = owning_repo_root(&target)
+        .ok_or_else(|| format!("Could not find the git repository owning {rel_path}"))?;
+    let path_in_repo = target
+        .strip_prefix(repo_root)
+        .map_err(|e| format!("Failed to resolve {rel_path} within its repository: {e}"))?
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    let output = std::process::Command::new("git")
+        .current_dir(repo_root)
+        .args(["show", &format!("HEAD:{path_in_repo}")])
+        .output()
+        .map_err(|e| format!("Failed to run git to read pristine {rel_path}: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git show HEAD:{path_in_repo} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+
+    String::from_utf8(output.stdout)
+        .map_err(|e| format!("Pristine {rel_path} is not valid UTF-8: {e}").into())
+}
+
+/// Finds the repository (or nested submodule) that directly tracks `file`: the nearest ancestor
+/// directory containing a `.git` entry (a directory for a repo, a file for a submodule).
+fn owning_repo_root(file: &Path) -> Option<&Path> {
+    file.ancestors()
+        .skip(1)
+        .find(|dir| dir.join(".git").exists())
 }
 
 /// Split a multi-file patch into individual file patches
