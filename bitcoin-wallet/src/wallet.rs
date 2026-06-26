@@ -11,6 +11,7 @@ use bdk_wallet::bitcoin::FeeRate;
 use bdk_wallet::bitcoin::Network;
 use bdk_wallet::export::FullyNodedExport;
 use bdk_wallet::rusqlite::Connection;
+use bdk_wallet::chain::ChainPosition;
 use bdk_wallet::template::{Bip84, DescriptorTemplate};
 use bdk_wallet::{Balance, PersistedWallet};
 use bitcoin::bip32::Xpriv;
@@ -23,6 +24,7 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;
@@ -1390,8 +1392,7 @@ where
             tx_builder.finish()?
         };
 
-        let weight = psbt.unsigned_tx.weight();
-        let fee = self.estimate_fee(weight, Some(amount)).await?;
+        let fee = self.estimate_fee_for_psbt(&psbt, Some(amount)).await?;
 
         self.send_to_address(address, amount, fee, change_override)
             .await
@@ -1481,16 +1482,17 @@ where
     ///
     /// Returns a tuple of (max_giveable_amount, spending_fee).
     pub async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
-        let mut wallet = self.wallet.lock().await;
+        let (dummy_max_giveable, dummy_psbt) = {
+            let mut wallet = self.wallet.lock().await;
 
-        // Construct a dummy drain transaction
-        let dummy_script = ScriptBuf::from(vec![0u8; locking_script_size]);
+            // Construct a dummy drain transaction
+            let dummy_script = ScriptBuf::from(vec![0u8; locking_script_size]);
 
-        let mut tx_builder = wallet.build_tx();
+            let mut tx_builder = wallet.build_tx();
 
-        tx_builder.drain_to(dummy_script.clone());
-        tx_builder.fee_absolute(Amount::ZERO);
-        tx_builder.drain_wallet();
+            tx_builder.drain_to(dummy_script.clone());
+            tx_builder.fee_absolute(Amount::ZERO);
+            tx_builder.drain_wallet();
 
         // The weight WILL NOT change, even if we change the fee
         // because we are draining the wallet (using all inputs) and
@@ -1506,90 +1508,89 @@ where
                     bail!("Expected a single output in the dummy transaction");
                 }
 
-                let max_giveable = psbt.unsigned_tx.output.first().expect("Expected a single output in the dummy transaction").value;
-                let weight = psbt.unsigned_tx.weight();
+                    let max_giveable = psbt.unsigned_tx.output.first().expect("Expected a single output in the dummy transaction").value;
 
-                Ok((Some(max_giveable), weight))
-            },
-            Err(bdk_wallet::error::CreateTxError::CoinSelection(_)) => {
-                // We don't have enough funds to create a transaction (below dust limit)
-                //
-                // We still want to to return a valid fee.
-                // Callers of this function might want to calculate *how* large
-                // the next UTXO needs to be such that we can spend any funds
-                //
-                // To be able to calculate an accurate fee, we need to figure out
-                // the weight our drain transaction if we received another UTXO
+                    Ok((Some(max_giveable), psbt))
+                },
+                Err(bdk_wallet::error::CreateTxError::CoinSelection(_)) => {
+                    // We don't have enough funds to create a transaction (below dust limit)
+                    //
+                    // We still want to to return a valid fee.
+                    // Callers of this function might want to calculate *how* large
+                    // the next UTXO needs to be such that we can spend any funds
+                    //
+                    // To be able to calculate an accurate fee, we need to figure out
+                    // the weight our drain transaction if we received another UTXO
 
-                // We create fake deposit UTXO
-                // Our dummy drain transaction will spend this deposit UTXO
-                let mut fake_deposit_input = bitcoin::psbt::Input::default();
+                    // We create fake deposit UTXO
+                    // Our dummy drain transaction will spend this deposit UTXO
+                    let mut fake_deposit_input = bitcoin::psbt::Input::default();
 
-                let dummy_deposit_address = wallet.peek_address(KeychainKind::External, 0);
-                let fake_deposit_script = dummy_deposit_address.script_pubkey();
-                let fake_deposit_txout = bitcoin::blockdata::transaction::TxOut {
-                    // The exact deposit amount does not matter
-                    // because we only care about the weight of the transaction
-                    // which does not depend on the amount of the input
-                    value: DUST_AMOUNT * 5,
-                    script_pubkey: fake_deposit_script,
-                };
-                let fake_deposit_tx = bitcoin::Transaction {
-                    version: bitcoin::blockdata::transaction::Version::TWO,
-                    lock_time: bitcoin::blockdata::locktime::absolute::LockTime::ZERO,
-                    input: vec![bitcoin::TxIn {
-                        previous_output: bitcoin::OutPoint::null(), // or some dummy outpoint
-                        script_sig: Default::default(),
-                        sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
-                        witness: Default::default(),
-                    }],
-                    output: vec![fake_deposit_txout.clone()],
-                };
+                    let dummy_deposit_address = wallet.peek_address(KeychainKind::External, 0);
+                    let fake_deposit_script = dummy_deposit_address.script_pubkey();
+                    let fake_deposit_txout = bitcoin::blockdata::transaction::TxOut {
+                        // The exact deposit amount does not matter
+                        // because we only care about the weight of the transaction
+                        // which does not depend on the amount of the input
+                        value: DUST_AMOUNT * 5,
+                        script_pubkey: fake_deposit_script,
+                    };
+                    let fake_deposit_tx = bitcoin::Transaction {
+                        version: bitcoin::blockdata::transaction::Version::TWO,
+                        lock_time: bitcoin::blockdata::locktime::absolute::LockTime::ZERO,
+                        input: vec![bitcoin::TxIn {
+                            previous_output: bitcoin::OutPoint::null(), // or some dummy outpoint
+                            script_sig: Default::default(),
+                            sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
+                            witness: Default::default(),
+                        }],
+                        output: vec![fake_deposit_txout.clone()],
+                    };
 
-                let fake_deposit_txid = fake_deposit_tx.compute_txid();
+                    let fake_deposit_txid = fake_deposit_tx.compute_txid();
 
-                fake_deposit_input.witness_utxo = Some(fake_deposit_txout);
-                fake_deposit_input.non_witness_utxo = Some(fake_deposit_tx);
+                    fake_deposit_input.witness_utxo = Some(fake_deposit_txout);
+                    fake_deposit_input.non_witness_utxo = Some(fake_deposit_tx);
 
-                // Create outpoint that points to our fake transaction's output 0
-                let fake_deposit_outpoint = bitcoin::OutPoint {
-                    txid: fake_deposit_txid,
-                    vout: 0,
-                };
+                    // Create outpoint that points to our fake transaction's output 0
+                    let fake_deposit_outpoint = bitcoin::OutPoint {
+                        txid: fake_deposit_txid,
+                        vout: 0,
+                    };
 
-                // Worst-case witness weight for our script type.
-                const DUMMY_SATISFACTION_WEIGHT: Weight = Weight::from_wu(107 * 10);
+                    // Worst-case witness weight for our script type.
+                    const DUMMY_SATISFACTION_WEIGHT: Weight = Weight::from_wu(107 * 10);
 
-                let mut tx_builder = wallet.build_tx();
+                    let mut tx_builder = wallet.build_tx();
 
-                tx_builder.drain_to(dummy_script.clone());
-                tx_builder.fee_absolute(Amount::ZERO);
-                tx_builder.drain_wallet();
+                    tx_builder.drain_to(dummy_script.clone());
+                    tx_builder.fee_absolute(Amount::ZERO);
+                    tx_builder.drain_wallet();
 
-                tx_builder
-                    .add_foreign_utxo(
-                        fake_deposit_outpoint,
-                        fake_deposit_input,
-                        DUMMY_SATISFACTION_WEIGHT,
-                    ).context("Failed to add dummy foreign utxo to calculate fee for max_giveable if we had one more utxo")?;
+                    tx_builder
+                        .add_foreign_utxo(
+                            fake_deposit_outpoint,
+                            fake_deposit_input,
+                            DUMMY_SATISFACTION_WEIGHT,
+                        ).context("Failed to add dummy foreign utxo to calculate fee for max_giveable if we had one more utxo")?;
 
-                // Try building the dummy drain transaction with the new fake UTXO
-                // If we fail now, we propagate the error to the caller
-                let psbt = tx_builder.finish()?;
-                let weight = psbt.unsigned_tx.weight();
+                    // Try building the dummy drain transaction with the new fake UTXO
+                    // If we fail now, we propagate the error to the caller
+                    let psbt = tx_builder.finish()?;
 
-                tracing::trace!(
-                    weight = weight.to_wu(),
-                    "Built dummy drain transaction with fake UTXO, max giveable is 0"
-                );
+                    tracing::trace!(
+                        weight = psbt.unsigned_tx.weight().to_wu(),
+                        "Built dummy drain transaction with fake UTXO, max giveable is 0"
+                    );
 
-                Ok((None, weight))
-            }
-            Err(e) => Err(e)
-        }.context("Failed to build transaction to figure out max giveable")?;
+                    Ok((None, psbt))
+                }
+                Err(e) => Err(e)
+            }.context("Failed to build transaction to figure out max giveable")?
+        };
 
-        // Estimate the fee rate using our real fee rate estimation
-        let fee = self.estimate_fee(dummy_weight, dummy_max_giveable).await?;
+        // Estimate fee, accounting for any unconfirmed parents (CPFP)
+        let fee = self.estimate_fee_for_psbt(&dummy_psbt, dummy_max_giveable).await?;
 
         Ok(match dummy_max_giveable {
             // If the max giveable is less than the dust amount, we return 0
@@ -1640,6 +1641,181 @@ where
 
         estimate_fee(weight, transfer_amount, fee_rate, min_relay_fee)
     }
+
+    /// Estimates the fee for a transaction represented by a PSBT, taking unconfirmed parent transactions into account (CPFP package fee).
+    ///
+    /// Recursively collects all unconfirmed ancestors; if any exist, the child fee is increased so that the full package (parents + child)
+    /// reaches the target fee rate. Fee caps (relative and absolute) are applied with warnings.
+    async fn estimate_fee_for_psbt(
+        &self,
+        psbt: &Psbt,
+        transfer_amount: Option<Amount>,
+    ) -> Result<Amount> {
+        let fee_rate = self.combined_fee_rate().await?;
+        let min_relay_fee = self.combined_min_relay_fee().await?;
+        let target_fee_rate = compute_effective_fee_rate(fee_rate, min_relay_fee)?;
+
+        let child_only_fee = estimate_fee(
+            psbt.unsigned_tx.weight(),
+            transfer_amount,
+            target_fee_rate,
+            min_relay_fee,
+        )?;
+
+        let (ancestor_fee, ancestor_weight) = self.collect_unconfirmed_ancestors(psbt).await?;
+
+        if ancestor_weight == Weight::from_wu(0) {
+            return Ok(child_only_fee);
+        }
+
+        let total_weight = Weight::from_wu(
+            psbt.unsigned_tx
+                .weight()
+                .to_wu()
+                .saturating_add(ancestor_weight.to_wu()),
+        );
+
+        let package_fee = target_fee_rate
+            .checked_mul_by_weight(total_weight)
+            .context("Failed to compute package fee")?;
+
+        let required_child_fee = Amount::from_sat(
+            package_fee
+                .to_sat()
+                .saturating_sub(ancestor_fee.to_sat()),
+        );
+
+        let fee = child_only_fee.max(required_child_fee);
+        Ok(clamp_cpfp_fee(fee, transfer_amount))
+    }
+
+    /// Walks all unconfirmed ancestors of every input in `psbt` and returns the total fee already paid by those ancestors + their total weight.
+    /// Confirmed ancestors are ignored. If a parent's fee cannot be calculated, that ancestor is skipped entirely.
+    async fn collect_unconfirmed_ancestors(
+        &self,
+        psbt: &Psbt,
+    ) -> Result<(Amount, Weight)> {
+        // Included:
+        //   depth 0 = parent
+        //   depth 1 = grandparent
+        //
+        // Excluded:
+        //   depth 2 = great-grandparent and beyond
+        const MAX_ANCESTOR_DEPTH: usize = 1;
+
+        let mut seen = HashSet::<Txid>::new();
+
+        let mut stack: Vec<(Txid, usize)> = psbt
+            .unsigned_tx
+            .input
+            .iter()
+            .map(|input| (input.previous_output.txid, 0))
+            .collect();
+
+        let mut total_fee = Amount::ZERO;
+        let mut total_weight = Weight::ZERO;
+
+        let wallet = self.wallet.lock().await;
+
+        while let Some((txid, depth)) = stack.pop() {
+            if depth > MAX_ANCESTOR_DEPTH {
+                continue;
+            }
+
+            if !seen.insert(txid) {
+                continue;
+            }
+
+            // // Local wallet lookup only. This reads from the synced tx graph and doesn't hit the network.
+            let Some(wallet_tx) = wallet.get_tx(txid) else {
+                continue;
+            };
+
+            if matches!(wallet_tx.chain_position, ChainPosition::Confirmed { .. }) {
+                continue;
+            }
+
+            let tx = wallet_tx.tx_node.tx.clone();
+
+            let fee = match wallet.calculate_fee(&tx) {
+                Ok(fee) => fee,
+                Err(err) => {
+                    tracing::debug!(
+                        %txid,
+                        error = %err,
+                        "Cannot compute fee for unconfirmed ancestor; skipping it."
+                    );
+
+                    continue;
+                }
+            };
+
+            total_fee = Amount::from_sat(
+                total_fee.to_sat().saturating_add(fee.to_sat()),
+            );
+
+            total_weight = Weight::from_wu(
+                total_weight
+                    .to_wu()
+                    .saturating_add(tx.weight().to_wu()),
+            );
+
+            stack.extend(
+                tx.input
+                    .iter()
+                    .map(|input| (input.previous_output.txid, depth + 1)),
+            );
+        }
+
+        Ok((total_fee, total_weight))
+    }
+}
+
+/// Clamps a CPFP fee to the allowed range (relative cap -> min absolute -> hard cap)
+fn clamp_cpfp_fee(fee: Amount, transfer_amount: Option<Amount>) -> Amount {
+    let mut final_fee = fee;
+
+    if let Some(transfer_amount) = transfer_amount {
+        let relative_max = Amount::from_sat(
+            MAX_RELATIVE_TX_FEE
+                .saturating_mul(Decimal::from(transfer_amount.to_sat()))
+                .ceil()
+                .to_u64()
+                .expect("MAX_RELATIVE_TX_FEE * transfer_amount fits in u64"),
+        );
+
+        if final_fee > relative_max {
+            tracing::warn!(
+                "CPFP fee {} exceeds relative cap {}. Clamping.",
+                final_fee.to_sat(),
+                relative_max.to_sat(),
+            );
+
+            final_fee = relative_max;
+        }
+    }
+
+    if final_fee < MIN_ABSOLUTE_TX_FEE {
+        tracing::warn!(
+            "CPFP fee {} below minimum {}. Raising.",
+            final_fee.to_sat(),
+            MIN_ABSOLUTE_TX_FEE.to_sat(),
+        );
+
+        final_fee = MIN_ABSOLUTE_TX_FEE;
+    }
+
+    if final_fee > MAX_ABSOLUTE_TX_FEE {
+        tracing::warn!(
+            "CPFP fee {} exceeds absolute hard cap {}. Capping.",
+            final_fee.to_sat(),
+            MAX_ABSOLUTE_TX_FEE.to_sat(),
+        );
+
+        final_fee = MAX_ABSOLUTE_TX_FEE;
+    }
+
+    final_fee
 }
 
 impl Client {
@@ -2521,6 +2697,19 @@ pub fn trace_status_change(
     new
 }
 
+fn compute_effective_fee_rate(
+    fee_rate: FeeRate,
+    min_relay_fee: FeeRate,
+) -> Result<FeeRate> {
+    FeeRate::from_sat_per_vb(
+        fee_rate
+            .to_sat_per_vb_ceil()
+            .max(min_relay_fee.to_sat_per_vb_ceil())
+            .max(FeeRate::BROADCAST_MIN.to_sat_per_vb_ceil()),
+    )
+    .context("Failed to compute effective fee rate")
+}
+
 /// Estimate the absolute fee for a transaction.
 ///
 /// This function takes the following parameters:
@@ -2569,14 +2758,7 @@ pub fn estimate_fee(
     // 2. The minimum relay fee rate (comes from fee estimation source, might vary depending on mempool congestion)
     // 3. The broadcast minimum fee rate (hardcoded in the Bitcoin library)
     // We round up to the next sat/vbyte
-    let recommended_fee_rate = FeeRate::from_sat_per_vb(
-        fee_rate_estimation
-            .to_sat_per_vb_ceil()
-            .max(min_relay_fee_rate.to_sat_per_vb_ceil())
-            .max(FeeRate::BROADCAST_MIN.to_sat_per_vb_ceil()),
-    )
-    .context("Failed to compute recommended fee rate")?;
-
+    let recommended_fee_rate = compute_effective_fee_rate(fee_rate_estimation, min_relay_fee_rate)?;
     if recommended_fee_rate > fee_rate_estimation {
         tracing::warn!(
             "Estimated fee was below the minimum relay fee rate. Falling back to: {} sats/vbyte",
@@ -3095,5 +3277,48 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
 
     async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
         unimplemented!("stub method called erroneously")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cpfp_fee_clamps_to_absolute_max() {
+        let fee = Amount::from_sat(MAX_ABSOLUTE_TX_FEE.to_sat() * 100);
+
+        let actual = clamp_cpfp_fee(fee, None);
+
+        assert_eq!(actual, MAX_ABSOLUTE_TX_FEE);
+    }
+
+    #[test]
+    fn cpfp_fee_clamps_to_absolute_minimum() {
+        let actual = clamp_cpfp_fee(Amount::from_sat(1), None);
+
+        assert_eq!(actual, MIN_ABSOLUTE_TX_FEE);
+    }
+
+    #[test]
+    fn cpfp_fee_enforces_minimum_even_when_fee_is_zero() {
+        let actual = clamp_cpfp_fee(
+            Amount::from_sat(0),
+            Some(Amount::from_sat(1_000)),
+        );
+
+        assert_eq!(actual, MIN_ABSOLUTE_TX_FEE);
+    }
+
+    #[test]
+    fn cpfp_fee_is_capped() {
+        let absurd_fee = Amount::from_sat(u64::MAX / 2);
+
+        let actual = clamp_cpfp_fee(
+            absurd_fee,
+            Some(Amount::from_sat(1_000_000)),
+        );
+
+        assert!(actual <= MAX_ABSOLUTE_TX_FEE);
     }
 }
