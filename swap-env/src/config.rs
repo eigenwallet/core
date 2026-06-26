@@ -79,6 +79,12 @@ pub struct Monero {
     pub finality_confirmations: Option<u64>,
     #[serde(with = "swap_serde::monero::network")]
     pub network: monero_address::Network,
+    /// Whether the configured Monero daemon is trusted. You should generally only
+    /// consider self-hosted Monero nodes on your own hardware as trusted. If an
+    /// attacker controls your node and you set this to true, they might be able to
+    /// steal your funds.
+    #[serde(default)]
+    pub trusted_daemon: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -451,6 +457,7 @@ pub fn query_user_for_initial_config_with_network(
             daemon_url: monero_daemon_url,
             finality_confirmations: None,
             network: monero_network,
+            trusted_daemon: false,
         },
         tor: TorConf {
             register_hidden_service,
