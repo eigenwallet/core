@@ -485,7 +485,7 @@ where
                         }
                         SwarmEvent::IncomingConnectionError { send_back_addr: address, error, .. } => {
                             if let libp2p::swarm::ListenError::Denied { cause } = &error {
-                                if let Some(exceeded) = cause.downcast_ref::<libp2p::connection_limits::Exceeded>() {
+                                if let Some(exceeded) = cause.downcast_ref::<crate::network::connection_limits::Exceeded>() {
                                     tracing::warn!(%address, error = %exceeded, "Rejected inbound connection to prevent against denial-of-service");
                                 } else {
                                     tracing::trace!(%address, "Failed to set up connection with peer: {:?}", error);

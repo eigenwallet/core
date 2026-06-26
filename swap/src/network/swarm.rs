@@ -5,7 +5,7 @@ use crate::{asb, cli};
 use anyhow::Result;
 use arti_client::TorClient;
 use libp2p::Transport as _;
-use libp2p::connection_limits::ConnectionLimits;
+use crate::network::connection_limits::ConnectionLimits;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::metrics::{BandwidthTransport, Registry};
 use libp2p::swarm::NetworkBehaviour;

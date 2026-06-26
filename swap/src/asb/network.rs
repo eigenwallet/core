@@ -145,10 +145,11 @@ pub mod transport {
 pub mod behaviour {
     use std::sync::Arc;
 
-    use libp2p::{connection_limits, identify, identity, ping, swarm::behaviour::toggle::Toggle};
+    use libp2p::{identify, identity, ping, swarm::behaviour::toggle::Toggle};
     use swap_p2p::protocols::metered::RequestResponseMetrics;
     use swap_p2p::{out_event::alice::OutEvent, patches};
 
+    use crate::network::connection_limits;
     use crate::network::wormhole;
     use crate::network::wormhole::PeerTrust;
     use crate::network::wormhole::alice::transport::WormholeChannels;
