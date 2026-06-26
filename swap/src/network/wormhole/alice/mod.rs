@@ -104,7 +104,7 @@ pub struct Behaviour {
     /// Pending trust provider query result.
     /// Stored as an OptionFuture so we can poll it directly without Option dance.
     /// Wrapped with `Fuse` so we can use `is_terminated()` without extra state.
-    pending_query: OptionFuture<Fuse<BoxFuture<'static, Vec<PeerId>>>>,
+    pending_query: OptionFuture<Fuse<BoxFuture<'static, Option<Vec<PeerId>>>>>,
 }
 
 impl Behaviour {
@@ -381,28 +381,25 @@ impl NetworkBehaviour for Behaviour {
         }
 
         // Check if a pending trust provider query has completed
-        match self.pending_query.poll_unpin(cx) {
-            Poll::Ready(Some(peers)) => {
-                for peer_id in peers {
-                    self.spawn_service_for_peer(peer_id);
-                }
+        if let Poll::Ready(Some(Some(peers))) = self.pending_query.poll_unpin(cx) {
+            for peer_id in peers {
+                self.spawn_service_for_peer(peer_id);
             }
-            Poll::Ready(None) | Poll::Pending => {}
         }
 
         // Check if it's time to poll the trust provider
         if self.pending_query.is_terminated() && self.poll_interval.poll_tick(cx).is_ready() {
             let trust_provider = Arc::clone(&self.trust_provider);
             let freshness_hours = self.swap_freshness_hours;
-            let fut: Fuse<BoxFuture<'static, Vec<PeerId>>> = async move {
+            let fut: Fuse<BoxFuture<'static, Option<Vec<PeerId>>>> = async move {
                 match trust_provider
                     .peers_with_financially_relevant_swap(freshness_hours)
                     .await
                 {
-                    Ok(peers) => peers,
+                    Ok(peers) => Some(peers),
                     Err(e) => {
                         tracing::warn!(error = ?e, "Failed to query peers");
-                        Vec::new()
+                        None
                     }
                 }
             }

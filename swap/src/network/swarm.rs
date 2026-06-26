@@ -45,6 +45,7 @@ pub fn asb<LR>(
     wormhole_swap_freshness_hours: u64,
     trust_provider: Arc<dyn super::wormhole::PeerTrust + Send + Sync>,
     connection_limit_exemption_freshness_days: u64,
+    connection_limit_exemption_max_peers: u64,
     metrics_registry: Option<&mut Registry>,
 ) -> Result<(
     Swarm<asb::Behaviour<LR>>,
@@ -107,6 +108,7 @@ where
         connection_limits,
         trust_provider,
         connection_limit_exemption_freshness_days,
+        connection_limit_exemption_max_peers,
         // Passing None disables the wormhole behaviour entirely.
         if wormhole_enabled {
             wormhole_channels

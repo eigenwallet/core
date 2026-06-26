@@ -605,8 +605,7 @@ impl SqliteDatabase {
         let mut offset = 0;
 
         loop {
-            let page = self.latest_states_paginated(PAGE_SIZE, offset).await?;
-            let page_len = page.len();
+            let (fetched, page) = self.latest_states_paginated(PAGE_SIZE, offset).await?;
 
             for (peer_id, swap_id, state_json, entered_at) in page {
                 if entered_at < cutoff {
@@ -622,7 +621,7 @@ impl SqliteDatabase {
                 fresh.push((peer_id, swap_id, state));
             }
 
-            if page_len < PAGE_SIZE as usize {
+            if fetched < PAGE_SIZE as usize {
                 break;
             }
             offset += PAGE_SIZE;
@@ -635,7 +634,7 @@ impl SqliteDatabase {
         &self,
         limit: u32,
         offset: u32,
-    ) -> Result<Vec<(PeerId, Uuid, String, OffsetDateTime)>> {
+    ) -> Result<(usize, Vec<(PeerId, Uuid, String, OffsetDateTime)>)> {
         let limit = i32::try_from(limit)?;
         let offset = i32::try_from(offset)?;
 
@@ -657,6 +656,8 @@ impl SqliteDatabase {
         )
         .fetch_all(&self.pool)
         .await?;
+
+        let fetched = rows.len();
 
         let page = rows
             .into_iter()
@@ -687,7 +688,7 @@ impl SqliteDatabase {
             })
             .collect();
 
-        Ok(page)
+        Ok((fetched, page))
     }
 }
 
@@ -700,17 +701,19 @@ impl crate::network::wormhole::PeerTrust for SqliteDatabase {
         use std::collections::HashSet;
 
         let swaps = self.all_fresh(freshness_hours).await?;
-        let peers = swaps
-            .into_iter()
-            .filter_map(|(peer_id, _, state)| {
-                let State::Alice(alice_state) = state else {
-                    return None;
-                };
-                alice_state.is_at_or_past_btc_locked().then_some(peer_id)
-            })
-            .collect::<HashSet<_>>();
 
-        Ok(peers.into_iter().collect())
+        let mut seen = HashSet::new();
+        let mut peers = Vec::new();
+        for (peer_id, _, state) in swaps.into_iter().rev() {
+            let State::Alice(alice_state) = state else {
+                continue;
+            };
+            if alice_state.is_at_or_past_btc_locked() && seen.insert(peer_id) {
+                peers.push(peer_id);
+            }
+        }
+
+        Ok(peers)
     }
 }
 

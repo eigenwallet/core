@@ -53,10 +53,16 @@ pub struct Network {
     pub prometheus_port: Option<u16>,
     #[serde(default = "default_connection_limit_exemption_freshness_days")]
     pub connection_limit_exemption_freshness_days: u64,
+    #[serde(default = "default_connection_limit_exemption_max_peers")]
+    pub connection_limit_exemption_max_peers: u64,
 }
 
 pub fn default_connection_limit_exemption_freshness_days() -> u64 {
     30
+}
+
+pub fn default_connection_limit_exemption_max_peers() -> u64 {
+    500
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -447,6 +453,7 @@ pub fn query_user_for_initial_config_with_network(
             prometheus_port: None,
             connection_limit_exemption_freshness_days:
                 default_connection_limit_exemption_freshness_days(),
+            connection_limit_exemption_max_peers: default_connection_limit_exemption_max_peers(),
         },
         bitcoin: Bitcoin {
             electrum_rpc_urls,

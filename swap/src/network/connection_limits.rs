@@ -77,8 +77,9 @@ pub struct Behaviour {
     honest_peers: HashSet<PeerId>,
     trust_provider: Arc<dyn PeerTrust + Send + Sync>,
     freshness_days: u64,
+    max_honest_peers: usize,
     poll_interval: tokio::time::Interval,
-    pending_query: OptionFuture<Fuse<BoxFuture<'static, Vec<PeerId>>>>,
+    pending_query: OptionFuture<Fuse<BoxFuture<'static, Option<Vec<PeerId>>>>>,
 }
 
 impl Behaviour {
@@ -86,6 +87,7 @@ impl Behaviour {
         limits: ConnectionLimits,
         trust_provider: Arc<dyn PeerTrust + Send + Sync>,
         freshness_days: u64,
+        max_honest_peers: usize,
         poll_interval: Duration,
     ) -> Self {
         let mut poll_interval = tokio::time::interval(poll_interval);
@@ -101,6 +103,7 @@ impl Behaviour {
             honest_peers: Default::default(),
             trust_provider,
             freshness_days,
+            max_honest_peers,
             poll_interval,
             pending_query: OptionFuture::from(None),
         }
@@ -387,25 +390,23 @@ impl NetworkBehaviour for Behaviour {
     }
 
     fn poll(&mut self, cx: &mut Context<'_>) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-        match self.pending_query.poll_unpin(cx) {
-            Poll::Ready(Some(peers)) => {
-                self.honest_peers = peers.into_iter().collect();
-            }
-            Poll::Ready(None) | Poll::Pending => {}
+        if let Poll::Ready(Some(Some(mut peers))) = self.pending_query.poll_unpin(cx) {
+            peers.truncate(self.max_honest_peers);
+            self.honest_peers = peers.into_iter().collect();
         }
 
         if self.pending_query.is_terminated() && self.poll_interval.poll_tick(cx).is_ready() {
             let trust_provider = Arc::clone(&self.trust_provider);
             let freshness_hours = self.freshness_days.saturating_mul(24);
-            let fut: Fuse<BoxFuture<'static, Vec<PeerId>>> = async move {
+            let fut: Fuse<BoxFuture<'static, Option<Vec<PeerId>>>> = async move {
                 match trust_provider
                     .peers_with_financially_relevant_swap(freshness_hours)
                     .await
                 {
-                    Ok(peers) => peers,
+                    Ok(peers) => Some(peers),
                     Err(e) => {
                         tracing::warn!(error = ?e, "Failed to query honest peers for connection-limit exemption");
-                        Vec::new()
+                        None
                     }
                 }
             }
@@ -437,6 +438,26 @@ mod tests {
         }
     }
 
+    struct OkThenErr {
+        peers: Vec<PeerId>,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl PeerTrust for OkThenErr {
+        async fn peers_with_financially_relevant_swap(
+            &self,
+            _freshness_hours: u64,
+        ) -> Result<Vec<PeerId>> {
+            let n = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 {
+                Ok(self.peers.clone())
+            } else {
+                Err(anyhow::anyhow!("transient failure"))
+            }
+        }
+    }
+
     fn addr() -> Multiaddr {
         "/ip4/127.0.0.1/tcp/1".parse().unwrap()
     }
@@ -464,6 +485,7 @@ mod tests {
             limits,
             Arc::new(FixedTrust(vec![honest])),
             24,
+            500,
             Duration::from_secs(60),
         );
         refresh_honest_peers(&mut behaviour).await;
@@ -503,6 +525,7 @@ mod tests {
             limits,
             Arc::new(FixedTrust(vec![honest])),
             24,
+            500,
             Duration::from_secs(60),
         );
         refresh_honest_peers(&mut behaviour).await;
@@ -539,6 +562,52 @@ mod tests {
                 )
                 .is_err(),
             "per-peer limit must apply even to honest peers"
+        );
+    }
+
+    #[tokio::test]
+    async fn honest_peer_set_is_capped() {
+        let peers: Vec<PeerId> = (0..5).map(|_| PeerId::random()).collect();
+        let mut behaviour = Behaviour::new(
+            ConnectionLimits::default(),
+            Arc::new(FixedTrust(peers)),
+            24,
+            2,
+            Duration::from_secs(60),
+        );
+        refresh_honest_peers(&mut behaviour).await;
+
+        assert_eq!(behaviour.honest_peers.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn honest_peers_retained_when_refresh_query_fails() {
+        let honest = PeerId::random();
+        let trust = Arc::new(OkThenErr {
+            peers: vec![honest],
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let mut behaviour = Behaviour::new(
+            ConnectionLimits::default(),
+            trust,
+            24,
+            500,
+            Duration::from_millis(1),
+        );
+
+        refresh_honest_peers(&mut behaviour).await;
+        assert!(behaviour.honest_peers.contains(&honest));
+
+        let waker = futures::task::noop_waker();
+        let mut cx = std::task::Context::from_waker(&waker);
+        for _ in 0..100 {
+            let _ = behaviour.poll(&mut cx);
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+
+        assert!(
+            behaviour.honest_peers.contains(&honest),
+            "honest peers must survive a transient refresh failure"
         );
     }
 }
