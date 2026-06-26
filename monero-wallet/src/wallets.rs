@@ -6,7 +6,7 @@
 //!  - send money from one wallet to another.
 pub use monero_sys::{Daemon, TxReceipt, WalletHandle as Wallet, WalletHandleListener};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use monero_address::Network;
 use monero_daemon_rpc::MoneroDaemon;
 use monero_oxide_wallet::transaction::{NotPruned, Transaction};
@@ -299,11 +299,22 @@ impl Wallets {
         Ok(rpc_client)
     }
 
-    /// Check that the daemon RPC is reachable, connecting if necessary.
+    /// Check that the daemon RPC is reachable and the node is fully synced.
     pub async fn rpc_health_check(&self) -> Result<()> {
-        self.direct_rpc_block_height()
+        use monero_wallet_ng::rpc::ProvidesNodeInfo;
+
+        let rpc_client = self.rpc_client().await?;
+        let status = rpc_client
+            .node_sync_status()
             .await
             .context("Monero daemon RPC health check failed")?;
+
+        if !status.synchronized {
+            bail!(
+                "Monero node is not fully synced (synced to height {})",
+                status.height
+            );
+        }
 
         Ok(())
     }

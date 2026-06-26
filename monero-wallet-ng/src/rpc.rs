@@ -40,6 +40,30 @@ pub trait ProvidesTransactionStatus: Sync {
     ) -> impl Send + Future<Output = Result<TransactionStatus, TransactionStatusError>>;
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum NodeInfoError {
+    #[error("Interface error: {0}")]
+    Interface(#[from] InterfaceError),
+    #[error("Failed to parse get_info response: {0}")]
+    Parse(String),
+}
+
+/// Sync status of a remote daemon, as reported by `get_info`.
+#[derive(Debug, Clone)]
+pub struct NodeSyncStatus {
+    /// Whether the node considers itself on the same height as the network.
+    pub synchronized: bool,
+    /// The height the node has synced to.
+    pub height: u64,
+}
+
+/// Provides the ability to query a remote daemon's sync status.
+pub trait ProvidesNodeInfo: Sync {
+    fn node_sync_status(
+        &self,
+    ) -> impl Send + Future<Output = Result<NodeSyncStatus, NodeInfoError>>;
+}
+
 /// Data structures we get back from the RPC server
 ///
 /// See: https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/rpc/core_rpc_server_commands_defs.h#L358-L439
@@ -52,6 +76,14 @@ mod monerod {
         pub(crate) missed_tx: Vec<String>,
         #[serde(default)]
         pub(crate) txs: Vec<TransactionInfo>,
+    }
+
+    // The daemon `get_info` endpoint.
+    // See: https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/rpc/core_rpc_server_commands_defs.h#L633-L673
+    #[derive(Deserialize)]
+    pub(crate) struct GetInfoResponse {
+        pub(crate) synchronized: bool,
+        pub(crate) height: u64,
     }
 
     // See: https://github.com/SNeedlewoods/seraphis_wallet/blob/dbbccecc89e1121762a4ad6b531638ece82aa0c7/src/rpc/core_rpc_server_commands_defs.h#L406-L428
@@ -110,6 +142,25 @@ impl<T: HttpTransport> ProvidesTransactionStatus for MoneroDaemon<T> {
                     )
                 })?,
             });
+        }
+    }
+}
+
+impl<T: HttpTransport> ProvidesNodeInfo for MoneroDaemon<T> {
+    fn node_sync_status(
+        &self,
+    ) -> impl Send + Future<Output = Result<NodeSyncStatus, NodeInfoError>> {
+        async move {
+            // 16kb, fairly arbitrary, but get_info is small
+            let response = self.rpc_call("get_info", None, 16384).await?;
+
+            let info: monerod::GetInfoResponse = serde_json::from_str(&response)
+                .map_err(|e| NodeInfoError::Parse(e.to_string()))?;
+
+            Ok(NodeSyncStatus {
+                synchronized: info.synchronized,
+                height: info.height,
+            })
         }
     }
 }
