@@ -6586,6 +6586,7 @@ dependencies = [
  "monero-sys",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
  "monero-wallet-ng",
+ "serde_json",
  "swap-core",
  "throttle",
  "tokio",
