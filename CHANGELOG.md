@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Honest peers (those that committed real funds to a recent swap) are now exempt from the incoming connection limit, so an attacker flooding connections from throwaway peer IDs can no longer lock honest peers out and block quotes/swaps. A new `[network]` config option `connection_limit_exemption_freshness_days` controls how recently a peer must have transacted to stay exempt (default: `30`).
+
 ## [4.11.3] - 2026-06-24
 
 ## [4.11.2] - 2026-06-23

@@ -27,8 +27,15 @@ use libp2p_swarm::{
 };
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::Duration;
 use void::Void;
+
+use futures::FutureExt;
+use futures::future::{BoxFuture, Fuse, FusedFuture, OptionFuture};
+
+use crate::network::wormhole::PeerTrust;
 
 /// A [`NetworkBehaviour`] that enforces a set of [`ConnectionLimits`].
 ///
@@ -66,10 +73,24 @@ pub struct Behaviour {
     established_inbound_connections: HashSet<ConnectionId>,
     established_outbound_connections: HashSet<ConnectionId>,
     established_per_peer: HashMap<PeerId, HashSet<ConnectionId>>,
+
+    honest_peers: HashSet<PeerId>,
+    trust_provider: Arc<dyn PeerTrust + Send + Sync>,
+    freshness_days: u64,
+    poll_interval: tokio::time::Interval,
+    pending_query: OptionFuture<Fuse<BoxFuture<'static, Vec<PeerId>>>>,
 }
 
 impl Behaviour {
-    pub fn new(limits: ConnectionLimits) -> Self {
+    pub fn new(
+        limits: ConnectionLimits,
+        trust_provider: Arc<dyn PeerTrust + Send + Sync>,
+        freshness_days: u64,
+        poll_interval: Duration,
+    ) -> Self {
+        let mut poll_interval = tokio::time::interval(poll_interval);
+        poll_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
         Self {
             limits,
             pending_inbound_connections: Default::default(),
@@ -77,6 +98,11 @@ impl Behaviour {
             established_inbound_connections: Default::default(),
             established_outbound_connections: Default::default(),
             established_per_peer: Default::default(),
+            honest_peers: Default::default(),
+            trust_provider,
+            freshness_days,
+            poll_interval,
+            pending_query: OptionFuture::from(None),
         }
     }
 
@@ -231,11 +257,20 @@ impl NetworkBehaviour for Behaviour {
     ) -> Result<THandler<Self>, ConnectionDenied> {
         self.pending_inbound_connections.remove(&connection_id);
 
-        check_limit(
-            self.limits.max_established_incoming,
-            self.established_inbound_connections.len(),
-            Kind::EstablishedIncoming,
-        )?;
+        if !self.honest_peers.contains(&peer) {
+            check_limit(
+                self.limits.max_established_incoming,
+                self.established_inbound_connections.len(),
+                Kind::EstablishedIncoming,
+            )?;
+            check_limit(
+                self.limits.max_established_total,
+                self.established_inbound_connections.len()
+                    + self.established_outbound_connections.len(),
+                Kind::EstablishedTotal,
+            )?;
+        }
+
         check_limit(
             self.limits.max_established_per_peer,
             self.established_per_peer
@@ -243,12 +278,6 @@ impl NetworkBehaviour for Behaviour {
                 .map(|connections| connections.len())
                 .unwrap_or(0),
             Kind::EstablishedPerPeer,
-        )?;
-        check_limit(
-            self.limits.max_established_total,
-            self.established_inbound_connections.len()
-                + self.established_outbound_connections.len(),
-            Kind::EstablishedTotal,
         )?;
 
         Ok(dummy::ConnectionHandler)
@@ -357,7 +386,159 @@ impl NetworkBehaviour for Behaviour {
         void::unreachable(event)
     }
 
-    fn poll(&mut self, _: &mut Context<'_>) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
+    fn poll(&mut self, cx: &mut Context<'_>) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
+        match self.pending_query.poll_unpin(cx) {
+            Poll::Ready(Some(peers)) => {
+                self.honest_peers = peers.into_iter().collect();
+            }
+            Poll::Ready(None) | Poll::Pending => {}
+        }
+
+        if self.pending_query.is_terminated() && self.poll_interval.poll_tick(cx).is_ready() {
+            let trust_provider = Arc::clone(&self.trust_provider);
+            let freshness_hours = self.freshness_days.saturating_mul(24);
+            let fut: Fuse<BoxFuture<'static, Vec<PeerId>>> = async move {
+                match trust_provider
+                    .peers_with_financially_relevant_swap(freshness_hours)
+                    .await
+                {
+                    Ok(peers) => peers,
+                    Err(e) => {
+                        tracing::warn!(error = ?e, "Failed to query honest peers for connection-limit exemption");
+                        Vec::new()
+                    }
+                }
+            }
+            .boxed()
+            .fuse();
+            self.pending_query = OptionFuture::from(Some(fut));
+
+            cx.waker().wake_by_ref();
+        }
+
         Poll::Pending
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+
+    struct FixedTrust(Vec<PeerId>);
+
+    #[async_trait::async_trait]
+    impl PeerTrust for FixedTrust {
+        async fn peers_with_financially_relevant_swap(
+            &self,
+            _freshness_hours: u64,
+        ) -> Result<Vec<PeerId>> {
+            Ok(self.0.clone())
+        }
+    }
+
+    fn addr() -> Multiaddr {
+        "/ip4/127.0.0.1/tcp/1".parse().unwrap()
+    }
+
+    async fn refresh_honest_peers(behaviour: &mut Behaviour) {
+        let waker = futures::task::noop_waker();
+        let mut cx = std::task::Context::from_waker(&waker);
+        for _ in 0..100 {
+            let _ = behaviour.poll(&mut cx);
+            if !behaviour.honest_peers.is_empty() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        panic!("honest peers were never refreshed");
+    }
+
+    #[tokio::test]
+    async fn honest_peer_is_exempt_from_incoming_limit() {
+        let honest = PeerId::random();
+        let unknown = PeerId::random();
+
+        let limits = ConnectionLimits::default().with_max_established_incoming(Some(0));
+        let mut behaviour = Behaviour::new(
+            limits,
+            Arc::new(FixedTrust(vec![honest])),
+            24,
+            Duration::from_secs(60),
+        );
+        refresh_honest_peers(&mut behaviour).await;
+
+        assert!(
+            behaviour
+                .handle_established_inbound_connection(
+                    ConnectionId::new_unchecked(0),
+                    honest,
+                    &addr(),
+                    &addr(),
+                )
+                .is_ok(),
+            "honest peer must be exempt from the incoming connection limit"
+        );
+        assert!(
+            behaviour
+                .handle_established_inbound_connection(
+                    ConnectionId::new_unchecked(1),
+                    unknown,
+                    &addr(),
+                    &addr(),
+                )
+                .is_err(),
+            "unknown peer must still be subject to the incoming connection limit"
+        );
+    }
+
+    #[tokio::test]
+    async fn per_peer_limit_applies_even_to_honest_peers() {
+        let honest = PeerId::random();
+
+        let limits = ConnectionLimits::default()
+            .with_max_established_incoming(Some(0))
+            .with_max_established_per_peer(Some(1));
+        let mut behaviour = Behaviour::new(
+            limits,
+            Arc::new(FixedTrust(vec![honest])),
+            24,
+            Duration::from_secs(60),
+        );
+        refresh_honest_peers(&mut behaviour).await;
+
+        assert!(
+            behaviour
+                .handle_established_inbound_connection(
+                    ConnectionId::new_unchecked(0),
+                    honest,
+                    &addr(),
+                    &addr(),
+                )
+                .is_ok()
+        );
+        let endpoint = ConnectedPoint::Listener {
+            local_addr: addr(),
+            send_back_addr: addr(),
+        };
+        behaviour.on_swarm_event(FromSwarm::ConnectionEstablished(ConnectionEstablished {
+            peer_id: honest,
+            connection_id: ConnectionId::new_unchecked(0),
+            endpoint: &endpoint,
+            failed_addresses: &[],
+            other_established: 0,
+        }));
+
+        assert!(
+            behaviour
+                .handle_established_inbound_connection(
+                    ConnectionId::new_unchecked(1),
+                    honest,
+                    &addr(),
+                    &addr(),
+                )
+                .is_err(),
+            "per-peer limit must apply even to honest peers"
+        );
     }
 }

@@ -156,6 +156,8 @@ pub mod behaviour {
 
     use super::*;
 
+    const HONEST_PEERS_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+
     /// A `NetworkBehaviour` that represents an XMR/BTC swap node as Alice.
     #[derive(NetworkBehaviour)]
     #[behaviour(out_event = "OutEvent", event_process = false)]
@@ -194,6 +196,7 @@ pub mod behaviour {
             rendezvous_nodes: Vec<PeerId>,
             connection_limits: connection_limits::ConnectionLimits,
             trust_provider: Arc<dyn PeerTrust + Send + Sync>,
+            connection_limit_exemption_freshness_days: u64,
             wormhole_channels: Option<WormholeChannels>,
             wormhole_swap_freshness_hours: u64,
             request_response_metrics: Option<RequestResponseMetrics>,
@@ -210,7 +213,7 @@ pub mod behaviour {
             let wormhole = wormhole_channels.map(|channels| {
                 wormhole::alice::Behaviour::new(
                     &identity,
-                    trust_provider,
+                    Arc::clone(&trust_provider),
                     channels.service_tx,
                     channels.handle_rx,
                     wormhole::alice::Config {
@@ -231,7 +234,12 @@ pub mod behaviour {
             };
 
             Self {
-                connection_limits: connection_limits::Behaviour::new(connection_limits),
+                connection_limits: connection_limits::Behaviour::new(
+                    connection_limits,
+                    trust_provider,
+                    connection_limit_exemption_freshness_days,
+                    HONEST_PEERS_REFRESH_INTERVAL,
+                ),
                 rendezvous: Toggle::from(behaviour),
                 quote: quote::alice(request_response_metrics.clone()),
                 swap_setup: alice::Behaviour::new(

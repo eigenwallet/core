@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use swap_env::config::{
     Bitcoin, Config, ConfigNotInitialized, Data, Maker, Monero, Network, TorConf,
+    default_connection_limit_exemption_freshness_days,
     default_price_ticker_rest_poll_interval_exolix_secs, default_price_ticker_source_enabled,
     default_price_ticker_validity_duration_secs,
 };
@@ -347,6 +348,8 @@ fn main() {
                 rendezvous_point: rendezvous_points,
                 external_addresses: vec![],
                 prometheus_port: None,
+                connection_limit_exemption_freshness_days:
+                    default_connection_limit_exemption_freshness_days(),
             },
             bitcoin: Bitcoin {
                 electrum_rpc_urls: match electrum_server_type {

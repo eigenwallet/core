@@ -307,6 +307,7 @@ pub async fn main() -> Result<()> {
                 config.tor.wormhole_num_intro_points,
                 config.tor.wormhole_swap_freshness_hours,
                 db.clone(),
+                config.network.connection_limit_exemption_freshness_days,
                 metrics_registry.as_mut(),
             )?;
 

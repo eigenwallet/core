@@ -51,6 +51,12 @@ pub struct Network {
     /// `/metrics`. When unset, the metrics endpoint is disabled.
     #[serde(default)]
     pub prometheus_port: Option<u16>,
+    #[serde(default = "default_connection_limit_exemption_freshness_days")]
+    pub connection_limit_exemption_freshness_days: u64,
+}
+
+pub fn default_connection_limit_exemption_freshness_days() -> u64 {
+    30
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -439,6 +445,8 @@ pub fn query_user_for_initial_config_with_network(
             rendezvous_point: rendezvous_points,
             external_addresses: vec![],
             prometheus_port: None,
+            connection_limit_exemption_freshness_days:
+                default_connection_limit_exemption_freshness_days(),
         },
         bitcoin: Bitcoin {
             electrum_rpc_urls,
