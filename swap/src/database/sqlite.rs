@@ -313,10 +313,9 @@ impl Database for SqliteDatabase {
     }
 
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()> {
-        let entered_at = OffsetDateTime::now_utc();
+        let entered_at = super::format_entered_at(OffsetDateTime::now_utc())?;
 
         let swap = serde_json::to_string(&Swap::from(state))?;
-        let entered_at = entered_at.to_string();
         let swap_id_str = swap_id.to_string();
 
         sqlx::query!(
@@ -596,39 +595,83 @@ impl Database for SqliteDatabase {
 impl SqliteDatabase {
     /// Like [`Database::all`] but only returns swaps whose latest state
     /// update happened within the last `freshness_hours`.
-    ///
-    /// `entered_at` is stored as a Rust-formatted string
-    /// (`YYYY-MM-DD HH:MM:SS.fff +00:00:00`). SQLite's date functions don't
-    /// accept the offset trailer, so we `substr` down to the first 19
-    /// characters before parsing with `strftime('%s', ...)`. All writes use
-    /// `OffsetDateTime::now_utc()`, so dropping the offset is safe.
     pub async fn all_fresh(&self, freshness_hours: u64) -> Result<Vec<(PeerId, Uuid, State)>> {
-        let freshness_seconds = (freshness_hours as i64).saturating_mul(3600);
+        const PAGE_SIZE: u32 = 100;
+
+        let cutoff = OffsetDateTime::now_utc()
+            - time::Duration::seconds((freshness_hours as i64).saturating_mul(3600));
+
+        let mut fresh = Vec::new();
+        let mut offset = 0;
+
+        loop {
+            let page = self.latest_states_paginated(PAGE_SIZE, offset).await?;
+            let page_len = page.len();
+
+            for (peer_id, swap_id, state_json, entered_at) in page {
+                if entered_at < cutoff {
+                    continue;
+                }
+                let state = match serde_json::from_str::<Swap>(&state_json) {
+                    Ok(a) => State::from(a),
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to deserialize state");
+                        continue;
+                    }
+                };
+                fresh.push((peer_id, swap_id, state));
+            }
+
+            if page_len < PAGE_SIZE as usize {
+                break;
+            }
+            offset += PAGE_SIZE;
+        }
+
+        Ok(fresh)
+    }
+
+    async fn latest_states_paginated(
+        &self,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<(PeerId, Uuid, String, OffsetDateTime)>> {
+        let limit = i32::try_from(limit)?;
+        let offset = i32::try_from(offset)?;
 
         let rows = sqlx::query!(
             r#"
-            SELECT s.swap_id, s.state, p.peer_id
+            SELECT s.swap_id, s.state, s.entered_at, p.peer_id
             FROM (
                 SELECT max(id) as id, swap_id, state, entered_at
                 FROM swap_states
                 GROUP BY swap_id
             ) s
             INNER JOIN peers p ON s.swap_id = p.swap_id
-            WHERE CAST(strftime('%s', substr(s.entered_at, 1, 19)) AS INTEGER)
-                  >= CAST(strftime('%s', 'now') AS INTEGER) - ?
+            ORDER BY s.id
+            LIMIT ?
+            OFFSET ?
             "#,
-            freshness_seconds,
+            limit,
+            offset,
         )
         .fetch_all(&self.pool)
         .await?;
 
-        let result = rows
-            .iter()
+        let page = rows
+            .into_iter()
             .filter_map(|row| {
                 let swap_id = match Uuid::from_str(&row.swap_id) {
                     Ok(id) => id,
                     Err(e) => {
                         tracing::error!(swap_id = %row.swap_id, error = ?e, "Failed to parse UUID");
+                        return None;
+                    }
+                };
+                let entered_at = match super::parse_entered_at(&row.entered_at) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::error!(%swap_id, entered_at = %row.entered_at, error = ?e, "Failed to parse entered_at");
                         return None;
                     }
                 };
@@ -639,19 +682,12 @@ impl SqliteDatabase {
                         return None;
                     }
                 };
-                let state = match serde_json::from_str::<Swap>(&row.state) {
-                    Ok(a) => State::from(a),
-                    Err(e) => {
-                        tracing::error!(%swap_id, error = ?e, "Failed to deserialize state");
-                        return None;
-                    }
-                };
 
-                Some((peer_id, swap_id, state))
+                Some((peer_id, swap_id, row.state, entered_at))
             })
             .collect();
 
-        Ok(result)
+        Ok(page)
     }
 }
 

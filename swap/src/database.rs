@@ -1,5 +1,6 @@
 pub use alice::Alice;
 pub use bob::Bob;
+pub use entered_at::{format_entered_at, parse_entered_at};
 pub use sqlite::SqliteDatabase;
 
 use crate::cli::api::tauri_bindings::TauriHandle;
@@ -14,6 +15,7 @@ use swap_fs::ensure_directory_exists;
 pub use swap_db::alice;
 pub use swap_db::bob;
 
+mod entered_at;
 mod sqlite;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

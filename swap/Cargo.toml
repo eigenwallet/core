@@ -84,7 +84,7 @@ swap-p2p = { path = "../swap-p2p" }
 swap-proptest = { path = "../swap-proptest" }
 swap-serde = { path = "../swap-serde" }
 tauri = { version = "2.0", features = ["config-json5"], optional = true, default-features = false }
-time = "0.3"
+time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
 toml = { workspace = true }
 toml_edit = { workspace = true }
 url = { workspace = true }
