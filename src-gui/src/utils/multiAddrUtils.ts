@@ -7,8 +7,9 @@ import { isTestnet } from "store/config";
 // const MIN_ASB_VERSION = "2.0.0-beta.1"; // First version with support for tx_early_refund
 // const MIN_ASB_VERSION = "3.2.0-rc.1";
 // const VERSION_FLOOR = "4.0.0"; // First version with partial refund path - completely incompatible
-const VERSION_FLOOR_SOFT = "4.8.0"; // First version where both parties reject swaps with mismatched fee estimates
-const VERSION_FLOOR_HARD = "4.8.0";
+// First version to support the "hermes" protocol, which improves reliability of swaps significantly
+const VERSION_FLOOR_SOFT = "4.11.2";
+const VERSION_FLOOR_HARD = "4.11.2";
 
 export function isMakerOnCorrectNetwork(
   provider: ExtendedMakerStatus,
