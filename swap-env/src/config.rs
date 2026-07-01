@@ -199,7 +199,7 @@ pub struct Maker {
     #[serde(default = "default_hermes_funding_amount_piconero")]
     pub hermes_funding_amount_piconero: u64,
     /// Whether to fund the on-chain Hermes encrypted-signature channel at all.
-    /// Disabled by default.
+    /// Enabled by default.
     #[serde(default = "default_hermes_enabled")]
     pub hermes_enabled: bool,
     /// Minimum swap size (in BTC) below which the Hermes amount is not funded.
@@ -272,11 +272,12 @@ pub fn default_hermes_funding_amount_piconero() -> u64 {
 }
 
 pub fn default_hermes_enabled() -> bool {
-    false
+    true
 }
 
 pub fn default_hermes_min_swap_amount() -> bitcoin::Amount {
-    bitcoin::Amount::from_btc(0.01).expect("0.01 BTC to be a valid amount")
+    // ~50 USD worth of BTC at a reference price of 50,000 USD/BTC
+    bitcoin::Amount::from_btc(0.001).expect("0.001 BTC to be a valid amount")
 }
 
 pub fn default_btc_redeem_fee_multiplier() -> Decimal {
