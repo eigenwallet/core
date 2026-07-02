@@ -596,11 +596,7 @@ pub trait TauriEmitter {
         timeout_secs: u64,
     ) -> Result<bool>;
 
-    async fn request_seed_selection_with_recent_wallets(
-        &self,
-        recent_wallets: Vec<String>,
-        default_wallet_directory: String,
-    ) -> Result<SeedChoice>;
+    async fn request_seed_selection(&self, details: SeedSelectionDetails) -> Result<SeedChoice>;
 
     async fn request_password(&self, wallet_path: String) -> Result<String>;
 
@@ -715,15 +711,7 @@ impl TauriEmitter for TauriHandle {
             .unwrap_or(false))
     }
 
-    async fn request_seed_selection_with_recent_wallets(
-        &self,
-        recent_wallets: Vec<String>,
-        default_wallet_directory: String,
-    ) -> Result<SeedChoice> {
-        let details = SeedSelectionDetails {
-            recent_wallets,
-            default_wallet_directory,
-        };
+    async fn request_seed_selection(&self, details: SeedSelectionDetails) -> Result<SeedChoice> {
         self.request_approval(ApprovalRequestType::SeedSelection(details), None)
             .await
     }
@@ -797,20 +785,9 @@ impl TauriEmitter for Option<TauriHandle> {
         }
     }
 
-    async fn request_seed_selection_with_recent_wallets(
-        &self,
-        recent_wallets: Vec<String>,
-        default_wallet_directory: String,
-    ) -> Result<SeedChoice> {
+    async fn request_seed_selection(&self, details: SeedSelectionDetails) -> Result<SeedChoice> {
         match self {
-            Some(tauri) => {
-                tauri
-                    .request_seed_selection_with_recent_wallets(
-                        recent_wallets,
-                        default_wallet_directory,
-                    )
-                    .await
-            }
+            Some(tauri) => tauri.request_seed_selection(details).await,
             None => bail!("No Tauri handle available"),
         }
     }

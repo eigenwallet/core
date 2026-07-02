@@ -17,21 +17,22 @@ import { PrivateKeyScamAlert } from "renderer/components/other/PrivateKeyWarning
 import CircularProgressWithSubtitle from "renderer/components/pages/swap/swap/components/CircularProgressWithSubtitle";
 
 const SEED_FETCH_RETRY_INTERVAL_MS = 1000;
-const SEED_FETCH_MAX_ATTEMPTS = 60;
+const SEED_FETCH_MAX_ATTEMPTS = 5;
 
 /// Shown after a fresh wallet has been created so the user records their seed
 /// before continuing. The seed only becomes readable once the newly created
 /// Monero wallet has finished opening, so we wait for it before fetching.
 export default function BackupSeedStep({
+  confirmed,
   onConfirmedChange,
 }: {
+  confirmed: boolean;
   onConfirmedChange: (confirmed: boolean) => void;
 }) {
   const moneroWalletAvailable = useIsMoneroWalletAvailable();
   const [seed, setSeed] = useState<
     [GetMoneroSeedResponse, GetRestoreHeightResponse] | null
   >(null);
-  const [confirmed, setConfirmed] = useState(false);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -53,6 +54,9 @@ export default function BackupSeedStep({
           if (attempt >= SEED_FETCH_MAX_ATTEMPTS) {
             console.error("Failed to read wallet seed for backup", e);
             setFailed(true);
+            // The wallet itself was created; never trap the user in the
+            // dialog over a display failure.
+            onConfirmedChange(true);
             return;
           }
           timeout = setTimeout(fetchSeed, SEED_FETCH_RETRY_INTERVAL_MS);
@@ -62,8 +66,9 @@ export default function BackupSeedStep({
 
     return () => {
       cancelled = true;
-      if (timeout !== undefined) clearTimeout(timeout);
+      clearTimeout(timeout);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch only when the wallet becomes readable
   }, [moneroWalletAvailable, seed]);
 
   if (failed) {
@@ -103,10 +108,7 @@ export default function BackupSeedStep({
         control={
           <Checkbox
             checked={confirmed}
-            onChange={(e) => {
-              setConfirmed(e.target.checked);
-              onConfirmedChange(e.target.checked);
-            }}
+            onChange={(e) => onConfirmedChange(e.target.checked)}
           />
         }
         label="I have written down my seed phrase and restore height"

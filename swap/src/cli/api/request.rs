@@ -1912,7 +1912,9 @@ impl Request for SetPendingWalletArgs {
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         let config = ctx.try_get_config().await?;
-        let eigenwallet_data_dir = swap_fs::system_data_dir_eigenwallet(config.is_testnet)?;
+        // Same derivation as ContextBuilder::build, so the marker is written
+        // where the next startup reads it.
+        let eigenwallet_data_dir = super::eigenwallet_data::new(config.is_testnet)?;
 
         super::wallet::write_pending_wallet(&eigenwallet_data_dir, &self.action)?;
 

@@ -30,8 +30,12 @@ export default function NameLocationStep({
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="my-wallet"
-        error={name.trim().length === 0}
-        helperText={name.trim().length === 0 ? "Enter a wallet name" : ""}
+        error={name.length > 0 && name.trim().length === 0}
+        helperText={
+          name.length > 0 && name.trim().length === 0
+            ? "Enter a wallet name"
+            : ""
+        }
       />
       <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
         <TextField

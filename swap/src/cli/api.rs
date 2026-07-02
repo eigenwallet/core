@@ -2,7 +2,9 @@ pub mod request;
 pub mod seed_words;
 pub mod tauri_bindings;
 
-use crate::cli::api::tauri_bindings::{ContextStatus, PendingWalletAction, SeedChoice};
+use crate::cli::api::tauri_bindings::{
+    ContextStatus, PendingWalletAction, SeedChoice, SeedSelectionDetails,
+};
 use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
@@ -970,6 +972,41 @@ mod wallet {
         eigenwallet_data_dir.join("wallets")
     }
 
+    /// Builds the path for a freshly created wallet. The name must be a single
+    /// path component so it cannot escape the chosen directory, and the wallet
+    /// must not already exist (creating must never silently open an existing
+    /// wallet).
+    fn new_wallet_path(directory: &str, name: &str) -> Result<PathBuf> {
+        if name.trim().is_empty() {
+            anyhow::bail!("Wallet name must not be empty");
+        }
+
+        let is_single_component = Path::new(name)
+            .components()
+            .eq(std::iter::once(std::path::Component::Normal(name.as_ref())));
+        if !is_single_component {
+            anyhow::bail!("Wallet name must be a single file name, got {name:?}");
+        }
+
+        if directory.trim().is_empty() || !Path::new(directory).is_absolute() {
+            anyhow::bail!("Wallet directory must be an absolute path, got {directory:?}");
+        }
+
+        let wallet_path = PathBuf::from(directory).join(name);
+        // Monero stores a wallet as `<name>` plus `<name>.keys`; `with_extension`
+        // would truncate a name containing dots.
+        let keys_path = PathBuf::from(directory).join(format!("{name}.keys"));
+
+        if wallet_path.exists() || keys_path.exists() {
+            anyhow::bail!("A wallet named {name:?} already exists in {directory:?}");
+        }
+
+        swap_fs::ensure_directory_exists(&wallet_path)
+            .context("Failed to create wallet directory")?;
+
+        Ok(wallet_path)
+    }
+
     /// Requests the user to select a seed choice from a list of recent wallets
     pub(super) async fn request_seed_choice(
         tauri_handle: TauriHandle,
@@ -977,19 +1014,15 @@ mod wallet {
         eigenwallet_data_dir: &Path,
     ) -> Result<SeedChoice> {
         let recent_wallets = database.get_recent_wallets(5).await?;
-        let recent_wallets: Vec<String> =
-            recent_wallets.into_iter().map(|w| w.wallet_path).collect();
 
-        let seed_choice = tauri_handle
-            .request_seed_selection_with_recent_wallets(
-                recent_wallets,
-                default_wallet_directory(eigenwallet_data_dir)
+        tauri_handle
+            .request_seed_selection(SeedSelectionDetails {
+                recent_wallets: recent_wallets.into_iter().map(|w| w.wallet_path).collect(),
+                default_wallet_directory: default_wallet_directory(eigenwallet_data_dir)
                     .display()
                     .to_string(),
-            )
-            .await?;
-
-        Ok(seed_choice)
+            })
+            .await
     }
 
     /// Marker file recording the wallet to open after an app relaunch, used by
@@ -1006,11 +1039,18 @@ mod wallet {
         swap_fs::ensure_directory_exists(&marker)
             .context("Failed to create data directory for pending wallet marker")?;
         let encoded = serde_json::to_string(action).context("Failed to encode pending wallet")?;
-        std::fs::write(&marker, encoded).context("Failed to write pending wallet marker")?;
+
+        // Write-then-rename so a crash cannot leave a torn marker behind.
+        let tmp = marker.with_extension("tmp");
+        std::fs::write(&tmp, encoded).context("Failed to write pending wallet marker")?;
+        std::fs::rename(&tmp, &marker)
+            .context("Failed to move pending wallet marker into place")?;
         Ok(())
     }
 
-    /// Reads and consumes the pending-wallet marker, if any.
+    /// Reads and consumes the pending-wallet marker, if any. A marker that
+    /// cannot be decoded is discarded: it is purely advisory, and failing
+    /// startup over it would leave the app unusable.
     fn take_pending_wallet(eigenwallet_data_dir: &Path) -> Result<Option<PendingWalletAction>> {
         let marker = pending_wallet_marker_path(eigenwallet_data_dir);
 
@@ -1021,9 +1061,11 @@ mod wallet {
         };
         std::fs::remove_file(&marker).context("Failed to remove pending wallet marker")?;
 
-        let action =
-            serde_json::from_str(&encoded).context("Failed to decode pending wallet marker")?;
-        Ok(Some(action))
+        Ok(serde_json::from_str(&encoded)
+            .inspect_err(
+                |error| tracing::warn!(%error, "Discarding corrupt pending wallet marker"),
+            )
+            .ok())
     }
 
     /// On startup, honor a wallet the user pre-selected before relaunching the
@@ -1035,8 +1077,15 @@ mod wallet {
         eigenwallet_data_dir: &Path,
     ) -> Result<SeedChoice> {
         match take_pending_wallet(eigenwallet_data_dir)? {
-            Some(PendingWalletAction::Open { wallet_path }) => {
+            Some(PendingWalletAction::Open { wallet_path })
+                if Path::new(&wallet_path).exists() =>
+            {
+                tracing::info!(%wallet_path, "Opening wallet pre-selected before relaunch");
                 Ok(SeedChoice::FromWalletPath { wallet_path })
+            }
+            Some(PendingWalletAction::Open { wallet_path }) => {
+                tracing::warn!(%wallet_path, "Pending wallet no longer exists, showing chooser");
+                request_seed_choice(tauri_handle, database, eigenwallet_data_dir).await
             }
             Some(PendingWalletAction::ShowChooser) | None => {
                 request_seed_choice(tauri_handle, database, eigenwallet_data_dir).await
@@ -1051,8 +1100,8 @@ mod wallet {
     /// - Recover a wallet from a given seed phrase.
     /// - Open an existing wallet file (with password verification).
     ///
-    /// Errors if the user aborts, provides an incorrect password, or the wallet
-    /// fails to open/create.
+    /// A wallet that fails to open or create puts the user back into the
+    /// chooser; hard errors (e.g. the approval UI going away) propagate.
     pub(super) async fn open_monero_wallet(
         tauri_handle: Option<TauriHandle>,
         eigenwallet_data_dir: &Path,
@@ -1075,61 +1124,31 @@ mod wallet {
                             (),
                         );
 
-                    // Builds the path for a freshly created wallet. The name
-                    // must be a single path component so it cannot escape the
-                    // chosen directory, and the wallet must not already exist
-                    // (creating must never silently open an existing wallet).
-                    fn new_wallet_path(directory: &str, name: &str) -> Result<PathBuf> {
-                        if name.trim().is_empty() {
-                            anyhow::bail!("Wallet name must not be empty");
-                        }
-
-                        let is_single_component = Path::new(name)
-                            .components()
-                            .eq(std::iter::once(std::path::Component::Normal(name.as_ref())));
-                        if !is_single_component {
-                            anyhow::bail!("Wallet name must be a single file name, got {name:?}");
-                        }
-
-                        let wallet_path = PathBuf::from(directory).join(name);
-                        // Monero stores a wallet as `<name>` plus `<name>.keys`;
-                        // `with_extension` would truncate a name containing dots.
-                        let keys_path = PathBuf::from(directory).join(format!("{name}.keys"));
-
-                        if wallet_path.exists() || keys_path.exists() {
-                            anyhow::bail!(
-                                "A wallet named {name:?} already exists in {directory:?}"
-                            );
-                        }
-
-                        swap_fs::ensure_directory_exists(&wallet_path)
-                            .context("Failed to create wallet directory")?;
-
-                        Ok(wallet_path)
-                    }
-
-                    let wallet = match seed_choice {
+                    let opened = match seed_choice {
                         SeedChoice::RandomSeed {
                             password,
                             name,
                             directory,
                         } => {
-                            let wallet_path = new_wallet_path(&directory, &name)
-                                .context("Failed to determine path for new wallet")?;
+                            async {
+                                let wallet_path = new_wallet_path(&directory, &name)
+                                    .context("Failed to determine path for new wallet")?;
 
-                            monero::Wallet::open_or_create_with_password(
-                                wallet_path.display().to_string(),
-                                if password.is_empty() {
-                                    None
-                                } else {
-                                    Some(password)
-                                },
-                                daemon.clone(),
-                                env_config.monero_network,
-                                true,
-                            )
+                                monero::Wallet::open_or_create_with_password(
+                                    wallet_path.display().to_string(),
+                                    if password.is_empty() {
+                                        None
+                                    } else {
+                                        Some(password)
+                                    },
+                                    daemon.clone(),
+                                    env_config.monero_network,
+                                    true,
+                                )
+                                .await
+                                .context("Failed to create wallet from random seed")
+                            }
                             .await
-                            .context("Failed to create wallet from random seed")?
                         }
                         SeedChoice::FromSeed {
                             seed: mnemonic,
@@ -1138,24 +1157,27 @@ mod wallet {
                             name,
                             directory,
                         } => {
-                            let wallet_path = new_wallet_path(&directory, &name)
-                                .context("Failed to determine path for new wallet")?;
+                            async {
+                                let wallet_path = new_wallet_path(&directory, &name)
+                                    .context("Failed to determine path for new wallet")?;
 
-                            monero::Wallet::open_or_create_from_seed_with_password(
-                                wallet_path.display().to_string(),
-                                mnemonic,
-                                if password.is_empty() {
-                                    None
-                                } else {
-                                    Some(password)
-                                },
-                                env_config.monero_network,
-                                restore_height.into(),
-                                true,
-                                daemon.clone(),
-                            )
+                                monero::Wallet::open_or_create_from_seed_with_password(
+                                    wallet_path.display().to_string(),
+                                    mnemonic,
+                                    if password.is_empty() {
+                                        None
+                                    } else {
+                                        Some(password)
+                                    },
+                                    env_config.monero_network,
+                                    restore_height.into(),
+                                    true,
+                                    daemon.clone(),
+                                )
+                                .await
+                                .context("Failed to create wallet from provided seed")
+                            }
                             .await
-                            .context("Failed to create wallet from provided seed")?
                         }
                         SeedChoice::FromWalletPath { ref wallet_path } => {
                             let wallet_path = wallet_path.clone();
@@ -1255,7 +1277,7 @@ mod wallet {
                                 true,
                             )
                             .await
-                            .context("Failed to open wallet from provided path")?
+                            .context("Failed to open wallet from provided path")
                         }
 
                         SeedChoice::Legacy => {
@@ -1270,6 +1292,26 @@ mod wallet {
                                 .context("Failed to read legacy seed from file")?;
 
                             break (wallet, seed);
+                        }
+                    };
+
+                    // A failed create/open (e.g. the wallet name is already
+                    // taken) must not abort startup: put the user back into
+                    // the chooser instead.
+                    let wallet = match opened {
+                        Ok(wallet) => wallet,
+                        Err(error) => {
+                            tracing::error!(
+                                ?error,
+                                "Failed to open or create wallet, asking user to choose again"
+                            );
+                            seed_choice = request_seed_choice(
+                                tauri_handle.clone().unwrap(),
+                                database,
+                                eigenwallet_data_dir,
+                            )
+                            .await?;
+                            continue;
                         }
                     };
 

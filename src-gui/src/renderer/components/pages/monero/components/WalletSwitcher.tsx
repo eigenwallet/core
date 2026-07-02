@@ -22,6 +22,7 @@ import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getRecentWallets, setPendingWallet } from "renderer/rpc";
+import { useIsSwapRunningAndHasFundsLocked } from "store/hooks";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 
 function walletFileName(path: string): string {
@@ -29,7 +30,8 @@ function walletFileName(path: string): string {
 }
 
 // Switching opens a specific wallet; creating restarts into the wallet setup
-// chooser (an empty pending marker tells startup to prompt instead of opening).
+// chooser (a ShowChooser marker also neutralizes any stale Open marker left by
+// a previously failed switch).
 type PendingAction = { kind: "switch"; path: string } | { kind: "create" };
 
 // Shows the current wallet and lets the user open a different one. The most
@@ -40,7 +42,11 @@ export default function WalletSwitcher() {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [recentWallets, setRecentWallets] = useState<string[]>([]);
   // Action the user picked, awaiting confirmation before the app relaunches.
+  // Kept while the dialog fades out so the copy doesn't flicker; `confirmOpen`
+  // alone controls visibility.
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const swapRunning = useIsSwapRunningAndHasFundsLocked();
 
   const refreshRecentWallets = () => {
     getRecentWallets()
@@ -58,6 +64,11 @@ export default function WalletSwitcher() {
     setAnchorEl(event.currentTarget);
   };
 
+  const requestConfirmation = (action: PendingAction) => {
+    setPending(action);
+    setConfirmOpen(true);
+  };
+
   const confirmPending = async () => {
     if (pending === null) return;
     await setPendingWallet(
@@ -65,12 +76,25 @@ export default function WalletSwitcher() {
         ? { type: "Open", content: { wallet_path: pending.path } }
         : { type: "ShowChooser" },
     );
-    await relaunch();
+    try {
+      await relaunch();
+    } catch (e) {
+      // Never leave an Open marker behind when the relaunch failed: a later
+      // manual launch would silently open a wallet the user no longer expects.
+      await setPendingWallet({ type: "ShowChooser" }).catch(() => {});
+      throw e;
+    }
   };
 
   const chooseOther = async () => {
     const selected = await open({ multiple: false, directory: false });
-    if (selected) setPending({ kind: "switch", path: selected });
+    if (!selected) return;
+    // Users commonly pick the `<name>.keys` file; the wallet is the file
+    // without that extension.
+    requestConfirmation({
+      kind: "switch",
+      path: selected.replace(/\.keys$/, ""),
+    });
   };
 
   return (
@@ -88,6 +112,7 @@ export default function WalletSwitcher() {
           // below, with a small downward notch tail.
           position: "relative",
           height: 36,
+          maxWidth: 220,
           bgcolor: "background.paper",
           boxShadow: 3,
           borderTopLeftRadius: 0,
@@ -121,7 +146,7 @@ export default function WalletSwitcher() {
             key={path}
             onClick={() => {
               setAnchorEl(null);
-              setPending({ kind: "switch", path });
+              requestConfirmation({ kind: "switch", path });
             }}
           >
             <ListItemIcon>
@@ -145,7 +170,7 @@ export default function WalletSwitcher() {
         <MenuItem
           onClick={() => {
             setAnchorEl(null);
-            setPending({ kind: "create" });
+            requestConfirmation({ kind: "create" });
           }}
         >
           <ListItemIcon>
@@ -155,8 +180,9 @@ export default function WalletSwitcher() {
         </MenuItem>
       </Menu>
       <Dialog
-        open={pending !== null}
-        onClose={() => setPending(null)}
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        TransitionProps={{ onExited: () => setPending(null) }}
         maxWidth="xs"
         fullWidth
       >
@@ -170,11 +196,13 @@ export default function WalletSwitcher() {
               : `The app will restart to open "${
                   pending ? walletFileName(pending.path) : ""
                 }".`}{" "}
-            Any running operations will be interrupted.
+            {swapRunning
+              ? "A swap with locked funds is currently running. It will be interrupted, and its Monero will arrive in the wallet it was started with — not the one you are switching to."
+              : "Any running operations will be interrupted."}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPending(null)} color="inherit">
+          <Button onClick={() => setConfirmOpen(false)} color="inherit">
             Cancel
           </Button>
           <PromiseInvokeButton

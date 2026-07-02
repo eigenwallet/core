@@ -119,7 +119,7 @@ export default function OpenWalletStep({
         >
           <List disablePadding>
             {recentWallets.map((path, index) => (
-              <Box key={index}>
+              <Box key={path}>
                 <ListItem disablePadding>
                   <ListItemButton
                     selected={walletPath === path}
