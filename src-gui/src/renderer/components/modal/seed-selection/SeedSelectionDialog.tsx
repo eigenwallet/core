@@ -66,8 +66,8 @@ interface Step {
 const FLOWS: Record<WalletMode, Step[]> = {
   RandomSeed: [
     { id: "chooseMode", label: "Choose wallet", action: "next" },
-    { id: "randomPassword", label: "Set password", action: "next" },
-    { id: "nameLocation", label: "Name & location", action: "createWallet" },
+    { id: "nameLocation", label: "Name & location", action: "next" },
+    { id: "randomPassword", label: "Set password", action: "createWallet" },
     { id: "backupSeed", label: "Back up seed", action: "finish" },
   ],
   FromSeed: [
