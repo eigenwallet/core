@@ -8,16 +8,16 @@ use swap::cli::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
             CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
             CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, CreateMoneroSubaddressArgs,
-            DeleteAllLogsArgs, ExportBitcoinWalletArgs,
-            GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
-            GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
-            GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSubaddressesArgs,
-            GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
-            GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs,
-            RedactArgs, RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
-            SetMoneroWalletPasswordArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs,
-            WithdrawBtcArgs,
+            DeleteAllLogsArgs, ExportBitcoinWalletArgs, GetBitcoinAddressArgs, GetCurrentSwapArgs,
+            GetDataDirArgs, GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs,
+            GetMoneroBalanceArgs, GetMoneroHistoryArgs, GetMoneroMainAddressArgs,
+            GetMoneroSeedArgs, GetMoneroSubaddressesArgs, GetMoneroSyncProgressArgs,
+            GetPendingApprovalsResponse, GetRecentWalletsArgs, GetRestoreHeightArgs,
+            GetSeedWordsArgs, GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs,
+            MoneroRecoveryArgs, RedactArgs, RefreshP2PArgs, RejectApprovalArgs,
+            RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs,
+            SetMoneroSubaddressLabelArgs, SetMoneroWalletPasswordArgs, SetPendingWalletArgs,
+            SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
         tauri_bindings::{ContextStatus, TauriSettings},
     },
@@ -68,6 +68,9 @@ macro_rules! generate_command_handlers {
             get_monero_sync_progress,
             get_monero_seed,
             check_seed,
+            get_seed_words,
+            get_recent_wallets,
+            set_pending_wallet,
             get_pending_approvals,
             set_monero_restore_height,
             reject_approval_request,
@@ -388,7 +391,6 @@ pub async fn save_txt_files(
     Ok(())
 }
 
-
 // Here we define the Tauri commands that will be available to the frontend
 // The commands are defined using the `tauri_command!` macro.
 // Implementations are handled by the Request trait
@@ -424,4 +426,7 @@ tauri_command!(get_monero_subaddresses, GetMoneroSubaddressesArgs);
 tauri_command!(create_monero_subaddress, CreateMoneroSubaddressArgs);
 tauri_command!(set_monero_subaddress_label, SetMoneroSubaddressLabelArgs);
 tauri_command!(get_monero_seed, GetMoneroSeedArgs, no_args);
+tauri_command!(get_seed_words, GetSeedWordsArgs, no_args);
+tauri_command!(get_recent_wallets, GetRecentWalletsArgs, no_args);
+tauri_command!(set_pending_wallet, SetPendingWalletArgs);
 tauri_command!(refresh_p2p, RefreshP2PArgs, no_args);

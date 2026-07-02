@@ -52,6 +52,11 @@ import {
   GetRestoreHeightResponse,
   MoneroNodeConfig,
   GetMoneroSeedResponse,
+  GetSeedWordsResponse,
+  GetRecentWalletsResponse,
+  PendingWalletAction,
+  SetPendingWalletArgs,
+  SetPendingWalletResponse,
   ContextStatus,
   GetSwapTimelockArgs,
   GetSwapTimelockResponse,
@@ -603,6 +608,26 @@ export async function getMoneroSeedAndRestoreHeight(): Promise<
   [GetMoneroSeedResponse, GetRestoreHeightResponse]
 > {
   return Promise.all([getMoneroSeed(), getRestoreHeight()]);
+}
+
+export async function getSeedWords(): Promise<string[]> {
+  const response = await invokeNoArgs<GetSeedWordsResponse>("get_seed_words");
+  return response.words;
+}
+
+export async function getRecentWallets(): Promise<string[]> {
+  const response =
+    await invokeNoArgs<GetRecentWalletsResponse>("get_recent_wallets");
+  return response.wallets;
+}
+
+export async function setPendingWallet(
+  action: PendingWalletAction,
+): Promise<void> {
+  await invoke<SetPendingWalletArgs, SetPendingWalletResponse>(
+    "set_pending_wallet",
+    { action },
+  );
 }
 
 // Wallet management functions that handle Redux dispatching

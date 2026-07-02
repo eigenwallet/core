@@ -1,7 +1,8 @@
 pub mod request;
+pub mod seed_words;
 pub mod tauri_bindings;
 
-use crate::cli::api::tauri_bindings::{ContextStatus, SeedChoice};
+use crate::cli::api::tauri_bindings::{ContextStatus, PendingWalletAction, SeedChoice};
 use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
@@ -570,9 +571,14 @@ mod builder {
                         .context("Failed to initialize wallet database")?;
 
                     let seed_choice = match tauri_handle {
-                        Some(tauri_handle) => {
-                            Some(wallet::request_seed_choice(tauri_handle, &wallet_database).await?)
-                        }
+                        Some(tauri_handle) => Some(
+                            wallet::resolve_startup_seed_choice(
+                                tauri_handle,
+                                &wallet_database,
+                                eigenwallet_data_dir,
+                            )
+                            .await?,
+                        ),
                         None => None,
                     };
 
@@ -959,20 +965,83 @@ mod wallet {
         Ok(wallet)
     }
 
+    /// Default directory new wallet files are stored in.
+    pub fn default_wallet_directory(eigenwallet_data_dir: &Path) -> PathBuf {
+        eigenwallet_data_dir.join("wallets")
+    }
+
     /// Requests the user to select a seed choice from a list of recent wallets
     pub(super) async fn request_seed_choice(
         tauri_handle: TauriHandle,
         database: &monero_sys::Database,
+        eigenwallet_data_dir: &Path,
     ) -> Result<SeedChoice> {
         let recent_wallets = database.get_recent_wallets(5).await?;
         let recent_wallets: Vec<String> =
             recent_wallets.into_iter().map(|w| w.wallet_path).collect();
 
         let seed_choice = tauri_handle
-            .request_seed_selection_with_recent_wallets(recent_wallets)
+            .request_seed_selection_with_recent_wallets(
+                recent_wallets,
+                default_wallet_directory(eigenwallet_data_dir)
+                    .display()
+                    .to_string(),
+            )
             .await?;
 
         Ok(seed_choice)
+    }
+
+    /// Marker file recording the wallet to open after an app relaunch, used by
+    /// the wallet switcher.
+    fn pending_wallet_marker_path(eigenwallet_data_dir: &Path) -> PathBuf {
+        eigenwallet_data_dir.join("pending_wallet")
+    }
+
+    pub fn write_pending_wallet(
+        eigenwallet_data_dir: &Path,
+        action: &PendingWalletAction,
+    ) -> Result<()> {
+        let marker = pending_wallet_marker_path(eigenwallet_data_dir);
+        swap_fs::ensure_directory_exists(&marker)
+            .context("Failed to create data directory for pending wallet marker")?;
+        let encoded = serde_json::to_string(action).context("Failed to encode pending wallet")?;
+        std::fs::write(&marker, encoded).context("Failed to write pending wallet marker")?;
+        Ok(())
+    }
+
+    /// Reads and consumes the pending-wallet marker, if any.
+    fn take_pending_wallet(eigenwallet_data_dir: &Path) -> Result<Option<PendingWalletAction>> {
+        let marker = pending_wallet_marker_path(eigenwallet_data_dir);
+
+        let encoded = match std::fs::read_to_string(&marker) {
+            Ok(encoded) => encoded,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e).context("Failed to read pending wallet marker"),
+        };
+        std::fs::remove_file(&marker).context("Failed to remove pending wallet marker")?;
+
+        let action =
+            serde_json::from_str(&encoded).context("Failed to decode pending wallet marker")?;
+        Ok(Some(action))
+    }
+
+    /// On startup, honor a wallet the user pre-selected before relaunching the
+    /// app. A consumed marker either opens a specific wallet or forces the
+    /// chooser; with no marker the user is prompted to choose.
+    pub(super) async fn resolve_startup_seed_choice(
+        tauri_handle: TauriHandle,
+        database: &monero_sys::Database,
+        eigenwallet_data_dir: &Path,
+    ) -> Result<SeedChoice> {
+        match take_pending_wallet(eigenwallet_data_dir)? {
+            Some(PendingWalletAction::Open { wallet_path }) => {
+                Ok(SeedChoice::FromWalletPath { wallet_path })
+            }
+            Some(PendingWalletAction::ShowChooser) | None => {
+                request_seed_choice(tauri_handle, database, eigenwallet_data_dir).await
+            }
+        }
     }
 
     /// Opens or creates a Monero wallet after asking the user via the Tauri UI.
@@ -986,15 +1055,13 @@ mod wallet {
     /// fails to open/create.
     pub(super) async fn open_monero_wallet(
         tauri_handle: Option<TauriHandle>,
-        eigenwallet_data_dir: &PathBuf,
+        eigenwallet_data_dir: &Path,
         legacy_data_dir: &PathBuf,
         env_config: EnvConfig,
         daemon: &monero_sys::Daemon,
         seed_choice: Option<SeedChoice>,
         database: &monero_sys::Database,
     ) -> Result<(monero_sys::WalletHandle, Seed), Error> {
-        let eigenwallet_wallets_dir = eigenwallet_data_dir.join("wallets");
-
         let wallet = match seed_choice {
             Some(mut seed_choice) => {
                 // This loop continually requests the user to select a wallet file
@@ -1008,14 +1075,32 @@ mod wallet {
                             (),
                         );
 
-                    fn new_wallet_path(eigenwallet_wallets_dir: &PathBuf) -> Result<PathBuf> {
-                        let timestamp = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs();
+                    // Builds the path for a freshly created wallet. The name
+                    // must be a single path component so it cannot escape the
+                    // chosen directory, and the wallet must not already exist
+                    // (creating must never silently open an existing wallet).
+                    fn new_wallet_path(directory: &str, name: &str) -> Result<PathBuf> {
+                        if name.trim().is_empty() {
+                            anyhow::bail!("Wallet name must not be empty");
+                        }
 
-                        let wallet_path =
-                            eigenwallet_wallets_dir.join(format!("wallet_{}", timestamp));
+                        let is_single_component = Path::new(name)
+                            .components()
+                            .eq(std::iter::once(std::path::Component::Normal(name.as_ref())));
+                        if !is_single_component {
+                            anyhow::bail!("Wallet name must be a single file name, got {name:?}");
+                        }
+
+                        let wallet_path = PathBuf::from(directory).join(name);
+                        // Monero stores a wallet as `<name>` plus `<name>.keys`;
+                        // `with_extension` would truncate a name containing dots.
+                        let keys_path = PathBuf::from(directory).join(format!("{name}.keys"));
+
+                        if wallet_path.exists() || keys_path.exists() {
+                            anyhow::bail!(
+                                "A wallet named {name:?} already exists in {directory:?}"
+                            );
+                        }
 
                         swap_fs::ensure_directory_exists(&wallet_path)
                             .context("Failed to create wallet directory")?;
@@ -1024,9 +1109,12 @@ mod wallet {
                     }
 
                     let wallet = match seed_choice {
-                        SeedChoice::RandomSeed { password } => {
-                            // Create wallet with Unix timestamp as name
-                            let wallet_path = new_wallet_path(&eigenwallet_wallets_dir)
+                        SeedChoice::RandomSeed {
+                            password,
+                            name,
+                            directory,
+                        } => {
+                            let wallet_path = new_wallet_path(&directory, &name)
                                 .context("Failed to determine path for new wallet")?;
 
                             monero::Wallet::open_or_create_with_password(
@@ -1047,9 +1135,10 @@ mod wallet {
                             seed: mnemonic,
                             restore_height,
                             password,
+                            name,
+                            directory,
                         } => {
-                            // Create wallet from provided seed
-                            let wallet_path = new_wallet_path(&eigenwallet_wallets_dir)
+                            let wallet_path = new_wallet_path(&directory, &name)
                                 .context("Failed to determine path for new wallet")?;
 
                             monero::Wallet::open_or_create_from_seed_with_password(
@@ -1150,6 +1239,7 @@ mod wallet {
                                     seed_choice = request_seed_choice(
                                         tauri_handle.clone().unwrap(),
                                         database,
+                                        eigenwallet_data_dir,
                                     )
                                     .await?;
                                     continue;
