@@ -1845,31 +1845,6 @@ impl CheckSeedArgs {
     }
 }
 
-// GetSeedWords: the Monero English mnemonic wordlist, used by the GUI for
-// seed-word autocomplete.
-#[typeshare]
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GetSeedWordsArgs;
-
-#[typeshare]
-#[derive(Serialize, Deserialize, Debug)]
-pub struct GetSeedWordsResponse {
-    pub words: Vec<String>,
-}
-
-impl Request for GetSeedWordsArgs {
-    type Response = GetSeedWordsResponse;
-
-    async fn request(self, _: Arc<Context>) -> Result<Self::Response> {
-        Ok(GetSeedWordsResponse {
-            words: crate::cli::api::seed_words::ENGLISH_SEED_WORDS
-                .iter()
-                .map(|word| word.to_string())
-                .collect(),
-        })
-    }
-}
-
 // New request type for Monero sync progress
 #[typeshare]
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -23,7 +23,6 @@ import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import BackupSeedStep from "./BackupSeedStep";
 import OpenWalletStep from "./OpenWalletStep";
 import NameLocationStep from "./NameLocationStep";
-import SeedPhraseInput from "./SeedPhraseInput";
 
 type WalletMode = "RandomSeed" | "FromSeed" | "FromWalletPath";
 
@@ -512,9 +511,15 @@ export default function SeedSelectionDialog() {
               restore. Setting the restore height to around when the wallet was
               created speeds up syncing.
             </Typography>
-            <SeedPhraseInput
+            <TextField
+              fullWidth
+              multiline
+              autoFocus
+              rows={3}
+              label="Enter your seed phrase"
               value={fields.customSeed}
-              onChange={setField("customSeed")}
+              onChange={(e) => setField("customSeed")(e.target.value)}
+              placeholder="Enter your Monero 25 words seed phrase..."
               error={!isSeedValid && fields.customSeed.length > 0}
               helperText={
                 isSeedValid

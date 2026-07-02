@@ -1,5 +1,4 @@
 pub mod request;
-pub mod seed_words;
 pub mod tauri_bindings;
 
 use crate::cli::api::tauri_bindings::{ContextStatus, SeedChoice, SeedSelectionDetails};

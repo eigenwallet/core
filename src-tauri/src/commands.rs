@@ -12,7 +12,7 @@ use swap::cli::{
             GetDataDirArgs, GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs,
             GetMoneroBalanceArgs, GetMoneroHistoryArgs, GetMoneroMainAddressArgs,
             GetMoneroSeedArgs, GetMoneroSubaddressesArgs, GetMoneroSyncProgressArgs,
-            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSeedWordsArgs, GetSwapInfoArgs,
+            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
             GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs, RedactArgs,
             RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs,
             ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
@@ -68,7 +68,6 @@ macro_rules! generate_command_handlers {
             get_monero_sync_progress,
             get_monero_seed,
             check_seed,
-            get_seed_words,
             get_pending_approvals,
             set_monero_restore_height,
             reject_approval_request,
@@ -424,5 +423,4 @@ tauri_command!(get_monero_subaddresses, GetMoneroSubaddressesArgs);
 tauri_command!(create_monero_subaddress, CreateMoneroSubaddressArgs);
 tauri_command!(set_monero_subaddress_label, SetMoneroSubaddressLabelArgs);
 tauri_command!(get_monero_seed, GetMoneroSeedArgs, no_args);
-tauri_command!(get_seed_words, GetSeedWordsArgs, no_args);
 tauri_command!(refresh_p2p, RefreshP2PArgs, no_args);
