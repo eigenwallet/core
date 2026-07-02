@@ -13,7 +13,10 @@ import {
 } from "@mui/material";
 import NewPasswordInput from "renderer/components/other/NewPasswordInput";
 import { useState, useEffect, useReducer, useRef } from "react";
-import { usePendingSeedSelectionApproval } from "store/hooks";
+import {
+  usePendingSeedSelectionApproval,
+  usePendingSeedBackupApproval,
+} from "store/hooks";
 import { resolveApproval, checkSeed } from "renderer/rpc";
 import { SeedChoice } from "models/tauriModel";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
@@ -23,7 +26,15 @@ import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import BackupSeedStep from "./BackupSeedStep";
 import OpenWalletStep from "./OpenWalletStep";
 import NameLocationStep from "./NameLocationStep";
+import CircularProgressWithSubtitle from "renderer/components/pages/swap/swap/components/CircularProgressWithSubtitle";
 
+// The wallet-setup flow itself is a state machine in Rust
+// (swap/src/cli/api/wallet_setup.rs): the backend walks
+// ChooseSeed -> OpenWallet -> BackupSeed -> Finish and blocks on an approval
+// whenever it needs user input. This dialog only renders whichever request is
+// pending — a SeedSelection approval shows the wizard below, a SeedBackup
+// approval shows the backup step — plus a local spinner while the backend is
+// busy creating the wallet between the two.
 type WalletMode = "RandomSeed" | "FromSeed" | "FromWalletPath";
 
 type StepId =
@@ -102,23 +113,14 @@ const EMPTY_FIELDS: FormFields = {
   directory: "",
 };
 
-interface EditingState {
-  phase: "editing";
+// Wizard navigation state for filling out a SeedSelection approval. This is
+// purely presentational: mode/step navigate the FLOWS table, fields hold the
+// user's input, and a reset rebuilds everything for a new request.
+interface WizardState {
   mode: WalletMode;
   step: StepId;
   fields: FormFields;
 }
-
-// The wizard is a state machine. `editing` navigates the FLOWS table of the
-// selected mode and owns all form input, so a reset cannot leak fields from a
-// previous request. `backingUp` is entered once a new wallet has been created:
-// the approval is already resolved, but the dialog stays up until the user has
-// recorded the seed; it carries the editing state to resume on failure.
-// `finished` unmounts the dialog.
-type WizardState =
-  | EditingState
-  | { phase: "backingUp"; confirmed: boolean; resume: EditingState }
-  | { phase: "finished" };
 
 type WizardEvent =
   | { type: "reset"; mode: WalletMode; fields: Partial<FormFields> }
@@ -126,14 +128,9 @@ type WizardEvent =
   | { type: "setField"; field: keyof FormFields; value: string }
   | { type: "next" }
   | { type: "back" }
-  | { type: "navigateBackTo"; step: StepId }
-  | { type: "walletCreationStarted" }
-  | { type: "walletCreationFailed" }
-  | { type: "confirmBackup"; confirmed: boolean }
-  | { type: "finish" };
+  | { type: "navigateBackTo"; step: StepId };
 
 const INITIAL_WIZARD: WizardState = {
-  phase: "editing",
   mode: "RandomSeed",
   step: "chooseMode",
   fields: EMPTY_FIELDS,
@@ -142,37 +139,16 @@ const INITIAL_WIZARD: WizardState = {
 // Every transition is guarded: an event that does not apply to the current
 // state is a no-op instead of producing an invalid state.
 function wizardReducer(state: WizardState, event: WizardEvent): WizardState {
-  switch (event.type) {
-    case "reset":
-      return {
-        phase: "editing",
-        mode: event.mode,
-        step: "chooseMode",
-        fields: { ...EMPTY_FIELDS, ...event.fields },
-      };
-    case "walletCreationStarted":
-      // Creation is only offered on the RandomSeed name & location step.
-      return state.phase === "editing" &&
-        state.mode === "RandomSeed" &&
-        state.step === "nameLocation"
-        ? { phase: "backingUp", confirmed: false, resume: state }
-        : state;
-    case "walletCreationFailed":
-      return state.phase === "backingUp" ? state.resume : state;
-    case "confirmBackup":
-      return state.phase === "backingUp"
-        ? { ...state, confirmed: event.confirmed }
-        : state;
-    case "finish":
-      return state.phase === "backingUp" ? { phase: "finished" } : state;
-  }
-
-  // The remaining events edit or navigate within the editing phase.
-  if (state.phase !== "editing") return state;
   const flow = FLOWS[state.mode];
   const index = stepIndex(state.mode, state.step);
 
   switch (event.type) {
+    case "reset":
+      return {
+        mode: event.mode,
+        step: "chooseMode",
+        fields: { ...EMPTY_FIELDS, ...event.fields },
+      };
     case "setField":
       return {
         ...state,
@@ -232,9 +208,14 @@ function parseBlockHeightInput(blockheightInput: string): number | false {
 }
 
 export default function SeedSelectionDialog() {
-  const pendingApprovals = usePendingSeedSelectionApproval();
+  const selectionApproval = usePendingSeedSelectionApproval()[0];
+  const backupApproval = usePendingSeedBackupApproval()[0];
   const [wizard, dispatch] = useReducer(wizardReducer, INITIAL_WIZARD);
   const [isPasswordValid, setIsPasswordValid] = useState<boolean>(true);
+  const [backupConfirmed, setBackupConfirmed] = useState<boolean>(false);
+  // Backend is creating the wallet: the SeedSelection approval is resolved
+  // but the SeedBackup approval has not arrived yet.
+  const [waitingForWallet, setWaitingForWallet] = useState<boolean>(false);
   // Result of the async seed check, tagged with the seed it belongs to so a
   // stale response can never validate a newer input.
   const [seedValidation, setSeedValidation] = useState<{
@@ -242,19 +223,22 @@ export default function SeedSelectionDialog() {
     valid: boolean;
   } | null>(null);
 
-  const approval = pendingApprovals[0];
   const content =
-    approval?.request?.type === "SeedSelection"
-      ? approval.request.content
+    selectionApproval?.request?.type === "SeedSelection"
+      ? selectionApproval.request.content
       : undefined;
   const recentWallets = content?.recent_wallets ?? [];
+  const backupContent =
+    backupApproval?.request?.type === "SeedBackup"
+      ? backupApproval.request.content
+      : undefined;
 
-  // Reset the wizard whenever a new seed-selection approval arrives (e.g. after
-  // the user cancels a password prompt or a wallet fails to create and the
-  // backend asks again).
+  // Reset the wizard whenever a new seed-selection approval arrives (e.g.
+  // after the user cancels a password prompt or a wallet fails to create and
+  // the backend asks again).
   const lastRequestIdRef = useRef<string | null>(null);
   useEffect(() => {
-    const requestId = approval?.request_id;
+    const requestId = selectionApproval?.request_id;
     if (!requestId || requestId === lastRequestIdRef.current) return;
     lastRequestIdRef.current = requestId;
 
@@ -268,21 +252,21 @@ export default function SeedSelectionDialog() {
       },
     });
     setSeedValidation(null);
+    setWaitingForWallet(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on a new approval id
-  }, [approval?.request_id]);
+  }, [selectionApproval?.request_id]);
 
-  // While backing up, the fields of the editing state that created the wallet
-  // are still needed for a rollback on failure.
-  const editing =
-    wizard.phase === "editing"
-      ? wizard
-      : wizard.phase === "backingUp"
-        ? wizard.resume
-        : null;
+  // A backup request means the wallet was created: ask for a fresh
+  // confirmation.
+  useEffect(() => {
+    if (!backupApproval) return;
+    setWaitingForWallet(false);
+    setBackupConfirmed(false);
+  }, [backupApproval?.request_id, backupApproval]);
 
-  const trimmedSeed = editing?.fields.customSeed.trim() ?? "";
+  const trimmedSeed = wizard.fields.customSeed.trim();
   const needsSeedValidation =
-    editing?.mode === "FromSeed" && trimmedSeed.length > 0;
+    wizard.mode === "FromSeed" && trimmedSeed.length > 0;
 
   useEffect(() => {
     if (!needsSeedValidation) return;
@@ -292,14 +276,23 @@ export default function SeedSelectionDialog() {
       .catch(() => setSeedValidation({ forSeed: trimmedSeed, valid: false }));
   }, [trimmedSeed, needsSeedValidation]);
 
-  if (wizard.phase === "finished" || editing === null) return null;
-  if (wizard.phase === "editing" && !approval) return null;
+  // Which screen is shown is decided by the backend's pending request.
+  const view = backupApproval
+    ? ("backup" as const)
+    : selectionApproval
+      ? ("wizard" as const)
+      : waitingForWallet
+        ? ("waiting" as const)
+        : null;
 
-  const { mode, fields } = editing;
-  const step: StepId =
-    wizard.phase === "backingUp" ? "backupSeed" : wizard.step;
+  if (view === null) return null;
+
+  // The backup and waiting screens render the last step of the create flow.
+  const mode = view === "wizard" ? wizard.mode : "RandomSeed";
+  const step: StepId = view === "wizard" ? wizard.step : "backupSeed";
   const flow = FLOWS[mode];
   const index = stepIndex(mode, step);
+  const { fields } = wizard;
 
   const setField = (field: keyof FormFields) => (value: string) =>
     dispatch({ type: "setField", field, value });
@@ -323,7 +316,7 @@ export default function SeedSelectionDialog() {
     nameLocation:
       fields.name.trim().length > 0 && fields.directory.trim().length > 0,
     openFile: fields.walletPath.length > 0,
-    backupSeed: wizard.phase === "backingUp" && wizard.confirmed,
+    backupSeed: view === "backup" && backupConfirmed,
   };
 
   const buildSeedChoice = (chosenMode: WalletMode): SeedChoice => {
@@ -363,32 +356,38 @@ export default function SeedSelectionDialog() {
     }
   };
 
-  const resolve = async (seedChoice: SeedChoice) => {
-    if (!approval)
+  const resolveSelection = async (seedChoice: SeedChoice) => {
+    if (!selectionApproval)
       throw new Error("No approval request found for seed selection");
-    await resolveApproval<SeedChoice>(approval.request_id, seedChoice);
+    await resolveApproval<SeedChoice>(selectionApproval.request_id, seedChoice);
   };
 
-  // Creating transitions to the backup phase *before* resolving, so the dialog
-  // stays mounted once the approval clears; on failure we roll back.
+  // The backend creates the wallet after the choice is resolved and then
+  // requests the seed backup; show a spinner in between.
   const createWallet = async () => {
     const seedChoice = buildSeedChoice("RandomSeed");
-    dispatch({ type: "walletCreationStarted" });
+    setWaitingForWallet(true);
     try {
-      await resolve(seedChoice);
+      await resolveSelection(seedChoice);
     } catch (e) {
-      dispatch({ type: "walletCreationFailed" });
+      setWaitingForWallet(false);
       throw e;
     }
+  };
+
+  const finishBackup = async () => {
+    if (!backupApproval)
+      throw new Error("No approval request found for seed backup");
+    await resolveApproval<boolean>(backupApproval.request_id, true);
   };
 
   const primaryHandlers: Record<PrimaryActionKind, () => void | Promise<void>> =
     {
       next: () => dispatch({ type: "next" }),
-      finish: () => dispatch({ type: "finish" }),
+      finish: finishBackup,
       createWallet,
-      restoreWallet: () => resolve(buildSeedChoice("FromSeed")),
-      openWallet: () => resolve(buildSeedChoice("FromWalletPath")),
+      restoreWallet: () => resolveSelection(buildSeedChoice("FromSeed")),
+      openWallet: () => resolveSelection(buildSeedChoice("FromWalletPath")),
     };
 
   return (
@@ -423,7 +422,7 @@ export default function SeedSelectionDialog() {
             const crumbLabel = i === 0 ? "Set up your wallet" : s.label;
             // Past crumbs link back; upcoming crumbs preview muted; navigation
             // is disabled once a wallet has been created.
-            const navigable = i < index && wizard.phase === "editing";
+            const navigable = i < index && view === "wizard";
             const upcoming = i > index;
 
             return navigable ? (
@@ -572,14 +571,17 @@ export default function SeedSelectionDialog() {
           />
         )}
 
-        {step === "backupSeed" && (
-          <BackupSeedStep
-            confirmed={wizard.phase === "backingUp" && wizard.confirmed}
-            onConfirmedChange={(confirmed) =>
-              dispatch({ type: "confirmBackup", confirmed })
-            }
-          />
-        )}
+        {step === "backupSeed" &&
+          (backupContent ? (
+            <BackupSeedStep
+              seed={backupContent.seed}
+              restoreHeight={backupContent.restore_height}
+              confirmed={backupConfirmed}
+              onConfirmedChange={setBackupConfirmed}
+            />
+          ) : (
+            <CircularProgressWithSubtitle description="Creating your new wallet…" />
+          ))}
 
         {step === "openFile" && (
           <OpenWalletStep
@@ -594,7 +596,7 @@ export default function SeedSelectionDialog() {
           {step === "chooseMode" && (
             <PromiseInvokeButton
               variant="text"
-              onInvoke={() => resolve({ type: "Legacy" })}
+              onInvoke={() => resolveSelection({ type: "Legacy" })}
               contextRequirement={false}
               displayErrorSnackbar
               color="inherit"
@@ -602,7 +604,7 @@ export default function SeedSelectionDialog() {
               No wallet (Legacy)
             </PromiseInvokeButton>
           )}
-          {index > 0 && wizard.phase === "editing" && (
+          {index > 0 && view === "wizard" && (
             <Button
               variant="text"
               color="inherit"

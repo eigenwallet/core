@@ -6,6 +6,8 @@ import {
   isPendingBackgroundProcess,
   isPendingLockBitcoinApprovalEvent,
   isPendingSeedSelectionApprovalEvent,
+  isPendingSeedBackupApprovalEvent,
+  PendingSeedBackupApprovalRequest,
   PendingApprovalRequest,
   PendingLockBitcoinApprovalRequest,
   PendingSelectMakerApprovalRequest,
@@ -17,7 +19,6 @@ import {
   PendingPasswordApprovalRequest,
   isPendingPasswordApprovalEvent,
   isContextFullyInitialized,
-  isContextWithMoneroWallet,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
@@ -40,7 +41,6 @@ import {
   selectSwapInfoWithTimelock,
   selectSwapInfosRaw,
 } from "./selectors";
-import { ContextStatusType } from "./features/rpcSlice";
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
@@ -120,14 +120,6 @@ export function useIsSpecificSwapRunning(swapId: string | null) {
 
 export function useIsContextAvailable() {
   return useAppSelector((state) => isContextFullyInitialized(state.rpc.status));
-}
-
-export function useIsMoneroWalletAvailable() {
-  return useAppSelector((state) =>
-    state.rpc.status?.type === ContextStatusType.Status
-      ? isContextWithMoneroWallet(state.rpc.status.status)
-      : false,
-  );
 }
 
 /// We do not use a sanity check here, as opposed to the other useSwapInfo hooks,
@@ -240,6 +232,11 @@ export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalReque
 export function usePendingSeedSelectionApproval(): PendingSeedSelectionApprovalRequest[] {
   const approvals = usePendingApprovals();
   return approvals.filter((c) => isPendingSeedSelectionApprovalEvent(c));
+}
+
+export function usePendingSeedBackupApproval(): PendingSeedBackupApprovalRequest[] {
+  const approvals = usePendingApprovals();
+  return approvals.filter((c) => isPendingSeedBackupApprovalEvent(c));
 }
 
 export function usePendingPasswordApproval(): PendingPasswordApprovalRequest[] {

@@ -170,6 +170,16 @@ pub struct SeedSelectionDetails {
     pub default_wallet_directory: String,
 }
 
+/// Seed phrase of a freshly created wallet, shown once so the user can back
+/// it up before startup continues.
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SeedBackupDetails {
+    pub seed: String,
+    #[typeshare(serialized_as = "number")]
+    pub restore_height: u64,
+}
+
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApprovalRequest {
@@ -197,6 +207,9 @@ pub enum ApprovalRequestType {
     /// Request password for wallet file.
     /// User must provide password to unlock the selected wallet.
     PasswordRequest(PasswordRequestDetails),
+    /// Request the user to back up the seed of a freshly created wallet.
+    /// Resolved once the user confirms having recorded it.
+    SeedBackup(SeedBackupDetails),
 }
 
 #[typeshare]
@@ -568,6 +581,7 @@ impl Display for ApprovalRequest {
             ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
             ApprovalRequestType::SendMonero(_) => write!(f, "SendMonero()"),
             ApprovalRequestType::PasswordRequest(_) => write!(f, "PasswordRequest()"),
+            ApprovalRequestType::SeedBackup(_) => write!(f, "SeedBackup()"),
         }
     }
 }
@@ -587,6 +601,8 @@ pub trait TauriEmitter {
     ) -> Result<bool>;
 
     async fn request_seed_selection(&self, details: SeedSelectionDetails) -> Result<SeedChoice>;
+
+    async fn request_seed_backup(&self, details: SeedBackupDetails) -> Result<bool>;
 
     async fn request_password(&self, wallet_path: String) -> Result<String>;
 
@@ -706,6 +722,11 @@ impl TauriEmitter for TauriHandle {
             .await
     }
 
+    async fn request_seed_backup(&self, details: SeedBackupDetails) -> Result<bool> {
+        self.request_approval(ApprovalRequestType::SeedBackup(details), None)
+            .await
+    }
+
     async fn request_password(&self, wallet_path: String) -> Result<String> {
         let details = PasswordRequestDetails { wallet_path };
         self.request_approval(ApprovalRequestType::PasswordRequest(details), None)
@@ -778,6 +799,13 @@ impl TauriEmitter for Option<TauriHandle> {
     async fn request_seed_selection(&self, details: SeedSelectionDetails) -> Result<SeedChoice> {
         match self {
             Some(tauri) => tauri.request_seed_selection(details).await,
+            None => bail!("No Tauri handle available"),
+        }
+    }
+
+    async fn request_seed_backup(&self, details: SeedBackupDetails) -> Result<bool> {
+        match self {
+            Some(tauri) => tauri.request_seed_backup(details).await,
             None => bail!("No Tauri handle available"),
         }
     }
