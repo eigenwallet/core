@@ -256,13 +256,19 @@ export default function SeedSelectionDialog() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on a new approval id
   }, [selectionApproval?.request_id]);
 
-  // A backup request means the wallet was created: ask for a fresh
-  // confirmation.
+  // A new backup request means a wallet was created: ask for a fresh
+  // confirmation. Keyed on the stable request id — the approval object's
+  // identity churns on every store update and must not re-run this reset.
+  const lastBackupRequestIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!backupApproval) return;
+    const requestId = backupApproval?.request_id;
+    if (!requestId || requestId === lastBackupRequestIdRef.current) return;
+    lastBackupRequestIdRef.current = requestId;
+
     setWaitingForWallet(false);
     setBackupConfirmed(false);
-  }, [backupApproval?.request_id, backupApproval]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on a new backup request id
+  }, [backupApproval?.request_id]);
 
   const trimmedSeed = wizard.fields.customSeed.trim();
   const needsSeedValidation =
