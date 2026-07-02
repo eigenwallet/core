@@ -2,9 +2,7 @@ pub mod request;
 pub mod seed_words;
 pub mod tauri_bindings;
 
-use crate::cli::api::tauri_bindings::{
-    ContextStatus, PendingWalletAction, SeedChoice, SeedSelectionDetails,
-};
+use crate::cli::api::tauri_bindings::{ContextStatus, SeedChoice, SeedSelectionDetails};
 use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
@@ -574,7 +572,7 @@ mod builder {
 
                     let seed_choice = match tauri_handle {
                         Some(tauri_handle) => Some(
-                            wallet::resolve_startup_seed_choice(
+                            wallet::request_seed_choice(
                                 tauri_handle,
                                 &wallet_database,
                                 eigenwallet_data_dir,
@@ -1023,74 +1021,6 @@ mod wallet {
                     .to_string(),
             })
             .await
-    }
-
-    /// Marker file recording the wallet to open after an app relaunch, used by
-    /// the wallet switcher.
-    fn pending_wallet_marker_path(eigenwallet_data_dir: &Path) -> PathBuf {
-        eigenwallet_data_dir.join("pending_wallet")
-    }
-
-    pub fn write_pending_wallet(
-        eigenwallet_data_dir: &Path,
-        action: &PendingWalletAction,
-    ) -> Result<()> {
-        let marker = pending_wallet_marker_path(eigenwallet_data_dir);
-        swap_fs::ensure_directory_exists(&marker)
-            .context("Failed to create data directory for pending wallet marker")?;
-        let encoded = serde_json::to_string(action).context("Failed to encode pending wallet")?;
-
-        // Write-then-rename so a crash cannot leave a torn marker behind.
-        let tmp = marker.with_extension("tmp");
-        std::fs::write(&tmp, encoded).context("Failed to write pending wallet marker")?;
-        std::fs::rename(&tmp, &marker)
-            .context("Failed to move pending wallet marker into place")?;
-        Ok(())
-    }
-
-    /// Reads and consumes the pending-wallet marker, if any. A marker that
-    /// cannot be decoded is discarded: it is purely advisory, and failing
-    /// startup over it would leave the app unusable.
-    fn take_pending_wallet(eigenwallet_data_dir: &Path) -> Result<Option<PendingWalletAction>> {
-        let marker = pending_wallet_marker_path(eigenwallet_data_dir);
-
-        let encoded = match std::fs::read_to_string(&marker) {
-            Ok(encoded) => encoded,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(e).context("Failed to read pending wallet marker"),
-        };
-        std::fs::remove_file(&marker).context("Failed to remove pending wallet marker")?;
-
-        Ok(serde_json::from_str(&encoded)
-            .inspect_err(
-                |error| tracing::warn!(%error, "Discarding corrupt pending wallet marker"),
-            )
-            .ok())
-    }
-
-    /// On startup, honor a wallet the user pre-selected before relaunching the
-    /// app. A consumed marker either opens a specific wallet or forces the
-    /// chooser; with no marker the user is prompted to choose.
-    pub(super) async fn resolve_startup_seed_choice(
-        tauri_handle: TauriHandle,
-        database: &monero_sys::Database,
-        eigenwallet_data_dir: &Path,
-    ) -> Result<SeedChoice> {
-        match take_pending_wallet(eigenwallet_data_dir)? {
-            Some(PendingWalletAction::Open { wallet_path })
-                if Path::new(&wallet_path).exists() =>
-            {
-                tracing::info!(%wallet_path, "Opening wallet pre-selected before relaunch");
-                Ok(SeedChoice::FromWalletPath { wallet_path })
-            }
-            Some(PendingWalletAction::Open { wallet_path }) => {
-                tracing::warn!(%wallet_path, "Pending wallet no longer exists, showing chooser");
-                request_seed_choice(tauri_handle, database, eigenwallet_data_dir).await
-            }
-            Some(PendingWalletAction::ShowChooser) | None => {
-                request_seed_choice(tauri_handle, database, eigenwallet_data_dir).await
-            }
-        }
     }
 
     /// Opens or creates a Monero wallet after asking the user via the Tauri UI.

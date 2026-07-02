@@ -34,7 +34,9 @@ export default function OpenWalletStep({
         if (event.payload.type === "drop") {
           setIsDragging(false);
           const path = event.payload.paths[0];
-          if (path) setWalletPath(path);
+          // Users commonly pick the `<name>.keys` file; the wallet is the
+          // file without that extension.
+          if (path) setWalletPath(path.replace(/\.keys$/, ""));
         } else if (event.payload.type === "leave") {
           setIsDragging(false);
         } else {
@@ -54,7 +56,7 @@ export default function OpenWalletStep({
 
   const selectWalletFile = async () => {
     const selected = await open({ multiple: false, directory: false });
-    if (selected) setWalletPath(selected);
+    if (selected) setWalletPath(selected.replace(/\.keys$/, ""));
   };
 
   return (

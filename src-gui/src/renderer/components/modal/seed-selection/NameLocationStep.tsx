@@ -1,6 +1,7 @@
-import { Box, Button, TextField, Typography } from "@mui/material";
+import { Box, TextField, Typography } from "@mui/material";
 import { open } from "@tauri-apps/plugin-dialog";
 import SearchIcon from "@mui/icons-material/Search";
+import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 
 export default function NameLocationStep({
   name,
@@ -45,14 +46,16 @@ export default function NameLocationStep({
           placeholder="Select a folder..."
           InputProps={{ readOnly: true }}
         />
-        <Button
+        <PromiseInvokeButton
           variant="outlined"
-          onClick={selectDirectory}
+          onInvoke={selectDirectory}
+          contextRequirement={false}
+          displayErrorSnackbar
           sx={{ minWidth: "120px", height: "56px" }}
           startIcon={<SearchIcon />}
         >
           Browse
-        </Button>
+        </PromiseInvokeButton>
       </Box>
     </Box>
   );

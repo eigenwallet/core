@@ -170,16 +170,6 @@ pub struct SeedSelectionDetails {
     pub default_wallet_directory: String,
 }
 
-/// Wallet to open after the app relaunches, recorded so the user can switch
-/// wallets. `ShowChooser` forces the setup chooser instead of opening a wallet.
-#[typeshare]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type", content = "content")]
-pub enum PendingWalletAction {
-    Open { wallet_path: String },
-    ShowChooser,
-}
-
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApprovalRequest {

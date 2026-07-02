@@ -6,7 +6,6 @@ import {
   WalletOverview,
   TransactionHistory,
   WalletActionButtons,
-  WalletSwitcher,
 } from "./components";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import WalletPageLoadingState from "./components/WalletPageLoadingState";
@@ -36,19 +35,8 @@ export default function MoneroWalletPage() {
         flexDirection: "column",
         gap: 2,
         pb: 2,
-        position: "relative",
       }}
     >
-      <Box
-        sx={{
-          position: "absolute",
-          top: 0,
-          right: 24,
-          zIndex: 1,
-        }}
-      >
-        <WalletSwitcher />
-      </Box>
       <WalletOverview balance={balance} syncProgress={syncProgress} />
       <ActionableMonospaceTextBox
         content={mainAddress}

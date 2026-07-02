@@ -1,8 +1,8 @@
 use super::tauri_bindings::TauriHandle;
 use crate::cli::api::Context;
 use crate::cli::api::tauri_bindings::{
-    ApprovalRequestType, MoneroNodeConfig, PendingWalletAction, SelectMakerDetails,
-    SendMoneroDetails, TauriEmitter, TauriSwapProgressEvent,
+    ApprovalRequestType, MoneroNodeConfig, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
+    TauriSwapProgressEvent,
 };
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::common::{get_logs, redact};
@@ -1867,58 +1867,6 @@ impl Request for GetSeedWordsArgs {
                 .map(|word| word.to_string())
                 .collect(),
         })
-    }
-}
-
-// GetRecentWallets: paths of recently opened wallets, shown in the wallet
-// switcher dropdown.
-#[typeshare]
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GetRecentWalletsArgs;
-
-#[typeshare]
-#[derive(Serialize, Deserialize, Debug)]
-pub struct GetRecentWalletsResponse {
-    pub wallets: Vec<String>,
-}
-
-impl Request for GetRecentWalletsArgs {
-    type Response = GetRecentWalletsResponse;
-
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet_manager = ctx.try_get_monero_manager().await?;
-        let wallets = wallet_manager.get_recent_wallets().await?;
-
-        Ok(GetRecentWalletsResponse { wallets })
-    }
-}
-
-// SetPendingWallet: records the action to take after the app relaunches, so the
-// user can switch wallets. The marker is consumed on the next startup.
-#[typeshare]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SetPendingWalletArgs {
-    pub action: PendingWalletAction,
-}
-
-#[typeshare]
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SetPendingWalletResponse {
-    pub success: bool,
-}
-
-impl Request for SetPendingWalletArgs {
-    type Response = SetPendingWalletResponse;
-
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let config = ctx.try_get_config().await?;
-        // Same derivation as ContextBuilder::build, so the marker is written
-        // where the next startup reads it.
-        let eigenwallet_data_dir = super::eigenwallet_data::new(config.is_testnet)?;
-
-        super::wallet::write_pending_wallet(&eigenwallet_data_dir, &self.action)?;
-
-        Ok(SetPendingWalletResponse { success: true })
     }
 }
 
