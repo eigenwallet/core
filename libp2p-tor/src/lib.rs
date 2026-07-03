@@ -59,10 +59,12 @@ use futures::{
 use libp2p::{
     Multiaddr, Transport, TransportError,
     core::transport::{ListenerId, TransportEvent},
+    multiaddr::Protocol,
 };
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::Duration;
 use thiserror::Error;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -140,9 +142,6 @@ pub struct TorTransport {
     /// The Tor client.
     client: Arc<TorClient<TokioRustlsRuntime>>,
 
-    /// Limiter for outbound Tor dials.
-    dial_limiter: Option<TorDialLimiter>,
-
     /// Onion services we are listening on.
     #[cfg(feature = "listen-onion-service")]
     listeners: HashMap<ListenerId, TorListener>,
@@ -210,7 +209,6 @@ impl TorTransport {
         Self {
             conversion_mode,
             client,
-            dial_limiter: None,
             #[cfg(feature = "listen-onion-service")]
             listeners: HashMap::new(),
             #[cfg(feature = "listen-onion-service")]
@@ -230,13 +228,6 @@ impl TorTransport {
     #[must_use]
     pub fn with_address_conversion(mut self, conversion_mode: AddressConversion) -> Self {
         self.conversion_mode = conversion_mode;
-        self
-    }
-
-    /// Set a shared outbound Tor dial limiter.
-    #[must_use]
-    pub fn with_dial_limiter(mut self, dial_limiter: TorDialLimiter) -> Self {
-        self.dial_limiter = Some(dial_limiter);
         self
     }
 
@@ -345,8 +336,6 @@ impl TorTransport {
 pub enum TorTransportError {
     #[error(transparent)]
     Client(#[from] TorError),
-    #[error(transparent)]
-    DialLimiter(#[from] TorDialLimiterError),
     #[cfg(feature = "listen-onion-service")]
     #[error(transparent)]
     Service(#[from] tor_hsservice::ClientError),
@@ -470,18 +459,8 @@ impl Transport for TorTransport {
         let tor_address =
             maybe_tor_addr.ok_or(TransportError::MultiaddrNotSupported(addr.clone()))?;
         let onion_client = self.client.clone();
-        let dial_limiter = self.dial_limiter.clone();
-        let peer_id = extract_peer_id(&addr);
 
         Ok(Box::pin(async move {
-            // Hold the dial permit for the entire duration of the dial: the slot
-            // is only freed once `_dial_permit` is dropped at the end of this
-            // scope (whether the connect succeeded or failed).
-            let _dial_permit = match dial_limiter {
-                Some(dial_limiter) => Some(dial_limiter.wait(peer_id).await?),
-                None => None,
-            };
-
             let stream = onion_client.connect(tor_address).await?;
 
             tracing::debug!(%addr, "Established connection to peer through Tor");
@@ -584,5 +563,114 @@ impl Transport for TorTransport {
         }
 
         Poll::Pending
+    }
+}
+
+/// Wraps a transport so every outbound dial first waits for a slot from a shared
+/// [`TorDialLimiter`], and only then runs the inner dial under a timeout.
+///
+/// This is meant to be the **outermost** transport. The limiter permit is
+/// acquired *before* the inner `dial()` future is polled, so time spent queued
+/// for a Tor slot is excluded from the dial `timeout`. The permit is held until
+/// the inner dial (connect and upgrade) completes or the timeout fires, and is
+/// released as soon as this dial is dropped (e.g. cancelled once a sibling
+/// address connects).
+pub struct DialLimiterTransport<T> {
+    inner: T,
+    limiter: TorDialLimiter,
+    timeout: Duration,
+}
+
+impl<T> DialLimiterTransport<T> {
+    /// Wraps `inner`, gating its dials through `limiter` and bounding each dial
+    /// (measured *after* the permit is granted) by `timeout`.
+    #[must_use]
+    pub fn new(inner: T, limiter: TorDialLimiter, timeout: Duration) -> Self {
+        Self {
+            inner,
+            limiter,
+            timeout,
+        }
+    }
+
+    /// Wraps an already-created inner dial future so that it only runs once a Tor
+    /// dial permit has been granted, then bounds it by `timeout`.
+    fn gate(
+        &self,
+        addr: &Multiaddr,
+        inner_dial: T::Dial,
+    ) -> BoxFuture<'static, Result<T::Output, std::io::Error>>
+    where
+        T: Transport<Error = std::io::Error>,
+        T::Dial: Send + 'static,
+        T::Output: Send + 'static,
+    {
+        let is_onion = addr
+            .iter()
+            .any(|protocol| matches!(protocol, Protocol::Onion3(_)));
+        let peer_id = extract_peer_id(addr);
+        let limiter = self.limiter.clone();
+        let timeout = self.timeout;
+
+        Box::pin(async move {
+            // Acquiring the permit here, before polling `inner_dial`, is what
+            // keeps the queue-wait out of the `timeout` below.
+            let _permit = limiter
+                .wait(peer_id, is_onion)
+                .await
+                .map_err(std::io::Error::other)?;
+
+            tokio::time::timeout(timeout, inner_dial)
+                .await
+                .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))?
+        })
+    }
+}
+
+impl<T> Transport for DialLimiterTransport<T>
+where
+    T: Transport<Error = std::io::Error> + Unpin,
+    T::Dial: Send + 'static,
+    T::Output: Send + 'static,
+{
+    type Output = T::Output;
+    type Error = std::io::Error;
+    type Dial = BoxFuture<'static, Result<T::Output, std::io::Error>>;
+    type ListenerUpgrade = T::ListenerUpgrade;
+
+    fn listen_on(
+        &mut self,
+        id: ListenerId,
+        addr: Multiaddr,
+    ) -> Result<(), TransportError<Self::Error>> {
+        self.inner.listen_on(id, addr)
+    }
+
+    fn remove_listener(&mut self, id: ListenerId) -> bool {
+        self.inner.remove_listener(id)
+    }
+
+    fn dial(&mut self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>> {
+        let inner_dial = self.inner.dial(addr.clone())?;
+        Ok(self.gate(&addr, inner_dial))
+    }
+
+    fn dial_as_listener(
+        &mut self,
+        addr: Multiaddr,
+    ) -> Result<Self::Dial, TransportError<Self::Error>> {
+        let inner_dial = self.inner.dial_as_listener(addr.clone())?;
+        Ok(self.gate(&addr, inner_dial))
+    }
+
+    fn address_translation(&self, listen: &Multiaddr, observed: &Multiaddr) -> Option<Multiaddr> {
+        self.inner.address_translation(listen, observed)
+    }
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<TransportEvent<Self::ListenerUpgrade, Self::Error>> {
+        Pin::new(&mut self.inner).poll(cx)
     }
 }
