@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::network::transport::authenticate_and_multiplex;
+use crate::network::transport::authenticate_and_multiplex_no_timeout;
 use anyhow::Result;
 use arti_client::TorClient;
 use libp2p::core::muxing::StreamMuxerBox;
@@ -10,7 +10,8 @@ use libp2p::core::transport::{Boxed, OptionalTransport};
 use libp2p::{PeerId, Transport, identity};
 use libp2p::{dns, tcp, websocket};
 use libp2p_tor::{
-    AddressConversion, TorDialLimiter, TorDialPriorityConfig, TorDialPriorityTracker, TorTransport,
+    AddressConversion, DialLimiterTransport, TorDialLimiter, TorDialPriorityConfig,
+    TorDialPriorityTracker, TorTransport,
 };
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -22,6 +23,11 @@ const TOR_DIAL_NORMAL_PRIORITY_MAX_CONCURRENT: usize = 2;
 const TOR_DIAL_NORMAL_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(1);
 const TOR_DIAL_LOW_PRIORITY_MAX_CONCURRENT: usize = 1;
 const TOR_DIAL_LOW_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(4);
+
+/// Per-address dial timeout. Applied *after* a Tor dial slot is granted (see
+/// [`DialLimiterTransport`]) so time spent queued for a slot is excluded; when
+/// Tor is disabled there is no queue, so a plain timeout is equivalent.
+const DIAL_TIMEOUT: Duration = Duration::from_secs(15);
 
 fn new_tor_dial_limiter() -> (TorDialLimiter, TorDialPriorityTracker) {
     let priority_tracker = TorDialPriorityTracker::default();
@@ -76,16 +82,10 @@ pub fn new(
     let ws_inner_tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
     let ws_inner_tcp_dns = dns::tokio::Transport::system(ws_inner_tcp)?;
     let ws_inner_tor: OptionalTransport<TorTransport> = match &maybe_tor_client {
-        Some(client) => {
-            let mut transport =
-                TorTransport::from_client(Arc::clone(client), AddressConversion::IpAndDns);
-
-            if let Some(dial_limiter) = maybe_tor_dial_limiter.clone() {
-                transport = transport.with_dial_limiter(dial_limiter);
-            }
-
-            OptionalTransport::some(transport)
-        }
+        Some(client) => OptionalTransport::some(TorTransport::from_client(
+            Arc::clone(client),
+            AddressConversion::IpAndDns,
+        )),
         None => OptionalTransport::none(),
     };
     let ws_inner = ws_inner_tor.or_transport(ws_inner_tcp_dns);
@@ -95,15 +95,10 @@ pub fn new(
     let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
     let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
     let maybe_tor_transport: OptionalTransport<TorTransport> = match maybe_tor_client {
-        Some(client) => {
-            let mut transport = TorTransport::from_client(client, AddressConversion::IpAndDns);
-
-            if let Some(dial_limiter) = maybe_tor_dial_limiter {
-                transport = transport.with_dial_limiter(dial_limiter);
-            }
-
-            OptionalTransport::some(transport)
-        }
+        Some(client) => OptionalTransport::some(TorTransport::from_client(
+            client,
+            AddressConversion::IpAndDns,
+        )),
         None => OptionalTransport::none(),
     };
     let plain_transport = maybe_tor_transport.or_transport(tcp_with_dns);
@@ -113,8 +108,18 @@ pub fn new(
     // /ws suffix) and establish a raw connection without a WebSocket handshake.
     let transport = ws_transport.or_transport(plain_transport).boxed();
 
-    Ok((
-        authenticate_and_multiplex(transport, identity)?,
-        maybe_tor_priority_tracker,
-    ))
+    // Apply the noise + yamux upgrade without a timeout here; the timeout is
+    // applied by `DialLimiterTransport` *after* the Tor dial permit is granted,
+    // so that time spent queued for a scarce Tor slot is not counted against it.
+    // When Tor is disabled there is no queue, so a plain timeout is equivalent.
+    let upgraded = authenticate_and_multiplex_no_timeout(transport, identity)?;
+
+    let transport = match maybe_tor_dial_limiter {
+        Some(dial_limiter) => {
+            DialLimiterTransport::new(upgraded, dial_limiter, DIAL_TIMEOUT).boxed()
+        }
+        None => upgraded.timeout(DIAL_TIMEOUT).boxed(),
+    };
+
+    Ok((transport, maybe_tor_priority_tracker))
 }
