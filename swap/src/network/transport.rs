@@ -12,12 +12,17 @@ const AUTH_AND_MULTIPLEX_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_NUM_STREAMS: usize = 5;
 
 /// "Completes" a transport by applying the authentication and multiplexing
-/// upgrades.
+/// upgrades, **without** a dial timeout.
+///
+/// Callers that need a timeout should either use [`authenticate_and_multiplex`]
+/// (which wraps this with a fixed timeout) or apply their own. This split exists
+/// so the CLI can apply the timeout *after* a Tor dial slot has been acquired,
+/// keeping the time queued for a slot out of the timeout.
 ///
 /// Even though the actual transport technology in use might be different, for
 /// two libp2p applications to be compatible, the authentication and
 /// multiplexing upgrades need to be compatible.
-pub fn authenticate_and_multiplex<T>(
+pub fn authenticate_and_multiplex_no_timeout<T>(
     transport: Boxed<T>,
     identity: &identity::Keypair,
 ) -> Result<Boxed<(PeerId, StreamMuxerBox)>>
@@ -33,8 +38,23 @@ where
         .upgrade(Version::V1)
         .authenticate(auth_upgrade)
         .multiplex(multiplex_upgrade)
-        .timeout(AUTH_AND_MULTIPLEX_TIMEOUT)
         .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))
+        .boxed();
+
+    Ok(transport)
+}
+
+/// "Completes" a transport by applying the authentication and multiplexing
+/// upgrades, with a fixed dial timeout applied to the whole dial.
+pub fn authenticate_and_multiplex<T>(
+    transport: Boxed<T>,
+    identity: &identity::Keypair,
+) -> Result<Boxed<(PeerId, StreamMuxerBox)>>
+where
+    T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let transport = authenticate_and_multiplex_no_timeout(transport, identity)?
+        .timeout(AUTH_AND_MULTIPLEX_TIMEOUT)
         .boxed();
 
     Ok(transport)

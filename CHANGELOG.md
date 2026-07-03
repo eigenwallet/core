@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: unreachable multiaddress for a maker (e.g. a stale onion/wormhole) no longer blocks that maker's other addresses from being dialed. Each address is dialed with its own timeout that excludes time spent queued for a Tor slot, and reachable clearnet addresses are tried first.
+
 ## [5.0.4] - 2026-11-16
 
 - GUI: The warning before you accept an offer during swap setup now appears if the rate of the maker is more than 2% above its quote, instead of 5%.
