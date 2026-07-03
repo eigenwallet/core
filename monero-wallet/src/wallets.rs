@@ -363,6 +363,28 @@ impl Wallets {
         Ok(height as u64)
     }
 
+    pub async fn has_received_outputs(
+        &self,
+        public_spend_key: monero_oxide_ext::PublicKey,
+        private_view_key: PrivateViewKey,
+        start_height: BlockHeight,
+        inner_retry: Option<backoff::ExponentialBackoff>,
+    ) -> Result<bool> {
+        let rpc_client = self.rpc_client().await?;
+        let public_spend_key = public_spend_key.decompress();
+        let private_view_key = Zeroizing::new(private_view_key.0.scalar);
+
+        monero_wallet_ng::empty::has_received_outputs(
+            &rpc_client,
+            public_spend_key,
+            private_view_key,
+            start_height.height as usize,
+            inner_retry,
+        )
+        .await
+        .context("Failed to check for received outputs")
+    }
+
     /// Construct and sign a sweep transaction for the largest output of
     /// `lock_tx_hash` (viewable by the given view-pair) across a set of
     /// `destinations` split by ratio.

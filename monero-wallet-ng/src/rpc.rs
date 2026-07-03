@@ -8,6 +8,8 @@ use core::future::Future;
 
 use monero_daemon_rpc::{HttpTransport, MoneroDaemon};
 use monero_interface::InterfaceError;
+use monero_oxide_wallet::transaction::{Pruned, Transaction};
+
 /// Spend status of a single key image, per the daemon's `is_key_image_spent` RPC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyImageSpentStatus {
@@ -86,8 +88,23 @@ impl<T: HttpTransport> IsKeyImageSpent for MoneroDaemon<T> {
     }
 }
 
+const MEMPOOL_HASHES_RESPONSE_SIZE_LIMIT: usize = 2 * 1024 * 1024;
+const NON_MINER_TX_SIZE_UPPER_BOUND: usize = 1_000_000;
+
+#[derive(Debug, Clone)]
+pub struct MempoolTransaction {
+    pub tx_id: [u8; 32],
+    pub tx: Transaction<Pruned>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum TransactionStatusError {
+    #[error("Interface error: {0}")]
+    Interface(#[from] InterfaceError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum MempoolTransactionsError {
     #[error("Interface error: {0}")]
     Interface(#[from] InterfaceError),
 }
@@ -117,6 +134,17 @@ pub trait ProvidesTransactionStatus: Sync {
     ) -> impl Send + Future<Output = Result<TransactionStatus, TransactionStatusError>>;
 }
 
+pub trait ProvidesMempoolTransactions: Sync {
+    fn mempool_transaction_hashes(
+        &self,
+    ) -> impl Send + Future<Output = Result<Vec<[u8; 32]>, MempoolTransactionsError>>;
+
+    fn mempool_transactions(
+        &self,
+        hashes: &[[u8; 32]],
+    ) -> impl Send + Future<Output = Result<Vec<MempoolTransaction>, MempoolTransactionsError>>;
+}
+
 /// Data structures we get back from the RPC server
 ///
 /// See: https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/rpc/core_rpc_server_commands_defs.h#L358-L439
@@ -134,10 +162,18 @@ mod monerod {
     // See: https://github.com/SNeedlewoods/seraphis_wallet/blob/dbbccecc89e1121762a4ad6b531638ece82aa0c7/src/rpc/core_rpc_server_commands_defs.h#L406-L428
     #[derive(Deserialize)]
     pub(crate) struct TransactionInfo {
+        pub(crate) tx_hash: Option<String>,
+        pub(crate) pruned_as_hex: Option<String>,
         // `block_height` is only present if `in_pool` is false
         pub(crate) block_height: Option<u64>,
         // `in_pool` is always present
         pub(crate) in_pool: bool,
+    }
+
+    #[derive(Deserialize)]
+    pub(crate) struct GetTransactionPoolHashesResponse {
+        #[serde(default)]
+        pub(crate) tx_hashes: Vec<String>,
     }
 }
 
@@ -189,4 +225,136 @@ impl<T: HttpTransport> ProvidesTransactionStatus for MoneroDaemon<T> {
             })
         }
     }
+}
+
+impl<T: HttpTransport> ProvidesMempoolTransactions for MoneroDaemon<T> {
+    fn mempool_transaction_hashes(
+        &self,
+    ) -> impl Send + Future<Output = Result<Vec<[u8; 32]>, MempoolTransactionsError>> {
+        async move {
+            let response = self
+                .rpc_call(
+                    "get_transaction_pool_hashes",
+                    Some("{}".to_string()),
+                    MEMPOOL_HASHES_RESPONSE_SIZE_LIMIT,
+                )
+                .await?;
+
+            let response: monerod::GetTransactionPoolHashesResponse =
+                serde_json::from_str(&response).map_err(|e| {
+                    InterfaceError::InvalidInterface(format!(
+                        "Failed to parse get_transaction_pool_hashes response: {}",
+                        e
+                    ))
+                })?;
+
+            response
+                .tx_hashes
+                .into_iter()
+                .map(|hash| decode_hash(&hash))
+                .collect::<Result<Vec<_>, _>>()
+        }
+    }
+
+    fn mempool_transactions(
+        &self,
+        hashes: &[[u8; 32]],
+    ) -> impl Send + Future<Output = Result<Vec<MempoolTransaction>, MempoolTransactionsError>>
+    {
+        async move {
+            if hashes.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let hashes_json = hashes
+                .iter()
+                .map(hex::encode)
+                .map(|hash| format!(r#""{}""#, hash))
+                .collect::<Vec<_>>()
+                .join(",");
+            let response_size_limit = hashes.len().saturating_mul(NON_MINER_TX_SIZE_UPPER_BOUND);
+
+            let response = self
+                .rpc_call(
+                    "get_transactions",
+                    Some(format!(
+                        r#"{{ "txs_hashes": [{}], "prune": true }}"#,
+                        hashes_json
+                    )),
+                    response_size_limit,
+                )
+                .await?;
+
+            let response: monerod::GetTransactionsResponse = serde_json::from_str(&response)
+                .map_err(|e| {
+                    InterfaceError::InvalidInterface(format!(
+                        "Failed to parse get_transactions response: {}",
+                        e
+                    ))
+                })?;
+
+            if !response.missed_tx.is_empty() {
+                return Err(InterfaceError::InvalidInterface(format!(
+                    "Daemon missed mempool transactions: {}",
+                    response.missed_tx.join(", ")
+                ))
+                .into());
+            }
+
+            if response.txs.len() != hashes.len() {
+                return Err(InterfaceError::InvalidInterface(
+                    "Daemon returned an unexpected number of mempool transactions".to_string(),
+                )
+                .into());
+            }
+
+            response
+                .txs
+                .into_iter()
+                .map(parse_pruned_mempool_transaction)
+                .collect()
+        }
+    }
+}
+
+fn parse_pruned_mempool_transaction(
+    info: monerod::TransactionInfo,
+) -> Result<MempoolTransaction, MempoolTransactionsError> {
+    let tx_id = decode_hash(info.tx_hash.as_deref().ok_or_else(|| {
+        InterfaceError::InvalidInterface("Mempool transaction response missing tx_hash".to_string())
+    })?)?;
+
+    let blob = hex::decode(info.pruned_as_hex.as_deref().ok_or_else(|| {
+        InterfaceError::InvalidInterface(
+            "Mempool transaction response missing pruned_as_hex".to_string(),
+        )
+    })?)
+    .map_err(|e| {
+        InterfaceError::InvalidInterface(format!("Failed to decode mempool tx blob hex: {}", e))
+    })?;
+
+    let mut reader = blob.as_slice();
+    let tx = Transaction::<Pruned>::read(&mut reader).map_err(|e| {
+        InterfaceError::InvalidInterface(format!("Failed to parse mempool transaction: {}", e))
+    })?;
+
+    if !reader.is_empty() {
+        return Err(InterfaceError::InvalidInterface(
+            "Mempool transaction blob has trailing bytes".to_string(),
+        )
+        .into());
+    }
+
+    Ok(MempoolTransaction { tx_id, tx })
+}
+
+fn decode_hash(hash: &str) -> Result<[u8; 32], MempoolTransactionsError> {
+    hex::decode(hash)
+        .map_err(|e| {
+            InterfaceError::InvalidInterface(format!("Failed to decode transaction hash: {}", e))
+        })?
+        .try_into()
+        .map_err(|_| {
+            InterfaceError::InvalidInterface("Transaction hash was not 32 bytes".to_string()).into()
+        })
 }

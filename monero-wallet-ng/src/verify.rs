@@ -1,12 +1,11 @@
 use zeroize::Zeroizing;
 
-use monero_oxide_wallet::block::{Block, BlockHeader};
 use monero_oxide_wallet::ed25519::{Point, Scalar};
-use monero_oxide_wallet::interface::{ProvidesTransactions, ScannableBlock, TransactionsError};
-use monero_oxide_wallet::transaction::{Input, Pruned, Timelock, Transaction, TransactionPrefix};
+use monero_oxide_wallet::interface::{ProvidesTransactions, TransactionsError};
+use monero_oxide_wallet::transaction::{Pruned, Transaction};
 use monero_oxide_wallet::{Scanner, ViewPair};
 
-use crate::HARDFORK_VERSION;
+use crate::util::create_scannable_block_for_tx;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerifyError {
@@ -92,40 +91,4 @@ pub async fn largest_received_utxo<P: ProvidesTransactions>(
         .iter()
         .map(|output| output.commitment().amount)
         .max())
-}
-
-/// Create a fake ScannableBlock containing a single transaction.
-///
-/// This is a workaround since monero-oxide's Scanner only scans blocks, not individual
-/// transactions.
-fn create_scannable_block_for_tx(tx_id: [u8; 32], tx: Transaction<Pruned>) -> ScannableBlock {
-    // Fake miner transaction
-    let miner_tx = Transaction::V1 {
-        prefix: TransactionPrefix {
-            additional_timelock: Timelock::None,
-            inputs: vec![Input::Gen(0)],
-            outputs: vec![],
-            extra: vec![],
-        },
-        signatures: Vec::new(),
-    };
-
-    // Fake block header
-    let header = BlockHeader {
-        hardfork_version: HARDFORK_VERSION,
-        hardfork_signal: 0,
-        timestamp: 0,
-        previous: [0u8; 32],
-        nonce: 0,
-    };
-
-    // Create the block with our transaction (and the fake miner transaction)
-    let block = Block::new(header, miner_tx, vec![tx_id])
-        .expect("Block creation should succeed with valid miner tx");
-
-    ScannableBlock {
-        block,
-        transactions: vec![tx],
-        output_index_for_first_ringct_output: Some(0),
-    }
 }
