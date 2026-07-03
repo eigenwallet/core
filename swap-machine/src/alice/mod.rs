@@ -30,6 +30,10 @@ pub enum AliceState {
     BtcLocked {
         state3: Box<State3>,
     },
+    XmrReadyToLock {
+        state3: Box<State3>,
+        monero_wallet_restore_blockheight: BlockHeight,
+    },
     BtcEarlyRefundable {
         state3: Box<State3>,
     },
@@ -190,6 +194,7 @@ impl fmt::Display for AliceState {
                 write!(f, "bitcoin lock transaction in mempool")
             }
             AliceState::BtcLocked { .. } => write!(f, "btc is locked"),
+            AliceState::XmrReadyToLock { .. } => write!(f, "xmr is ready to lock"),
             AliceState::XmrLockTransactionConstructed { .. } => {
                 write!(f, "xmr lock transaction constructed")
             }
@@ -1206,6 +1211,7 @@ impl ReservesMonero for AliceState {
             // our Monero, and we haven't done so yet.
             AliceState::BtcLockTransactionSeen { state3 }
             | AliceState::BtcLocked { state3 }
+            | AliceState::XmrReadyToLock { state3, .. }
             | AliceState::XmrLockTransactionConstructed { state3, .. } => {
                 // We reserve as much Monero as we need for the output of the lock transaction
                 // and as we need for the network fee
