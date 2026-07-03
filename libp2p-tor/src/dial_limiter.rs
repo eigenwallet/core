@@ -148,11 +148,21 @@ impl TorDialLimiter {
     /// # Errors
     ///
     /// Returns an error if the background limiter task has stopped.
-    pub async fn wait(&self, peer_id: Option<PeerId>) -> Result<TorDialPermit, TorDialLimiterError> {
+    ///
+    /// `is_onion` marks whether this dial targets an onion address. Within a
+    /// priority, clearnet dials are served before onion ones, so a reachable
+    /// clearnet address is not starved by an onion dial that hangs on a dead
+    /// service.
+    pub async fn wait(
+        &self,
+        peer_id: Option<PeerId>,
+        is_onion: bool,
+    ) -> Result<TorDialPermit, TorDialLimiterError> {
         let (permit_sender, permit_receiver) = oneshot::channel();
         let request = DialRequest {
             peer_id,
             permit_sender,
+            is_onion,
         };
 
         self.request_sender
@@ -192,6 +202,9 @@ impl Drop for TorDialPermit {
 struct DialRequest {
     peer_id: Option<PeerId>,
     permit_sender: oneshot::Sender<TorDialPermit>,
+    /// Whether this dial targets an onion address. Used to serve clearnet dials
+    /// before onion ones within the same priority.
+    is_onion: bool,
 }
 
 struct PriorityQueue {
@@ -227,7 +240,15 @@ impl PriorityQueue {
                 break;
             }
 
-            let request = self.queue.pop_front().expect("queue to be non-empty");
+            // Prefer a clearnet (non-onion) waiter over onion ones at this
+            // priority: an onion connect can hang on a dead service, so serving
+            // clearnet first lets a reachable address win the scarce slot.
+            let idx = self
+                .queue
+                .iter()
+                .position(|request| !request.is_onion)
+                .unwrap_or(0);
+            let request = self.queue.remove(idx).expect("index to be in bounds");
             let permit = TorDialPermit {
                 priority,
                 release_sender: Some(release_sender.clone()),
@@ -429,11 +450,11 @@ mod tests {
     async fn normal_dials_are_serialized_by_concurrency_and_delay() {
         let limiter = limiter(TorDialPriorityTracker::default());
 
-        let first = limiter.wait(None).await.unwrap();
+        let first = limiter.wait(None, false).await.unwrap();
 
         let second = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(None).await.unwrap() }
+            async move { limiter.wait(None, false).await.unwrap() }
         });
 
         // Blocked by the concurrency limit of 1.
@@ -459,7 +480,7 @@ mod tests {
         let spawn_wait = |peer: PeerId| {
             priority_tracker.mark_high_priority(peer);
             let limiter = limiter.clone();
-            tokio::spawn(async move { limiter.wait(Some(peer)).await.unwrap() })
+            tokio::spawn(async move { limiter.wait(Some(peer), false).await.unwrap() })
         };
         let first = spawn_wait(PeerId::random());
         let second = spawn_wait(PeerId::random());
@@ -494,18 +515,18 @@ mod tests {
         let limiter = limiter(priority_tracker.clone());
 
         // Saturate the normal queue (concurrency 1).
-        let normal = limiter.wait(None).await.unwrap();
+        let normal = limiter.wait(None, false).await.unwrap();
 
         let normal_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(None).await.unwrap() }
+            async move { limiter.wait(None, false).await.unwrap() }
         });
 
         let high_peer = PeerId::random();
         priority_tracker.mark_high_priority(high_peer);
         let high_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(Some(high_peer)).await.unwrap() }
+            async move { limiter.wait(Some(high_peer), false).await.unwrap() }
         });
 
         // The high dial proceeds despite the normal queue being saturated.
@@ -546,17 +567,17 @@ mod tests {
         // Saturate the low queue (concurrency 1).
         let low_peer = PeerId::random();
         priority_tracker.mark_low_priority(low_peer);
-        let low = limiter.wait(Some(low_peer)).await.unwrap();
+        let low = limiter.wait(Some(low_peer), false).await.unwrap();
 
         let low_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(Some(low_peer)).await.unwrap() }
+            async move { limiter.wait(Some(low_peer), false).await.unwrap() }
         });
 
         // A normal dial proceeds despite the low queue being saturated.
         let normal_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(None).await.unwrap() }
+            async move { limiter.wait(None, false).await.unwrap() }
         });
 
         settle().await;
@@ -574,10 +595,10 @@ mod tests {
 
         // Occupy the normal slot and queue another normal dial so the low queue
         // stays gated off.
-        let normal = limiter.wait(None).await.unwrap();
+        let normal = limiter.wait(None, false).await.unwrap();
         let normal_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(None).await.unwrap() }
+            async move { limiter.wait(None, false).await.unwrap() }
         });
 
         // A low dial that cannot start while a normal dial is waiting.
@@ -585,7 +606,7 @@ mod tests {
         priority_tracker.mark_low_priority(peer);
         let waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(Some(peer)).await.unwrap() }
+            async move { limiter.wait(Some(peer), false).await.unwrap() }
         });
 
         settle().await;
@@ -609,10 +630,10 @@ mod tests {
         let limiter = limiter(priority_tracker.clone());
 
         // Occupy the normal slot, then queue another so the normal queue is non-empty.
-        let normal = limiter.wait(None).await.unwrap();
+        let normal = limiter.wait(None, false).await.unwrap();
         let normal_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(None).await.unwrap() }
+            async move { limiter.wait(None, false).await.unwrap() }
         });
 
         // Held back while a normal dial is waiting, despite a free low slot.
@@ -620,7 +641,7 @@ mod tests {
         priority_tracker.mark_low_priority(low_peer);
         let low_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(Some(low_peer)).await.unwrap() }
+            async move { limiter.wait(Some(low_peer), false).await.unwrap() }
         });
 
         settle().await;
@@ -636,5 +657,65 @@ mod tests {
 
         let _ = normal_waiter.await.unwrap();
         let _ = low_waiter.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn clearnet_dial_is_served_before_a_held_onion_dial() {
+        let priority_tracker = TorDialPriorityTracker::default();
+        let limiter = limiter(priority_tracker.clone());
+
+        // A peer at Low priority (single global slot), matching the restart case.
+        let peer = PeerId::random();
+        priority_tracker.mark_low_priority(peer);
+
+        // The onion dial takes the only Low slot and is held, simulating a dead
+        // onion that never connects.
+        let onion = limiter.wait(Some(peer), true).await.unwrap();
+
+        // The same peer's clearnet dial and another onion dial both queue up.
+        let clearnet_waiter = tokio::spawn({
+            let limiter = limiter.clone();
+            async move { limiter.wait(Some(peer), false).await.unwrap() }
+        });
+        let onion_waiter = tokio::spawn({
+            let limiter = limiter.clone();
+            async move { limiter.wait(Some(peer), true).await.unwrap() }
+        });
+
+        // Nothing can start while the held onion occupies the slot.
+        settle().await;
+        assert!(!clearnet_waiter.is_finished());
+        assert!(!onion_waiter.is_finished());
+
+        // Free the slot; the clearnet dial must be served before the queued onion.
+        drop(onion);
+        tokio::time::advance(Duration::from_secs(8)).await;
+        settle().await;
+        assert!(clearnet_waiter.is_finished());
+        assert!(!onion_waiter.is_finished());
+
+        let _ = clearnet_waiter.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn onion_only_queue_is_still_served() {
+        let limiter = limiter(TorDialPriorityTracker::default());
+
+        // With no clearnet waiter present, onion dials must still be released.
+        let first = limiter.wait(None, true).await.unwrap();
+
+        let second = tokio::spawn({
+            let limiter = limiter.clone();
+            async move { limiter.wait(None, true).await.unwrap() }
+        });
+
+        settle().await;
+        assert!(!second.is_finished());
+
+        drop(first);
+        tokio::time::advance(Duration::from_secs(4)).await;
+        settle().await;
+        assert!(second.is_finished());
+        let _ = second.await.unwrap();
     }
 }
