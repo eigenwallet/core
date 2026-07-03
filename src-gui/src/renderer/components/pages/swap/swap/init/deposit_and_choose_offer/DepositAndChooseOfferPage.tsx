@@ -33,7 +33,7 @@ export default function DepositAndChooseOfferPage({
   known_quotes,
 }: TauriSwapProgressEventContent<"WaitingForBtcDeposit">) {
   const [currentPage, setCurrentPage] = useState(1);
-  const [sortMode, setSortMode] = useState<OfferSortMode>("small");
+  const [sortMode, setSortMode] = useState<OfferSortMode>("cheapest");
   const [sortAnchorEl, setSortAnchorEl] = useState<null | HTMLElement>(null);
   const offersPerPage = 3;
 
