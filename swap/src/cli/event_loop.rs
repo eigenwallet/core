@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::EncryptedSignature;
 use swap_p2p::protocols::redial;
+use swap_p2p::protocols::tor_dial_filter::TorDialFilter;
 use uuid::Uuid;
 
 // Timeout for the execution setup protocol within the event loop.
@@ -41,7 +42,7 @@ static RETRY_MAX_INTERVAL: Duration = Duration::from_secs(5);
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop {
-    swarm: libp2p::Swarm<Behaviour>,
+    swarm: libp2p::Swarm<TorDialFilter<Behaviour>>,
     db: Arc<dyn Database + Send + Sync>,
 
     // When a new `SwapEventLoopHandle` is created:
@@ -153,7 +154,7 @@ pub struct EventLoop {
 
 impl EventLoop {
     pub fn new(
-        swarm: Swarm<Behaviour>,
+        swarm: Swarm<TorDialFilter<Behaviour>>,
         db: Arc<dyn Database + Send + Sync>,
         tauri_handle: Option<TauriHandle>,
         tor_priority_tracker: Option<TorDialPriorityTracker>,

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + CLI: When Tor is disabled, onion addresses are no longer dialed. Previously a maker's advertised onion address could be attempted without Tor, producing failed dials and pointless redial churn; such addresses are now filtered out before the Swarm attempts to dial them.
 - ASB: The Hermes protocol is now enabled by default (`hermes_enabled` defaults to `true`), and the default `hermes_min_swap_amount` was lowered from `0.01` to `0.001` BTC (~50 USD at a reference price of 50,000 USD/BTC).
 
 ## [4.11.4] - 2026-06-30

@@ -19,6 +19,7 @@ use swap_core::bitcoin;
 use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
 use swap_p2p::protocols::metered::RequestResponseMetrics;
+use swap_p2p::protocols::tor_dial_filter::TorDialFilter;
 use tor_hsservice::RunningOnionService;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -136,11 +137,21 @@ pub async fn cli<T>(
     identity: identity::Keypair,
     maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
     behaviour: T,
-) -> Result<(Swarm<T>, Option<TorDialPriorityTracker>)>
+) -> Result<(Swarm<TorDialFilter<T>>, Option<TorDialPriorityTracker>)>
 where
     T: NetworkBehaviour,
 {
+    // Onion addresses can only be dialed through Tor. Derive the flag from the
+    // very same `maybe_tor_client` that decides whether the transport can dial
+    // onion addresses, so the dial filter and the transport can never disagree.
+    let tor_enabled = maybe_tor_client.is_some();
+
     let (transport, tor_priority_tracker) = cli::transport::new(&identity, maybe_tor_client)?;
+
+    // Single choke point: with Tor disabled, strip onion addresses from every
+    // dial-candidate list before the Swarm ever attempts to dial them,
+    // regardless of which inner behaviour contributed the address.
+    let behaviour = TorDialFilter::new(behaviour, tor_enabled);
 
     let swarm = SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
