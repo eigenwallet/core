@@ -21,10 +21,17 @@ export function isXmrAddressValid(address: string, stagenet: boolean) {
   return new RegExp(`(?:^${re}$)`).test(address);
 }
 
-export function isBtcAddressValid(address: string, testnet: boolean) {
+export function isBtcAddressValid(
+  address: string,
+  testnet: boolean,
+  allowTaproot = false,
+) {
+  // Segwit v0 (bc1q..., ~42 chars) fits in {25,49}. Taproot v1 (bc1p...) and
+  // P2WSH are longer (up to ~90 chars total), so widen the cap when allowed.
+  const max = allowTaproot ? 87 : 49;
   const re = testnet
-    ? "(tb1)[a-zA-HJ-NP-Z0-9]{25,49}"
-    : "(bc1)[a-zA-HJ-NP-Z0-9]{25,49}";
+    ? `(tb1)[a-zA-HJ-NP-Z0-9]{25,${max}}`
+    : `(bc1)[a-zA-HJ-NP-Z0-9]{25,${max}}`;
   return new RegExp(`(?:^${re}$)`).test(address);
 }
 
