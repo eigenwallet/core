@@ -6,6 +6,7 @@ use crate::network::transport::authenticate_and_multiplex_no_timeout;
 use anyhow::Result;
 use arti_client::TorClient;
 use libp2p::core::muxing::StreamMuxerBox;
+use libp2p::core::transport::timeout::TransportTimeout;
 use libp2p::core::transport::{Boxed, OptionalTransport};
 use libp2p::{PeerId, Transport, identity};
 use libp2p::{dns, tcp, websocket};
@@ -118,7 +119,7 @@ pub fn new(
         Some(dial_limiter) => {
             DialLimiterTransport::new(upgraded, dial_limiter, DIAL_TIMEOUT).boxed()
         }
-        None => upgraded.timeout(DIAL_TIMEOUT).boxed(),
+        None => TransportTimeout::new(upgraded, DIAL_TIMEOUT).boxed(),
     };
 
     Ok((transport, maybe_tor_priority_tracker))
