@@ -23,6 +23,7 @@ export default function AddressInputPage({
         onAddressValidityChange={setWithdrawAddressValid}
         helperText="All Bitcoin of the internal wallet will be transferred to this address"
         allowEmpty={false}
+        allowTaproot
         fullWidth
       />
     </>
