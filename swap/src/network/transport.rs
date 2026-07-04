@@ -2,6 +2,7 @@ use anyhow::Result;
 use futures::{AsyncRead, AsyncWrite};
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::core::transport::Boxed;
+use libp2p::core::transport::timeout::TransportTimeout;
 use libp2p::core::upgrade::Version;
 use libp2p::noise;
 use libp2p::{PeerId, Transport, identity, yamux};
@@ -53,9 +54,11 @@ pub fn authenticate_and_multiplex<T>(
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    let transport = authenticate_and_multiplex_no_timeout(transport, identity)?
-        .timeout(AUTH_AND_MULTIPLEX_TIMEOUT)
-        .boxed();
+    let transport = TransportTimeout::new(
+        authenticate_and_multiplex_no_timeout(transport, identity)?,
+        AUTH_AND_MULTIPLEX_TIMEOUT,
+    )
+    .boxed();
 
     Ok(transport)
 }
