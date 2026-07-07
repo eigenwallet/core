@@ -8,6 +8,8 @@ mod commands;
 
 use commands::*;
 
+const THREAD_STACK_SIZE: usize = 40 * 1024 * 1024;
+
 /// Represents the shared Tauri state. It is accessed by Tauri commands
 struct State {
     pub context: Arc<Context>,
@@ -87,6 +89,14 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(THREAD_STACK_SIZE)
+        .build()
+        .expect("failed to build tokio runtime");
+    tauri::async_runtime::set(runtime.handle().clone());
+    std::mem::forget(runtime);
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("failed to install default rustls provider");
