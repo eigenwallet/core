@@ -384,26 +384,15 @@ fn main() {
     // Link libsodium statically
     println!("cargo:rustc-link-lib=static=sodium");
 
-    // Link OpenSSL statically (on android we use openssl-sys's vendored version instead)
-    #[cfg(not(target_os = "android"))]
-    {
-        println!("cargo:rustc-link-lib=static=ssl"); // This is OpenSSL (libsll)
-        println!("cargo:rustc-link-lib=static=crypto"); // This is OpenSSLs crypto library (libcrypto)
-    }
+    // Link OpenSSL statically
+    println!("cargo:rustc-link-lib=static=ssl"); // This is OpenSSL (libsll)
+    println!("cargo:rustc-link-lib=static=crypto"); // This is OpenSSLs crypto library (libcrypto)
 
     // Link unbound statically
     println!("cargo:rustc-link-lib=static=unbound");
     println!("cargo:rustc-link-lib=static=expat"); // Expat is required by unbound
     // println!("cargo:rustc-link-lib=static=nghttp2");
     // println!("cargo:rustc-link-lib=static=event");
-    // Android
-    #[cfg(target_os = "android")]
-    {
-        println!(
-            "cargo:rustc-link-search=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/"
-        );
-        // println!("cargo:rustc-link-lib=static=c++_static");
-    }
 
     // Link protobuf statically
     // println!("cargo:rustc-link-lib=static=protobuf");

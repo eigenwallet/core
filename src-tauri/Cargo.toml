@@ -7,7 +7,7 @@ description = "GUI for XMR<>BTC Atomic Swaps written in Rust"
 
 [lib]
 name = "unstoppableswap_gui_rs_lib"
-crate-type = ["rlib", "staticlib", "cdylib"]
+crate-type = ["rlib", "cdylib"]
 
 [build-dependencies]
 tauri-build = { version = "2.*", features = ["config-json5"] }

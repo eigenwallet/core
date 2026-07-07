@@ -5,6 +5,7 @@
     config.allowUnfreePredicate = p:
       builtins.match "nvidia.*" (builtins.parseDrvName p.name).name != null;
   }
+, withAndroid ? false
 , nvidiaVersion ?
     let
       # nix can't readFile /proc directly (NixOS/nix#3539); copy it out impurely first
@@ -52,6 +53,39 @@ let
       export WEBKIT_DISABLE_DMABUF_RENDERER=1
     '';
 
+  androidComposition = pkgs.androidenv.composeAndroidPackages {
+    platformVersions = [ "36" ];
+    buildToolsVersions = [ "35.0.0" "36.0.0" ];
+    includeNDK = true;
+    ndkVersion = "28.2.13676358";
+  };
+  androidHome = "${androidComposition.androidsdk}/libexec/android-sdk";
+
+  androidShellHook = if !withAndroid then "" else ''
+    export ANDROID_HOME="${androidHome}"
+    export ANDROID_SDK_ROOT="$ANDROID_HOME"
+    export NDK_HOME="$ANDROID_HOME/ndk-bundle"
+    export ANDROID_NDK_HOME="$NDK_HOME"
+    export ANDROID_NDK_ROOT="$NDK_HOME"
+    export JAVA_HOME="${pkgs.jdk21.home}"
+
+    _ndk_bin="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+    _clang_rt="$(echo "$NDK_HOME"/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/*/lib/linux)"
+    export CC_aarch64_linux_android="$_ndk_bin/aarch64-linux-android24-clang"
+    export CXX_aarch64_linux_android="$_ndk_bin/aarch64-linux-android24-clang++"
+    export AR_aarch64_linux_android="$_ndk_bin/llvm-ar"
+    export RANLIB_aarch64_linux_android="$_ndk_bin/llvm-ranlib"
+    export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
+    export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-L native=$_clang_rt -l static=clang_rt.builtins-aarch64-android -C link-arg=-landroid -C link-arg=-llog"
+    export CC_x86_64_linux_android="$_ndk_bin/x86_64-linux-android24-clang"
+    export CXX_x86_64_linux_android="$_ndk_bin/x86_64-linux-android24-clang++"
+    export AR_x86_64_linux_android="$_ndk_bin/llvm-ar"
+    export RANLIB_x86_64_linux_android="$_ndk_bin/llvm-ranlib"
+    export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$CC_x86_64_linux_android"
+    export CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS="-L native=$_clang_rt -l static=clang_rt.builtins-x86_64-android -C link-arg=-landroid -C link-arg=-llog"
+    unset _ndk_bin _clang_rt
+  '';
+
   tauriLinkLibs = (with pkgs; [
     glib
     gtk3
@@ -98,7 +132,12 @@ pkgs.mkShell {
     dprint
     sqlx-cli
     cargo-tauri
-  ]) ++ [ moneroDependsToolchain ];
+  ]) ++ [ moneroDependsToolchain ]
+    ++ pkgs.lib.optionals withAndroid (with pkgs; [
+      androidComposition.androidsdk
+      jdk21
+      unzip
+    ]);
 
   buildInputs = tauriLinkLibs;
 
@@ -116,6 +155,7 @@ pkgs.mkShell {
     fi
 
     ${gpuShellHook}
+    ${androidShellHook}
     if ! command -v docker >/dev/null 2>&1 && command -v podman >/dev/null 2>&1; then
       _docker_shim="$HOME/.cache/eigenwallet-docker-shim"
       mkdir -p -m 700 "$_docker_shim"

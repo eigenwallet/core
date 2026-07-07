@@ -45,6 +45,16 @@ impl State {
 /// Initializes the Tauri state
 /// Sets the window title
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(mobile)]
+    {
+        let data_dir = app.path().app_data_dir()?;
+        unsafe {
+            std::env::set_var("HOME", &data_dir);
+            std::env::set_var("XDG_DATA_HOME", data_dir.join("data"));
+            std::env::set_var("XDG_CONFIG_HOME", data_dir.join("config"));
+        }
+    }
+
     // Set the window title to include the product name and version
     #[cfg(desktop)]
     {
@@ -77,6 +87,10 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("failed to install default rustls provider");
+
     let mut builder = tauri::Builder::default();
 
     #[cfg(desktop)]
