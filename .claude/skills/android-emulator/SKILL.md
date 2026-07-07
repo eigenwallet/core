@@ -9,7 +9,9 @@ Use the emulator for realistic end-to-end tests of Android features and UI — i
 
 ## Delegate to a subagent
 
-Emulator interaction is far too context-heavy for the main agent (screenshots, XML dumps, log greps). ALWAYS delegate the interaction loop to a subagent (Agent tool, opus model, low reasoning effort). Give it a concrete goal and the procedure below; have it return only a compact report (what it did, what it observed, verbatim error lines if any). The main agent never runs screencap/uiautomator/logcat itself.
+Emulator interaction is far too context-heavy for the main agent (screenshots, XML dumps, log greps). ALWAYS delegate the routine interaction loop — navigation, coordinate gathering via uiautomator, tapping, log greps — to a subagent (Agent tool, opus model, low reasoning effort). Give it a concrete goal and the procedure below; have it return only a compact report (what it did, what it observed, verbatim error lines if any). The main agent never runs uiautomator/logcat itself.
+
+Exception: visual judgement stays with the main agent. For any decision based on how the UI actually looks (what is broken, how something renders), have the subagent save a screenshot (`adb exec-out screencap -p > <scratchpad>/screen.png`) and return the path, then Read the PNG yourself — and do this at least once per session regardless. Don't take the subagent's verbal description on faith for anything load-bearing.
 
 ## Environment
 
