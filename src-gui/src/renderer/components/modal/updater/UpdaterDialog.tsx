@@ -63,7 +63,8 @@ export default function UpdaterDialog() {
   const { enqueueSnackbar } = useSnackbar();
 
   useEffect(() => {
-    // Check for updates when component mounts
+    if (/android|iphone|ipad/i.test(navigator.userAgent)) return;
+
     check()
       .then((updateResponse) => {
         console.log("updateResponse", updateResponse);

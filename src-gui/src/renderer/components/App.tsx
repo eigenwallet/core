@@ -76,8 +76,9 @@ function InnerContent() {
   return (
     <Box
       sx={{
-        padding: 4,
-        marginLeft: drawerWidth,
+        padding: { xs: 2, sm: 4 },
+        paddingTop: { xs: 7, sm: 4 },
+        marginLeft: { xs: 0, sm: drawerWidth },
         maxHeight: `100vh`,
         flex: 1,
       }}

@@ -11,6 +11,9 @@ import { ReactNode } from "react";
 const StyledMaterialDesignContent = styled(MaterialDesignContent)(() => ({
   "&.notistack-MuiContent": {
     maxWidth: "50vw",
+    "@media (max-width:599.95px)": {
+      maxWidth: "calc(100vw - 16px)",
+    },
   },
 }));
 

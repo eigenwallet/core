@@ -103,10 +103,10 @@ pub fn run() {
         }));
 
         builder = builder.plugin(tauri_plugin_cli::init());
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
     builder
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
