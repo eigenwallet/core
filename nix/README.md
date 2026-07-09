@@ -77,6 +77,23 @@ The first run rebuilds all of monero-depends from source (~30 min, dominated by 
 build is cached in `<target>/debug/monero-depends/<triple>`, keyed so it is not rebuilt on
 subsequent runs.
 
+## Android
+
+`nix develop .#android` extends the platform shell (Linux or macOS) with everything the
+Android cross-build needs: the SDK (platform 36 + build-tools), NDK r28c and JDK 21 from
+nixpkgs' `androidenv`, plus the `CC_<target>`/`CARGO_TARGET_<target>_*` environment cargo and
+cc-rs need to drive the NDK clang for `aarch64-linux-android` and `x86_64-linux-android`.
+The flake shell is required (plain `nix-shell` can't accept the SDK license); build with
+`cargo tauri android build --debug [--target aarch64]`.
+
+Two NDKs are involved, deliberately the same release (r28c): the nix-provided one compiles
+and links everything cargo drives (the cxx bridge, `ring`, the final rustc link), while
+monero-depends downloads its own copy — the linux or darwin zip depending on the build host —
+and generates a standalone toolchain from it for the depends packages and the monero cmake
+build. `clang_rt.builtins-<arch>-android` is linked statically because rustc links with the
+NDK clang driver but its own runtime expects the compiler builtins that libgcc/compiler-rt
+normally inject.
+
 ## GPU rendering (Tauri webview)
 
 WebKitGTK dispatches OpenGL/EGL through nix's libglvnd, which ships no vendor ICD. On a

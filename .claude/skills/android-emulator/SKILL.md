@@ -15,9 +15,10 @@ Exception: visual judgement stays with the main agent. For any decision based on
 
 ## Environment
 
-- adb: `~/Android/Sdk/platform-tools/adb`, emulator binary: `~/Android/Sdk/emulator/emulator`
+- SDK root: `~/Android/Sdk` on Linux, `~/Library/Android/sdk` on macOS — below `$SDK` means that root
+- adb: `$SDK/platform-tools/adb`, emulator binary: `$SDK/emulator/emulator`
 - AVD: `eigen` (shows up as `emulator-5554`), screen 1080x2400
-- Start if not running: `~/Android/Sdk/emulator/emulator -avd eigen &` then `adb wait-for-device`
+- Start if not running: `$SDK/emulator/emulator -avd eigen &` then `adb wait-for-device`
 - App: package `net.unstoppableswap.gui`, activity `.MainActivity`
 - APK: `src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`
 - Install: `adb install -r <apk>` — launch: `adb shell am start -n net.unstoppableswap.gui/.MainActivity`

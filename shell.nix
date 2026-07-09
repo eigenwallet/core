@@ -22,6 +22,46 @@
 
 let
   supportedSystem = pkgs.stdenv.hostPlatform.system == "x86_64-linux";
+
+  androidComposition = pkgs.androidenv.composeAndroidPackages {
+    platformVersions = [ "36" ];
+    buildToolsVersions = [ "35.0.0" "36.0.0" ];
+    includeNDK = true;
+    ndkVersion = "28.2.13676358";
+  };
+  androidHome = "${androidComposition.androidsdk}/libexec/android-sdk";
+  ndkPrebuilt = if pkgs.stdenv.hostPlatform.isDarwin then "darwin-x86_64" else "linux-x86_64";
+
+  androidShellHook = if !withAndroid then "" else ''
+    export ANDROID_HOME="${androidHome}"
+    export ANDROID_SDK_ROOT="$ANDROID_HOME"
+    export NDK_HOME="$ANDROID_HOME/ndk-bundle"
+    export ANDROID_NDK_HOME="$NDK_HOME"
+    export ANDROID_NDK_ROOT="$NDK_HOME"
+    export JAVA_HOME="${pkgs.jdk21.home}"
+
+    _ndk_bin="$NDK_HOME/toolchains/llvm/prebuilt/${ndkPrebuilt}/bin"
+    _clang_rt="$(echo "$NDK_HOME"/toolchains/llvm/prebuilt/${ndkPrebuilt}/lib/clang/*/lib/linux)"
+    export CC_aarch64_linux_android="$_ndk_bin/aarch64-linux-android24-clang"
+    export CXX_aarch64_linux_android="$_ndk_bin/aarch64-linux-android24-clang++"
+    export AR_aarch64_linux_android="$_ndk_bin/llvm-ar"
+    export RANLIB_aarch64_linux_android="$_ndk_bin/llvm-ranlib"
+    export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
+    export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-L native=$_clang_rt -l static=clang_rt.builtins-aarch64-android -C link-arg=-landroid -C link-arg=-llog"
+    export CC_x86_64_linux_android="$_ndk_bin/x86_64-linux-android24-clang"
+    export CXX_x86_64_linux_android="$_ndk_bin/x86_64-linux-android24-clang++"
+    export AR_x86_64_linux_android="$_ndk_bin/llvm-ar"
+    export RANLIB_x86_64_linux_android="$_ndk_bin/llvm-ranlib"
+    export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$CC_x86_64_linux_android"
+    export CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS="-L native=$_clang_rt -l static=clang_rt.builtins-x86_64-android -C link-arg=-landroid -C link-arg=-llog"
+    unset _ndk_bin _clang_rt
+  '';
+
+  androidPackages = pkgs.lib.optionals withAndroid (with pkgs; [
+    androidComposition.androidsdk
+    jdk21
+    unzip
+  ]);
 in
 if supportedSystem then
 let
@@ -52,39 +92,6 @@ let
       export LIBGL_ALWAYS_SOFTWARE=1
       export WEBKIT_DISABLE_DMABUF_RENDERER=1
     '';
-
-  androidComposition = pkgs.androidenv.composeAndroidPackages {
-    platformVersions = [ "36" ];
-    buildToolsVersions = [ "35.0.0" "36.0.0" ];
-    includeNDK = true;
-    ndkVersion = "28.2.13676358";
-  };
-  androidHome = "${androidComposition.androidsdk}/libexec/android-sdk";
-
-  androidShellHook = if !withAndroid then "" else ''
-    export ANDROID_HOME="${androidHome}"
-    export ANDROID_SDK_ROOT="$ANDROID_HOME"
-    export NDK_HOME="$ANDROID_HOME/ndk-bundle"
-    export ANDROID_NDK_HOME="$NDK_HOME"
-    export ANDROID_NDK_ROOT="$NDK_HOME"
-    export JAVA_HOME="${pkgs.jdk21.home}"
-
-    _ndk_bin="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-    _clang_rt="$(echo "$NDK_HOME"/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/*/lib/linux)"
-    export CC_aarch64_linux_android="$_ndk_bin/aarch64-linux-android24-clang"
-    export CXX_aarch64_linux_android="$_ndk_bin/aarch64-linux-android24-clang++"
-    export AR_aarch64_linux_android="$_ndk_bin/llvm-ar"
-    export RANLIB_aarch64_linux_android="$_ndk_bin/llvm-ranlib"
-    export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
-    export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-L native=$_clang_rt -l static=clang_rt.builtins-aarch64-android -C link-arg=-landroid -C link-arg=-llog"
-    export CC_x86_64_linux_android="$_ndk_bin/x86_64-linux-android24-clang"
-    export CXX_x86_64_linux_android="$_ndk_bin/x86_64-linux-android24-clang++"
-    export AR_x86_64_linux_android="$_ndk_bin/llvm-ar"
-    export RANLIB_x86_64_linux_android="$_ndk_bin/llvm-ranlib"
-    export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$CC_x86_64_linux_android"
-    export CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS="-L native=$_clang_rt -l static=clang_rt.builtins-x86_64-android -C link-arg=-landroid -C link-arg=-llog"
-    unset _ndk_bin _clang_rt
-  '';
 
   tauriLinkLibs = (with pkgs; [
     glib
@@ -132,12 +139,7 @@ pkgs.mkShell {
     dprint
     sqlx-cli
     cargo-tauri
-  ]) ++ [ moneroDependsToolchain ]
-    ++ pkgs.lib.optionals withAndroid (with pkgs; [
-      androidComposition.androidsdk
-      jdk21
-      unzip
-    ]);
+  ]) ++ [ moneroDependsToolchain ] ++ androidPackages;
 
   buildInputs = tauriLinkLibs;
 
@@ -201,7 +203,7 @@ let
   ];
 in
 pkgs.mkShellNoCC {
-  nativeBuildInputs = darwinTools;
+  nativeBuildInputs = darwinTools ++ androidPackages;
 
   MACOSX_DEPLOYMENT_TARGET = "11.0";
 
@@ -219,6 +221,8 @@ pkgs.mkShellNoCC {
 
     export CC=/usr/bin/clang
     export CXX=/usr/bin/clang++
+
+    ${androidShellHook}
 
     export PATH="$HOME/.cargo/bin:$PATH"
 
