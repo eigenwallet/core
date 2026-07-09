@@ -178,9 +178,61 @@ pkgs.mkShell {
     export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS"
   '';
 }
+else if pkgs.stdenv.hostPlatform.isDarwin then
+let
+  darwinTools = with pkgs; [
+    cmake
+    autoconf
+    automake
+    libtool
+    pkg-config
+    ccache
+    gperf
+    lbzip2
+    curl
+    git
+    python3
+    nodejs_22
+    just
+    typeshare
+    dprint
+    sqlx-cli
+    cargo-tauri
+  ];
+in
+pkgs.mkShellNoCC {
+  nativeBuildInputs = darwinTools;
+
+  MACOSX_DEPLOYMENT_TARGET = "11.0";
+
+  shellHook = ''
+    unset SDKROOT DEVELOPER_DIR
+    export MACOSX_DEPLOYMENT_TARGET=11.0
+
+    apple_shim="$HOME/.cache/eigenwallet-apple-shim"
+    mkdir -p "$apple_shim"
+    ln -sf /usr/bin/xcrun "$apple_shim/xcrun"
+    ln -sf /usr/bin/make "$apple_shim/make"
+    export PATH="$apple_shim:$PATH"
+
+    export PATH="$PATH:/usr/bin:/usr/sbin:/bin"
+
+    export CC=/usr/bin/clang
+    export CXX=/usr/bin/clang++
+
+    export PATH="$HOME/.cargo/bin:$PATH"
+
+    export COREPACK_HOME="$HOME/.cache/corepack"
+    export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+    corepack_bin="$HOME/.cache/corepack/bin"
+    mkdir -p "$corepack_bin"
+    ${pkgs.nodejs_22}/bin/corepack enable --install-directory "$corepack_bin"
+    export PATH="$corepack_bin:$PATH"
+  '';
+}
 else
 pkgs.mkShell {
   shellHook = ''
-    echo "Skipping eigenwallet Nix dev shell; supported only on x86_64 Linux."
+    echo "Skipping eigenwallet Nix dev shell; supported only on x86_64 Linux or macOS."
   '';
 }

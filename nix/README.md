@@ -5,17 +5,77 @@ run eigenwallet (monero-sys, the Tauri GUI, and the `just` recipes) on non-NixOS
 This file documents the *why* behind `shell.nix` and `flake.nix`; the code itself is
 kept comment-free.
 
+`shell.nix` branches on the host platform: **x86_64 Linux** gets the full nixpkgs toolchain
+(the rest of this document), **macOS** gets a leaner shell described under
+[macOS](#macos-apple-silicon--intel), and every other platform gets a no-op stub.
+
 ## Usage
 
-- `nix-shell` — impure shell; auto-detects the host NVIDIA driver for GPU rendering.
-- `direnv` — `.envrc` runs `use nix` on x86_64 Linux, so the shell loads
+- `nix-shell` — impure shell; on Linux auto-detects the host NVIDIA driver for GPU rendering.
+- `direnv` — `.envrc` runs `use nix` on x86_64 Linux and on macOS, so the shell loads
   automatically on `cd`. On other systems it intentionally does nothing.
-- `nix develop` — pure flake shell; uses mesa software rendering (pure eval can't read
-  `/proc`). For GPU acceleration use `nix-shell`, or `nix develop --impure` with an
+- `nix develop` — pure flake shell. On Linux it uses mesa software rendering (pure eval can't
+  read `/proc`); for GPU acceleration use `nix-shell`, or `nix develop --impure` with an
   explicit `nvidiaVersion` (e.g. `"580.159.03"`).
 
 Inputs are pinned: `flake.lock` for the flake path, and an explicit rev + `sha256` on
 each `fetchTarball` in `shell.nix` for the `nix-shell` path. Bump both together.
+
+## macOS (Apple Silicon & Intel)
+
+On macOS the dev shell is deliberately different from the Linux one: nix provides **only the
+auxiliary build tooling** (cmake, autotools, pkg-config, node, `just`, `sqlx-cli`,
+`cargo-tauri`, …) and the **system Xcode toolchain** (clang + the macOS SDK, located via
+`xcrun`) does every bit of C/C++ compilation and linking. This mirrors CI on the `macos-15`
+runners and is what keeps the build reproducible:
+
+- `monero-depends` hardcodes the system `xcrun` clang + SDK in `builders/darwin.mk` and builds
+  every native library Monero needs (boost, openssl, unbound, expat, libsodium, zeromq, …) as
+  static archives. **Nothing comes from Homebrew** — verified by building with `brew`
+  unreachable; `unbound`/`expat` (which Homebrew also ships) come straight from monero-depends.
+- The only other native dependencies are system frameworks: `native-tls` → `Security`,
+  Tauri's webview → `WebKit`. No nix C libraries are linked.
+
+Mixing nixpkgs' own clang/`apple-sdk` with the xcrun-built static libs would only create
+sysroot/ABI mismatches, so the shell uses `mkShellNoCC` and then repairs the handful of things
+the nixpkgs darwin stdenv does that get in the way:
+
+- Unsets `SDKROOT`/`DEVELOPER_DIR` (the stdenv points them at nix's pinned `apple-sdk`, and
+  even `/usr/bin/xcrun` honours those env vars) so every step sees one consistent *system* SDK.
+- Shims `xcrun` → `/usr/bin/xcrun` (nixpkgs ships an ancient xcbuild reimplementation).
+- Shims `make` → `/usr/bin/make`. nixpkgs' gnumake 4.x rejects a `build_darwin_CC: = …` typo
+  in `monero-depends/builders/darwin.mk` ("empty variable name"); the OS-pinned GNU make 3.81
+  — frozen by Apple, and what CI/Homebrew also use — tolerates it as a harmless no-op rule.
+- Sets `CC`/`CXX` to `/usr/bin/clang(++)` — the driver auto-injects `-isysroot`, whereas the
+  bare toolchain binary would fail to find the C++ standard headers — and pins
+  `MACOSX_DEPLOYMENT_TARGET=11.0` to match `build.rs` / `tauri.conf.json`.
+- `monero-sys/build.rs` forwards `ACLOCAL_PATH` through the `env -i` it wraps the depends
+  build in: some depends packages (hidapi) run autoreconf, and under nix the libtool/automake
+  m4 macros live in separate store paths that `aclocal` only finds via that variable. It also
+  emits the `/opt/homebrew` link search paths only when `brew` is actually reachable, so the
+  nix flow can never silently pick up a host-installed library.
+
+### Prerequisites
+
+Three things, all of which a developer already has once Nix is installed: **Nix**, the
+**Xcode Command Line Tools** (for `xcrun`, clang and the SDK), and **rustup** (the Rust
+toolchain is taken from `~/.cargo/bin`; `rust-toolchain.toml` pins the exact version).
+
+### Reproducible / isolated builds
+
+`nix/macos-isolated-build.sh <cmd>` runs a build inside the pinned dev shell with Homebrew,
+MacPorts and nvm scrubbed from `PATH` and a dedicated `../nixbuild/target` target dir (the
+target dir must end in `target`: `monero-sys/build.rs` resolves the shared monero-depends
+location by walking up from `OUT_DIR` to a dir named `target`/`target-check`). It
+proves both that a "nix-only" mac can build the project and that nothing silently links a
+host-installed library: `brew` is made unreachable, which — together with the guard in
+`monero-sys/build.rs` — means no Homebrew path is ever passed to the linker. Audit the
+resulting binaries with `otool -L` (dynamic deps) and `otool -l` (rpaths); there must be zero
+`/opt/homebrew` references.
+
+The first run rebuilds all of monero-depends from source (~30 min, dominated by boost). The
+build is cached in `<target>/debug/monero-depends/<triple>`, keyed so it is not rebuilt on
+subsequent runs.
 
 ## GPU rendering (Tauri webview)
 

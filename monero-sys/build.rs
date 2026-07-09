@@ -311,20 +311,20 @@ fn main() {
 
     // Add search paths for clang runtime libraries on macOS (not iOS)
     if target.contains("apple-darwin") {
-        // Dynamically detect Homebrew installation prefix (works on both Apple Silicon and Intel Macs)
-        let brew_prefix = std::process::Command::new("brew")
+        if let Some(brew_prefix) = std::process::Command::new("brew")
             .arg("--prefix")
             .output()
             .ok()
+            .filter(|o| o.status.success())
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "/opt/homebrew".into());
-
-        // add homebrew search paths using dynamic prefix
-        println!("cargo:rustc-link-search=native={brew_prefix}/lib",);
-        println!("cargo:rustc-link-search=native={brew_prefix}/opt/unbound/lib",);
-        println!("cargo:rustc-link-search=native={brew_prefix}/opt/expat/lib",);
-        println!("cargo:rustc-link-search=native={brew_prefix}/Cellar/protobuf@21/21.12_1/lib/",);
+            .filter(|s| !s.is_empty())
+        {
+            println!("cargo:rustc-link-search=native={brew_prefix}/lib",);
+            println!("cargo:rustc-link-search=native={brew_prefix}/opt/unbound/lib",);
+            println!("cargo:rustc-link-search=native={brew_prefix}/opt/expat/lib",);
+            println!("cargo:rustc-link-search=native={brew_prefix}/Cellar/protobuf@21/21.12_1/lib/",);
+        }
 
         // Add search paths for clang runtime libraries
         let resource_dir = std::process::Command::new("clang")
@@ -482,6 +482,9 @@ fn compile_dependencies(
         cmd.arg("-i");
         let path = std::env::var("PATH").unwrap_or_default();
         cmd.arg(format!("PATH={path}"));
+        if let Ok(aclocal_path) = std::env::var("ACLOCAL_PATH") {
+            cmd.arg(format!("ACLOCAL_PATH={aclocal_path}"));
+        }
     }
     cmd.arg("make")
         .arg(format!("HOST={target}"))
