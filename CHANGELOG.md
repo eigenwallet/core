@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [4.11.5] - 2026-07-07
 
 - ASB: The Hermes protocol is now enabled by default (`hermes_enabled` defaults to `true`), and the default `hermes_min_swap_amount` was lowered from `0.01` to `0.001` BTC (~50 USD at a reference price of 50,000 USD/BTC).
+- GUI: unreachable multiaddress for a maker (e.g. a stale onion/wormhole) no longer blocks that maker's other addresses from being dialed. Each address is dialed with its own timeout that excludes time spent queued for a Tor slot, and reachable clearnet addresses are tried first.
 
 ## [4.11.4] - 2026-06-30
 
