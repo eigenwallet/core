@@ -10,6 +10,7 @@ import {
   Card,
   CardContent,
   Breadcrumbs,
+  alpha,
 } from "@mui/material";
 import NewPasswordInput from "renderer/components/other/NewPasswordInput";
 import { useState, useEffect, useReducer, useRef } from "react";
@@ -388,13 +389,13 @@ export default function SeedSelectionDialog() {
   };
 
   const primaryHandlers: Record<PrimaryActionKind, () => void | Promise<void>> =
-    {
-      next: () => dispatch({ type: "next" }),
-      finish: finishBackup,
-      createWallet,
-      restoreWallet: () => resolveSelection(buildSeedChoice("FromSeed")),
-      openWallet: () => resolveSelection(buildSeedChoice("FromWalletPath")),
-    };
+  {
+    next: () => dispatch({ type: "next" }),
+    finish: finishBackup,
+    createWallet,
+    restoreWallet: () => resolveSelection(buildSeedChoice("FromSeed")),
+    openWallet: () => resolveSelection(buildSeedChoice("FromWalletPath")),
+  };
 
   return (
     <Dialog
@@ -466,7 +467,7 @@ export default function SeedSelectionDialog() {
                   sx={{ fontSize: 32, color: "text.secondary" }}
                 />
               }
-              label="Open wallet file"
+              label="Open existing wallet file"
               onClick={() =>
                 dispatch({ type: "selectMode", mode: "FromWalletPath" })
               }
@@ -607,7 +608,7 @@ export default function SeedSelectionDialog() {
               displayErrorSnackbar
               color="inherit"
             >
-              No wallet (Legacy)
+              old Legacy Wallet
             </PromiseInvokeButton>
           )}
           {index > 0 && view === "wizard" && (
@@ -651,9 +652,13 @@ function ModeCard({
     <Card
       sx={{
         cursor: "pointer",
-        border: selected ? 2 : 1,
+        border: 2,
         borderColor: selected ? "primary.main" : "divider",
-        "&:hover": { borderColor: "primary.main" },
+        "&:hover": {
+          borderColor: selected
+            ? "primary.main"
+            : (theme) => alpha(theme.palette.primary.main, 0.5),
+        },
         flex: 1,
       }}
       onClick={onClick}
