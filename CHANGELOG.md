@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: The wallet setup dialog is now a multi-step wizard. Creating a wallet lets you pick a name and location and requires backing up the seed phrase before continuing, and opening a wallet file supports drag & drop. Newly created wallets are named by the user instead of a Unix timestamp.
+
 ## [4.11.5] - 2026-07-07
 
 - ASB: The Hermes protocol is now enabled by default (`hermes_enabled` defaults to `true`), and the default `hermes_min_swap_amount` was lowered from `0.01` to `0.001` BTC (~50 USD at a reference price of 50,000 USD/BTC).

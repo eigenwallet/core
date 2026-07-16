@@ -3,48 +3,190 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
-  FormControlLabel,
-  Radio,
-  RadioGroup,
   TextField,
   Typography,
   Button,
   Box,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  Divider,
   Card,
   CardContent,
+  Breadcrumbs,
+  alpha,
 } from "@mui/material";
 import NewPasswordInput from "renderer/components/other/NewPasswordInput";
-import { useState, useEffect, useRef } from "react";
-import { usePendingSeedSelectionApproval } from "store/hooks";
+import { useState, useEffect, useReducer, useRef } from "react";
+import {
+  usePendingSeedSelectionApproval,
+  usePendingSeedBackupApproval,
+} from "store/hooks";
 import { resolveApproval, checkSeed } from "renderer/rpc";
 import { SeedChoice } from "models/tauriModel";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { open } from "@tauri-apps/plugin-dialog";
 import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
-import SearchIcon from "@mui/icons-material/Search";
+import BackupSeedStep from "./BackupSeedStep";
+import OpenWalletStep from "./OpenWalletStep";
+import NameLocationStep from "./NameLocationStep";
+import CircularProgressWithSubtitle from "renderer/components/pages/swap/swap/components/CircularProgressWithSubtitle";
+import { useSnackbar } from "notistack";
+
+// The wallet-setup flow itself is a state machine in Rust
+// (swap/src/cli/api/wallet_setup.rs): the backend walks
+// ChooseSeed -> OpenWallet -> BackupSeed -> Finish and blocks on an approval
+// whenever it needs user input. This dialog only renders whichever request is
+// pending — a SeedSelection approval shows the wizard below, a SeedBackup
+// approval shows the backup step — plus a local spinner while the backend is
+// busy creating the wallet between the two.
+type WalletMode = "RandomSeed" | "FromSeed" | "FromWalletPath";
+
+type StepId =
+  | "chooseMode"
+  | "randomPassword"
+  | "nameLocation"
+  | "backupSeed"
+  | "seedPhrase"
+  | "storage"
+  | "openFile";
+
+/// What the primary (bottom-right) button does on a step.
+type PrimaryActionKind =
+  | "next"
+  | "createWallet"
+  | "restoreWallet"
+  | "openWallet"
+  | "finish";
+
+interface Step {
+  id: StepId;
+  label: string;
+  action: PrimaryActionKind;
+}
+
+// Single source of truth for each mode's wizard steps. Labels, content, the
+// primary action, and navigation are all derived from this table, so a flow
+// only ever changes here.
+const FLOWS: Record<WalletMode, Step[]> = {
+  RandomSeed: [
+    { id: "chooseMode", label: "Choose wallet", action: "next" },
+    { id: "nameLocation", label: "Name & location", action: "next" },
+    { id: "randomPassword", label: "Set password", action: "createWallet" },
+    { id: "backupSeed", label: "Back up seed", action: "finish" },
+  ],
+  FromSeed: [
+    { id: "chooseMode", label: "Choose wallet", action: "next" },
+    { id: "seedPhrase", label: "Enter seed phrase", action: "next" },
+    { id: "storage", label: "Wallet storage", action: "next" },
+    { id: "nameLocation", label: "Name & location", action: "restoreWallet" },
+  ],
+  FromWalletPath: [
+    { id: "chooseMode", label: "Choose wallet", action: "next" },
+    { id: "openFile", label: "Open wallet file", action: "openWallet" },
+  ],
+};
+
+const PRIMARY_LABELS: Record<PrimaryActionKind, string> = {
+  next: "Continue",
+  createWallet: "Create wallet",
+  restoreWallet: "Restore wallet",
+  openWallet: "Open wallet",
+  finish: "Finish",
+};
+
+function stepIndex(mode: WalletMode, step: StepId): number {
+  return FLOWS[mode].findIndex((s) => s.id === step);
+}
+
+/// Everything the user types into the wizard.
+interface FormFields {
+  password: string;
+  customSeed: string;
+  blockheightInput: string;
+  walletPath: string;
+  name: string;
+  directory: string;
+}
+
+const EMPTY_FIELDS: FormFields = {
+  password: "",
+  customSeed: "",
+  blockheightInput: "",
+  walletPath: "",
+  name: "",
+  directory: "",
+};
+
+// Wizard navigation state for filling out a SeedSelection approval. This is
+// purely presentational: mode/step navigate the FLOWS table, fields hold the
+// user's input, and a reset rebuilds everything for a new request.
+interface WizardState {
+  mode: WalletMode;
+  step: StepId;
+  fields: FormFields;
+}
+
+type WizardEvent =
+  | { type: "reset"; mode: WalletMode; fields: Partial<FormFields> }
+  | { type: "selectMode"; mode: WalletMode }
+  | { type: "setField"; field: keyof FormFields; value: string }
+  | { type: "next" }
+  | { type: "back" }
+  | { type: "navigateBackTo"; step: StepId };
+
+const INITIAL_WIZARD: WizardState = {
+  mode: "RandomSeed",
+  step: "chooseMode",
+  fields: EMPTY_FIELDS,
+};
+
+// Every transition is guarded: an event that does not apply to the current
+// state is a no-op instead of producing an invalid state.
+function wizardReducer(state: WizardState, event: WizardEvent): WizardState {
+  const flow = FLOWS[state.mode];
+  const index = stepIndex(state.mode, state.step);
+
+  switch (event.type) {
+    case "reset":
+      return {
+        mode: event.mode,
+        step: "chooseMode",
+        fields: { ...EMPTY_FIELDS, ...event.fields },
+      };
+    case "setField":
+      return {
+        ...state,
+        fields: { ...state.fields, [event.field]: event.value },
+      };
+    case "selectMode":
+      // First click selects a mode, clicking the selected mode again advances.
+      if (state.step !== "chooseMode") return state;
+      return state.mode === event.mode
+        ? { ...state, step: flow[1].id }
+        : { ...state, mode: event.mode };
+    case "next":
+      return index < flow.length - 1
+        ? { ...state, step: flow[index + 1].id }
+        : state;
+    case "back":
+      return index > 0 ? { ...state, step: flow[index - 1].id } : state;
+    case "navigateBackTo": {
+      const target = stepIndex(state.mode, event.step);
+      return target !== -1 && target < index
+        ? { ...state, step: event.step }
+        : state;
+    }
+  }
+}
 
 /**
  * Parses a block height input string and returns a number if valid, 0 for empty string, or false if invalid.
  *
- * @param blockheightInput - The input string representing a block height.
- * @returns A non-negative integer if the input is a valid positive number,
- *          0 if the input is an empty string,
- *          false if the input is invalid (non-numeric, negative, or NaN).
- *
- * @example
- * parseBlockHeightInput(""); // 0
- * parseBlockHeightInput("123"); // 123
- * parseBlockHeightInput("abc"); // false
- * parseBlockHeightInput("-1"); // false
- * parseBlockHeightInput("0"); // 0
+ * Handles edge cases:
+ * - Empty string: returns 0 (valid, means "scan from beginning")
+ * - Whitespace-only: returns false (invalid)
+ * - Non-numeric characters: returns false (invalid)
+ * - Negative numbers: returns false (invalid)
+ * - Zero: returns 0 (valid)
+ * - Positive integers: returns the number (valid)
  */
 function parseBlockHeightInput(blockheightInput: string): number | false {
   if (blockheightInput.length === 0) {
@@ -68,143 +210,208 @@ function parseBlockHeightInput(blockheightInput: string): number | false {
 }
 
 export default function SeedSelectionDialog() {
-  const pendingApprovals = usePendingSeedSelectionApproval();
-  const [selectedOption, setSelectedOption] = useState<
-    SeedChoice["type"] | undefined
-  >("RandomSeed");
-  const [customSeed, setCustomSeed] = useState<string>("");
-  const [blockheightInput, setBlockheightInput] = useState<string>("");
-  const [asyncSeedValidation, setAsyncSeedValidation] =
-    useState<boolean>(false);
-  const [password, setPassword] = useState<string>("");
+  const { enqueueSnackbar } = useSnackbar();
+  const selectionApproval = usePendingSeedSelectionApproval()[0];
+  const backupApproval = usePendingSeedBackupApproval()[0];
+  const [wizard, dispatch] = useReducer(wizardReducer, INITIAL_WIZARD);
   const [isPasswordValid, setIsPasswordValid] = useState<boolean>(true);
-  const [walletPath, setWalletPath] = useState<string>("");
+  const [backupConfirmed, setBackupConfirmed] = useState<boolean>(false);
+  // Backend is creating the wallet: the SeedSelection approval is resolved
+  // but the SeedBackup approval has not arrived yet.
+  const [waitingForWallet, setWaitingForWallet] = useState<boolean>(false);
+  // Result of the async seed check, tagged with the seed it belongs to so a
+  // stale response can never validate a newer input.
+  const [seedValidation, setSeedValidation] = useState<{
+    forSeed: string;
+    valid: boolean;
+  } | null>(null);
 
-  const approval = pendingApprovals[0];
+  const content =
+    selectionApproval?.request?.type === "SeedSelection"
+      ? selectionApproval.request.content
+      : undefined;
+  const recentWallets = content?.recent_wallets ?? [];
+  const backupContent =
+    backupApproval?.request?.type === "SeedBackup"
+      ? backupApproval.request.content
+      : undefined;
 
-  // Extract recent wallets from the approval request content
-  const recentWallets =
-    approval?.request?.type === "SeedSelection"
-      ? approval.request.content.recent_wallets
-      : [];
+  // Reset the wizard whenever a new seed-selection approval arrives (e.g.
+  // after the user cancels a password prompt or a wallet fails to create and
+  // the backend asks again).
+  const lastRequestIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const requestId = selectionApproval?.request_id;
+    if (!requestId || requestId === lastRequestIdRef.current) return;
+    lastRequestIdRef.current = requestId;
 
-  // Only run async validation when in "FromSeed" mode with content
+    // Default to opening a recent wallet when one exists, otherwise create.
+    dispatch({
+      type: "reset",
+      mode: recentWallets.length > 0 ? "FromWalletPath" : "RandomSeed",
+      fields: {
+        directory: content?.default_wallet_directory ?? "",
+        walletPath: recentWallets[0] ?? "",
+      },
+    });
+    setSeedValidation(null);
+    setWaitingForWallet(false);
+
+    if (content?.error) {
+      enqueueSnackbar(content.error, {
+        autoHideDuration: 60 * 1000,
+        variant: "error",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on a new approval id
+  }, [selectionApproval?.request_id]);
+
+  // A new backup request means a wallet was created: ask for a fresh
+  // confirmation. Keyed on the stable request id — the approval object's
+  // identity churns on every store update and must not re-run this reset.
+  const lastBackupRequestIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const requestId = backupApproval?.request_id;
+    if (!requestId || requestId === lastBackupRequestIdRef.current) return;
+    lastBackupRequestIdRef.current = requestId;
+
+    setWaitingForWallet(false);
+    setBackupConfirmed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on a new backup request id
+  }, [backupApproval?.request_id]);
+
+  const trimmedSeed = wizard.fields.customSeed.trim();
   const needsSeedValidation =
-    selectedOption === "FromSeed" && customSeed.trim();
+    wizard.mode === "FromSeed" && trimmedSeed.length > 0;
 
   useEffect(() => {
     if (!needsSeedValidation) return;
 
-    checkSeed(customSeed.trim())
-      .then(setAsyncSeedValidation)
-      .catch(() => setAsyncSeedValidation(false));
-  }, [customSeed, needsSeedValidation]);
+    checkSeed(trimmedSeed)
+      .then((valid) => setSeedValidation({ forSeed: trimmedSeed, valid }))
+      .catch(() => setSeedValidation({ forSeed: trimmedSeed, valid: false }));
+  }, [trimmedSeed, needsSeedValidation]);
 
-  // isSeedValid is derived: only true if we need validation AND async check passed
-  const isSeedValid = needsSeedValidation && asyncSeedValidation;
+  // Which screen is shown is decided by the backend's pending request.
+  const view = backupApproval
+    ? ("backup" as const)
+    : selectionApproval
+      ? ("wizard" as const)
+      : waitingForWallet
+        ? ("waiting" as const)
+        : null;
 
-  // Auto-select the first recent wallet if available (one-time initialization)
-  const hasInitializedRef = useRef(false);
-  useEffect(() => {
-    if (recentWallets.length > 0 && !hasInitializedRef.current) {
-      hasInitializedRef.current = true;
-      setSelectedOption("FromWalletPath");
-      setWalletPath(recentWallets[0]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only init once when wallets available
-  }, [recentWallets.length]);
+  if (view === null) return null;
 
-  const selectWalletFile = async () => {
-    const selected = await open({
-      multiple: false,
-      directory: false,
-    });
+  // The backup and waiting screens render the last step of the create flow.
+  const mode = view === "wizard" ? wizard.mode : "RandomSeed";
+  const step: StepId = view === "wizard" ? wizard.step : "backupSeed";
+  const flow = FLOWS[mode];
+  const index = stepIndex(mode, step);
+  const { fields } = wizard;
 
-    if (selected) {
-      setWalletPath(selected);
-    }
+  const setField = (field: keyof FormFields) => (value: string) =>
+    dispatch({ type: "setField", field, value });
+
+  const isSeedValid =
+    needsSeedValidation &&
+    seedValidation !== null &&
+    seedValidation.forSeed === trimmedSeed &&
+    seedValidation.valid;
+  const hasBlockheightInput = fields.blockheightInput.length > 0;
+  const isBlockheightValid =
+    parseBlockHeightInput(fields.blockheightInput) !== false;
+  const isBlockheightInvalid = hasBlockheightInput && !isBlockheightValid;
+
+  // Whether the current step's input is complete enough to act on.
+  const stepValid: Record<StepId, boolean> = {
+    chooseMode: true,
+    randomPassword: isPasswordValid,
+    seedPhrase: trimmedSeed.length > 0 && isSeedValid && !isBlockheightInvalid,
+    storage: isPasswordValid,
+    nameLocation:
+      fields.name.trim().length > 0 && fields.directory.trim().length > 0,
+    openFile: fields.walletPath.length > 0,
+    backupSeed: view === "backup" && backupConfirmed,
   };
 
-  const hasBlockheightInput = blockheightInput.length > 0;
-  const isBlockheightValid = parseBlockHeightInput(blockheightInput) !== false;
-  const isBlockheightInvalid =
-    hasBlockheightInput && isBlockheightValid === false;
-
-  const Legacy = async () => {
-    if (!approval)
-      throw new Error("No approval request found for seed selection");
-
-    await resolveApproval<SeedChoice>(approval.request_id, {
-      type: "Legacy",
-    });
-  };
-
-  const accept = async () => {
-    if (!approval)
-      throw new Error("No approval request found for seed selection");
-
-    let seedChoice: SeedChoice;
-
-    switch (selectedOption) {
+  const buildSeedChoice = (chosenMode: WalletMode): SeedChoice => {
+    switch (chosenMode) {
       case "RandomSeed":
-        seedChoice = { type: "RandomSeed", content: { password } };
-        break;
-
+        return {
+          type: "RandomSeed",
+          content: {
+            password: fields.password,
+            name: fields.name,
+            directory: fields.directory,
+          },
+        };
       case "FromSeed": {
-        const parsedBlockHeight = parseBlockHeightInput(blockheightInput);
-
+        const parsedBlockHeight = parseBlockHeightInput(
+          fields.blockheightInput,
+        );
         if (parsedBlockHeight === false) {
           throw new Error("Invalid blockheight");
         }
-
-        seedChoice = {
+        return {
           type: "FromSeed",
           content: {
-            seed: customSeed,
-            password,
+            seed: fields.customSeed,
+            password: fields.password,
             restore_height: parsedBlockHeight,
+            name: fields.name,
+            directory: fields.directory,
           },
         };
-        break;
       }
-
-      default:
-        seedChoice = {
+      case "FromWalletPath":
+        return {
           type: "FromWalletPath",
-          content: { wallet_path: walletPath },
+          content: { wallet_path: fields.walletPath },
         };
-        break;
     }
-
-    await resolveApproval<SeedChoice>(approval.request_id, seedChoice);
   };
 
-  if (!approval) {
-    return null;
-  }
+  const resolveSelection = async (seedChoice: SeedChoice) => {
+    if (!selectionApproval)
+      throw new Error("No approval request found for seed selection");
+    await resolveApproval<SeedChoice>(selectionApproval.request_id, seedChoice);
+  };
 
-  // Disable the button if the user is restoring from a seed and the seed is invalid
-  // or if selecting wallet path and no path is selected,
-  // or if blockheight is provided but invalid,
-  // or if setting a password and they don't match
-  const isDisabled =
-    selectedOption === "FromSeed"
-      ? customSeed.trim().length === 0 ||
-        !isSeedValid ||
-        isBlockheightInvalid ||
-        !isPasswordValid
-      : selectedOption === "FromWalletPath"
-        ? !walletPath
-        : selectedOption === "RandomSeed"
-          ? !isPasswordValid
-          : false;
+  // The backend creates the wallet after the choice is resolved and then
+  // requests the seed backup; show a spinner in between.
+  const createWallet = async () => {
+    const seedChoice = buildSeedChoice("RandomSeed");
+    setWaitingForWallet(true);
+    try {
+      await resolveSelection(seedChoice);
+    } catch (e) {
+      setWaitingForWallet(false);
+      throw e;
+    }
+  };
+
+  const finishBackup = async () => {
+    if (!backupApproval)
+      throw new Error("No approval request found for seed backup");
+    await resolveApproval<boolean>(backupApproval.request_id, true);
+  };
+
+  const primaryHandlers: Record<PrimaryActionKind, () => void | Promise<void>> =
+    {
+      next: () => dispatch({ type: "next" }),
+      finish: finishBackup,
+      createWallet,
+      restoreWallet: () => resolveSelection(buildSeedChoice("FromSeed")),
+      openWallet: () => resolveSelection(buildSeedChoice("FromWalletPath")),
+    };
 
   return (
     <Dialog
       open={true}
       maxWidth="sm"
       fullWidth
-      sx={{ "& .MuiDialog-paper": { minHeight: "min(32rem, 80vh)" } }}
+      sx={{ "& .MuiDialog-paper": { height: "min(32rem, 80vh)" } }}
       BackdropProps={{
         sx: {
           backdropFilter: "blur(8px)",
@@ -212,163 +419,137 @@ export default function SeedSelectionDialog() {
         },
       }}
     >
-      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <Box sx={{ display: "flex", flexDirection: "row", gap: 2 }}>
-          {/* Open existing wallet option */}
-          <Card
-            sx={{
-              cursor: "pointer",
-              border: selectedOption === "FromWalletPath" ? 2 : 1,
-              borderColor:
-                selectedOption === "FromWalletPath"
-                  ? "primary.main"
-                  : "divider",
-              "&:hover": { borderColor: "primary.main" },
-              flex: 1,
-            }}
-            onClick={() => setSelectedOption("FromWalletPath")}
-          >
-            <CardContent
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 1,
-              }}
-            >
-              <FolderOpenIcon sx={{ fontSize: 32, color: "text.secondary" }} />
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ textAlign: "center" }}
-              >
-                Open wallet file
-              </Typography>
-            </CardContent>
-          </Card>
+      <DialogTitle sx={{ pb: 1 }}>
+        <Breadcrumbs
+          aria-label="wallet setup steps"
+          sx={{
+            // Keep the trail on one line, fading out the overflow rather than
+            // wrapping to a second line.
+            overflow: "hidden",
+            "& .MuiBreadcrumbs-ol": { flexWrap: "nowrap" },
+            "& .MuiBreadcrumbs-li": { whiteSpace: "nowrap" },
+            maskImage:
+              "linear-gradient(to right, black calc(100% - 32px), transparent)",
+            WebkitMaskImage:
+              "linear-gradient(to right, black calc(100% - 32px), transparent)",
+          }}
+        >
+          {flow.map((s, i) => {
+            const crumbLabel = i === 0 ? "Set up your wallet" : s.label;
+            // Past crumbs link back; upcoming crumbs preview muted; navigation
+            // is disabled once a wallet has been created.
+            const navigable = i < index && view === "wizard";
+            const upcoming = i > index;
 
-          {/* Create new wallet option */}
-          <Card
-            sx={{
-              cursor: "pointer",
-              border: selectedOption === "RandomSeed" ? 2 : 1,
-              borderColor:
-                selectedOption === "RandomSeed" ? "primary.main" : "divider",
-              "&:hover": { borderColor: "primary.main" },
-              flex: 1,
-            }}
-            onClick={() => setSelectedOption("RandomSeed")}
-          >
-            <CardContent
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 1,
-              }}
-            >
-              <AddIcon sx={{ fontSize: 32, color: "text.secondary" }} />
+            return navigable ? (
               <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ textAlign: "center" }}
+                key={s.id}
+                color="primary"
+                onClick={() => dispatch({ type: "navigateBackTo", step: s.id })}
+                sx={{
+                  cursor: "pointer",
+                  "&:hover": { textDecoration: "underline" },
+                }}
               >
-                Create new wallet
+                {crumbLabel}
               </Typography>
-            </CardContent>
-          </Card>
-
-          {/* Restore from seed option */}
-          <Card
-            sx={{
-              cursor: "pointer",
-              border: selectedOption === "FromSeed" ? 2 : 1,
-              borderColor:
-                selectedOption === "FromSeed" ? "primary.main" : "divider",
-              "&:hover": { borderColor: "primary.main" },
-              flex: 1,
-            }}
-            onClick={() => setSelectedOption("FromSeed")}
-          >
-            <CardContent
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 1,
-              }}
-            >
-              <RefreshIcon sx={{ fontSize: 32, color: "text.secondary" }} />
+            ) : (
               <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ textAlign: "center" }}
+                key={s.id}
+                color={upcoming ? "text.disabled" : "text.primary"}
               >
-                Restore from seed
+                {crumbLabel}
               </Typography>
-            </CardContent>
-          </Card>
-        </Box>
+            );
+          })}
+        </Breadcrumbs>
+      </DialogTitle>
+      <DialogContent
+        sx={{ display: "flex", flexDirection: "column", gap: 3, pt: 1 }}
+      >
+        {step === "chooseMode" && (
+          <Box sx={{ display: "flex", flexDirection: "row", gap: 2 }}>
+            <ModeCard
+              selected={mode === "FromWalletPath"}
+              icon={
+                <FolderOpenIcon
+                  sx={{ fontSize: 32, color: "text.secondary" }}
+                />
+              }
+              label="Open existing wallet file"
+              onClick={() =>
+                dispatch({ type: "selectMode", mode: "FromWalletPath" })
+              }
+            />
+            <ModeCard
+              selected={mode === "RandomSeed"}
+              icon={<AddIcon sx={{ fontSize: 32, color: "text.secondary" }} />}
+              label="Create new wallet"
+              onClick={() =>
+                dispatch({ type: "selectMode", mode: "RandomSeed" })
+              }
+            />
+            <ModeCard
+              selected={mode === "FromSeed"}
+              icon={
+                <RefreshIcon sx={{ fontSize: 32, color: "text.secondary" }} />
+              }
+              label="Restore from seed"
+              onClick={() => dispatch({ type: "selectMode", mode: "FromSeed" })}
+            />
+          </Box>
+        )}
 
-        {selectedOption === "RandomSeed" && (
+        {step === "randomPassword" && (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
             <NewPasswordInput
-              password={password}
-              setPassword={setPassword}
+              password={fields.password}
+              setPassword={setField("password")}
               isPasswordValid={isPasswordValid}
               setIsPasswordValid={setIsPasswordValid}
             />
-
             <Typography
               variant="body2"
               color="text.secondary"
               sx={{ textAlign: "center" }}
             >
-              A new wallet with a random seed phrase will be generated.
-            </Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ textAlign: "center" }}
-            >
-              You will have the option to back it up later.
+              A new wallet with a random seed phrase will be generated. You will
+              record the seed in the final step.
             </Typography>
           </Box>
         )}
 
-        {selectedOption === "FromSeed" && (
+        {step === "seedPhrase" && (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Enter the 25-word Monero seed phrase of the wallet you want to
+              restore. Setting the restore height to around when the wallet was
+              created speeds up syncing.
+            </Typography>
             <TextField
               fullWidth
               multiline
               autoFocus
               rows={3}
               label="Enter your seed phrase"
-              value={customSeed}
-              onChange={(e) => setCustomSeed(e.target.value)}
+              value={fields.customSeed}
+              onChange={(e) => setField("customSeed")(e.target.value)}
               placeholder="Enter your Monero 25 words seed phrase..."
-              error={!isSeedValid && customSeed.length > 0}
+              error={!isSeedValid && fields.customSeed.length > 0}
               helperText={
                 isSeedValid
                   ? "Seed is valid"
-                  : customSeed.length > 0
+                  : fields.customSeed.length > 0
                     ? "Seed is invalid"
                     : ""
               }
             />
-
             <TextField
               type="text"
-              inputProps={{
-                inputmode: "numeric",
-                pattern: "[0-9]*",
-              }}
+              inputProps={{ inputmode: "numeric", pattern: "[0-9]*" }}
               label="Restore blockheight (optional)"
-              value={blockheightInput}
-              onChange={(e) => setBlockheightInput(e.target.value)}
+              value={fields.blockheightInput}
+              onChange={(e) => setField("blockheightInput")(e.target.value)}
               placeholder="Enter restore blockheight, leave empty to scan from the blockchain start"
               error={isBlockheightInvalid}
               helperText={
@@ -379,126 +560,136 @@ export default function SeedSelectionDialog() {
                     : ""
               }
             />
+          </Box>
+        )}
 
+        {step === "storage" && (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Set a password to encrypt the wallet file stored on this device.
+              Leave it empty to store the wallet unencrypted.
+            </Typography>
             <NewPasswordInput
-              password={password}
-              setPassword={setPassword}
+              password={fields.password}
+              setPassword={setField("password")}
               isPasswordValid={isPasswordValid}
               setIsPasswordValid={setIsPasswordValid}
-              autoFocus={false}
             />
           </Box>
         )}
 
-        {selectedOption === "FromWalletPath" && (
-          <Box sx={{ gap: 2, display: "flex", flexDirection: "column" }}>
-            <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-              <TextField
-                fullWidth
-                label="Wallet file path"
-                value={walletPath || ""}
-                placeholder="Select a wallet file..."
-                InputProps={{
-                  readOnly: true,
-                }}
-              />
-              <Button
-                variant="outlined"
-                onClick={selectWalletFile}
-                sx={{ minWidth: "120px", height: "56px" }}
-                startIcon={<SearchIcon />}
-              >
-                Browse
-              </Button>
-            </Box>
-            {recentWallets.length > 0 && (
-              <Box>
-                <Box
-                  sx={{
-                    border: 1,
-                    borderColor: "divider",
-                    borderRadius: 1,
-                    maxHeight: 200,
-                    overflowY: "scroll",
-                    "&::-webkit-scrollbar": {
-                      display: "block !important",
-                      width: "8px !important",
-                    },
-                    "&::-webkit-scrollbar-track": {
-                      display: "block !important",
-                      background: "rgba(255,255,255,.1) !important",
-                      borderRadius: "4px",
-                    },
-                    "&::-webkit-scrollbar-thumb": {
-                      display: "block !important",
-                      background: "rgba(255,255,255,.6) !important",
-                      borderRadius: "4px",
-                      minHeight: "20px !important",
-                    },
-                    "&::-webkit-scrollbar-thumb:hover": {
-                      background: "rgba(255,255,255,.8) !important",
-                    },
-                    "&::-webkit-scrollbar-corner": {
-                      background: "transparent !important",
-                    },
-                    scrollbarWidth: "thin",
-                    scrollbarColor: "rgba(255,255,255,.6) rgba(255,255,255,.1)",
-                  }}
-                >
-                  <List disablePadding>
-                    {recentWallets.map((path, index) => (
-                      <Box key={index}>
-                        <ListItem disablePadding>
-                          <ListItemButton
-                            selected={walletPath === path}
-                            onClick={() => setWalletPath(path)}
-                          >
-                            <ListItemText
-                              primary={path.split("/").pop() || path}
-                              secondary={path}
-                              primaryTypographyProps={{
-                                fontWeight: walletPath === path ? 600 : 400,
-                                fontSize: "0.9rem",
-                              }}
-                              secondaryTypographyProps={{
-                                fontSize: "0.75rem",
-                                sx: {
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                },
-                              }}
-                            />
-                          </ListItemButton>
-                        </ListItem>
-                        {index < recentWallets.length - 1 && <Divider />}
-                      </Box>
-                    ))}
-                  </List>
-                </Box>
-              </Box>
-            )}
-          </Box>
+        {step === "nameLocation" && (
+          <NameLocationStep
+            name={fields.name}
+            setName={setField("name")}
+            directory={fields.directory}
+            setDirectory={setField("directory")}
+          />
+        )}
+
+        {step === "backupSeed" &&
+          (backupContent ? (
+            <BackupSeedStep
+              seed={backupContent.seed}
+              restoreHeight={backupContent.restore_height}
+              confirmed={backupConfirmed}
+              onConfirmedChange={setBackupConfirmed}
+            />
+          ) : (
+            <CircularProgressWithSubtitle description="Creating your new wallet…" />
+          ))}
+
+        {step === "openFile" && (
+          <OpenWalletStep
+            walletPath={fields.walletPath}
+            setWalletPath={setField("walletPath")}
+            recentWallets={recentWallets}
+          />
         )}
       </DialogContent>
       <DialogActions sx={{ justifyContent: "space-between" }}>
+        <Box>
+          {step === "chooseMode" && (
+            <PromiseInvokeButton
+              variant="text"
+              onInvoke={() => resolveSelection({ type: "Legacy" })}
+              contextRequirement={false}
+              displayErrorSnackbar
+              color="inherit"
+            >
+              old Legacy Wallet
+            </PromiseInvokeButton>
+          )}
+          {index > 0 && view === "wizard" && (
+            <Button
+              variant="text"
+              color="inherit"
+              onClick={() => dispatch({ type: "back" })}
+            >
+              Back
+            </Button>
+          )}
+        </Box>
         <PromiseInvokeButton
-          variant="text"
-          onInvoke={Legacy}
-          contextRequirement={false}
-          color="inherit"
-        >
-          No wallet (Legacy)
-        </PromiseInvokeButton>
-        <PromiseInvokeButton
-          onInvoke={accept}
           variant="contained"
-          disabled={isDisabled}
+          disabled={!stepValid[step]}
           contextRequirement={false}
+          displayErrorSnackbar
+          onInvoke={async () => {
+            await primaryHandlers[flow[index].action]();
+          }}
         >
-          Continue
+          {PRIMARY_LABELS[flow[index].action]}
         </PromiseInvokeButton>
       </DialogActions>
     </Dialog>
+  );
+}
+
+function ModeCard({
+  selected,
+  icon,
+  label,
+  onClick,
+}: {
+  selected: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Card
+      sx={{
+        cursor: "pointer",
+        border: 2,
+        borderColor: selected ? "primary.main" : "divider",
+        "&:hover": {
+          borderColor: selected
+            ? "primary.main"
+            : (theme) => alpha(theme.palette.primary.main, 0.5),
+        },
+        flex: 1,
+      }}
+      onClick={onClick}
+    >
+      <CardContent
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 1,
+        }}
+      >
+        {icon}
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ textAlign: "center" }}
+        >
+          {label}
+        </Typography>
+      </CardContent>
+    </Card>
   );
 }

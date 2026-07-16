@@ -141,11 +141,19 @@ pub struct PasswordRequestDetails {
 pub enum SeedChoice {
     RandomSeed {
         password: String,
+        /// File name for the new wallet.
+        name: String,
+        /// Directory the new wallet file is stored in.
+        directory: String,
     },
     FromSeed {
         seed: String,
         restore_height: u32,
         password: String,
+        /// File name for the restored wallet.
+        name: String,
+        /// Directory the restored wallet file is stored in.
+        directory: String,
     },
     FromWalletPath {
         wallet_path: String,
@@ -158,6 +166,20 @@ pub enum SeedChoice {
 pub struct SeedSelectionDetails {
     /// List of recently used wallet paths
     pub recent_wallets: Vec<String>,
+    /// Default directory new wallet files are stored in.
+    pub default_wallet_directory: String,
+    /// Error from the previous wallet open or creation attempt.
+    pub error: Option<String>,
+}
+
+/// Seed phrase of a freshly created wallet, shown once so the user can back
+/// it up before startup continues.
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SeedBackupDetails {
+    pub seed: String,
+    #[typeshare(serialized_as = "number")]
+    pub restore_height: u64,
 }
 
 #[typeshare]
@@ -187,6 +209,9 @@ pub enum ApprovalRequestType {
     /// Request password for wallet file.
     /// User must provide password to unlock the selected wallet.
     PasswordRequest(PasswordRequestDetails),
+    /// Request the user to back up the seed of a freshly created wallet.
+    /// Resolved once the user confirms having recorded it.
+    SeedBackup(SeedBackupDetails),
 }
 
 #[typeshare]
@@ -558,6 +583,7 @@ impl Display for ApprovalRequest {
             ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
             ApprovalRequestType::SendMonero(_) => write!(f, "SendMonero()"),
             ApprovalRequestType::PasswordRequest(_) => write!(f, "PasswordRequest()"),
+            ApprovalRequestType::SeedBackup(_) => write!(f, "SeedBackup()"),
         }
     }
 }
@@ -576,12 +602,9 @@ pub trait TauriEmitter {
         timeout_secs: u64,
     ) -> Result<bool>;
 
-    async fn request_seed_selection(&self) -> Result<SeedChoice>;
+    async fn request_seed_selection(&self, details: SeedSelectionDetails) -> Result<SeedChoice>;
 
-    async fn request_seed_selection_with_recent_wallets(
-        &self,
-        recent_wallets: Vec<String>,
-    ) -> Result<SeedChoice>;
+    async fn request_seed_backup(&self, details: SeedBackupDetails) -> Result<bool>;
 
     async fn request_password(&self, wallet_path: String) -> Result<String>;
 
@@ -696,17 +719,13 @@ impl TauriEmitter for TauriHandle {
             .unwrap_or(false))
     }
 
-    async fn request_seed_selection(&self) -> Result<SeedChoice> {
-        self.request_seed_selection_with_recent_wallets(vec![])
+    async fn request_seed_selection(&self, details: SeedSelectionDetails) -> Result<SeedChoice> {
+        self.request_approval(ApprovalRequestType::SeedSelection(details), None)
             .await
     }
 
-    async fn request_seed_selection_with_recent_wallets(
-        &self,
-        recent_wallets: Vec<String>,
-    ) -> Result<SeedChoice> {
-        let details = SeedSelectionDetails { recent_wallets };
-        self.request_approval(ApprovalRequestType::SeedSelection(details), None)
+    async fn request_seed_backup(&self, details: SeedBackupDetails) -> Result<bool> {
+        self.request_approval(ApprovalRequestType::SeedBackup(details), None)
             .await
     }
 
@@ -779,23 +798,16 @@ impl TauriEmitter for Option<TauriHandle> {
         }
     }
 
-    async fn request_seed_selection(&self) -> Result<SeedChoice> {
+    async fn request_seed_selection(&self, details: SeedSelectionDetails) -> Result<SeedChoice> {
         match self {
-            Some(tauri) => tauri.request_seed_selection().await,
+            Some(tauri) => tauri.request_seed_selection(details).await,
             None => bail!("No Tauri handle available"),
         }
     }
 
-    async fn request_seed_selection_with_recent_wallets(
-        &self,
-        recent_wallets: Vec<String>,
-    ) -> Result<SeedChoice> {
+    async fn request_seed_backup(&self, details: SeedBackupDetails) -> Result<bool> {
         match self {
-            Some(tauri) => {
-                tauri
-                    .request_seed_selection_with_recent_wallets(recent_wallets)
-                    .await
-            }
+            Some(tauri) => tauri.request_seed_backup(details).await,
             None => bail!("No Tauri handle available"),
         }
     }
