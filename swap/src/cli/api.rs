@@ -576,6 +576,7 @@ mod builder {
                                 tauri_handle,
                                 &wallet_database,
                                 eigenwallet_data_dir,
+                                None,
                             )
                             .await?,
                         ),

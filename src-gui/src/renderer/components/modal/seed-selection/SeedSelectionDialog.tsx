@@ -28,6 +28,7 @@ import BackupSeedStep from "./BackupSeedStep";
 import OpenWalletStep from "./OpenWalletStep";
 import NameLocationStep from "./NameLocationStep";
 import CircularProgressWithSubtitle from "renderer/components/pages/swap/swap/components/CircularProgressWithSubtitle";
+import { useSnackbar } from "notistack";
 
 // The wallet-setup flow itself is a state machine in Rust
 // (swap/src/cli/api/wallet_setup.rs): the backend walks
@@ -209,6 +210,7 @@ function parseBlockHeightInput(blockheightInput: string): number | false {
 }
 
 export default function SeedSelectionDialog() {
+  const { enqueueSnackbar } = useSnackbar();
   const selectionApproval = usePendingSeedSelectionApproval()[0];
   const backupApproval = usePendingSeedBackupApproval()[0];
   const [wizard, dispatch] = useReducer(wizardReducer, INITIAL_WIZARD);
@@ -254,6 +256,13 @@ export default function SeedSelectionDialog() {
     });
     setSeedValidation(null);
     setWaitingForWallet(false);
+
+    if (content?.error) {
+      enqueueSnackbar(content.error, {
+        autoHideDuration: 60 * 1000,
+        variant: "error",
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on a new approval id
   }, [selectionApproval?.request_id]);
 
@@ -389,13 +398,13 @@ export default function SeedSelectionDialog() {
   };
 
   const primaryHandlers: Record<PrimaryActionKind, () => void | Promise<void>> =
-  {
-    next: () => dispatch({ type: "next" }),
-    finish: finishBackup,
-    createWallet,
-    restoreWallet: () => resolveSelection(buildSeedChoice("FromSeed")),
-    openWallet: () => resolveSelection(buildSeedChoice("FromWalletPath")),
-  };
+    {
+      next: () => dispatch({ type: "next" }),
+      finish: finishBackup,
+      createWallet,
+      restoreWallet: () => resolveSelection(buildSeedChoice("FromSeed")),
+      openWallet: () => resolveSelection(buildSeedChoice("FromWalletPath")),
+    };
 
   return (
     <Dialog

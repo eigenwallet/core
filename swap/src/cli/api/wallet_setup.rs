@@ -19,8 +19,9 @@ const LEGACY_MONITORING_WALLET_NAME: &str = "swap-tool-blockchain-monitoring-wal
 ///     └──────────────┘ (failure or password rejection)
 /// ```
 enum SetupFlow {
-    /// Ask the user how to open a wallet.
-    ChooseSeed,
+    /// Ask the user how to open a wallet, optionally showing why the previous
+    /// choice failed.
+    ChooseSeed(Option<String>),
     /// Attempt to open or create the wallet for the user's choice.
     OpenWallet(SeedChoice),
     /// A freshly generated wallet: show the seed until the user confirms
@@ -65,11 +66,12 @@ pub(super) async fn open_monero_wallet(
 
     loop {
         flow = match flow {
-            SetupFlow::ChooseSeed => SetupFlow::OpenWallet(
+            SetupFlow::ChooseSeed(error) => SetupFlow::OpenWallet(
                 request_seed_choice(
                     tauri_handle.clone().unwrap(),
                     database,
                     eigenwallet_data_dir,
+                    error,
                 )
                 .await?,
             ),
@@ -212,7 +214,7 @@ pub(super) async fn open_monero_wallet(
                         match wallet_password {
                             // The user rejected the password request: back to
                             // the chooser.
-                            None => Ok(SetupFlow::ChooseSeed),
+                            None => Ok(SetupFlow::ChooseSeed(None)),
                             // Open existing wallet with verified password
                             Some(password) => monero::Wallet::open_or_create_with_password(
                                 wallet_path.clone(),
@@ -251,7 +253,7 @@ pub(super) async fn open_monero_wallet(
                             ?error,
                             "Failed to open or create wallet, asking user to choose again"
                         );
-                        SetupFlow::ChooseSeed
+                        SetupFlow::ChooseSeed(Some(format!("{error:#}")))
                     }
                 }
             }
@@ -300,6 +302,7 @@ pub(super) async fn request_seed_choice(
     tauri_handle: TauriHandle,
     database: &monero_sys::Database,
     eigenwallet_data_dir: &Path,
+    error: Option<String>,
 ) -> Result<SeedChoice> {
     let recent_wallets = database.get_recent_wallets(5).await?;
 
@@ -309,6 +312,7 @@ pub(super) async fn request_seed_choice(
             default_wallet_directory: default_wallet_directory(eigenwallet_data_dir)
                 .display()
                 .to_string(),
+            error,
         })
         .await
 }

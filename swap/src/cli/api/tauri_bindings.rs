@@ -168,6 +168,8 @@ pub struct SeedSelectionDetails {
     pub recent_wallets: Vec<String>,
     /// Default directory new wallet files are stored in.
     pub default_wallet_directory: String,
+    /// Error from the previous wallet open or creation attempt.
+    pub error: Option<String>,
 }
 
 /// Seed phrase of a freshly created wallet, shown once so the user can back
