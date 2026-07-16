@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI: The wallet setup dialog is now a multi-step wizard. Creating a wallet lets you pick a name and location and requires backing up the seed phrase before continuing, and opening a wallet file supports drag & drop. Newly created wallets are named by the user instead of a Unix timestamp.
+
+## [4.11.5] - 2026-07-07
+
 - ASB: The Hermes protocol is now enabled by default (`hermes_enabled` defaults to `true`), and the default `hermes_min_swap_amount` was lowered from `0.01` to `0.001` BTC (~50 USD at a reference price of 50,000 USD/BTC).
 
 ## [4.11.4] - 2026-06-30
@@ -1043,7 +1046,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.11.4...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.11.5...HEAD
+[4.11.5]: https://github.com/eigenwallet/core/compare/4.11.4...4.11.5
 [4.11.4]: https://github.com/eigenwallet/core/compare/4.11.3...4.11.4
 [4.11.3]: https://github.com/eigenwallet/core/compare/4.11.2...4.11.3
 [4.11.2]: https://github.com/eigenwallet/core/compare/4.11.0...4.11.2

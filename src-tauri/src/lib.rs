@@ -8,6 +8,8 @@ mod commands;
 
 use commands::*;
 
+const THREAD_STACK_SIZE: usize = 40 * 1024 * 1024;
+
 /// Represents the shared Tauri state. It is accessed by Tauri commands
 struct State {
     pub context: Arc<Context>,
@@ -45,6 +47,16 @@ impl State {
 /// Initializes the Tauri state
 /// Sets the window title
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(mobile)]
+    {
+        let data_dir = app.path().app_data_dir()?;
+        unsafe {
+            std::env::set_var("HOME", &data_dir);
+            std::env::set_var("XDG_DATA_HOME", data_dir.join("data"));
+            std::env::set_var("XDG_CONFIG_HOME", data_dir.join("config"));
+        }
+    }
+
     // Set the window title to include the product name and version
     #[cfg(desktop)]
     {
@@ -77,6 +89,18 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(THREAD_STACK_SIZE)
+        .build()
+        .expect("failed to build tokio runtime");
+    tauri::async_runtime::set(runtime.handle().clone());
+    std::mem::forget(runtime);
+
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("failed to install default rustls provider");
+
     let mut builder = tauri::Builder::default();
 
     #[cfg(desktop)]
@@ -89,10 +113,10 @@ pub fn run() {
         }));
 
         builder = builder.plugin(tauri_plugin_cli::init());
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
     builder
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())

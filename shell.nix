@@ -5,6 +5,7 @@
     config.allowUnfreePredicate = p:
       builtins.match "nvidia.*" (builtins.parseDrvName p.name).name != null;
   }
+, withAndroid ? false
 , nvidiaVersion ?
     let
       # nix can't readFile /proc directly (NixOS/nix#3539); copy it out impurely first
@@ -21,6 +22,46 @@
 
 let
   supportedSystem = pkgs.stdenv.hostPlatform.system == "x86_64-linux";
+
+  androidComposition = pkgs.androidenv.composeAndroidPackages {
+    platformVersions = [ "36" ];
+    buildToolsVersions = [ "35.0.0" "36.0.0" ];
+    includeNDK = true;
+    ndkVersion = "28.2.13676358";
+  };
+  androidHome = "${androidComposition.androidsdk}/libexec/android-sdk";
+  ndkPrebuilt = if pkgs.stdenv.hostPlatform.isDarwin then "darwin-x86_64" else "linux-x86_64";
+
+  androidShellHook = if !withAndroid then "" else ''
+    export ANDROID_HOME="${androidHome}"
+    export ANDROID_SDK_ROOT="$ANDROID_HOME"
+    export NDK_HOME="$ANDROID_HOME/ndk-bundle"
+    export ANDROID_NDK_HOME="$NDK_HOME"
+    export ANDROID_NDK_ROOT="$NDK_HOME"
+    export JAVA_HOME="${pkgs.jdk21.home}"
+
+    _ndk_bin="$NDK_HOME/toolchains/llvm/prebuilt/${ndkPrebuilt}/bin"
+    _clang_rt="$(echo "$NDK_HOME"/toolchains/llvm/prebuilt/${ndkPrebuilt}/lib/clang/*/lib/linux)"
+    export CC_aarch64_linux_android="$_ndk_bin/aarch64-linux-android24-clang"
+    export CXX_aarch64_linux_android="$_ndk_bin/aarch64-linux-android24-clang++"
+    export AR_aarch64_linux_android="$_ndk_bin/llvm-ar"
+    export RANLIB_aarch64_linux_android="$_ndk_bin/llvm-ranlib"
+    export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
+    export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-L native=$_clang_rt -l static=clang_rt.builtins-aarch64-android -C link-arg=-landroid -C link-arg=-llog"
+    export CC_x86_64_linux_android="$_ndk_bin/x86_64-linux-android24-clang"
+    export CXX_x86_64_linux_android="$_ndk_bin/x86_64-linux-android24-clang++"
+    export AR_x86_64_linux_android="$_ndk_bin/llvm-ar"
+    export RANLIB_x86_64_linux_android="$_ndk_bin/llvm-ranlib"
+    export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$CC_x86_64_linux_android"
+    export CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS="-L native=$_clang_rt -l static=clang_rt.builtins-x86_64-android -C link-arg=-landroid -C link-arg=-llog"
+    unset _ndk_bin _clang_rt
+  '';
+
+  androidPackages = pkgs.lib.optionals withAndroid (with pkgs; [
+    androidComposition.androidsdk
+    jdk21
+    unzip
+  ]);
 in
 if supportedSystem then
 let
@@ -98,7 +139,7 @@ pkgs.mkShell {
     dprint
     sqlx-cli
     cargo-tauri
-  ]) ++ [ moneroDependsToolchain ];
+  ]) ++ [ moneroDependsToolchain ] ++ androidPackages;
 
   buildInputs = tauriLinkLibs;
 
@@ -116,6 +157,7 @@ pkgs.mkShell {
     fi
 
     ${gpuShellHook}
+    ${androidShellHook}
     if ! command -v docker >/dev/null 2>&1 && command -v podman >/dev/null 2>&1; then
       _docker_shim="$HOME/.cache/eigenwallet-docker-shim"
       mkdir -p -m 700 "$_docker_shim"
@@ -138,9 +180,63 @@ pkgs.mkShell {
     export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS"
   '';
 }
+else if pkgs.stdenv.hostPlatform.isDarwin then
+let
+  darwinTools = with pkgs; [
+    cmake
+    autoconf
+    automake
+    libtool
+    pkg-config
+    ccache
+    gperf
+    lbzip2
+    curl
+    git
+    python3
+    nodejs_22
+    just
+    typeshare
+    dprint
+    sqlx-cli
+    cargo-tauri
+  ];
+in
+pkgs.mkShellNoCC {
+  nativeBuildInputs = darwinTools ++ androidPackages;
+
+  MACOSX_DEPLOYMENT_TARGET = "11.0";
+
+  shellHook = ''
+    unset SDKROOT DEVELOPER_DIR
+    export MACOSX_DEPLOYMENT_TARGET=11.0
+
+    apple_shim="$HOME/.cache/eigenwallet-apple-shim"
+    mkdir -p "$apple_shim"
+    ln -sf /usr/bin/xcrun "$apple_shim/xcrun"
+    ln -sf /usr/bin/make "$apple_shim/make"
+    export PATH="$apple_shim:$PATH"
+
+    export PATH="$PATH:/usr/bin:/usr/sbin:/bin"
+
+    export CC=/usr/bin/clang
+    export CXX=/usr/bin/clang++
+
+    ${androidShellHook}
+
+    export PATH="$HOME/.cargo/bin:$PATH"
+
+    export COREPACK_HOME="$HOME/.cache/corepack"
+    export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+    corepack_bin="$HOME/.cache/corepack/bin"
+    mkdir -p "$corepack_bin"
+    ${pkgs.nodejs_22}/bin/corepack enable --install-directory "$corepack_bin"
+    export PATH="$corepack_bin:$PATH"
+  '';
+}
 else
 pkgs.mkShell {
   shellHook = ''
-    echo "Skipping eigenwallet Nix dev shell; supported only on x86_64 Linux."
+    echo "Skipping eigenwallet Nix dev shell; supported only on x86_64 Linux or macOS."
   '';
 }
