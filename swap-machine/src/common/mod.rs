@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
 use rust_decimal::prelude::FromPrimitive;
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use sigma_fun::HashTranscript;
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::{CrossCurveDLEQ, CrossCurveDLEQProof};
 use std::convert::TryInto;
@@ -16,12 +16,30 @@ use swap_core::bitcoin;
 use swap_core::monero::{self, MoneroAddressPool};
 use uuid::Uuid;
 
+/// BIP-341 NUMS point `H = lift_x(SHA256(uncompressed_encoding(G)))`: <https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs>
+static PEDERSEN_BLINDING_H_SECP256K1: LazyLock<ecdsa_fun::fun::Point> = LazyLock::new(|| {
+    let generator = (*ecdsa_fun::fun::G).normalize().to_bytes_uncompressed();
+    let x_coordinate = Sha256::digest(generator).into();
+
+    ecdsa_fun::fun::Point::<ecdsa_fun::fun::marker::EvenY>::from_xonly_bytes(x_coordinate)
+        .expect("SHA-256 of the uncompressed secp256k1 generator is a valid x-coordinate")
+        .normalize()
+});
+
+fn pedersen_blinding_h_ed25519() -> curve25519_dalek_ng::edwards::EdwardsPoint {
+    curve25519_dalek_ng::edwards::CompressedEdwardsY::from_slice(
+        &monero_oxide_wallet::ed25519::CompressedPoint::H.to_bytes(),
+    )
+    .decompress()
+    .expect("Monero Pedersen H is a valid ed25519 point")
+}
+
 pub static CROSS_CURVE_PROOF_SYSTEM: LazyLock<
     CrossCurveDLEQ<HashTranscript<Sha256, rand_chacha::ChaCha20Rng>>,
 > = LazyLock::new(|| {
     CrossCurveDLEQ::<HashTranscript<Sha256, rand_chacha::ChaCha20Rng>>::new(
-        (*ecdsa_fun::fun::G).normalize(),
-        curve25519_dalek_ng::constants::ED25519_BASEPOINT_POINT,
+        *PEDERSEN_BLINDING_H_SECP256K1,
+        pedersen_blinding_h_ed25519(),
     )
 });
 
