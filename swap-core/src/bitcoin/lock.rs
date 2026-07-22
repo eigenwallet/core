@@ -246,6 +246,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn given_two_outputs_pay_to_shared_descriptor_then_reconstructing_txlock_fails() {
+        let (A, B, wallet) = setup().await;
+        let agreed_amount = Amount::from_sat(10000);
+        let spending_fee = Amount::from_sat(1000);
+
+        let mut psbt = bob_make_psbt(A, B, &wallet, agreed_amount, spending_fee).await;
+
+        let descriptor = build_shared_output_descriptor(A.0, B.0).unwrap();
+        let dust_shared_output = TxOut {
+            value: Amount::from_sat(1),
+            script_pubkey: descriptor.script_pubkey(),
+        };
+        psbt.unsigned_tx.output.insert(0, dust_shared_output);
+
+        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
+
+        result.expect_err("PSBT with two shared outputs must be rejected");
+    }
+
+    #[tokio::test]
     async fn given_bob_is_sending_to_a_bad_output_reconstructing_txlock_then_fails() {
         let (A, B, wallet) = setup().await;
         let agreed_amount = Amount::from_sat(10000);
