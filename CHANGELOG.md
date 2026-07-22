@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- ASB: Fix a bug in the algorithm used to the select the Bitcoin output used for the swap.
+- ASB+GUI: Fix a bug in the cross curve equality proof cryptography.
 
 ## [4.12.0] - 2026-07-18
 
