@@ -54,37 +54,29 @@ impl TxLock {
         B: PublicKey,
         btc: Amount,
     ) -> Result<Self> {
-        let shared_output_candidate = match psbt.unsigned_tx.output.as_slice() {
-            [shared_output_candidate, _] if shared_output_candidate.value == btc => {
-                shared_output_candidate
-            }
-            [_, shared_output_candidate] if shared_output_candidate.value == btc => {
-                shared_output_candidate
-            }
-            // A single output is possible if Bob funds without any change necessary
-            [shared_output_candidate] if shared_output_candidate.value == btc => {
-                shared_output_candidate
-            }
-            [_, _] => {
-                bail!("Neither of the two provided outputs pays the right amount!");
-            }
-            [_] => {
-                bail!("The provided output does not pay the right amount!");
-            }
-            other => {
-                let num_outputs = other.len();
-                bail!(
-                    "PSBT has {} outputs, expected one or two. Something is fishy!",
-                    num_outputs
-                );
-            }
-        };
-
         let descriptor = build_shared_output_descriptor(A.0, B.0)?;
         let legit_shared_output_script = descriptor.script_pubkey();
 
-        if shared_output_candidate.script_pubkey != legit_shared_output_script {
-            bail!("Output script is not a shared output")
+        let shared_outputs = psbt
+            .unsigned_tx
+            .output
+            .iter()
+            .filter(|output| output.script_pubkey == legit_shared_output_script)
+            .collect::<Vec<_>>();
+
+        let [shared_output] = shared_outputs.as_slice() else {
+            bail!(
+                "PSBT must have exactly one output paying to the shared descriptor, found {}",
+                shared_outputs.len()
+            );
+        };
+
+        if shared_output.value != btc {
+            bail!(
+                "Shared output pays {} but the agreed amount is {}",
+                shared_output.value,
+                btc
+            );
         }
 
         Ok(TxLock {
