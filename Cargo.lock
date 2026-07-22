@@ -5258,6 +5258,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "killswitch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "kqueue"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

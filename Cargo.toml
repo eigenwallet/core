@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "bitcoin-wallet",
   "electrum-pool",
+  "killswitch",
   "libp2p-rendezvous-node",
   "libp2p-tor",
   "monero-oxide-ext",

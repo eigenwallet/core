@@ -1,4 +1,4 @@
-use dialoguer::{Select, theme::ColorfulTheme};
+use dialoguer::{Confirm, Select, theme::ColorfulTheme};
 use swap_env::prompt as config_prompt;
 use url::Url;
 
@@ -50,6 +50,14 @@ pub fn tor_for_daemons() -> bool {
         .expect("Failed to select tor usage");
 
     selection == 0
+}
+
+pub fn killswitch() -> bool {
+    Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Enable the Eigenwallet ASB killswitch?")
+        .default(false)
+        .interact()
+        .expect("Failed to select killswitch usage")
 }
 
 #[allow(dead_code)] // will be used in the future

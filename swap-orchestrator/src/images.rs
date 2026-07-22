@@ -77,6 +77,13 @@ pub fn asb_controller_image_from_source(context: &str) -> DockerBuildInput {
     }
 }
 
+pub fn killswitch_image_from_source(context: &str) -> DockerBuildInput {
+    DockerBuildInput {
+        context: context.to_string(),
+        dockerfile: "./killswitch/Dockerfile",
+    }
+}
+
 pub fn rendezvous_node_image_from_source(context: &str) -> DockerBuildInput {
     DockerBuildInput {
         context: context.to_string(),

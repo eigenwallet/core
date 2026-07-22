@@ -85,6 +85,11 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     --mount=type=cache,target=/root/.cargo/git,sharing=locked \
     cargo chef cook --release --recipe-path recipe.json --package swap-controller
 
+# Install dependencies required for the killswitch supervisor bundled into the ASB image.
+RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
+    --mount=type=cache,target=/root/.cargo/git,sharing=locked \
+    cargo chef cook --release --recipe-path recipe.json --package killswitch
+
 # Act as if we are in a GitHub Actions environment
 ENV DOCKER_BUILD=true
 
@@ -93,6 +98,7 @@ COPY . .
 
 RUN cargo build --release --locked -vv -p swap-asb --bin=asb
 RUN cargo build --release --locked -vv -p swap-controller --bin=asb-controller
+RUN cargo build --release --locked -vv -p killswitch --bin=killswitch
 
 # Latest Ubuntu 24.04 image as of Tue, 05 Aug 2025 15:34:08 GMT
 FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS runner
@@ -107,5 +113,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 COPY --from=builder /target/release/asb /bin/asb
 COPY --from=builder /target/release/asb-controller /bin/asb-controller
+COPY --from=builder /target/release/killswitch /bin/killswitch
 
 ENTRYPOINT ["asb"]

@@ -192,6 +192,7 @@ fn main() {
     let source_build_context = images::source_build_context(gh_token.as_deref());
 
     let want_tor = prompt::tor_for_daemons();
+    let want_killswitch = prompt::killswitch();
     let (bitcoin_network, monero_network) = prompt::network();
 
     let defaults = match (bitcoin_network, monero_network) {
@@ -223,6 +224,9 @@ fn main() {
             tor: OrchestratorImage::Registry(images::TOR_IMAGE.to_string()),
             // TODO: Allow pre-built images here
             asb: OrchestratorImage::Build(images::asb_image_from_source(&source_build_context)),
+            killswitch: OrchestratorImage::Build(images::killswitch_image_from_source(
+                &source_build_context,
+            )),
             // TODO: Allow pre-built images here
             asb_controller: OrchestratorImage::Build(images::asb_controller_image_from_source(
                 &source_build_context,
@@ -248,6 +252,7 @@ fn main() {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),
         },
         want_tor,
+        want_killswitch,
         cloudflared: cloudflared_config.clone(),
         promtail: promtail_config.clone(),
         metrics: metrics_config.clone(),

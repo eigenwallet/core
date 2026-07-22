@@ -9,6 +9,7 @@ use swap_orchestrator::images;
 
 fn make_input(
     want_tor: bool,
+    want_killswitch: bool,
     cloudflared: Option<CloudflaredConfig>,
     promtail: Option<PromtailConfig>,
     metrics: Option<MetricsConfig>,
@@ -39,6 +40,9 @@ fn make_input(
                 &source_build_context,
             )),
             asb: OrchestratorImage::Build(images::asb_image_from_source(&source_build_context)),
+            killswitch: OrchestratorImage::Build(images::killswitch_image_from_source(
+                &source_build_context,
+            )),
             asb_controller: OrchestratorImage::Build(images::asb_controller_image_from_source(
                 &source_build_context,
             )),
@@ -60,6 +64,7 @@ fn make_input(
             asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),
         },
         want_tor,
+        want_killswitch,
         cloudflared,
         promtail,
         metrics,
@@ -96,18 +101,19 @@ fn test_orchestrator_spec_generation() {
     // `to_spec` runs `validate_compose` internally, so generating each
     // variant is enough to catch indentation regressions in the optional
     // tor / cloudflared / promtail segments.
-    let _ = make_input(false, None, None, None).to_spec();
-    let _ = make_input(true, None, None, None).to_spec();
-    let _ = make_input(false, Some(sample_cloudflared_config()), None, None).to_spec();
-    let _ = make_input(true, Some(sample_cloudflared_config()), None, None).to_spec();
-    let compose = make_input(false, None, Some(sample_promtail_config()), None).to_spec();
-    let _ = make_input(true, None, Some(sample_promtail_config()), None).to_spec();
+    let _ = make_input(false, false, None, None, None).to_spec();
+    let _ = make_input(true, false, None, None, None).to_spec();
+    let _ = make_input(false, false, Some(sample_cloudflared_config()), None, None).to_spec();
+    let _ = make_input(true, false, Some(sample_cloudflared_config()), None, None).to_spec();
+    let compose = make_input(false, false, None, Some(sample_promtail_config()), None).to_spec();
+    let _ = make_input(true, false, None, Some(sample_promtail_config()), None).to_spec();
 
     // promtail's docker SD needs the networks API, not just containers, or
     // discovery 403s on /networks and no node logs ship.
     assert!(compose.contains("NETWORKS=1"));
     let _ = make_input(
         true,
+        false,
         Some(sample_cloudflared_config()),
         Some(sample_promtail_config()),
         None,
@@ -115,6 +121,7 @@ fn test_orchestrator_spec_generation() {
     .to_spec();
     let _ = make_input(
         true,
+        false,
         Some(sample_cloudflared_config()),
         Some(sample_promtail_config()),
         Some(sample_metrics_config()),
@@ -124,6 +131,7 @@ fn test_orchestrator_spec_generation() {
     // With metrics enabled, both cadvisor and the prometheus agent must appear.
     let metrics_compose = make_input(
         true,
+        false,
         Some(sample_cloudflared_config()),
         Some(sample_promtail_config()),
         Some(sample_metrics_config()),
@@ -139,7 +147,7 @@ fn test_orchestrator_spec_generation() {
     assert!(metrics_compose.contains("--monitoring-addr=0.0.0.0:4224"));
 
     // Without metrics, none of the metrics services or endpoints are generated.
-    let plain = make_input(false, None, None, None).to_spec();
+    let plain = make_input(false, false, None, None, None).to_spec();
     assert!(!plain.contains("cadvisor"));
     assert!(!plain.contains("prometheus-agent"));
     assert!(!plain.contains("bitcoin-exporter"));
@@ -154,7 +162,7 @@ fn test_gh_token_inlined_into_build_context() {
 
     // A spec built from the authenticated context must still validate, and the
     // token must reach the build attribute of every source-built service.
-    let mut input = make_input(false, None, None, None);
+    let mut input = make_input(false, false, None, None, None);
     input.images.asb = OrchestratorImage::Build(images::asb_image_from_source(&context));
     input.images.asb_controller =
         OrchestratorImage::Build(images::asb_controller_image_from_source(&context));
@@ -318,9 +326,24 @@ fn test_prometheus_agent_scrapes_cloudflared_when_enabled() {
 
 #[test]
 fn test_asb_publishes_libp2p_port() {
-    let spec = make_input(false, None, None, None).to_spec();
+    let spec = make_input(false, false, None, None, None).to_spec();
 
     assert!(spec.contains("- '0.0.0.0:9839:9839'"));
     assert!(spec.contains("http://asb:9944"));
     assert!(spec.contains("net.ipv4.tcp_tw_reuse=1"));
+}
+
+#[test]
+fn test_killswitch_is_opt_in_and_supervises_asb() {
+    let disabled = make_input(false, false, None, None, None).to_spec();
+    assert!(!disabled.contains("container_name: killswitch"));
+    assert!(!disabled.contains("killswitch-state"));
+    assert!(!disabled.contains("\"killswitch\",\"supervise\""));
+
+    let enabled = make_input(false, true, None, None, None).to_spec();
+    assert!(enabled.contains("container_name: killswitch"));
+    assert!(enabled.contains("condition: service_healthy"));
+    assert!(enabled.contains("test: [\"CMD\", \"killswitch\", \"health\"]"));
+    assert!(enabled.contains("killswitch-state:/run/killswitch:ro"));
+    assert!(enabled.contains("[\"killswitch\",\"supervise\",\"--\",\"asb\""));
 }
