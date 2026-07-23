@@ -54,6 +54,13 @@ impl TxLock {
         B: PublicKey,
         btc: Amount,
     ) -> Result<Self> {
+        if psbt.unsigned_tx.output.len() > 2 {
+            bail!(
+                "PSBT has {} outputs, expected at most two",
+                psbt.unsigned_tx.output.len()
+            );
+        }
+
         let descriptor = build_shared_output_descriptor(A.0, B.0)?;
         let legit_shared_output_script = descriptor.script_pubkey();
 
@@ -263,6 +270,37 @@ mod tests {
         let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
 
         result.expect_err("PSBT with two shared outputs must be rejected");
+    }
+
+    #[test]
+    fn given_more_than_two_outputs_when_reconstructing_txlock_then_fails() {
+        let (A, B) = alice_and_bob();
+        let agreed_amount = Amount::from_sat(10000);
+        let descriptor = build_shared_output_descriptor(A.0, B.0).unwrap();
+        let psbt = Psbt::from_unsigned_tx(Transaction {
+            version: bitcoin::transaction::Version(2),
+            lock_time: PackedLockTime::ZERO,
+            input: vec![],
+            output: vec![
+                TxOut {
+                    value: agreed_amount,
+                    script_pubkey: descriptor.script_pubkey(),
+                },
+                TxOut {
+                    value: Amount::from_sat(1),
+                    script_pubkey: ScriptBuf::new(),
+                },
+                TxOut {
+                    value: Amount::from_sat(1),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            ],
+        })
+        .unwrap();
+
+        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
+
+        result.expect_err("PSBT with more than two outputs must be rejected");
     }
 
     #[tokio::test]
