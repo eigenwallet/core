@@ -65,21 +65,19 @@ pub fn default_electrum_servers_mainnet() -> Vec<Url> {
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://bitcoin.stackwallet.com:50002")
             .expect("default electrum server url to be valid"),
-        Url::parse("ssl://b.1209k.com:50002").expect("default electrum server url to be valid"),
-        Url::parse("ssl://mainnet.foundationdevices.com:50002")
-            .expect("default electrum server url to be valid"),
         Url::parse("tcp://bitcoin.lu.ke:50001").expect("default electrum server url to be valid"),
-        Url::parse("ssl://electrum.coinfinity.co:50002")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://electrum1.bluewallet.io:50001")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://electrum2.bluewallet.io:50001")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://electrum3.bluewallet.io:50001")
-            .expect("default electrum server url to be valid"),
         Url::parse("ssl://btc-electrum.cakewallet.com:50002")
             .expect("default electrum server url to be valid"),
         Url::parse("tcp://bitcoin.aranguren.org:50001")
+            .expect("default electrum server url to be valid"),
+        Url::parse("ssl://bitcoin.mullvad.net:5010")
+            .expect("default electrum server url to be valid"),
+        Url::parse("tcp://electrs.cakewallet.com:50001")
+            .expect("default electrum server url to be valid"),
+        Url::parse("ssl://blockstream.info:700").expect("default electrum server url to be valid"),
+        Url::parse("ssl://electrum.diynodes.com:50022")
+            .expect("default electrum server url to be valid"),
+        Url::parse("ssl://electrum.acinq.co:50002")
             .expect("default electrum server url to be valid"),
     ]
 }
@@ -88,16 +86,10 @@ pub fn default_electrum_servers_testnet() -> Vec<Url> {
     vec![
         Url::parse("ssl://blackie.c3-soft.com:57006")
             .expect("default electrum server url to be valid"),
-        Url::parse("ssl://v22019051929289916.bestsrv.de:50002")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://v22019051929289916.bestsrv.de:50001")
-            .expect("default electrum server url to be valid"),
         Url::parse("ssl://electrum.blockstream.info:60002")
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://blockstream.info:993").expect("default electrum server url to be valid"),
         Url::parse("tcp://testnet.aranguren.org:51001")
-            .expect("default electrum server url to be valid"),
-        Url::parse("ssl://testnet.aranguren.org:51002")
             .expect("default electrum server url to be valid"),
     ]
 }
