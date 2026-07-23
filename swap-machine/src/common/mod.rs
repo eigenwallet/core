@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
 use rust_decimal::prelude::FromPrimitive;
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use sigma_fun::HashTranscript;
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::{CrossCurveDLEQ, CrossCurveDLEQProof};
 use std::convert::TryInto;
@@ -16,12 +16,30 @@ use swap_core::bitcoin;
 use swap_core::monero::{self, MoneroAddressPool};
 use uuid::Uuid;
 
+/// BIP-341 NUMS point `H = lift_x(SHA256(uncompressed_encoding(G)))`: <https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs>
+static PEDERSEN_BLINDING_H_SECP256K1: LazyLock<ecdsa_fun::fun::Point> = LazyLock::new(|| {
+    let generator = (*ecdsa_fun::fun::G).normalize().to_bytes_uncompressed();
+    let x_coordinate = Sha256::digest(generator).into();
+
+    ecdsa_fun::fun::Point::<ecdsa_fun::fun::marker::EvenY>::from_xonly_bytes(x_coordinate)
+        .expect("SHA-256 of the uncompressed secp256k1 generator is a valid x-coordinate")
+        .normalize()
+});
+
+fn pedersen_blinding_h_ed25519() -> curve25519_dalek_ng::edwards::EdwardsPoint {
+    curve25519_dalek_ng::edwards::CompressedEdwardsY::from_slice(
+        &monero_oxide_wallet::ed25519::CompressedPoint::H.to_bytes(),
+    )
+    .decompress()
+    .expect("Monero Pedersen H is a valid ed25519 point")
+}
+
 pub static CROSS_CURVE_PROOF_SYSTEM: LazyLock<
     CrossCurveDLEQ<HashTranscript<Sha256, rand_chacha::ChaCha20Rng>>,
 > = LazyLock::new(|| {
     CrossCurveDLEQ::<HashTranscript<Sha256, rand_chacha::ChaCha20Rng>>::new(
-        (*ecdsa_fun::fun::G).normalize(),
-        curve25519_dalek_ng::constants::ED25519_BASEPOINT_POINT,
+        *PEDERSEN_BLINDING_H_SECP256K1,
+        pedersen_blinding_h_ed25519(),
     )
 });
 
@@ -346,6 +364,83 @@ pub trait Database {
 mod tests {
     use super::*;
     use bitcoin_wallet::{MIN_ABSOLUTE_TX_FEE, MIN_ABSOLUTE_TX_FEE_SATS};
+    use rand::SeedableRng;
+
+    #[test]
+    fn pedersen_blinding_generators_are_not_the_curve_generators() {
+        let _force_init = &*CROSS_CURVE_PROOF_SYSTEM;
+
+        let secp_generator = (*ecdsa_fun::fun::G).normalize();
+        let ed25519_generator = curve25519_dalek_ng::constants::ED25519_BASEPOINT_POINT;
+        let blinding_h_ed25519 = pedersen_blinding_h_ed25519();
+
+        assert_ne!(
+            *PEDERSEN_BLINDING_H_SECP256K1, secp_generator,
+            "secp256k1 Pedersen blinding generator must differ from the curve generator"
+        );
+        assert_ne!(
+            blinding_h_ed25519, ed25519_generator,
+            "ed25519 Pedersen blinding generator must differ from the curve generator"
+        );
+    }
+
+    #[test]
+    fn secp256k1_pedersen_blinding_generator_matches_bip341() {
+        const BIP341_NUMS_X_COORDINATE: [u8; 32] = [
+            0x50, 0x92, 0x9b, 0x74, 0xc1, 0xa0, 0x49, 0x54, 0xb7, 0x8b, 0x4b, 0x60, 0x35, 0xe9,
+            0x7a, 0x5e, 0x07, 0x8a, 0x5a, 0x0f, 0x28, 0xec, 0x96, 0xd5, 0x47, 0xbf, 0xee, 0x9a,
+            0xce, 0x80, 0x3a, 0xc0,
+        ];
+
+        assert_eq!(
+            PEDERSEN_BLINDING_H_SECP256K1.coordinates().0,
+            BIP341_NUMS_X_COORDINATE
+        );
+        assert!(PEDERSEN_BLINDING_H_SECP256K1.is_y_even());
+    }
+
+    #[test]
+    fn honest_cross_curve_proof_verifies() {
+        use curve25519_dalek_ng::scalar::Scalar;
+
+        let mut rng = rand_chacha::ChaCha20Rng::from_seed([7u8; 32]);
+        let secret = clamp_to_252_bits(Scalar::random(&mut rng));
+
+        let (proof, claim) = CROSS_CURVE_PROOF_SYSTEM.prove(&secret, &mut rng);
+
+        assert!(
+            CROSS_CURVE_PROOF_SYSTEM.verify(&proof, claim),
+            "an honestly generated cross-curve proof must verify"
+        );
+    }
+
+    #[test]
+    fn cross_curve_proof_does_not_verify_against_mismatched_ed25519_key() {
+        use curve25519_dalek_ng::constants::ED25519_BASEPOINT_TABLE;
+        use curve25519_dalek_ng::scalar::Scalar;
+
+        let mut rng = rand_chacha::ChaCha20Rng::from_seed([9u8; 32]);
+        let secret = clamp_to_252_bits(Scalar::random(&mut rng));
+
+        let (proof, (claim_secp, _claim_ed25519)) =
+            CROSS_CURVE_PROOF_SYSTEM.prove(&secret, &mut rng);
+
+        let unrelated_ed25519 =
+            &clamp_to_252_bits(Scalar::random(&mut rng)) * &ED25519_BASEPOINT_TABLE;
+
+        assert!(
+            !CROSS_CURVE_PROOF_SYSTEM.verify(&proof, (claim_secp, unrelated_ed25519)),
+            "a proof must not verify when the ed25519 key has a different discrete log"
+        );
+    }
+
+    fn clamp_to_252_bits(
+        scalar: curve25519_dalek_ng::scalar::Scalar,
+    ) -> curve25519_dalek_ng::scalar::Scalar {
+        let mut bytes = scalar.to_bytes();
+        bytes[31] &= 0b0000_1111;
+        curve25519_dalek_ng::scalar::Scalar::from_bytes_mod_order(bytes)
+    }
 
     /// 1 BTC lock amount.
     const LOCK: bitcoin::Amount = bitcoin::Amount::from_sat(100_000_000);

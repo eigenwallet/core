@@ -54,37 +54,36 @@ impl TxLock {
         B: PublicKey,
         btc: Amount,
     ) -> Result<Self> {
-        let shared_output_candidate = match psbt.unsigned_tx.output.as_slice() {
-            [shared_output_candidate, _] if shared_output_candidate.value == btc => {
-                shared_output_candidate
-            }
-            [_, shared_output_candidate] if shared_output_candidate.value == btc => {
-                shared_output_candidate
-            }
-            // A single output is possible if Bob funds without any change necessary
-            [shared_output_candidate] if shared_output_candidate.value == btc => {
-                shared_output_candidate
-            }
-            [_, _] => {
-                bail!("Neither of the two provided outputs pays the right amount!");
-            }
-            [_] => {
-                bail!("The provided output does not pay the right amount!");
-            }
-            other => {
-                let num_outputs = other.len();
-                bail!(
-                    "PSBT has {} outputs, expected one or two. Something is fishy!",
-                    num_outputs
-                );
-            }
-        };
+        if psbt.unsigned_tx.output.len() > 2 {
+            bail!(
+                "PSBT has {} outputs, expected at most two",
+                psbt.unsigned_tx.output.len()
+            );
+        }
 
         let descriptor = build_shared_output_descriptor(A.0, B.0)?;
         let legit_shared_output_script = descriptor.script_pubkey();
 
-        if shared_output_candidate.script_pubkey != legit_shared_output_script {
-            bail!("Output script is not a shared output")
+        let shared_outputs = psbt
+            .unsigned_tx
+            .output
+            .iter()
+            .filter(|output| output.script_pubkey == legit_shared_output_script)
+            .collect::<Vec<_>>();
+
+        let [shared_output] = shared_outputs.as_slice() else {
+            bail!(
+                "PSBT must have exactly one output paying to the shared descriptor, found {}",
+                shared_outputs.len()
+            );
+        };
+
+        if shared_output.value != btc {
+            bail!(
+                "Shared output pays {} but the agreed amount is {}",
+                shared_output.value,
+                btc
+            );
         }
 
         Ok(TxLock {
@@ -251,6 +250,57 @@ mod tests {
         let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
 
         result.expect_err("PSBT to be invalid");
+    }
+
+    #[tokio::test]
+    async fn given_two_outputs_pay_to_shared_descriptor_then_reconstructing_txlock_fails() {
+        let (A, B, wallet) = setup().await;
+        let agreed_amount = Amount::from_sat(10000);
+        let spending_fee = Amount::from_sat(1000);
+
+        let mut psbt = bob_make_psbt(A, B, &wallet, agreed_amount, spending_fee).await;
+
+        let descriptor = build_shared_output_descriptor(A.0, B.0).unwrap();
+        let dust_shared_output = TxOut {
+            value: Amount::from_sat(1),
+            script_pubkey: descriptor.script_pubkey(),
+        };
+        psbt.unsigned_tx.output.insert(0, dust_shared_output);
+
+        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
+
+        result.expect_err("PSBT with two shared outputs must be rejected");
+    }
+
+    #[test]
+    fn given_more_than_two_outputs_when_reconstructing_txlock_then_fails() {
+        let (A, B) = alice_and_bob();
+        let agreed_amount = Amount::from_sat(10000);
+        let descriptor = build_shared_output_descriptor(A.0, B.0).unwrap();
+        let psbt = Psbt::from_unsigned_tx(Transaction {
+            version: bitcoin::transaction::Version(2),
+            lock_time: PackedLockTime::ZERO,
+            input: vec![],
+            output: vec![
+                TxOut {
+                    value: agreed_amount,
+                    script_pubkey: descriptor.script_pubkey(),
+                },
+                TxOut {
+                    value: Amount::from_sat(1),
+                    script_pubkey: ScriptBuf::new(),
+                },
+                TxOut {
+                    value: Amount::from_sat(1),
+                    script_pubkey: ScriptBuf::new(),
+                },
+            ],
+        })
+        .unwrap();
+
+        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
+
+        result.expect_err("PSBT with more than two outputs must be rejected");
     }
 
     #[tokio::test]

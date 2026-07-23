@@ -708,6 +708,9 @@ using StringVec = std::vector<String>;
 using MoneroSysAccountTagsPair = std::pair<StringMap, StringVec>;
 void monero_sys_account_tags_pair_dtor(MoneroSysAccountTagsPair* p) asm("_ZNSt6__ndk14pairINS_3mapINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEES7_NS_4lessIS7_EENS5_INS0_IKS7_S7_EEEEEENS_6vectorIS7_NS5_IS7_EEEEED1Ev");
 __attribute__((weak)) void monero_sys_account_tags_pair_dtor(MoneroSysAccountTagsPair* p) { p->~MoneroSysAccountTagsPair(); }
+#else
+// The following is a hack to ensure the linker includes the pair destructor in the binary
+static std::pair<StringMap, StringVec> _monero_sys_pair_instantiation;
 #endif
 
 namespace Monero
