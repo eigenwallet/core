@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + ASB: Remove nine unusable Electrum defaults and add healthy Mullvad,
+  Cake Wallet, Blockstream, DIYnodes, and ACINQ mainnet servers.
+
 ## [4.13.1] - 2026-07-23
 
 ## [4.13.0] - 2026-07-23
