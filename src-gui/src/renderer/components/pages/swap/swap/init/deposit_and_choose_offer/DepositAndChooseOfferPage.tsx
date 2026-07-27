@@ -49,12 +49,6 @@ export default function DepositAndChooseOfferPage({
   // Pagination calculations
   const totalPages = Math.max(1, Math.ceil(makerOffers.length / offersPerPage));
 
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
-
   const clampedPage = Math.min(currentPage, totalPages);
   const startIndex = (clampedPage - 1) * offersPerPage;
   const endIndex = startIndex + offersPerPage;
@@ -64,7 +58,7 @@ export default function DepositAndChooseOfferPage({
     event: React.ChangeEvent<unknown>,
     value: number,
   ) => {
-    setCurrentPage(value);
+    setCurrentPage(Math.min(value, totalPages));
   };
 
   return (
