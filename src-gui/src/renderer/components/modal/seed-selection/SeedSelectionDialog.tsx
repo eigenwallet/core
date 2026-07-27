@@ -277,7 +277,6 @@ export default function SeedSelectionDialog() {
 
     setWaitingForWallet(false);
     setBackupConfirmed(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on a new backup request id
   }, [backupApproval?.request_id]);
 
   const trimmedSeed = wizard.fields.customSeed.trim();
@@ -398,13 +397,13 @@ export default function SeedSelectionDialog() {
   };
 
   const primaryHandlers: Record<PrimaryActionKind, () => void | Promise<void>> =
-    {
-      next: () => dispatch({ type: "next" }),
-      finish: finishBackup,
-      createWallet,
-      restoreWallet: () => resolveSelection(buildSeedChoice("FromSeed")),
-      openWallet: () => resolveSelection(buildSeedChoice("FromWalletPath")),
-    };
+  {
+    next: () => dispatch({ type: "next" }),
+    finish: finishBackup,
+    createWallet,
+    restoreWallet: () => resolveSelection(buildSeedChoice("FromSeed")),
+    openWallet: () => resolveSelection(buildSeedChoice("FromWalletPath")),
+  };
 
   return (
     <Dialog

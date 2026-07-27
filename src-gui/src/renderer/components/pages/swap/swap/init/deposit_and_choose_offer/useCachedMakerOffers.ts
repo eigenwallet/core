@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { QuoteWithAddress } from "models/tauriModel";
 import { useAppSelector, usePendingSelectMakerApproval } from "store/hooks";
 import _ from "lodash";
@@ -7,6 +7,7 @@ import {
   SortedMakerEntry,
   sortApprovalsAndKnownQuotes,
 } from "utils/sortUtils";
+import { useThrottle } from "utils/reactUtils";
 
 const REFRESH_INTERVAL_MS = 5_000;
 
@@ -21,6 +22,7 @@ export function useCachedMakerOffers(
   sortMode: OfferSortMode,
   offersPerPage: number,
 ): SortedMakerEntry[] {
+
   const pendingApprovals = usePendingSelectMakerApproval();
   const bitcoinBalance = useAppSelector((state) => state.bitcoinWallet.balance);
 
@@ -35,33 +37,7 @@ export function useCachedMakerOffers(
     [pendingApprovals, known_quotes, sortMode, offersPerPage],
   );
 
-  const liveOffersRef = useRef<SortedMakerEntry[]>(liveOffers);
-  liveOffersRef.current = liveOffers;
+  const throttled = useThrottle(liveOffers, REFRESH_INTERVAL_MS, [sortMode, bitcoinBalance]);
 
-  const [snapshot, setSnapshot] = useState<SortedMakerEntry[]>(liveOffers);
-
-  useEffect(() => {
-    setSnapshot(liveOffersRef.current);
-  }, [sortMode, bitcoinBalance]);
-
-  useEffect(() => {
-    const snapshotPeers = new Set(
-      snapshot.map((o) => o.quote_with_address.peer_id),
-    );
-    const hasNewPeer = liveOffers.some(
-      (o) => !snapshotPeers.has(o.quote_with_address.peer_id),
-    );
-    if (hasNewPeer) setSnapshot(liveOffers);
-  }, [snapshot, liveOffers]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setSnapshot((prev) =>
-        _.isEqual(prev, liveOffersRef.current) ? prev : liveOffersRef.current,
-      );
-    }, REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return snapshot;
+  return throttled;
 }
