@@ -159,26 +159,6 @@ where
         }
     }
 
-    /// Execute the given closure using one of the Electrum clients asynchronously.
-    ///
-    /// If the closure returns an I/O error or certificate error the balancer will try the next
-    /// node until all nodes have been exhausted. The last encountered error
-    /// is returned in that case.
-    #[instrument(level = "debug", skip(self, f), fields(operation = kind, total_urls = self.urls.len(), total_clients = self.client_count()))]
-    pub async fn call_async<F, T>(&self, kind: &str, f: F) -> Result<T, Error>
-    where
-        F: Fn(&C) -> Result<T, Error> + Send + Sync + Clone + 'static,
-        T: Send + 'static,
-    {
-        let balancer = self.clone();
-        let kind = kind.to_string();
-
-        match spawn_blocking(move || balancer.call_sync(&kind, f)).await {
-            Ok(result) => result.map_err(|multi_error| multi_error.into()),
-            Err(e) => Err(Error::IOError(std::io::Error::other(e.to_string()))),
-        }
-    }
-
     /// Execute the given closure using one of the Electrum clients asynchronously,
     /// returning the full MultiError for detailed error analysis.
     ///
@@ -1253,8 +1233,9 @@ mod tests {
         let factory = Arc::new(MockElectrumClientFactory::new());
         factory.add_client(MockElectrumClient::new(urls[0].clone()));
         factory.add_client(MockElectrumClient::new(urls[1].clone()));
-        factory
-            .add_client(MockElectrumClient::new(urls[2].clone()).with_delay(Duration::from_secs(2)));
+        factory.add_client(
+            MockElectrumClient::new(urls[2].clone()).with_delay(Duration::from_secs(2)),
+        );
 
         let config = ElectrumBalancerConfig {
             request_timeout: 5,
