@@ -103,13 +103,13 @@ impl<T: HttpTransport> ProvidesTransactionStatus for MoneroDaemon<T> {
                 return Ok(TransactionStatus::InPool);
             }
 
-            return Ok(TransactionStatus::InBlock {
+            Ok(TransactionStatus::InBlock {
                 block_height: tx_info.block_height.ok_or_else(|| {
                     InterfaceError::InvalidInterface(
                         "Transaction has in_pool=false but has no block_height".to_string(),
                     )
                 })?,
-            });
+            })
         }
     }
 }

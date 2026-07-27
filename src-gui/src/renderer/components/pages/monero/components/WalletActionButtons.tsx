@@ -1,16 +1,10 @@
 import {
   Box,
-  Button,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   IconButton,
   ListItemIcon,
   Menu,
   MenuItem,
-  TextField,
   Typography,
 } from "@mui/material";
 import {
@@ -23,20 +17,17 @@ import {
   Key as KeyIcon,
 } from "@mui/icons-material";
 import { useState } from "react";
-import { getMoneroSeedAndRestoreHeight, setMoneroRestoreHeight } from "renderer/rpc";
+import { getMoneroSeedAndRestoreHeight } from "renderer/rpc";
 import SendTransactionModal from "../SendTransactionModal";
 import SubaddressesModal from "../SubaddressesModal";
 import { useNavigate } from "react-router-dom";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import SetRestoreHeightModal from "../SetRestoreHeightModal";
 import SetPasswordModal from "../SetPasswordModal";
-import SeedPhraseButton from "../SeedPhraseButton";
 import SeedPhraseModal from "../SeedPhraseModal";
 import {
   GetMoneroSeedResponse,
   GetRestoreHeightResponse,
 } from "models/tauriModel";
-import { isContextWithMoneroWallet } from "models/tauriModelExt";
 import AsyncActionButton from "renderer/components/AsyncActionButton";
 
 interface WalletActionButtonsProps {
