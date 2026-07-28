@@ -494,7 +494,9 @@ export function isContextWithMoneroWallet(
 
 export type ExportBitcoinWalletResponseExt = ExportBitcoinWalletResponse & {
   wallet_descriptor: {
-    descriptor: string;
+    seed_phrase: string;
+    legacy_descriptor: string;
+    legacy_change_descriptor: string;
   };
 };
 
@@ -504,8 +506,15 @@ export function hasDescriptorProperty(
   return (
     typeof response.wallet_descriptor === "object" &&
     response.wallet_descriptor !== null &&
-    "descriptor" in response.wallet_descriptor &&
-    typeof (response.wallet_descriptor as { descriptor?: unknown })
-      .descriptor === "string"
+    "seed_phrase" in response.wallet_descriptor &&
+    typeof (response.wallet_descriptor as { seed_phrase?: unknown })
+      .seed_phrase === "string" &&
+    "legacy_descriptor" in response.wallet_descriptor &&
+    typeof (response.wallet_descriptor as { legacy_descriptor?: unknown })
+      .legacy_descriptor === "string" &&
+    "legacy_change_descriptor" in response.wallet_descriptor &&
+    typeof (
+      response.wallet_descriptor as { legacy_change_descriptor?: unknown }
+    ).legacy_change_descriptor === "string"
   );
 }

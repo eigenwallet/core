@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Box } from "@mui/material";
 import { useAppSelector } from "store/hooks";
 import { initializeMoneroWallet } from "renderer/rpc";
@@ -9,9 +9,13 @@ import {
 } from "./components";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import WalletPageLoadingState from "./components/WalletPageLoadingState";
+import WalletRecoveryPage from "../wallet/components/WalletRecoveryPage";
+import { WalletRecoveryData } from "renderer/rpc";
 
 // Main MoneroWalletPage component
 export default function MoneroWalletPage() {
+  const [walletRecovery, setWalletRecovery] =
+    useState<WalletRecoveryData | null>(null);
   const { mainAddress, balance, syncProgress, history } = useAppSelector(
     (state) => state.wallet.state,
   );
@@ -37,13 +41,26 @@ export default function MoneroWalletPage() {
         pb: 2,
       }}
     >
-      <WalletOverview balance={balance} syncProgress={syncProgress} />
-      <ActionableMonospaceTextBox
-        content={mainAddress}
-        displayCopyIcon={true}
-      />
-      <WalletActionButtons balance={balance} />
-      <TransactionHistory history={history} />
+      {walletRecovery === null ? (
+        <>
+          <WalletOverview balance={balance} syncProgress={syncProgress} />
+          <ActionableMonospaceTextBox
+            content={mainAddress}
+            displayCopyIcon={true}
+          />
+          <WalletActionButtons
+            balance={balance}
+            onShowWalletRecovery={setWalletRecovery}
+          />
+          <TransactionHistory history={history} />
+        </>
+      ) : (
+        <WalletRecoveryPage
+          walletRecovery={walletRecovery}
+          highlightedWallet="monero"
+          onBack={() => setWalletRecovery(null)}
+        />
+      )}
     </Box>
   );
 }

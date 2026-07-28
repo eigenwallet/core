@@ -14,7 +14,9 @@ use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::template::{Bip84, DescriptorTemplate};
 use bdk_wallet::{Balance, PersistedWallet};
 use bitcoin::bip32::Xpriv;
-use bitcoin::{Address, Amount, Transaction, Txid, psbt::Psbt as PartiallySignedTransaction};
+use bitcoin::{
+    Address, Amount, OutPoint, Transaction, Txid, psbt::Psbt as PartiallySignedTransaction,
+};
 use bitcoin::{Psbt, ScriptBuf, Weight};
 use derive_builder::Builder;
 use electrum_pool::ElectrumBalancer;
@@ -69,10 +71,12 @@ pub trait BitcoinTauriBackgroundTask: Send + Sync {
 pub trait BitcoinWalletSeed {
     fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<Xpriv>;
 
-    /// Same as `derive_extended_private_key`, but using the legacy BDK API.
+    fn derive_extended_private_key_legacy(&self, network: bitcoin::Network) -> Result<Xpriv>;
+
+    /// Same as `derive_extended_private_key_legacy`, but using the legacy BDK API.
     ///
     /// This is only used for the migration path from the old wallet format to the new one.
-    fn derive_extended_private_key_legacy(
+    fn derive_extended_private_key_pre_bdk_1(
         &self,
         network: bdk::bitcoin::Network,
     ) -> Result<bdk::bitcoin::util::bip32::ExtendedPrivKey>;
@@ -96,10 +100,10 @@ pub const DUST_AMOUNT: Amount = Amount::from_sat(546);
 /// rusqlite connection, or an in-memory database, or something else.
 #[derive(Clone)]
 pub struct Wallet<Persister = Connection, C = Client> {
-    /// The wallet, which is persisted to the disk.
-    wallet: Arc<TokioMutex<PersistedWallet<Persister>>>,
-    /// The database connection used to persist the wallet.
-    persister: Arc<TokioMutex<Persister>>,
+    /// The BIP39-backed wallet used for receiving funds and change.
+    primary: KeyStore<Persister>,
+    /// The pre-BIP39 wallet retained so legacy funds remain spendable.
+    legacy: KeyStore<Persister>,
     /// The electrum client.
     electrum_client: Arc<C>,
     /// The cached fee estimator for the electrum client.
@@ -118,6 +122,21 @@ pub struct Wallet<Persister = Connection, C = Client> {
     target_block: u32,
     /// The Tauri handle
     tauri_handle: TauriHandle,
+}
+
+/// One independently persisted BDK wallet.
+#[derive(Clone)]
+struct KeyStore<Persister> {
+    wallet: Arc<TokioMutex<PersistedWallet<Persister>>>,
+    persister: Arc<TokioMutex<Persister>>,
+}
+
+#[derive(Clone)]
+struct ForeignUtxo {
+    outpoint: OutPoint,
+    psbt_input: bitcoin::psbt::Input,
+    satisfaction_weight: Weight,
+    value: Amount,
 }
 
 /// This is our wrapper around a bdk electrum client.
@@ -187,42 +206,78 @@ impl<Seed: BitcoinWalletSeed> WalletBuilder<Seed> {
 
         match &config.persister {
             PersisterConfig::SqliteFile { data_dir } => {
-                let xprivkey = config
+                let primary_xprivkey = config
                     .seed
                     .derive_extended_private_key(config.network)
-                    .context("Failed to derive extended private key for file wallet")?;
+                    .context("Failed to derive primary extended private key")?;
+                let legacy_xprivkey = config
+                    .seed
+                    .derive_extended_private_key_legacy(config.network)
+                    .context("Failed to derive legacy extended private key")?;
 
                 let wallet_parent_dir = data_dir.join(Wallet::<Connection>::WALLET_PARENT_DIR_NAME);
-                let wallet_dir = wallet_parent_dir.join(Wallet::<Connection>::WALLET_DIR_NAME);
-                let wallet_path = wallet_dir.join(Wallet::<Connection>::WALLET_FILE_NAME);
-                let wallet_exists = wallet_path.exists();
+                let primary_wallet_dir =
+                    wallet_parent_dir.join(Wallet::<Connection>::PRIMARY_WALLET_DIR_NAME);
+                let legacy_wallet_dir =
+                    wallet_parent_dir.join(Wallet::<Connection>::LEGACY_WALLET_DIR_NAME);
+                let primary_wallet_path =
+                    primary_wallet_dir.join(Wallet::<Connection>::WALLET_FILE_NAME);
+                let legacy_wallet_path =
+                    legacy_wallet_dir.join(Wallet::<Connection>::WALLET_FILE_NAME);
 
-                tokio::fs::create_dir_all(&wallet_dir)
+                tokio::fs::create_dir_all(&primary_wallet_dir)
                     .await
-                    .context("Failed to create wallet directory")?;
+                    .context("Failed to create primary wallet directory")?;
+                tokio::fs::create_dir_all(&legacy_wallet_dir)
+                    .await
+                    .context("Failed to create legacy wallet directory")?;
 
-                let open_connection = || -> Result<Connection> {
-                    Connection::open(&wallet_path).context(format!(
-                        "Failed to open SQLite database at {:?}",
-                        wallet_path
-                    ))
-                };
-
-                if wallet_exists {
-                    let connection = open_connection()?;
-
+                let primary = if primary_wallet_path.exists() {
                     Wallet::create_existing(
-                        xprivkey,
+                        primary_xprivkey,
                         config.network,
-                        client,
-                        connection,
-                        config.finality_confirmations,
-                        config.target_block,
-                        config.tauri_handle.clone(),
-                        config.use_mempool_space_fee_estimation,
+                        Connection::open(&primary_wallet_path).with_context(|| {
+                            format!(
+                                "Failed to open primary wallet database at {:?}",
+                                primary_wallet_path
+                            )
+                        })?,
                     )
                     .await
-                    .context("Failed to load existing wallet")
+                    .context("Failed to load primary wallet")?
+                } else {
+                    Wallet::create_new(
+                        primary_xprivkey,
+                        config.network,
+                        client.clone(),
+                        || {
+                            Connection::open(&primary_wallet_path).with_context(|| {
+                                format!(
+                                    "Failed to open primary wallet database at {:?}",
+                                    primary_wallet_path
+                                )
+                            })
+                        },
+                        None,
+                        config.tauri_handle.clone(),
+                    )
+                    .await
+                    .context("Failed to create primary wallet")?
+                };
+
+                let legacy = if legacy_wallet_path.exists() {
+                    Wallet::create_existing(
+                        legacy_xprivkey,
+                        config.network,
+                        Connection::open(&legacy_wallet_path).with_context(|| {
+                            format!(
+                                "Failed to open legacy wallet database at {:?}",
+                                legacy_wallet_path
+                            )
+                        })?,
+                    )
+                    .await
+                    .context("Failed to load legacy wallet")?
                 } else {
                     let old_wallet_export = Wallet::<Connection>::get_pre_1_0_bdk_wallet_export(
                         data_dir,
@@ -233,42 +288,83 @@ impl<Seed: BitcoinWalletSeed> WalletBuilder<Seed> {
                     .context("Failed to get pre-1.0.0 BDK wallet export for migration")?;
 
                     Wallet::create_new(
-                        xprivkey,
+                        legacy_xprivkey,
                         config.network,
-                        client,
-                        open_connection,
-                        config.finality_confirmations,
-                        config.target_block,
+                        client.clone(),
+                        || {
+                            Connection::open(&legacy_wallet_path).with_context(|| {
+                                format!(
+                                    "Failed to open legacy wallet database at {:?}",
+                                    legacy_wallet_path
+                                )
+                            })
+                        },
                         old_wallet_export,
                         config.tauri_handle.clone(),
-                        config.use_mempool_space_fee_estimation,
                     )
                     .await
-                    .context("Failed to create new wallet")
-                }
-            }
-            PersisterConfig::InMemorySqlite => {
-                let xprivkey = config
-                    .seed
-                    .derive_extended_private_key(config.network)
-                    .context("Failed to derive extended private key for in-memory wallet")?;
+                    .context("Failed to create legacy wallet")?
+                };
 
-                let persister = Connection::open_in_memory()
-                    .context("Failed to open in-memory SQLite database")?;
-
-                Wallet::create_new::<Connection>(
-                    xprivkey,
-                    config.network,
+                Ok(Wallet::from_key_stores(
+                    primary,
+                    legacy,
                     client,
-                    move || Ok(persister),
+                    config.network,
                     config.finality_confirmations,
                     config.target_block,
-                    None,
                     config.tauri_handle.clone(),
                     config.use_mempool_space_fee_estimation,
+                ))
+            }
+            PersisterConfig::InMemorySqlite => {
+                let primary_xprivkey = config
+                    .seed
+                    .derive_extended_private_key(config.network)
+                    .context("Failed to derive primary extended private key")?;
+                let legacy_xprivkey = config
+                    .seed
+                    .derive_extended_private_key_legacy(config.network)
+                    .context("Failed to derive legacy extended private key")?;
+
+                let primary = Wallet::create_new::<Connection>(
+                    primary_xprivkey,
+                    config.network,
+                    client.clone(),
+                    || {
+                        Connection::open_in_memory()
+                            .context("Failed to open primary in-memory database")
+                    },
+                    None,
+                    config.tauri_handle.clone(),
                 )
                 .await
-                .context("Failed to create new in-memory wallet")
+                .context("Failed to create primary in-memory wallet")?;
+
+                let legacy = Wallet::create_new::<Connection>(
+                    legacy_xprivkey,
+                    config.network,
+                    client.clone(),
+                    || {
+                        Connection::open_in_memory()
+                            .context("Failed to open legacy in-memory database")
+                    },
+                    None,
+                    config.tauri_handle.clone(),
+                )
+                .await
+                .context("Failed to create legacy in-memory wallet")?;
+
+                Ok(Wallet::from_key_stores(
+                    primary,
+                    legacy,
+                    client,
+                    config.network,
+                    config.finality_confirmations,
+                    config.target_block,
+                    config.tauri_handle.clone(),
+                    config.use_mempool_space_fee_estimation,
+                ))
             }
         }
     }
@@ -372,8 +468,47 @@ impl Wallet {
     const SYNC_MAX_ELAPSED_TIME: Duration = Duration::from_secs(15);
 
     const WALLET_PARENT_DIR_NAME: &str = "wallet";
-    const WALLET_DIR_NAME: &str = "wallet-post-bdk-1.0";
+    const PRIMARY_WALLET_DIR_NAME: &str = "wallet-bip39";
+    const LEGACY_WALLET_DIR_NAME: &str = "wallet-post-bdk-1.0";
     const WALLET_FILE_NAME: &str = "wallet-db.sqlite";
+
+    #[allow(clippy::too_many_arguments)]
+    fn from_key_stores(
+        primary: KeyStore<Connection>,
+        legacy: KeyStore<Connection>,
+        client: Client,
+        network: Network,
+        finality_confirmations: u32,
+        target_block: u32,
+        tauri_handle: TauriHandle,
+        use_mempool_space_fee_estimation: bool,
+    ) -> Self {
+        let cached_mempool_fee_estimator = if use_mempool_space_fee_estimation {
+            mempool_client::MempoolClient::new(network)
+                .inspect_err(|error| {
+                    tracing::warn!(
+                        ?error,
+                        "Failed to create mempool client. We will only use Electrum for fee estimation"
+                    );
+                })
+                .ok()
+                .map(CachedFeeEstimator::new)
+        } else {
+            None
+        };
+
+        Self {
+            primary,
+            legacy,
+            cached_electrum_fee_estimator: Arc::new(CachedFeeEstimator::new(client.clone())),
+            cached_mempool_fee_estimator: Arc::new(cached_mempool_fee_estimator),
+            electrum_client: Arc::new(client),
+            tauri_handle,
+            network,
+            finality_confirmations,
+            target_block,
+        }
+    }
 
     async fn get_pre_1_0_bdk_wallet_export(
         data_dir: impl AsRef<Path>,
@@ -396,7 +531,7 @@ impl Wallet {
                 _ => bail!("Unsupported network: {}", network),
             };
 
-            let xprivkey = seed.derive_extended_private_key_legacy(legacy_network)?;
+            let xprivkey = seed.derive_extended_private_key_pre_bdk_1(legacy_network)?;
             let old_wallet =
                 pre_1_0_0_bdk::OldWallet::new(&pre_bdk_1_0_wallet_dir, xprivkey, legacy_network)
                     .await?;
@@ -418,8 +553,8 @@ impl Wallet {
     /// Create a new wallet, persisted to a sqlite database.
     /// This is a private API so we allow too many arguments.
     #[allow(clippy::too_many_arguments)]
-    pub async fn with_sqlite(
-        seed: &impl BitcoinWalletSeed,
+    pub async fn with_sqlite<Seed>(
+        seed: &Seed,
         network: Network,
         electrum_rpc_urls: &[String],
         data_dir: impl AsRef<Path>,
@@ -428,86 +563,59 @@ impl Wallet {
         sync_interval: Duration,
         env_config: swap_env::env::Config,
         tauri_handle: TauriHandle,
-    ) -> Result<Wallet<bdk_wallet::rusqlite::Connection, Client>> {
-        // Construct the private key, directory and wallet file for the new (>= 1.0.0) bdk wallet
-        let xprivkey = seed.derive_extended_private_key(env_config.bitcoin_network)?;
-        let wallet_dir = data_dir
-            .as_ref()
-            .join(Self::WALLET_PARENT_DIR_NAME)
-            .join(Self::WALLET_DIR_NAME);
-        let wallet_path = wallet_dir.join(Self::WALLET_FILE_NAME);
-        let wallet_exists = wallet_path.exists();
-
-        // Connect to the electrum server.
-        let client = Client::new(electrum_rpc_urls, sync_interval).await?;
-
-        // Make sure the wallet directory exists.
-        tokio::fs::create_dir_all(&wallet_dir).await?;
-
-        let connection =
-            || Connection::open(&wallet_path).context("Failed to open SQLite database");
-
-        // If the new Bitcoin wallet (> 1.0.0 bdk) already exists, we open it
-        if wallet_exists {
-            Self::create_existing(
-                xprivkey,
+    ) -> Result<Wallet<bdk_wallet::rusqlite::Connection, Client>>
+    where
+        Seed: BitcoinWalletSeed + Clone,
+    {
+        if env_config.bitcoin_network != network {
+            bail!(
+                "Bitcoin network mismatch: wallet uses {}, environment uses {}",
                 network,
-                client,
-                connection()?,
-                finality_confirmations,
-                target_block,
-                tauri_handle,
-                true, // default to true for mempool space fee estimation
-            )
-            .await
-        } else {
-            // If the new Bitcoin wallet (> 1.0.0 bdk) does not yet exist:
-            // We check if we have an old (< 1.0.0 bdk) wallet. If so, we migrate.
-            let export = Self::get_pre_1_0_bdk_wallet_export(data_dir, network, seed).await?;
-
-            Self::create_new(
-                xprivkey,
-                network,
-                client,
-                connection,
-                finality_confirmations,
-                target_block,
-                export,
-                tauri_handle,
-                true, // default to true for mempool space fee estimation
-            )
-            .await
+                env_config.bitcoin_network
+            );
         }
+
+        WalletBuilder::<Seed>::default()
+            .seed(seed.clone())
+            .network(network)
+            .electrum_rpc_urls(electrum_rpc_urls.to_vec())
+            .persister(PersisterConfig::SqliteFile {
+                data_dir: data_dir.as_ref().to_path_buf(),
+            })
+            .finality_confirmations(finality_confirmations)
+            .target_block(target_block)
+            .sync_interval(sync_interval)
+            .tauri_handle(tauri_handle)
+            .use_mempool_space_fee_estimation(true)
+            .build()
+            .await
     }
 
     /// Create a new wallet, persisted to an in-memory sqlite database.
     /// Should only be used for testing.
-    pub async fn with_sqlite_in_memory(
-        seed: &impl BitcoinWalletSeed,
+    pub async fn with_sqlite_in_memory<Seed>(
+        seed: &Seed,
         network: Network,
         electrum_rpc_urls: &[String],
         finality_confirmations: u32,
         target_block: u32,
         sync_interval: Duration,
         tauri_handle: TauriHandle,
-    ) -> Result<Wallet<bdk_wallet::rusqlite::Connection, Client>> {
-        Self::create_new(
-            seed.derive_extended_private_key(network)?,
-            network,
-            Client::new(electrum_rpc_urls, sync_interval)
-                .await
-                .expect("Failed to create electrum client"),
-            || {
-                bdk_wallet::rusqlite::Connection::open_in_memory()
-                    .context("Failed to open in-memory SQLite database")
-            },
-            finality_confirmations,
-            target_block,
-            None,
-            tauri_handle,
-            true, // default to true for mempool space fee estimation
-        )
-        .await
+    ) -> Result<Wallet<bdk_wallet::rusqlite::Connection, Client>>
+    where
+        Seed: BitcoinWalletSeed + Clone,
+    {
+        WalletBuilder::<Seed>::default()
+            .seed(seed.clone())
+            .network(network)
+            .electrum_rpc_urls(electrum_rpc_urls.to_vec())
+            .persister(PersisterConfig::InMemorySqlite)
+            .finality_confirmations(finality_confirmations)
+            .target_block(target_block)
+            .sync_interval(sync_interval)
+            .tauri_handle(tauri_handle)
+            .build()
+            .await
     }
 
     /// Create a new wallet in the database and perform a full scan.
@@ -518,12 +626,9 @@ impl Wallet {
         network: Network,
         client: Client,
         persister_constructor: impl FnOnce() -> Result<Persister>,
-        finality_confirmations: u32,
-        target_block: u32,
         old_wallet: Option<pre_1_0_0_bdk::Export>,
         tauri_handle: TauriHandle,
-        use_mempool_space_fee_estimation: bool,
-    ) -> Result<Wallet<Persister, Client>>
+    ) -> Result<KeyStore<Persister>>
     where
         Persister: WalletPersister + Sized,
         <Persister as WalletPersister>::Error: std::error::Error + Send + Sync + 'static,
@@ -596,30 +701,9 @@ impl Wallet {
 
         tracing::trace!("Initial Bitcoin wallet scan completed");
 
-        // Create the mempool client
-        let mempool_client = if use_mempool_space_fee_estimation {
-            mempool_client::MempoolClient::new(network).inspect_err(|e| {
-                tracing::warn!("Failed to create mempool client: {:?}. We will only use the Electrum server for fee estimation.", e);
-            }).ok()
-        } else {
-            None
-        };
-
-        // Create cached fee estimators
-        let cached_electrum_fee_estimator = Arc::new(CachedFeeEstimator::new(client.clone()));
-        let cached_mempool_fee_estimator =
-            Arc::new(mempool_client.clone().map(CachedFeeEstimator::new));
-
-        Ok(Wallet {
+        Ok(KeyStore {
             wallet: wallet.into_arc_mutex_async(),
-            electrum_client: Arc::new(client),
-            cached_electrum_fee_estimator,
-            cached_mempool_fee_estimator,
             persister: persister.into_arc_mutex_async(),
-            tauri_handle,
-            network,
-            finality_confirmations,
-            target_block,
         })
     }
 
@@ -628,13 +712,8 @@ impl Wallet {
     async fn create_existing<Persister>(
         xprivkey: Xpriv,
         network: Network,
-        client: Client,
         mut persister: Persister,
-        finality_confirmations: u32,
-        target_block: u32,
-        tauri_handle: TauriHandle,
-        use_mempool_space_fee_estimation: bool,
-    ) -> Result<Wallet<Persister, Client>>
+    ) -> Result<KeyStore<Persister>>
     where
         Persister: WalletPersister + Sized,
         <Persister as WalletPersister>::Error: std::error::Error + Send + Sync + 'static,
@@ -657,31 +736,10 @@ impl Wallet {
             .context("Failed to open database")?
             .context("No wallet found in database")?;
 
-        // Create the mempool client with caching
-        let cached_mempool_fee_estimator = if use_mempool_space_fee_estimation {
-            mempool_client::MempoolClient::new(network).inspect_err(|e| {
-                tracing::warn!("Failed to create mempool client: {:?}. We will only use the Electrum server for fee estimation.", e);
-            }).ok().map(CachedFeeEstimator::new)
-        } else {
-            None
-        };
-
-        // Wrap the electrum client with caching
-        let cached_electrum_fee_estimator = Arc::new(CachedFeeEstimator::new(client.clone()));
-
-        let wallet = Wallet {
+        Ok(KeyStore {
             wallet: wallet.into_arc_mutex_async(),
-            electrum_client: Arc::new(client),
-            cached_electrum_fee_estimator,
-            cached_mempool_fee_estimator: Arc::new(cached_mempool_fee_estimator),
             persister: persister.into_arc_mutex_async(),
-            tauri_handle,
-            network,
-            finality_confirmations,
-            target_block,
-        };
-
-        Ok(wallet)
+        })
     }
 
     /// Broadcast the given transaction to the network and emit a tracing statement
@@ -755,10 +813,10 @@ impl Wallet {
             .expect("time went backwards")
             .as_secs();
 
-        {
-            let mut wallet = self.wallet.lock().await;
-            let mut persister = self.persister.lock().await;
-            wallet.apply_unconfirmed_txs(vec![(transaction, timestamp)]);
+        for key_store in [&self.primary, &self.legacy] {
+            let mut wallet = key_store.wallet.lock().await;
+            let mut persister = key_store.persister.lock().await;
+            wallet.apply_unconfirmed_txs(vec![(transaction.clone(), timestamp)]);
             wallet.persist(&mut persister)?;
         }
 
@@ -792,15 +850,29 @@ impl Wallet {
 
     // Returns the TxId of the last published Bitcoin transaction
     pub async fn last_published_txid(&self) -> Result<Txid> {
-        let wallet = self.wallet.lock().await;
+        let primary = self
+            .primary
+            .wallet
+            .lock()
+            .await
+            .transactions()
+            .max_by_key(|tx| tx.chain_position)
+            .map(|tx| (tx.chain_position, tx.tx_node.txid));
+        let legacy = self
+            .legacy
+            .wallet
+            .lock()
+            .await
+            .transactions()
+            .max_by_key(|tx| tx.chain_position)
+            .map(|tx| (tx.chain_position, tx.tx_node.txid));
 
-        // Get all the transactions sorted by recency
-        let mut txs = wallet.transactions().collect::<Vec<_>>();
-        txs.sort_by(|tx1, tx2| tx2.chain_position.cmp(&tx1.chain_position));
-
-        let last_tx = txs.first().context("No transactions found")?;
-
-        Ok(last_tx.tx_node.txid)
+        [primary, legacy]
+            .into_iter()
+            .flatten()
+            .max_by_key(|(position, _)| *position)
+            .map(|(_, txid)| txid)
+            .context("No transactions found")
     }
 
     pub async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
@@ -885,7 +957,7 @@ impl Wallet {
     }
 
     pub async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
-        let wallet = self.wallet.lock().await;
+        let wallet = self.primary.wallet.lock().await;
         match bdk_wallet::export::FullyNodedExport::export_wallet(
             &wallet,
             &format!("{}-{}", role, self.network),
@@ -894,6 +966,12 @@ impl Wallet {
             Result::Ok(wallet_export) => Ok(wallet_export),
             Err(err_msg) => Err(anyhow::Error::msg(err_msg)),
         }
+    }
+
+    pub async fn legacy_wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
+        let wallet = self.legacy.wallet.lock().await;
+        FullyNodedExport::export_wallet(&wallet, &format!("{}-legacy-{}", role, self.network), true)
+            .map_err(anyhow::Error::msg)
     }
 
     /// Get a transaction from the Electrum server or the cache.
@@ -913,12 +991,13 @@ impl Wallet {
     /// Useful for syncing the whole wallet in chunks.
     async fn chunked_sync_request(
         &self,
+        key_store: &KeyStore<Connection>,
         max_num_chunks: u32,
         batch_size: u32,
     ) -> Vec<SyncRequestBuilderFactory> {
         #[allow(clippy::type_complexity)]
         let (spks, chain_tip): (Vec<((KeychainKind, u32), ScriptBuf)>, CheckPoint) = {
-            let wallet = self.wallet.lock().await;
+            let wallet = key_store.wallet.lock().await;
 
             let spks = wallet
                 .spk_index()
@@ -968,14 +1047,21 @@ impl Wallet {
     /// Spawn `num_chunks` tasks to sync the wallet in parallel
     /// Call the callback with the cumulative progress of the sync
     pub async fn chunked_sync_with_callback(&self, callback: sync_ext::SyncCallback) -> Result<()> {
-        // Construct the chunks to process
-        let sync_request_factories = self
-            .chunked_sync_request(Self::SCAN_CHUNKS, Self::SCAN_BATCH_SIZE)
-            .await;
+        let primary_requests = self
+            .chunked_sync_request(&self.primary, Self::SCAN_CHUNKS, Self::SCAN_BATCH_SIZE)
+            .await
+            .into_iter()
+            .map(|request| (&self.primary, request));
+        let legacy_requests = self
+            .chunked_sync_request(&self.legacy, Self::SCAN_CHUNKS, Self::SCAN_BATCH_SIZE)
+            .await
+            .into_iter()
+            .map(|request| (&self.legacy, request));
+        let sync_requests = primary_requests.chain(legacy_requests).collect::<Vec<_>>();
 
         tracing::debug!(
             "Starting to sync Bitcoin wallet with {} concurrent chunks and batch size of {}",
-            sync_request_factories.len(),
+            sync_requests.len(),
             Self::SCAN_BATCH_SIZE
         );
 
@@ -985,25 +1071,30 @@ impl Wallet {
         // Assign each sync request:
         // 1. its individual callback which links back to the CumulativeProgress
         // 2. its chunk of the SyncRequest
-        let sync_requests = sync_request_factories
+        let sync_requests = sync_requests
             .into_iter()
             .enumerate()
-            .map(|(index, sync_request_factory)| {
+            .map(|(index, (key_store, sync_request_factory))| {
                 let callback = cumulative_progress_handle
                     .clone()
                     .chunk_callback(callback.clone(), index as u64);
 
-                (callback, sync_request_factory)
+                (key_store, callback, sync_request_factory)
             })
             .collect::<Vec<_>>();
 
         // Create a vector of futures to process in parallel
-        let futures = sync_requests
-            .into_iter()
-            .map(|(callback, sync_request_factory)| {
-                self.sync_with_custom_callback(sync_request_factory, callback)
+        let futures =
+            sync_requests
+                .into_iter()
+                .map(|(key_store, callback, sync_request_factory)| {
+                    self.sync_key_store_with_custom_callback(
+                        key_store,
+                        sync_request_factory,
+                        callback,
+                    )
                     .in_current_span()
-            });
+                });
 
         // Start timer to measure the time taken to sync the wallet
         let start_time = Instant::now();
@@ -1037,6 +1128,16 @@ impl Wallet {
         sync_request_factory: SyncRequestBuilderFactory,
         callback: InnerSyncCallback,
     ) -> Result<()> {
+        self.sync_key_store_with_custom_callback(&self.primary, sync_request_factory, callback)
+            .await
+    }
+
+    async fn sync_key_store_with_custom_callback(
+        &self,
+        key_store: &KeyStore<Connection>,
+        sync_request_factory: SyncRequestBuilderFactory,
+        callback: InnerSyncCallback,
+    ) -> Result<()> {
         let callback = Arc::new(SyncMutex::new(callback));
 
         let sync_response = self
@@ -1061,10 +1162,10 @@ impl Wallet {
             .await?;
 
         // We only acquire the lock after the long running .sync(...) call has finished
-        let mut wallet = self.wallet.lock().await;
+        let mut wallet = key_store.wallet.lock().await;
         wallet.apply_update(sync_response)?; // Use the full sync_response, not just chain_update
 
-        let mut persister = self.persister.lock().await;
+        let mut persister = key_store.persister.lock().await;
         wallet.persist(&mut persister)?;
 
         Ok(())
@@ -1129,7 +1230,8 @@ impl Wallet {
 
     /// Calculate the fee for a given transaction.
     ///
-    /// Will fail if the transaction inputs are not owned by this wallet.
+    /// Looks up every previous output so transactions funded by both key stores
+    /// can be handled without assigning ownership to only one BDK wallet.
     pub async fn transaction_fee(&self, txid: Txid) -> Result<Amount> {
         // Ensure wallet is synced before getting transaction
         self.sync().await?;
@@ -1142,9 +1244,35 @@ impl Wallet {
             )?
             .ok_or_else(|| anyhow!("Transaction not found"))?;
 
-        let fee = self.wallet.lock().await.calculate_fee(&transaction)?;
+        let mut input_sum = 0u64;
+        for input in &transaction.input {
+            let previous_tx = self
+                .get_tx(input.previous_output.txid)
+                .await?
+                .with_context(|| {
+                    format!(
+                        "Previous transaction {} not found",
+                        input.previous_output.txid
+                    )
+                })?;
+            let previous_output = previous_tx
+                .output
+                .get(input.previous_output.vout as usize)
+                .with_context(|| format!("Previous output {} not found", input.previous_output))?;
+            input_sum = input_sum
+                .checked_add(previous_output.value.to_sat())
+                .context("Bitcoin transaction input amount overflowed")?;
+        }
 
-        Ok(fee)
+        let output_sum = transaction.output.iter().try_fold(0u64, |sum, output| {
+            sum.checked_add(output.value.to_sat())
+                .context("Bitcoin transaction output amount overflowed")
+        })?;
+        let fee = input_sum
+            .checked_sub(output_sum)
+            .context("Bitcoin transaction outputs exceed inputs")?;
+
+        Ok(Amount::from_sat(fee))
     }
 }
 
@@ -1312,18 +1440,49 @@ where
         }
     }
 
-    pub async fn sign_and_finalize(&self, mut psbt: Psbt) -> Result<Transaction> {
-        // Acquire the wallet lock once here for efficiency within the non-finalized block
-        let wallet_guard = self.wallet.lock().await;
+    async fn legacy_utxos(&self) -> Result<Vec<ForeignUtxo>> {
+        let wallet = self.legacy.wallet.lock().await;
+        wallet
+            .list_unspent()
+            .map(|utxo| {
+                let satisfaction_weight = wallet
+                    .public_descriptor(utxo.keychain)
+                    .max_weight_to_satisfy()
+                    .context("Legacy descriptor cannot be satisfied")?;
+                let psbt_input = wallet
+                    .get_psbt_input(utxo.clone(), None, false)
+                    .context("Failed to construct PSBT input for legacy UTXO")?;
 
-        let finalized = wallet_guard.sign(&mut psbt, Default::default())?;
+                Ok(ForeignUtxo {
+                    outpoint: utxo.outpoint,
+                    psbt_input,
+                    satisfaction_weight,
+                    value: utxo.txout.value,
+                })
+            })
+            .collect()
+    }
+
+    pub async fn sign_and_finalize(&self, mut psbt: Psbt) -> Result<Transaction> {
+        let finalized = self
+            .primary
+            .wallet
+            .lock()
+            .await
+            .sign(&mut psbt, Default::default())?;
+        let finalized = if finalized {
+            true
+        } else {
+            self.legacy
+                .wallet
+                .lock()
+                .await
+                .sign(&mut psbt, Default::default())?
+        };
 
         if !finalized {
             bail!("PSBT is not finalized")
         }
-
-        // Release the lock if finalization succeeded
-        drop(wallet_guard);
 
         let tx = psbt.extract_tx();
         Ok(tx?)
@@ -1331,17 +1490,20 @@ where
 
     /// Returns the total Bitcoin balance, which includes pending funds
     pub async fn balance(&self) -> Result<Amount> {
-        Ok(self.wallet.lock().await.balance().total())
+        Ok(self.balance_info().await?.total())
     }
 
     /// Returns the balance info of the wallet, including unconfirmed funds etc.
     pub async fn balance_info(&self) -> Result<Balance> {
-        Ok(self.wallet.lock().await.balance())
+        let primary = self.primary.wallet.lock().await.balance();
+        let legacy = self.legacy.wallet.lock().await.balance();
+
+        Ok(primary + legacy)
     }
 
     /// Reveals the next address from the wallet.
     pub async fn new_address(&self) -> Result<Address> {
-        let mut wallet = self.wallet.lock().await;
+        let mut wallet = self.primary.wallet.lock().await;
 
         // Only reveal a new address if absolutely necessary
         // We want to avoid revealing more and more addresses
@@ -1349,7 +1511,7 @@ where
 
         // Important: persist that we revealed a new address.
         // Otherwise the wallet might reuse it (bad).
-        let mut persister = self.persister.lock().await;
+        let mut persister = self.primary.persister.lock().await;
         wallet.persist(&mut persister)?;
 
         Ok(address)
@@ -1374,27 +1536,23 @@ where
             .transpose()
             .context("Change address is not on the correct network")?;
 
-        let script = address.script_pubkey();
+        let mut fee = Amount::ZERO;
+        for _ in 0..3 {
+            let psbt = self
+                .send_to_address(address.clone(), amount, fee, change_override.clone())
+                .await?;
+            let estimated_fee = self
+                .estimate_fee(psbt.unsigned_tx.weight(), Some(amount))
+                .await?;
 
-        let psbt = {
-            let mut wallet = self.wallet.lock().await;
+            if estimated_fee == fee {
+                return Ok(psbt);
+            }
 
-            // Build the transaction with a dummy fee rate
-            // just to figure out the final weight of the transaction
-            // send_to_address(...) takes an absolute fee
-            let mut tx_builder = wallet.build_tx();
+            fee = estimated_fee;
+        }
 
-            tx_builder.add_recipient(script.clone(), amount);
-            tx_builder.fee_absolute(Amount::ZERO);
-
-            tx_builder.finish()?
-        };
-
-        let weight = psbt.unsigned_tx.weight();
-        let fee = self.estimate_fee(weight, Some(amount)).await?;
-
-        self.send_to_address(address, amount, fee, change_override)
-            .await
+        bail!("Bitcoin transaction fee did not converge after adding legacy inputs")
     }
 
     /// Builds a partially signed transaction that sweeps our entire balance
@@ -1433,15 +1591,64 @@ where
             .transpose()
             .context("Change address is not on the correct network")?;
 
-        let mut wallet = self.wallet.lock().await;
         let script = address.script_pubkey();
+        let mut legacy_utxos = self.legacy_utxos().await?;
+        legacy_utxos.sort_by_key(|utxo| std::cmp::Reverse(utxo.value));
+        let mut wallet = self.primary.wallet.lock().await;
 
-        // Build the transaction with a manual fee
-        let mut tx_builder = wallet.build_tx();
-        tx_builder.add_recipient(script.clone(), amount);
-        tx_builder.fee_absolute(spending_fee);
+        let mut psbt = {
+            let mut tx_builder = wallet.build_tx();
+            tx_builder.add_recipient(script.clone(), amount);
+            tx_builder.fee_absolute(spending_fee);
 
-        let mut psbt = tx_builder.finish()?;
+            match tx_builder.finish() {
+                Ok(psbt) => psbt,
+                Err(bdk_wallet::error::CreateTxError::CoinSelection(_))
+                    if !legacy_utxos.is_empty() =>
+                {
+                    let mut last_coin_selection_error = None;
+                    let mut funded_psbt = None;
+
+                    for num_legacy_utxos in 1..=legacy_utxos.len() {
+                        let mut tx_builder = wallet.build_tx();
+                        tx_builder.add_recipient(script.clone(), amount);
+                        tx_builder.fee_absolute(spending_fee);
+
+                        for utxo in &legacy_utxos[..num_legacy_utxos] {
+                            tx_builder
+                                .add_foreign_utxo(
+                                    utxo.outpoint,
+                                    utxo.psbt_input.clone(),
+                                    utxo.satisfaction_weight,
+                                )
+                                .context("Failed to add legacy UTXO to transaction")?;
+                        }
+
+                        match tx_builder.finish() {
+                            Ok(psbt) => {
+                                funded_psbt = Some(psbt);
+                                break;
+                            }
+                            Err(bdk_wallet::error::CreateTxError::CoinSelection(error)) => {
+                                last_coin_selection_error = Some(error);
+                            }
+                            Err(error) => return Err(error.into()),
+                        }
+                    }
+
+                    if let Some(psbt) = funded_psbt {
+                        psbt
+                    } else {
+                        return Err(bdk_wallet::error::CreateTxError::CoinSelection(
+                            last_coin_selection_error
+                                .context("Legacy UTXO selection did not run")?,
+                        )
+                        .into());
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            }
+        };
 
         match psbt.unsigned_tx.output.as_mut_slice() {
             // our primary output is the 2nd one? reverse the vectors
@@ -1481,7 +1688,8 @@ where
     ///
     /// Returns a tuple of (max_giveable_amount, spending_fee).
     pub async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
-        let mut wallet = self.wallet.lock().await;
+        let legacy_utxos = self.legacy_utxos().await?;
+        let mut wallet = self.primary.wallet.lock().await;
 
         // Construct a dummy drain transaction
         let dummy_script = ScriptBuf::from(vec![0u8; locking_script_size]);
@@ -1491,6 +1699,12 @@ where
         tx_builder.drain_to(dummy_script.clone());
         tx_builder.fee_absolute(Amount::ZERO);
         tx_builder.drain_wallet();
+
+        for utxo in legacy_utxos {
+            tx_builder
+                .add_foreign_utxo(utxo.outpoint, utxo.psbt_input, utxo.satisfaction_weight)
+                .context("Failed to add legacy UTXO to drain transaction")?;
+        }
 
         // The weight WILL NOT change, even if we change the fee
         // because we are draining the wallet (using all inputs) and
@@ -2880,10 +3094,12 @@ impl EstimateFeeRate for StaticFeeRate {
 #[derive(Debug)]
 pub struct TestWalletBuilder {
     utxo_amount: u64,
+    legacy_utxo_amount: u64,
     sats_per_vb: u64,
     min_relay_sats_per_vb: u64,
     key: bitcoin::bip32::Xpriv,
     num_utxos: u8,
+    num_legacy_utxos: u8,
 }
 
 impl TestWalletBuilder {
@@ -2894,10 +3110,12 @@ impl TestWalletBuilder {
     pub fn new(amount: u64) -> Self {
         TestWalletBuilder {
             utxo_amount: amount,
+            legacy_utxo_amount: 0,
             sats_per_vb: 1,
             min_relay_sats_per_vb: 1,
             key: "tprv8ZgxMBicQKsPeZRHk4rTG6orPS2CRNFX3njhUXx5vj9qGog5ZMH4uGReDWN5kCkY3jmWEtWause41CDvBRXD1shKknAMKxT99o9qUTRVC6m".parse().unwrap(),
             num_utxos: 1,
+            num_legacy_utxos: 0,
         }
     }
 
@@ -2928,11 +3146,21 @@ impl TestWalletBuilder {
         }
     }
 
+    pub fn with_legacy_utxos(self, amount: u64, number: u8) -> Self {
+        Self {
+            legacy_utxo_amount: amount,
+            num_legacy_utxos: number,
+            ..self
+        }
+    }
+
     pub async fn build(self) -> Wallet<Connection, StaticFeeRate> {
         use bdk_wallet::chain::BlockId;
         use bdk_wallet::test_utils::{insert_checkpoint, receive_output_in_latest_block};
 
         let bdk_network = bitcoin::Network::Regtest;
+        let legacy_key = bitcoin::bip32::Xpriv::new_master(bdk_network, &[1u8; 32])
+            .expect("Failed to create legacy key for test wallet");
 
         let external_descriptor = Bip84(self.key, KeychainKind::External)
             .build(bdk_network)
@@ -2940,14 +3168,27 @@ impl TestWalletBuilder {
         let internal_descriptor = Bip84(self.key, KeychainKind::Internal)
             .build(bdk_network)
             .expect("Failed to build internal descriptor for test wallet");
+        let legacy_external_descriptor = Bip84(legacy_key, KeychainKind::External)
+            .build(bdk_network)
+            .expect("Failed to build legacy external descriptor for test wallet");
+        let legacy_internal_descriptor = Bip84(legacy_key, KeychainKind::Internal)
+            .build(bdk_network)
+            .expect("Failed to build legacy internal descriptor for test wallet");
 
-        let mut persister = bdk_wallet::rusqlite::Connection::open_in_memory()
-            .expect("Failed to open in-memory DB for test wallet");
+        let mut primary_persister = bdk_wallet::rusqlite::Connection::open_in_memory()
+            .expect("Failed to open primary in-memory DB for test wallet");
+        let mut legacy_persister = bdk_wallet::rusqlite::Connection::open_in_memory()
+            .expect("Failed to open legacy in-memory DB for test wallet");
 
-        let bdk_core_wallet = bdk_wallet::Wallet::create(external_descriptor, internal_descriptor)
+        let primary_wallet = bdk_wallet::Wallet::create(external_descriptor, internal_descriptor)
             .network(bdk_network)
-            .create_wallet(&mut persister)
-            .expect("Failed to create bdk_wallet::Wallet for test");
+            .create_wallet(&mut primary_persister)
+            .expect("Failed to create primary bdk_wallet::Wallet for test");
+        let legacy_wallet =
+            bdk_wallet::Wallet::create(legacy_external_descriptor, legacy_internal_descriptor)
+                .network(bdk_network)
+                .create_wallet(&mut legacy_persister)
+                .expect("Failed to create legacy bdk_wallet::Wallet for test");
 
         let client = StaticFeeRate::new(
             FeeRate::from_sat_per_vb(self.sats_per_vb).unwrap(),
@@ -2957,18 +3198,24 @@ impl TestWalletBuilder {
         let cached_electrum_fee_estimator = Arc::new(CachedFeeEstimator::new(client.clone()));
 
         let wallet = Wallet {
-            wallet: bdk_core_wallet.into_arc_mutex_async(),
+            primary: KeyStore {
+                wallet: primary_wallet.into_arc_mutex_async(),
+                persister: primary_persister.into_arc_mutex_async(),
+            },
+            legacy: KeyStore {
+                wallet: legacy_wallet.into_arc_mutex_async(),
+                persister: legacy_persister.into_arc_mutex_async(),
+            },
             electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(None), // We don't use mempool client in tests
-            persister: persister.into_arc_mutex_async(),
             tauri_handle: None,
             network: Network::Regtest,
             finality_confirmations: 1,
             target_block: 1,
         };
 
-        let mut locked_wallet = wallet.wallet.try_lock().unwrap();
+        let mut locked_wallet = wallet.primary.wallet.try_lock().unwrap();
 
         // Create a block
         insert_checkpoint(
@@ -2995,7 +3242,125 @@ impl TestWalletBuilder {
 
         drop(locked_wallet);
 
+        let mut locked_legacy_wallet = wallet.legacy.wallet.try_lock().unwrap();
+
+        insert_checkpoint(
+            &mut locked_legacy_wallet,
+            BlockId {
+                height: 42,
+                hash: <bitcoin::blockdata::block::BlockHash as bitcoin::hashes::Hash>::all_zeros(),
+            },
+        );
+
+        for _ in 0..self.num_legacy_utxos {
+            receive_output_in_latest_block(
+                &mut locked_legacy_wallet,
+                Amount::from_sat(self.legacy_utxo_amount),
+            );
+        }
+
+        insert_checkpoint(
+            &mut locked_legacy_wallet,
+            BlockId {
+                height: 43,
+                hash: <bitcoin::blockdata::block::BlockHash as bitcoin::hashes::Hash>::all_zeros(),
+            },
+        );
+
+        drop(locked_legacy_wallet);
+
         wallet
+    }
+}
+
+#[cfg(test)]
+mod dual_key_store_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn balance_includes_primary_and_legacy_funds() {
+        let wallet = TestWalletBuilder::new(8_000)
+            .with_legacy_utxos(12_000, 1)
+            .build()
+            .await;
+
+        assert_eq!(wallet.balance().await.unwrap(), Amount::from_sat(20_000));
+    }
+
+    #[tokio::test]
+    async fn receive_addresses_only_belong_to_primary_wallet() {
+        let wallet = TestWalletBuilder::new(0).build().await;
+        let address = wallet.new_address().await.unwrap();
+
+        assert!(
+            wallet
+                .primary
+                .wallet
+                .lock()
+                .await
+                .is_mine(address.script_pubkey())
+        );
+        assert!(
+            !wallet
+                .legacy
+                .wallet
+                .lock()
+                .await
+                .is_mine(address.script_pubkey())
+        );
+    }
+
+    #[tokio::test]
+    async fn payment_selects_and_signs_inputs_from_both_wallets() {
+        let wallet = TestWalletBuilder::new(8_000)
+            .with_legacy_utxos(8_000, 1)
+            .with_zero_fees()
+            .build()
+            .await;
+        let recipient = wallet
+            .primary
+            .wallet
+            .lock()
+            .await
+            .peek_address(KeychainKind::External, 10)
+            .address;
+
+        let psbt = wallet
+            .send_to_address(recipient, Amount::from_sat(12_000), Amount::ZERO, None)
+            .await
+            .unwrap();
+
+        assert_eq!(psbt.unsigned_tx.input.len(), 2);
+        let transaction = wallet.sign_and_finalize(psbt).await.unwrap();
+        assert!(
+            transaction
+                .input
+                .iter()
+                .all(|input| !input.witness.is_empty())
+        );
+    }
+
+    #[tokio::test]
+    async fn payment_only_selects_as_many_legacy_inputs_as_needed() {
+        let wallet = TestWalletBuilder::new(1_000)
+            .with_legacy_utxos(10_000, 3)
+            .with_zero_fees()
+            .build()
+            .await;
+        let recipient = wallet
+            .primary
+            .wallet
+            .lock()
+            .await
+            .peek_address(KeychainKind::External, 10)
+            .address;
+
+        let psbt = wallet
+            .send_to_address(recipient, Amount::from_sat(8_000), Amount::ZERO, None)
+            .await
+            .unwrap();
+
+        assert_eq!(psbt.unsigned_tx.input.len(), 1);
     }
 }
 

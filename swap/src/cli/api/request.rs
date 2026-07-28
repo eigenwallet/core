@@ -1435,11 +1435,20 @@ pub async fn get_balance(balance: BalanceArgs, context: Arc<Context>) -> Result<
 #[tracing::instrument(fields(method = "export_bitcoin_wallet"), skip(context))]
 pub async fn export_bitcoin_wallet(context: Arc<Context>) -> Result<serde_json::Value> {
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
+    let config = context.try_get_config().await?;
+    let seed = config.seed.context("Seed not initialized")?;
 
-    let wallet_export = bitcoin_wallet.wallet_export("cli").await?;
+    let legacy_wallet_export = bitcoin_wallet.legacy_wallet_export("cli").await?;
+    let legacy_change_descriptor = legacy_wallet_export
+        .change_descriptor()
+        .context("Legacy wallet has no change descriptor")?;
+    let seed_phrase = seed.bitcoin_mnemonic();
     tracing::info!("Exported bitcoin wallet");
+
     Ok(json!({
-        "descriptor": wallet_export.to_string(),
+        "seed_phrase": seed_phrase,
+        "legacy_descriptor": legacy_wallet_export.descriptor(),
+        "legacy_change_descriptor": legacy_change_descriptor,
     }))
 }
 

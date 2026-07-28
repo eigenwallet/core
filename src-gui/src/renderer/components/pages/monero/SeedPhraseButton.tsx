@@ -1,27 +1,19 @@
 import { ListItemIcon, MenuItem, Typography } from "@mui/material";
 import { Key as KeyIcon } from "@mui/icons-material";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { getMoneroSeedAndRestoreHeight } from "renderer/rpc";
-import {
-  GetMoneroSeedResponse,
-  GetRestoreHeightResponse,
-} from "models/tauriModel";
+import { getWalletRecovery, WalletRecoveryData } from "renderer/rpc";
 import { isContextWithMoneroWallet } from "models/tauriModelExt";
 
 interface SeedPhraseButtonProps {
-  onMenuClose: () => void;
-  onSeedPhraseSuccess: (
-    response: [GetMoneroSeedResponse, GetRestoreHeightResponse],
-  ) => void;
+  onSeedPhraseSuccess: (response: WalletRecoveryData) => void;
 }
 
 export default function SeedPhraseButton({
-  onMenuClose,
   onSeedPhraseSuccess,
 }: SeedPhraseButtonProps) {
   return (
     <PromiseInvokeButton
-      onInvoke={getMoneroSeedAndRestoreHeight}
+      onInvoke={getWalletRecovery}
       onSuccess={onSeedPhraseSuccess}
       displayErrorSnackbar={true}
       contextRequirement={isContextWithMoneroWallet}
@@ -37,7 +29,7 @@ export default function SeedPhraseButton({
       <ListItemIcon>
         <KeyIcon />
       </ListItemIcon>
-      <Typography>Seedphrase</Typography>
+      <Typography>Wallet Recovery</Typography>
     </PromiseInvokeButton>
   );
 }

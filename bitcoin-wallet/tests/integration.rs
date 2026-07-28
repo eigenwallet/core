@@ -38,24 +38,39 @@ impl Default for TestSeed {
     }
 }
 
+impl TestSeed {
+    fn legacy_seed(&self) -> [u8; 64] {
+        let mut seed = self.0;
+        seed[0] ^= 1;
+        seed
+    }
+}
+
 impl bitcoin_wallet::BitcoinWalletSeed for TestSeed {
     fn derive_extended_private_key(
         &self,
         network: bitcoin::Network,
-    ) -> anyhow::Result<bitcoin::bip32::ExtendedPrivKey> {
-        #[allow(deprecated)]
-        {
-            Ok(bitcoin::bip32::ExtendedPrivKey::new_master(network, &self.0)?)
-        }
+    ) -> anyhow::Result<bitcoin::bip32::Xpriv> {
+        Ok(bitcoin::bip32::Xpriv::new_master(network, &self.0)?)
     }
 
     fn derive_extended_private_key_legacy(
+        &self,
+        network: bitcoin::Network,
+    ) -> anyhow::Result<bitcoin::bip32::Xpriv> {
+        Ok(bitcoin::bip32::Xpriv::new_master(
+            network,
+            &self.legacy_seed(),
+        )?)
+    }
+
+    fn derive_extended_private_key_pre_bdk_1(
         &self,
         network: bdk::bitcoin::Network,
     ) -> anyhow::Result<bdk::bitcoin::util::bip32::ExtendedPrivKey> {
         Ok(bdk::bitcoin::util::bip32::ExtendedPrivKey::new_master(
             network,
-            &self.0,
+            &self.legacy_seed(),
         )?)
     }
 }

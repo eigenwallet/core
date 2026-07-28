@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 use swap_fs::ensure_directory_exists;
 use zeroize::Zeroizing;
 
+mod bip39;
+
 pub const SEED_LENGTH: usize = 32;
 
 #[derive(Clone, Eq, PartialEq)]
@@ -47,6 +49,11 @@ impl Seed {
         let bytes = self.derive(b"NETWORK").derive(b"LIBP2P_IDENTITY").bytes();
 
         identity::Keypair::ed25519_from_bytes(bytes).expect("we always pass 32 bytes")
+    }
+
+    /// Encode the Monero seed entropy as a standard 24-word BIP39 mnemonic.
+    pub fn bitcoin_mnemonic(&self) -> String {
+        bip39::mnemonic(&self.bytes())
     }
 
     /// Create seed from a Monero wallet mnemonic string
@@ -136,17 +143,28 @@ impl Seed {
 
 impl bitcoin_wallet::BitcoinWalletSeed for Seed {
     fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<ExtendedPrivKey> {
-        let seed = self.derive(b"BITCOIN_EXTENDED_PRIVATE_KEY").bytes();
+        let seed = bip39::seed(&self.bitcoin_mnemonic());
         let private_key = ExtendedPrivKey::new_master(network, &seed)
-            .with_context(|| "Failed to create new master extended private key")?;
+            .context("Failed to create new master extended private key")?;
 
         Ok(private_key)
     }
 
-    /// Same as `derive_extended_private_key`, but using the legacy BDK API.
+    fn derive_extended_private_key_legacy(
+        &self,
+        network: bitcoin::Network,
+    ) -> Result<ExtendedPrivKey> {
+        let seed = self.derive(b"BITCOIN_EXTENDED_PRIVATE_KEY").bytes();
+        let private_key = ExtendedPrivKey::new_master(network, &seed)
+            .with_context(|| "Failed to create legacy master extended private key")?;
+
+        Ok(private_key)
+    }
+
+    /// Same as `derive_extended_private_key_legacy`, but using the legacy BDK API.
     ///
     /// This is only used for the migration path from the old wallet format to the new one.
-    fn derive_extended_private_key_legacy(
+    fn derive_extended_private_key_pre_bdk_1(
         &self,
         network: bdk::bitcoin::Network,
     ) -> Result<bdk::bitcoin::util::bip32::ExtendedPrivKey> {
