@@ -97,3 +97,25 @@ impl NodeRecord {
         self.health.success_rate()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::NodeHealthStats;
+
+    #[test]
+    fn success_rate_is_zero_without_samples() {
+        let stats = NodeHealthStats::default();
+        assert_eq!(stats.success_rate(), 0.0);
+    }
+
+    #[test]
+    fn success_rate_uses_success_over_total_checks() {
+        let stats = NodeHealthStats {
+            success_count: 3,
+            failure_count: 1,
+            ..Default::default()
+        };
+
+        assert_eq!(stats.success_rate(), 0.75);
+    }
+}

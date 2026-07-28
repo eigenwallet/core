@@ -185,3 +185,19 @@ pub async fn start_server_with_random_port(
 
     Ok((server_info, status_receiver, pool_handle))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ServerInfo;
+
+    #[test]
+    fn server_info_converts_to_http_url() {
+        let server_info = ServerInfo {
+            host: "127.0.0.1".to_string(),
+            port: 18081,
+        };
+
+        let url: String = server_info.into();
+        assert_eq!(url, "http://127.0.0.1:18081");
+    }
+}

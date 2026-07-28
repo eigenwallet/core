@@ -63,3 +63,21 @@ impl Config {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+    use monero_address::Network;
+    use std::path::PathBuf;
+
+    #[test]
+    fn new_random_port_uses_localhost_and_port_zero() {
+        let config = Config::new_random_port(PathBuf::from("/tmp/monero-rpc-pool"), Network::Testnet);
+
+        assert_eq!(config.host, "127.0.0.1");
+        assert_eq!(config.port, 0);
+        assert_eq!(config.data_dir, PathBuf::from("/tmp/monero-rpc-pool"));
+        assert!(config.tor_client.is_none());
+        assert_eq!(config.network, Network::Testnet);
+    }
+}

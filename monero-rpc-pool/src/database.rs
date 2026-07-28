@@ -28,6 +28,34 @@ pub fn network_to_string(network: &Network) -> &'static str {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{network_to_string, parse_network};
+    use monero_address::Network;
+
+    #[test]
+    fn parse_network_accepts_expected_values_case_insensitively() {
+        assert!(matches!(parse_network("mainnet"), Ok(Network::Mainnet)));
+        assert!(matches!(parse_network("STAGENET"), Ok(Network::Stagenet)));
+        assert!(matches!(parse_network("TestNet"), Ok(Network::Testnet)));
+    }
+
+    #[test]
+    fn parse_network_rejects_unknown_values() {
+        let error = parse_network("devnet").expect_err("expected invalid network to fail");
+        assert!(error.to_string().contains("Invalid network"));
+    }
+
+    #[test]
+    fn network_to_string_round_trips_supported_networks() {
+        for network in [Network::Mainnet, Network::Stagenet, Network::Testnet] {
+            let encoded = network_to_string(&network);
+            let decoded = parse_network(encoded).expect("expected encoded network to parse");
+            assert_eq!(decoded, network);
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Database {
     pub pool: SqlitePool,
