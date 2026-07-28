@@ -1,5 +1,5 @@
 import { createListenerMiddleware } from "@reduxjs/toolkit";
-import { throttle, debounce } from "lodash";
+import { throttle } from "lodash";
 import {
   getAllSwapInfos,
   getAllSwapTimelocks,
@@ -42,9 +42,9 @@ const throttledGetSwapInfoFunctions = new Map<
 // Function to get or create a throttled getSwapInfo for a specific swap_id
 const getThrottledSwapInfoUpdater = (swapId: string) => {
   if (!throttledGetSwapInfoFunctions.has(swapId)) {
-    // Create a throttled function that executes at most once every 2 seconds
-    // but will wait for 3 seconds of quiet during rapid calls (using debounce)
-    const debouncedGetSwapInfo = debounce(() => {
+    // Execute immediately on the first progress event, then coalesce rapid
+    // follow-up events so the history view is kept fresh without hammering RPC.
+    const throttledFunction = throttle(() => {
       logger.debug(`Executing getSwapInfo for swap ${swapId}`);
       getSwapInfo(swapId).catch((error) => {
         logger.debug(`Failed to fetch swap info for swap ${swapId}: ${error}`);
@@ -52,12 +52,7 @@ const getThrottledSwapInfoUpdater = (swapId: string) => {
       getSwapTimelock(swapId).catch((error) => {
         logger.debug(`Failed to fetch timelock for swap ${swapId}: ${error}`);
       });
-    }, 3000); // 3 seconds debounce for rapid calls
-
-    const throttledFunction = throttle(debouncedGetSwapInfo, 2000, {
-      leading: true, // Execute immediately on first call
-      trailing: true, // Execute on trailing edge if needed
-    });
+    }, 2000);
 
     throttledGetSwapInfoFunctions.set(swapId, throttledFunction);
   }
