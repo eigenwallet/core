@@ -30,20 +30,18 @@ import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import SetRestoreHeightModal from "../SetRestoreHeightModal";
 import SetPasswordModal from "../SetPasswordModal";
 import SeedPhraseButton from "../SeedPhraseButton";
-import SeedPhraseModal from "../SeedPhraseModal";
-import {
-  GetMoneroSeedResponse,
-  GetRestoreHeightResponse,
-} from "models/tauriModel";
+import { WalletRecoveryData } from "renderer/rpc";
 
 interface WalletActionButtonsProps {
   balance: {
     unlocked_balance: string;
   };
+  onShowWalletRecovery: (walletRecovery: WalletRecoveryData) => void;
 }
 
 export default function WalletActionButtons({
   balance,
+  onShowWalletRecovery,
 }: WalletActionButtonsProps) {
   const navigate = useNavigate();
 
@@ -51,10 +49,6 @@ export default function WalletActionButtons({
   const [restoreHeightDialogOpen, setRestoreHeightDialogOpen] = useState(false);
   const [subaddressesDialogOpen, setSubaddressesDialogOpen] = useState(false);
   const [setPasswordDialogOpen, setSetPasswordDialogOpen] = useState(false);
-  const [seedPhrase, setSeedPhrase] = useState<
-    [GetMoneroSeedResponse, GetRestoreHeightResponse] | null
-  >(null);
-
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchorEl);
 
@@ -75,7 +69,6 @@ export default function WalletActionButtons({
         open={setPasswordDialogOpen}
         onClose={() => setSetPasswordDialogOpen(false)}
       />
-      <SeedPhraseModal onClose={() => setSeedPhrase(null)} seed={seedPhrase} />
       <SendTransactionModal
         balance={balance}
         open={sendDialogOpen}
@@ -137,8 +130,10 @@ export default function WalletActionButtons({
               <Typography>Restore Height</Typography>
             </MenuItem>
             <SeedPhraseButton
-              onMenuClose={handleMenuClose}
-              onSeedPhraseSuccess={setSeedPhrase}
+              onSeedPhraseSuccess={(walletRecovery) => {
+                handleMenuClose();
+                onShowWalletRecovery(walletRecovery);
+              }}
             />
             <MenuItem
               onClick={() => {

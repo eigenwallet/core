@@ -18,6 +18,7 @@ type Props = {
   enableQrCode?: boolean;
   light?: boolean;
   spoilerText?: string;
+  title?: string;
   truncate?: boolean;
 };
 
@@ -66,6 +67,7 @@ export default function ActionableMonospaceTextBox({
   enableQrCode = true,
   light = false,
   spoilerText,
+  title,
   truncate = false,
 }: Props) {
   const [copied, setCopied] = useState(false);
@@ -82,7 +84,7 @@ export default function ActionableMonospaceTextBox({
 
   return (
     <>
-      <Box sx={{ position: "relative" }}>
+      <Box sx={{ position: "relative", mt: title ? 1 : 0 }}>
         <Tooltip
           title={
             isQrCodeButtonHovered
@@ -160,6 +162,28 @@ export default function ActionableMonospaceTextBox({
             >
               {spoilerText}
             </Box>
+          </Box>
+        )}
+        {title && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: -9,
+              left: 10,
+              zIndex: 2,
+              px: 0.75,
+              py: 0.125,
+              border: 1,
+              borderColor: "divider",
+              borderRadius: 0.5,
+              bgcolor: "background.paper",
+              color: "text.secondary",
+              fontSize: "0.7rem",
+              lineHeight: 1.4,
+              pointerEvents: "none",
+            }}
+          >
+            {title}
           </Box>
         )}
       </Box>

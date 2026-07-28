@@ -4,8 +4,13 @@ import { useState } from "react";
 import { useAppSelector } from "store/hooks";
 import WithdrawDialog from "../../../modal/wallet/WithdrawDialog";
 import WalletDescriptorButton from "./WalletDescriptorButton";
+import { WalletRecoveryData } from "renderer/rpc";
 
-export default function WalletActionButtons() {
+export default function WalletActionButtons({
+  onShowBitcoinSeed,
+}: {
+  onShowBitcoinSeed: (walletRecovery: WalletRecoveryData) => void;
+}) {
   const [showDialog, setShowDialog] = useState(false);
   const balance = useAppSelector((state) => state.bitcoinWallet.balance);
 
@@ -29,7 +34,7 @@ export default function WalletActionButtons() {
             onClick={() => setShowDialog(true)}
             disabled={balance === null || balance <= 0}
           />
-          <WalletDescriptorButton />
+          <WalletDescriptorButton onShowSeed={onShowBitcoinSeed} />
         </Box>
       </Box>
     </>

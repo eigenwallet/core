@@ -435,6 +435,22 @@ export async function getWalletDescriptor() {
   );
 }
 
+export interface WalletRecoveryData {
+  walletDescriptor: ExportBitcoinWalletResponse;
+  moneroSeed: GetMoneroSeedResponse;
+  restoreHeight: GetRestoreHeightResponse;
+}
+
+export async function getWalletRecovery(): Promise<WalletRecoveryData> {
+  const [walletDescriptor, moneroSeed, restoreHeight] = await Promise.all([
+    getWalletDescriptor(),
+    getMoneroSeed(),
+    getRestoreHeight(),
+  ]);
+
+  return { walletDescriptor, moneroSeed, restoreHeight };
+}
+
 export async function getMoneroNodeStatus(
   node: string,
   network: Network,
@@ -597,12 +613,6 @@ export async function getMoneroSyncProgress(): Promise<GetMoneroSyncProgressResp
 
 export async function getMoneroSeed(): Promise<GetMoneroSeedResponse> {
   return await invokeNoArgs<GetMoneroSeedResponse>("get_monero_seed");
-}
-
-export async function getMoneroSeedAndRestoreHeight(): Promise<
-  [GetMoneroSeedResponse, GetRestoreHeightResponse]
-> {
-  return Promise.all([getMoneroSeed(), getRestoreHeight()]);
 }
 
 // Wallet management functions that handle Redux dispatching

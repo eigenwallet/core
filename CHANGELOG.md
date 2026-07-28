@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Bitcoin receive addresses now use a standard 24-word BIP39 seed derived
+  from the Monero seed entropy. Legacy descriptors remain available and funds
+  from both the legacy and new Bitcoin wallets can be spent during migration.
+  A shared recovery page shows both seed formats, the Monero restore height,
+  and the legacy Bitcoin descriptors.
+
 ## [4.13.2] - 2026-07-23
 
 - GUI + ASB: Remove nine unusable Electrum defaults and add healthy Mullvad,
