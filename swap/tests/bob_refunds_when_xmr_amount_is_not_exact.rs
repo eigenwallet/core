@@ -71,3 +71,38 @@ async fn bob_refunds_when_xmr_amount_is_not_exact() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn bob_waits_for_cancel_timelock_before_allowing_btc_redeem_when_xmr_amount_is_wrong() {
+    harness::setup_test(SlowCancelConfig, None, None, |mut ctx| async move {
+        let (bob_swap, _bob_join_handle) = ctx.bob_swap().await;
+
+        let bob_swap = tokio::spawn(bob::run_until(bob_swap, |s| {
+            matches!(s, BobState::WaitingForCancelTimelockExpiration { .. })
+        }));
+
+        let alice_swap = ctx.alice_next_swap().await;
+        let alice_state = alice::run_until(
+            alice_swap,
+            |s| matches!(s, AliceState::BtcLocked { .. }),
+            FixedRate::default(),
+        )
+        .await?;
+
+        ctx.restart_alice().await;
+        let mut alice_swap = ctx.alice_next_swap().await;
+        alice_swap.state = lower_by_one_pico(alice_state);
+        let alice_swap = tokio::spawn(alice::run(alice_swap, FixedRate::default()));
+
+        let bob_state = bob_swap.await??;
+        assert!(matches!(
+            bob_state,
+            BobState::WaitingForCancelTimelockExpiration { .. }
+        ));
+
+        ctx.assert_alice_refunded(alice_swap.await??).await;
+
+        Ok::<(), anyhow::Error>(())
+    })
+    .await;
+}
