@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Fix a number of small ui issues / inconsistencies
+
 ## [4.13.2] - 2026-07-23
 
 - GUI + ASB: Remove nine unusable Electrum defaults and add healthy Mullvad,
