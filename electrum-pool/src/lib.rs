@@ -142,8 +142,8 @@ where
     /// Execute the given closure using one of the Electrum clients asynchronously.
     ///
     /// If the closure returns an I/O error or certificate error the balancer will try the next
-    /// node until all nodes have been exhausted. The last encountered error
-    /// is returned in that case.
+    /// node until all nodes have been exhausted. The returned error includes
+    /// all collected node failures in that case.
     #[instrument(level = "debug", skip(self, f), fields(operation = kind, total_urls = self.urls.len(), total_clients = self.client_count()))]
     pub async fn call<F, T>(&self, kind: &str, f: F) -> Result<T, Error>
     where
@@ -162,8 +162,8 @@ where
     /// Execute the given closure using one of the Electrum clients asynchronously.
     ///
     /// If the closure returns an I/O error or certificate error the balancer will try the next
-    /// node until all nodes have been exhausted. The last encountered error
-    /// is returned in that case.
+    /// node until all nodes have been exhausted. The returned error includes
+    /// all collected node failures in that case.
     #[instrument(level = "debug", skip(self, f), fields(operation = kind, total_urls = self.urls.len(), total_clients = self.client_count()))]
     pub async fn call_async<F, T>(&self, kind: &str, f: F) -> Result<T, Error>
     where
@@ -212,8 +212,8 @@ where
     /// Used for implementing the ElectrumApi trait.
     ///
     /// If the closure returns an I/O error or certificate error the balancer will try the next
-    /// node until all nodes have been exhausted. The last encountered error
-    /// is returned in that case.
+    /// node until all nodes have been exhausted. The returned error includes
+    /// all collected node failures in that case.
     ///
     /// Returns `MultiError` containing all individual failures, which can be inspected
     /// by the caller or automatically converted to a single `Error` for compatibility.
@@ -667,14 +667,9 @@ impl MultiError {
         self.errors.iter().all(predicate)
     }
 
-    /// Convert to a single Error (uses the last error, or creates a generic one)
+    /// Convert to a single Error while preserving the full failure summary.
     pub fn into_single_error(self) -> Error {
-        self.errors.into_iter().next_back().unwrap_or_else(|| {
-            Error::IOError(std::io::Error::other(format!(
-                "All operations failed: {}",
-                self.context
-            )))
-        })
+        Error::IOError(std::io::Error::other(self.to_string()))
     }
 }
 
@@ -1063,6 +1058,8 @@ mod tests {
                     error_msg.contains("All Electrum nodes failed")
                         || error_msg.contains("Mock connection failed")
                 );
+                assert!(error_msg.contains("tcp://localhost:50001"));
+                assert!(error_msg.contains("tcp://localhost:50002"));
             }
             Ok(_) => panic!("Expected error but got Ok"),
         }
@@ -1190,7 +1187,10 @@ mod tests {
 
         // Test converting to single error (should work with ?)
         let single_error: Error = multi_error.clone().into();
-        assert!(!single_error.to_string().is_empty());
+        let single_error = single_error.to_string();
+        assert!(single_error.contains("tcp://localhost:50001"));
+        assert!(single_error.contains("tcp://localhost:50002"));
+        assert!(single_error.contains("tcp://localhost:50003"));
 
         // Test that the ? operator works
         fn test_question_mark(multi_error: MultiError) -> Result<(), Error> {
