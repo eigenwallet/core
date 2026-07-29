@@ -116,6 +116,19 @@ pub fn init(
         24
     );
 
+    // Write monero-sys and its C++ wallet callback logs to a dedicated verbose
+    // log file so wallet-thread crashes can be investigated without digging
+    // through unrelated wallet/RPC traffic.
+    let monero_sys_file_layer = json_rolling_layer!(
+        &dir,
+        "tracing-monero-sys",
+        env_filter_with_all_crates(vec![(
+            crates::MONERO_SYS_CRATES.to_vec(),
+            LevelFilter::TRACE
+        )]),
+        24
+    );
+
     // Layer for writing to the terminal
     let terminal_layer = fmt::layer()
         .with_writer(std::io::stderr)
@@ -173,6 +186,7 @@ pub fn init(
         .with(tor_file_layer)
         .with(libp2p_file_layer)
         .with(monero_wallet_file_layer)
+        .with(monero_sys_file_layer)
         .with(final_terminal_layer)
         .with(tauri_layer);
 
@@ -181,7 +195,7 @@ pub fn init(
     // Now we can use the tracing macros to log messages
     tracing::info!(
         logs_dir = %dir.as_ref().display(),
-        "Initialized tracing. General logs go to swap-all.log; verbose logs: tracing*.log (ours), tracing-tor*.log (tor), tracing-libp2p*.log (libp2p)"
+        "Initialized tracing. General logs go to swap-all.log; verbose logs: tracing*.log (ours), tracing-tor*.log (tor), tracing-libp2p*.log (libp2p), tracing-monero-wallet*.log (wallet), tracing-monero-sys*.log (monero-sys)"
     );
 
     Ok(())
@@ -267,6 +281,8 @@ mod crates {
     ];
 
     pub const MONERO_WALLET_CRATES: &[&str] = &["monero_cpp", "monero_rpc_pool"];
+
+    pub const MONERO_SYS_CRATES: &[&str] = &["monero_sys", "monero_cpp"];
 }
 
 /// A writer that forwards tracing log messages to the tauri guest.
