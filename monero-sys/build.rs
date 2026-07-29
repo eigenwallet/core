@@ -323,7 +323,9 @@ fn main() {
             println!("cargo:rustc-link-search=native={brew_prefix}/lib",);
             println!("cargo:rustc-link-search=native={brew_prefix}/opt/unbound/lib",);
             println!("cargo:rustc-link-search=native={brew_prefix}/opt/expat/lib",);
-            println!("cargo:rustc-link-search=native={brew_prefix}/Cellar/protobuf@21/21.12_1/lib/",);
+            println!(
+                "cargo:rustc-link-search=native={brew_prefix}/Cellar/protobuf@21/21.12_1/lib/",
+            );
         }
 
         // Add search paths for clang runtime libraries
@@ -582,7 +584,10 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         for (file_path, patch_content) in file_patches {
-            match patches_by_file.iter_mut().find(|(path, _)| *path == file_path) {
+            match patches_by_file
+                .iter_mut()
+                .find(|(path, _)| *path == file_path)
+            {
                 Some((_, contents)) => contents.push(patch_content),
                 None => patches_by_file.push((file_path, vec![patch_content])),
             }
@@ -680,10 +685,10 @@ fn split_patch_by_files(
     for line in lines {
         if line.starts_with("diff --git ") {
             // Save previous file patch if we have one
-            if let Some(file_path) = current_file_path.take() {
-                if !current_file_patch.trim().is_empty() {
-                    file_patches.push((file_path, current_file_patch.clone()));
-                }
+            if let Some(file_path) = current_file_path.take()
+                && !current_file_patch.trim().is_empty()
+            {
+                file_patches.push((file_path, current_file_patch.clone()));
             }
 
             // Start new file patch
@@ -705,10 +710,10 @@ fn split_patch_by_files(
     }
 
     // Don't forget the last file
-    if let Some(file_path) = current_file_path {
-        if !current_file_patch.trim().is_empty() {
-            file_patches.push((file_path, current_file_patch));
-        }
+    if let Some(file_path) = current_file_path
+        && !current_file_patch.trim().is_empty()
+    {
+        file_patches.push((file_path, current_file_patch));
     }
 
     Ok(file_patches)

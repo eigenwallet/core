@@ -564,7 +564,7 @@ impl Wallet {
 
         let wallet = Arc::new(wallet);
         let ph = progress_handle.clone();
-        let full_scan_response = client.inner.call_async("full_scan_wallet", move |electrum_client| {
+        let full_scan_response = client.inner.call("full_scan_wallet", move |electrum_client| {
             let callback = ph.clone().and_then(|ph| InnerSyncCallback::new(move |consumed, total| {
                 ph.update(consumed, total);
             })).chain(InnerSyncCallback::new(move |consumed, total| {
@@ -1042,7 +1042,7 @@ impl Wallet {
         let sync_response = self
             .electrum_client
             .inner
-            .call_async("sync_wallet", move |client| {
+            .call("sync_wallet", move |client| {
                 let sync_request_factory = sync_request_factory.clone();
                 let callback = callback.clone();
 
@@ -1698,7 +1698,7 @@ impl Client {
     pub async fn update_block_height(&self) -> Result<()> {
         let latest_block = self
             .inner
-            .call_async("block_headers_subscribe", |client| {
+            .call("block_headers_subscribe", |client| {
                 client.inner.block_headers_subscribe()
             })
             .await
@@ -1950,13 +1950,12 @@ impl Client {
                 match client.inner.transaction_get_raw(&txid) {
                     Ok(raw) => {
                         let mut cursor = std::io::Cursor::new(&raw);
-                        let tx = bitcoin::Transaction::consensus_decode(&mut cursor).map_err(
-                            |e| {
+                        let tx =
+                            bitcoin::Transaction::consensus_decode(&mut cursor).map_err(|e| {
                                 bdk_electrum::electrum_client::Error::Protocol(
                                     format!("Failed to deserialize transaction: {}", e).into(),
                                 )
-                            },
-                        )?;
+                            })?;
 
                         Ok(Some(tx))
                     }
@@ -2029,7 +2028,7 @@ impl Client {
         // Get the fee rate in Bitcoin per kilobyte
         let btc_per_kvb = self
             .inner
-            .call_async("estimate_fee", move |client| {
+            .call("estimate_fee", move |client| {
                 client.inner.estimate_fee(target_block as usize)
             })
             .await?;
@@ -2075,7 +2074,7 @@ impl Client {
         // First we fetch the fee histogram from the Electrum server
         let fee_histogram = self
             .inner
-            .call_async("get_fee_histogram", move |client| {
+            .call("get_fee_histogram", move |client| {
                 client.inner.raw_call("mempool.get_fee_histogram", vec![])
             })
             .await?;
@@ -2129,7 +2128,7 @@ impl Client {
     async fn min_relay_fee(&self) -> Result<FeeRate> {
         let min_relay_btc_per_kvb = self
             .inner
-            .call_async("relay_fee", |client| client.inner.relay_fee())
+            .call("relay_fee", |client| client.inner.relay_fee())
             .await?;
 
         // Convert to sat / kB without ever constructing an Amount from the float

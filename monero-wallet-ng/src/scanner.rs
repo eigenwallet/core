@@ -185,9 +185,7 @@ mod fetcher {
 
             tracing::trace!(blocks = blocks.len(), start, end, "Fetched blocks");
 
-            if send_blocks(blocks_sender, start, blocks).await.is_none() {
-                return None;
-            }
+            send_blocks(blocks_sender, start, blocks).await?;
 
             next_height = end.saturating_add(1);
         }

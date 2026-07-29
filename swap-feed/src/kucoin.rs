@@ -43,7 +43,7 @@ mod connection {
     pub async fn new(
         rest_url_client: Arc<(Url, reqwest::Client)>,
     ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Error>>> {
-        let &(ref rest_url, ref client) = &*rest_url_client;
+        let (rest_url, client) = &*rest_url_client;
 
         let auth: wire::BulletPublicResponse = client
             .post(rest_url.clone())
@@ -279,7 +279,7 @@ pub mod wire {
         type Error = Error;
 
         fn try_from(best_ask: &str) -> Result<Self, Error> {
-            let ask = bitcoin::Amount::from_str_in(&best_ask, bitcoin::Denomination::Bitcoin)?;
+            let ask = bitcoin::Amount::from_str_in(best_ask, bitcoin::Denomination::Bitcoin)?;
 
             Ok(PriceUpdate { ask })
         }
