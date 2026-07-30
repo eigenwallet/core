@@ -826,7 +826,7 @@ pub struct TestContext {
 
     alice_starting_balances: StartingBalances,
     alice_bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
-    alice_monero_wallet: Arc<monero::Wallets>,
+    pub alice_monero_wallet: Arc<monero::Wallets>,
     alice_swap_handle: mpsc::Receiver<Swap>,
     alice_handle: AliceApplicationHandle,
 
@@ -1453,13 +1453,35 @@ impl TestContext {
     }
 
     pub async fn empty_alice_monero_wallet(&self) {
+        self.sweep_alice_monero_wallet_to_burn().await;
+    }
+
+    /// Sweeps Alice's entire Monero balance to a burn address, spending all of
+    /// her wallet's outputs (including the inputs of a not-yet-published Monero
+    /// lock transaction). Returns the sweep transaction receipt.
+    pub async fn sweep_alice_monero_wallet_to_burn(&self) -> monero_sys::TxReceipt {
         let burn_address = monero_address::MoneroAddress::from_str_with_unchecked_network("49LEH26DJGuCyr8xzRAzWPUryzp7bpccC7Hie1DiwyfJEyUKvMFAethRLybDYrFdU1eHaMkKQpUPebY4WT3cSjEvThmpjPa").unwrap();
         let wallet = self.alice_monero_wallet.main_wallet().await;
 
         wallet
             .sweep(&burn_address)
             .await
-            .expect("Failed to empty alice monero wallet to burn address");
+            .expect("Failed to empty alice monero wallet to burn address")
+    }
+
+    /// Funds Alice's Monero wallet with fresh outputs from the miner wallet and
+    /// waits until they are unlocked.
+    pub async fn fund_alice_monero_wallet(&self, amounts: Vec<monero::Amount>) {
+        let wallet = self.alice_monero_wallet.main_wallet().await;
+
+        self.monero
+            .init_external_wallet(
+                MONERO_WALLET_NAME_ALICE,
+                &wallet,
+                amounts.iter().map(|amount| amount.as_pico()).collect(),
+            )
+            .await
+            .expect("Failed to fund alice monero wallet");
     }
 
     pub async fn assert_alice_monero_wallet_empty(&self) {
@@ -1468,6 +1490,30 @@ impl TestContext {
             .await
             .unwrap();
     }
+}
+
+/// Polls `condition` until it returns `true`, with a generous timeout.
+/// Used to wait for on-chain conditions (e.g. a transaction being confirmed)
+/// without relying on fixed sleeps.
+pub async fn wait_until<F, Fut>(description: &str, mut condition: F) -> Result<()>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<bool>>,
+{
+    timeout(Duration::from_secs(180), async {
+        loop {
+            if condition()
+                .await
+                .with_context(|| format!("Failed to check condition: {description}"))?
+            {
+                return Ok(());
+            }
+
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    })
+    .await
+    .with_context(|| format!("Timed out waiting for: {description}"))?
 }
 
 async fn assert_eventual_balance<A: fmt::Display + PartialOrd>(
@@ -1711,6 +1757,36 @@ impl GetConfig for SlowCancelConfig {
     fn get_config() -> Config {
         Config {
             bitcoin_cancel_timelock: CancelTimelock::new(180).into(),
+            ..env::Regtest::get_config()
+        }
+    }
+}
+
+/// Regtest config with a trusted Monero daemon, enabling the ASB to rebuild
+/// the Monero lock transaction when the daemon reports a confirmed double
+/// spend of the lock transaction's inputs.
+pub struct TrustedDaemonConfig;
+
+impl GetConfig for TrustedDaemonConfig {
+    fn get_config() -> Config {
+        Config {
+            monero_trusted_daemon: true,
+            bitcoin_cancel_timelock: CancelTimelock::new(180).into(),
+            ..env::Regtest::get_config()
+        }
+    }
+}
+
+/// Like [`TrustedDaemonConfig`] but with a long cancel timelock, giving tests
+/// time to simulate a double spend and re-fund Alice before Bob can refund
+/// himself.
+pub struct TrustedDaemonLongCancelConfig;
+
+impl GetConfig for TrustedDaemonLongCancelConfig {
+    fn get_config() -> Config {
+        Config {
+            monero_trusted_daemon: true,
+            bitcoin_cancel_timelock: CancelTimelock::new(600).into(),
             ..env::Regtest::get_config()
         }
     }

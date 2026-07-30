@@ -155,6 +155,10 @@ jobs:
           - package: swap
             test_name: happy_path_restart_alice_after_xmr_locked
           - package: swap
+            test_name: happy_path_hermes_disabled
+          - package: swap
+            test_name: happy_path_no_p2p_after_btc_lock
+          - package: swap
             test_name: alice_and_bob_refund_using_cancel_and_refund_command
           - package: swap
             test_name: alice_and_bob_refund_using_cancel_then_refund_command
@@ -179,17 +183,29 @@ jobs:
           - package: swap
             test_name: alice_manually_redeems_after_enc_sig_learned
           - package: swap
+            test_name: alice_refuses_cooperative_redeem_for_malicious_swap
+          - package: swap
             test_name: happy_path_bob_offline_while_alice_redeems_btc
           - package: swap
             test_name: alice_empty_balance_after_started_btc_early_refund
           - package: swap
             test_name: alice_broken_wallet_rpc_after_started_btc_early_refund
           - package: swap
+            test_name: alice_rebuilds_xmr_lock_after_confirmed_double_spend
+          - package: swap
+            test_name: alice_does_not_rebuild_xmr_lock_with_untrusted_daemon
+          - package: swap
+            test_name: alice_does_not_rebuild_xmr_lock_for_mempool_double_spend
+          - package: swap
+            test_name: alice_does_not_rebuild_xmr_lock_when_shared_wallet_not_empty
+          - package: swap
             test_name: happy_path_alice_does_not_send_transfer_proof
           - package: swap
             test_name: partial_refund_bob_claims_amnesty
           - package: swap
             test_name: partial_refund_alice_burns
+          - package: swap
+            test_name: partial_refund_alice_burns_after_command
           - package: swap
             test_name: partial_refund_alice_grants_final_amnesty
           - package: swap
