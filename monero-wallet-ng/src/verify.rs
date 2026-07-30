@@ -54,7 +54,7 @@ pub async fn verify_transfer<P: ProvidesTransactions>(
     // Create a fake ScannableBlock containing with just this transaction.
     // The output_index_for_first_ringct_output is garbage (0) but we don't care
     // since we're only verifying amounts, not spending.
-    let scannable_block = create_scannable_block_for_tx(tx_id, tx);
+    let scannable_block = create_scannable_block_for_tx(vec![(tx_id, tx)]);
 
     // Scan the block
     let outputs = scanner.scan(scannable_block)?;
@@ -84,7 +84,7 @@ pub async fn largest_received_utxo<P: ProvidesTransactions>(
     let view_pair = ViewPair::new(public_spend_key, private_view_key)?;
     let mut scanner = Scanner::new(view_pair);
 
-    let scannable_block = create_scannable_block_for_tx(tx_id, tx);
+    let scannable_block = create_scannable_block_for_tx(vec![(tx_id, tx)]);
     let outputs = scanner.scan(scannable_block)?.not_additionally_locked();
 
     Ok(outputs

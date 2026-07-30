@@ -29,6 +29,10 @@ pub enum EmptyError {
     ViewPair(#[from] ViewPairError),
 }
 
+/// Scan the wallet for incoming funds.
+///
+/// Scans the wallet up to the current height at the time the function is called.
+/// Also scans the mempool.
 pub async fn has_received_outputs<P>(
     provider: &P,
     public_spend_key: Point,
@@ -102,8 +106,8 @@ where
         .await?;
 
         for mempool_tx in mempool_txs {
-            let block = create_scannable_block_for_tx(mempool_tx.tx_id, mempool_tx.tx);
-            if !scanner.scan(block)?.ignore_additional_timelock().is_empty() {
+            let block = create_scannable_block_for_tx(vec![(mempool_tx.tx_id, mempool_tx.tx)]);
+            if !scanner.scan(block)?.not_additionally_locked().is_empty() {
                 return Ok(true);
             }
         }

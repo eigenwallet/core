@@ -321,6 +321,12 @@ impl<'c> Monero {
         Ok(())
     }
 
+    /// Stops the periodically spawned mining task. Blocks can still be
+    /// generated manually via `generate_blocks` while the miner is stopped.
+    pub async fn stop_miner(&self) {
+        self.monerod.stop_miner().await;
+    }
+
     pub async fn init_and_start_miner(&self) -> Result<()> {
         self.init_miner().await?;
         self.start_miner().await?;
@@ -346,6 +352,19 @@ pub struct Monerod {
     network: String,
     client: MoneroDaemon<SimpleRequestTransport>,
     rpc_port: u16,
+    miner_task: MinerTaskHandle,
+}
+
+/// Handle to the periodically spawned mining task, allowing it to be aborted.
+/// Blocks can still be generated manually via `generate_blocks` while the miner
+/// is stopped.
+#[derive(Clone, Default)]
+pub struct MinerTaskHandle(std::sync::Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>);
+
+impl std::fmt::Debug for MinerTaskHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("MinerTaskHandle(..)")
+    }
 }
 
 pub struct MoneroWallet {
@@ -387,6 +406,7 @@ impl<'c> Monerod {
                 ))
                 .await?,
                 rpc_port: monerod_rpc_port,
+                miner_task: MinerTaskHandle::default(),
             },
             container,
         ))
@@ -402,8 +422,21 @@ impl<'c> Monerod {
         let monerod = self.client().clone();
         let address =
             monero_address::MoneroAddress::from_str_with_unchecked_network(miner_wallet_address)?;
-        tokio::spawn(mine(monerod, address));
+        let handle = tokio::spawn(async move {
+            if let Err(error) = mine(monerod, address).await {
+                tracing::error!(?error, "Miner task failed");
+            }
+        });
+        *self.miner_task.0.lock().await = Some(handle);
         Ok(())
+    }
+
+    /// Stops the periodically spawned mining task, if running. Blocks can still
+    /// be generated manually via `generate_blocks` while the miner is stopped.
+    pub async fn stop_miner(&self) {
+        if let Some(handle) = self.miner_task.0.lock().await.take() {
+            handle.abort();
+        }
     }
 
     /// Maybe this helps with wallet syncing?

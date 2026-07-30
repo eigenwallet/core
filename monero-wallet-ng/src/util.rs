@@ -29,7 +29,11 @@ pub fn transaction_from_hex(
 }
 
 /// Create a fake ScannableBlock containing a single transaction.
-pub fn create_scannable_block_for_tx(tx_id: [u8; 32], tx: Transaction<Pruned>) -> ScannableBlock {
+pub fn create_scannable_block_for_tx(
+    txs_with_id: Vec<([u8; 32], Transaction<Pruned>)>,
+) -> ScannableBlock {
+    let (txids, txs) = txs_with_id.into_iter().unzip();
+
     let miner_tx = Transaction::V1 {
         prefix: TransactionPrefix {
             additional_timelock: Timelock::None,
@@ -48,12 +52,12 @@ pub fn create_scannable_block_for_tx(tx_id: [u8; 32], tx: Transaction<Pruned>) -
         nonce: 0,
     };
 
-    let block = Block::new(header, miner_tx, vec![tx_id])
-        .expect("block creation to succeed with valid miner tx");
+    let block =
+        Block::new(header, miner_tx, txids).expect("block creation to succeed with valid miner tx");
 
     ScannableBlock {
         block,
-        transactions: vec![tx],
+        transactions: txs,
         output_index_for_first_ringct_output: Some(0),
     }
 }
