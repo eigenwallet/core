@@ -13,6 +13,7 @@ use anyhow::{Context, Result, bail};
 use bitcoin_wallet::BitcoinWallet;
 use monero_interface::PublishTransaction;
 use monero_oxide_wallet::transaction::{NotPruned, Transaction};
+use monero_wallet_ng::retry::with_retry;
 use rust_decimal::Decimal;
 use swap_core::bitcoin::ExpiredTimelocks;
 use swap_core::monero::BlockHeight;
@@ -148,11 +149,16 @@ where
             }
         }
         AliceState::BtcLocked { state3 } => {
-            let monero_wallet_restore_blockheight =
-                monero_wallet
-                    .direct_rpc_block_height()
-                    .await
-                    .context("Failed to get Monero wallet block height")?;
+            let monero_wallet_restore_blockheight = with_retry(
+                Some(
+                    backoff::ExponentialBackoffBuilder::new()
+                        .with_max_elapsed_time(Duration::from_secs(120)),
+                ),
+                "fetch monero block height",
+                || async { monero_wallet.direct_rpc_block_height().await },
+            )
+            .await
+            .context("Failed to get Monero wallet block height")?;
 
             AliceState::XmrReadyToLock {
                 state3,
