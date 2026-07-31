@@ -16,6 +16,7 @@ use monero_oxide_wallet::transaction::{NotPruned, Transaction};
 use monero_wallet_ng::retry::with_retry;
 use rust_decimal::Decimal;
 use swap_core::bitcoin::ExpiredTimelocks;
+use swap_core::compat::IntoDalekNg;
 use swap_core::monero::BlockHeight;
 use swap_env::env::Config;
 use swap_machine::alice::State3;
@@ -152,7 +153,8 @@ where
             let monero_wallet_restore_blockheight = with_retry(
                 Some(
                     backoff::ExponentialBackoffBuilder::new()
-                        .with_max_elapsed_time(Duration::from_secs(120)),
+                        .with_max_elapsed_time(Some(Duration::from_secs(120)))
+                        .build(),
                 ),
                 "fetch monero block height",
                 || async { monero_wallet.direct_rpc_block_height().await },
@@ -403,20 +405,30 @@ where
                         // transaction can never confirm, so we rebuild it from scratch by returning to
                         // BtcLocked. We only act on a trusted daemon, as a malicious one could
                         // otherwise grief us into rebuilding indefinitely.
+                        
+                        
                         if env_config.monero_trusted_daemon
-                            && monero_wallet
-                                .has_input_confirmed_spent(&xmr_lock_tx)
-                                .await
-                                .context("Failed to check whether the Monero lock transaction inputs were already spent")
-                                .map_err(backoff::Error::transient)?
                         {
-                            tracing::warn!(
-                                %swap_id,
-                                %xmr_lock_tx_hash,
-                                "Trusted Monero daemon reports the lock transaction's inputs were already spent by a confirmed transaction. Rebuilding the lock transaction."
-                            );
+                            tracing::info!("Monero lock transaction not present. Checking if we should rebuild it...");
+                            let (result, reason) = state3.is_shared_xmr_wallet_empty_and_tx_lock_double_spent(
+                                monero_wallet.clone(),
+                                monero_wallet_restore_blockheight,
+                                xmr_lock_tx.clone()
+                            )
+                            .await
+                            .context("Couldn't check if shared xmr wallet is empty + xmr lock tx double spent").map_err(backoff::Error::transient)?;
 
-                            return Ok(AliceState::BtcLocked { state3: state3.clone() });
+                            if result {
+                                tracing::warn!(
+                                    %swap_id,
+                                    %xmr_lock_tx_hash,
+                                    "Trusted Monero daemon reports the lock transaction's inputs were already spent by a confirmed transaction. Rebuilding the lock transaction."
+                                );
+
+                                return Ok(AliceState::BtcLocked { state3: state3.clone() });
+                            } else if let Some(reason) = reason {
+                                tracing::info!("Not rebuilding XMR lock transaction, because it's not safe: {reason}");
+                            }
                         }
 
                         if !cancel_timelock_not_expired(&state3, &*bitcoin_wallet)

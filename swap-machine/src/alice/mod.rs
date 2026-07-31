@@ -2,6 +2,8 @@
 
 use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
 use anyhow::{Context, Result, bail};
+use monero_oxide::transaction::NotPruned;
+use monero_wallet::Wallets;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
@@ -734,7 +736,7 @@ pub struct State3 {
     B: swap_core::bitcoin::PublicKey,
     #[serde(with = "swap_serde::monero::scalar")]
     pub s_a: swap_core::monero::Scalar,
-    S_b_monero: monero_oxide_ext::PublicKey,
+    pub S_b_monero: monero_oxide_ext::PublicKey,
     S_b_bitcoin: swap_core::bitcoin::PublicKey,
     pub v: monero::PrivateViewKey,
     pub btc: bitcoin::Amount,
@@ -996,6 +998,51 @@ impl State3 {
                 .clone()
                 .context("missing Bob's signature for TxReclaim")?,
         )
+    }
+
+    /// Scan the shared xmr wallet to see whether it is empty.
+    ///
+    /// We are very conservative. The wallet is only considered empty
+    /// if the lock transaction has a known + confirmed double spend,
+    /// we didn't find any incoming transaction in the chain and we didn't
+    /// find any incoming transactions in the mempool.
+    ///
+    /// Returns whether the shared xmr wallet is empty + a reason if it isn't.
+    pub async fn is_shared_xmr_wallet_empty_and_tx_lock_double_spent(
+        &self,
+        monero_wallet: Arc<Wallets>,
+        restore_height: BlockHeight,
+        xmr_lock_tx: monero_oxide::transaction::Transaction<NotPruned>,
+    ) -> Result<(bool, Option<String>)> {
+        let shared_public_spend = monero_oxide_ext::PublicKey::from_private_key(
+            &monero_oxide_ext::PrivateKey::from_scalar(self.s_a),
+        ) + self.S_b_monero;
+
+        if !monero_wallet
+            .has_input_confirmed_spent(&xmr_lock_tx)
+            .await
+            .context(
+                "Failed to check whether the Monero lock transaction inputs were already spent",
+            )?
+        {
+            return Ok((
+                false,
+                Some(format!("Lock transaction has no known double spend")),
+            ));
+        }
+
+        if monero_wallet
+            .has_received_outputs(shared_public_spend, self.v, restore_height, None)
+            .await
+            .context("Couldn't verify shared XMR lock is empty before rebuilding XMR lock tx")?
+        {
+            return Ok((
+                false,
+                Some(format!("Shared Monero wallet already has funds in it")),
+            ));
+        }
+
+        Ok((true, None))
     }
 
     /// Check if we have Bob's signature for TxWithhold.
