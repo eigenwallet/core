@@ -1,5 +1,4 @@
 import { createListenerMiddleware } from "@reduxjs/toolkit";
-import { throttle, debounce } from "lodash";
 import {
   getAllSwapInfos,
   getAllSwapTimelocks,
@@ -32,19 +31,19 @@ import {
   setConversation,
 } from "store/features/conversationsSlice";
 import { setBitcoinAddress } from "store/features/bitcoinWalletSlice";
+import { createSwapInfoUpdater } from "store/middleware/swapInfoUpdater";
 
 // Create a Map to store throttled functions per swap_id
 const throttledGetSwapInfoFunctions = new Map<
   string,
-  ReturnType<typeof throttle>
+  ReturnType<typeof createSwapInfoUpdater>
 >();
 
 // Function to get or create a throttled getSwapInfo for a specific swap_id
 const getThrottledSwapInfoUpdater = (swapId: string) => {
   if (!throttledGetSwapInfoFunctions.has(swapId)) {
-    // Create a throttled function that executes at most once every 2 seconds
-    // but will wait for 3 seconds of quiet during rapid calls (using debounce)
-    const debouncedGetSwapInfo = debounce(() => {
+    // Refresh immediately, then coalesce rapid follow-up progress events.
+    const throttledFunction = createSwapInfoUpdater(() => {
       logger.debug(`Executing getSwapInfo for swap ${swapId}`);
       getSwapInfo(swapId).catch((error) => {
         logger.debug(`Failed to fetch swap info for swap ${swapId}: ${error}`);
@@ -52,11 +51,6 @@ const getThrottledSwapInfoUpdater = (swapId: string) => {
       getSwapTimelock(swapId).catch((error) => {
         logger.debug(`Failed to fetch timelock for swap ${swapId}: ${error}`);
       });
-    }, 3000); // 3 seconds debounce for rapid calls
-
-    const throttledFunction = throttle(debouncedGetSwapInfo, 2000, {
-      leading: true, // Execute immediately on first call
-      trailing: true, // Execute on trailing edge if needed
     });
 
     throttledGetSwapInfoFunctions.set(swapId, throttledFunction);
