@@ -563,7 +563,7 @@ fn swap_wallet_path(swap_id: Uuid, wallet_dir: &PathBuf, spendable: bool) -> Pat
 
 fn validate_node_sync_status(
     status: &monero_wallet_ng::rpc::NodeSyncStatus,
-    expected_network: Network,
+    wallet_network: Network,
     regtest: bool,
 ) -> Result<()> {
     use monero_wallet_ng::rpc::NodeNetwork;
@@ -572,20 +572,20 @@ fn validate_node_sync_status(
         bail!("Monero node is running in offline mode");
     }
 
-    let expected_network = if regtest {
+    let wallet_network = if regtest {
         NodeNetwork::Fakechain
     } else {
-        match expected_network {
+        match wallet_network {
             Network::Mainnet => NodeNetwork::Mainnet,
             Network::Stagenet => NodeNetwork::Stagenet,
             Network::Testnet => NodeNetwork::Testnet,
         }
     };
 
-    if status.network != expected_network {
+    if status.network != wallet_network {
         bail!(
             "Monero node is on the wrong network (expected {:?}, got {:?})",
-            expected_network,
+            wallet_network,
             status.network
         );
     }
