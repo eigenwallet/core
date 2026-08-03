@@ -48,35 +48,6 @@ pub enum NodeInfoError {
     Parse(String),
     #[error("Monero daemon returned status `{0}`")]
     Status(String),
-    #[error("Unknown Monero daemon network `{0}`")]
-    UnknownNetwork(String),
-}
-
-/// The network a Monero daemon reports through `get_info`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NodeNetwork {
-    /// The production Monero network.
-    Mainnet,
-    /// The stable integration-testing network.
-    Stagenet,
-    /// The consensus-testing network.
-    Testnet,
-    /// A private chain used for regression tests.
-    Fakechain,
-}
-
-impl TryFrom<String> for NodeNetwork {
-    type Error = NodeInfoError;
-
-    fn try_from(network: String) -> Result<Self, Self::Error> {
-        match network.as_str() {
-            "mainnet" => Ok(Self::Mainnet),
-            "stagenet" => Ok(Self::Stagenet),
-            "testnet" => Ok(Self::Testnet),
-            "fakechain" => Ok(Self::Fakechain),
-            _ => Err(NodeInfoError::UnknownNetwork(network)),
-        }
-    }
 }
 
 /// Sync status of a remote daemon, as reported by `get_info`.
@@ -88,8 +59,6 @@ pub struct NodeSyncStatus {
     pub height: u64,
     /// Whether the daemon was started in offline mode.
     pub offline: bool,
-    /// The network the daemon is connected to.
-    pub network: NodeNetwork,
 }
 
 /// Provides the ability to query a remote daemon's sync status.
@@ -121,7 +90,6 @@ mod monerod {
         pub(crate) synchronized: bool,
         pub(crate) height: u64,
         pub(crate) offline: bool,
-        pub(crate) nettype: String,
     }
 
     // See: https://github.com/SNeedlewoods/seraphis_wallet/blob/dbbccecc89e1121762a4ad6b531638ece82aa0c7/src/rpc/core_rpc_server_commands_defs.h#L406-L428
@@ -208,7 +176,6 @@ fn parse_node_sync_status(response: &str) -> Result<NodeSyncStatus, NodeInfoErro
         synchronized: info.synchronized,
         height: info.height,
         offline: info.offline,
-        network: info.nettype.try_into()?,
     })
 }
 
@@ -217,14 +184,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn node_sync_status_includes_offline_and_network() {
+    fn node_sync_status_includes_offline() {
         let status = parse_node_sync_status(
             r#"{
                 "status": "OK",
                 "synchronized": true,
                 "height": 123,
-                "offline": true,
-                "nettype": "stagenet"
+                "offline": true
             }"#,
         )
         .expect("get_info response to be valid");
@@ -232,22 +198,6 @@ mod tests {
         assert!(status.synchronized);
         assert_eq!(status.height, 123);
         assert!(status.offline);
-        assert_eq!(status.network, NodeNetwork::Stagenet);
-    }
-
-    #[test]
-    fn node_network_parses_known_networks() {
-        for (network, expected) in [
-            ("mainnet", NodeNetwork::Mainnet),
-            ("stagenet", NodeNetwork::Stagenet),
-            ("testnet", NodeNetwork::Testnet),
-            ("fakechain", NodeNetwork::Fakechain),
-        ] {
-            assert_eq!(
-                NodeNetwork::try_from(network.to_string()).expect("Known Monero network to parse"),
-                expected
-            );
-        }
     }
 
     #[test]
@@ -257,32 +207,13 @@ mod tests {
                 "status": "BUSY",
                 "synchronized": true,
                 "height": 123,
-                "offline": false,
-                "nettype": "mainnet"
+                "offline": false
             }"#,
         );
 
         assert!(matches!(
             result,
             Err(NodeInfoError::Status(status)) if status == "BUSY"
-        ));
-    }
-
-    #[test]
-    fn node_sync_status_rejects_unknown_network() {
-        let result = parse_node_sync_status(
-            r#"{
-                "status": "OK",
-                "synchronized": true,
-                "height": 123,
-                "offline": false,
-                "nettype": "unknown"
-            }"#,
-        );
-
-        assert!(matches!(
-            result,
-            Err(NodeInfoError::UnknownNetwork(network)) if network == "unknown"
         ));
     }
 }
