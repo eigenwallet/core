@@ -46,6 +46,37 @@ pub enum NodeInfoError {
     Interface(#[from] InterfaceError),
     #[error("Failed to parse get_info response: {0}")]
     Parse(String),
+    #[error("Monero daemon returned status `{0}`")]
+    Status(String),
+    #[error("Unknown Monero daemon network `{0}`")]
+    UnknownNetwork(String),
+}
+
+/// The network a Monero daemon reports through `get_info`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeNetwork {
+    /// The production Monero network.
+    Mainnet,
+    /// The stable integration-testing network.
+    Stagenet,
+    /// The consensus-testing network.
+    Testnet,
+    /// A private chain used for regression tests.
+    Fakechain,
+}
+
+impl TryFrom<String> for NodeNetwork {
+    type Error = NodeInfoError;
+
+    fn try_from(network: String) -> Result<Self, Self::Error> {
+        match network.as_str() {
+            "mainnet" => Ok(Self::Mainnet),
+            "stagenet" => Ok(Self::Stagenet),
+            "testnet" => Ok(Self::Testnet),
+            "fakechain" => Ok(Self::Fakechain),
+            _ => Err(NodeInfoError::UnknownNetwork(network)),
+        }
+    }
 }
 
 /// Sync status of a remote daemon, as reported by `get_info`.
@@ -55,6 +86,10 @@ pub struct NodeSyncStatus {
     pub synchronized: bool,
     /// The height the node has synced to.
     pub height: u64,
+    /// Whether the daemon was started in offline mode.
+    pub offline: bool,
+    /// The network the daemon is connected to.
+    pub network: NodeNetwork,
 }
 
 /// Provides the ability to query a remote daemon's sync status.
@@ -82,8 +117,11 @@ mod monerod {
     // See: https://github.com/monero-project/monero/blob/48ad374b0d6d6e045128729534dc2508e6999afe/src/rpc/core_rpc_server_commands_defs.h#L633-L673
     #[derive(Deserialize)]
     pub(crate) struct GetInfoResponse {
+        pub(crate) status: String,
         pub(crate) synchronized: bool,
         pub(crate) height: u64,
+        pub(crate) offline: bool,
+        pub(crate) nettype: String,
     }
 
     // See: https://github.com/SNeedlewoods/seraphis_wallet/blob/dbbccecc89e1121762a4ad6b531638ece82aa0c7/src/rpc/core_rpc_server_commands_defs.h#L406-L428
@@ -153,14 +191,98 @@ impl<T: HttpTransport> ProvidesNodeInfo for MoneroDaemon<T> {
         async move {
             // 16kb, fairly arbitrary, but get_info is small
             let response = self.rpc_call("get_info", None, 16384).await?;
-
-            let info: monerod::GetInfoResponse = serde_json::from_str(&response)
-                .map_err(|e| NodeInfoError::Parse(e.to_string()))?;
-
-            Ok(NodeSyncStatus {
-                synchronized: info.synchronized,
-                height: info.height,
-            })
+            parse_node_sync_status(&response)
         }
+    }
+}
+
+fn parse_node_sync_status(response: &str) -> Result<NodeSyncStatus, NodeInfoError> {
+    let info: monerod::GetInfoResponse =
+        serde_json::from_str(response).map_err(|e| NodeInfoError::Parse(e.to_string()))?;
+
+    if info.status != "OK" {
+        return Err(NodeInfoError::Status(info.status));
+    }
+
+    Ok(NodeSyncStatus {
+        synchronized: info.synchronized,
+        height: info.height,
+        offline: info.offline,
+        network: info.nettype.try_into()?,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_sync_status_includes_offline_and_network() {
+        let status = parse_node_sync_status(
+            r#"{
+                "status": "OK",
+                "synchronized": true,
+                "height": 123,
+                "offline": true,
+                "nettype": "stagenet"
+            }"#,
+        )
+        .expect("get_info response to be valid");
+
+        assert!(status.synchronized);
+        assert_eq!(status.height, 123);
+        assert!(status.offline);
+        assert_eq!(status.network, NodeNetwork::Stagenet);
+    }
+
+    #[test]
+    fn node_network_parses_known_networks() {
+        for (network, expected) in [
+            ("mainnet", NodeNetwork::Mainnet),
+            ("stagenet", NodeNetwork::Stagenet),
+            ("testnet", NodeNetwork::Testnet),
+            ("fakechain", NodeNetwork::Fakechain),
+        ] {
+            assert_eq!(
+                NodeNetwork::try_from(network.to_string()).expect("Known Monero network to parse"),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn node_sync_status_rejects_non_ok_status() {
+        let result = parse_node_sync_status(
+            r#"{
+                "status": "BUSY",
+                "synchronized": true,
+                "height": 123,
+                "offline": false,
+                "nettype": "mainnet"
+            }"#,
+        );
+
+        assert!(matches!(
+            result,
+            Err(NodeInfoError::Status(status)) if status == "BUSY"
+        ));
+    }
+
+    #[test]
+    fn node_sync_status_rejects_unknown_network() {
+        let result = parse_node_sync_status(
+            r#"{
+                "status": "OK",
+                "synchronized": true,
+                "height": 123,
+                "offline": false,
+                "nettype": "unknown"
+            }"#,
+        );
+
+        assert!(matches!(
+            result,
+            Err(NodeInfoError::UnknownNetwork(network)) if network == "unknown"
+        ));
     }
 }

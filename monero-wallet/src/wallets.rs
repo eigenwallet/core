@@ -309,14 +309,7 @@ impl Wallets {
             .await
             .context("Monero daemon RPC health check failed")?;
 
-        if !status.synchronized {
-            bail!(
-                "Monero node is not fully synced (synced to height {})",
-                status.height
-            );
-        }
-
-        Ok(())
+        validate_node_sync_status(&status, self.network, self.regtest)
     }
 
     pub async fn is_transaction_present(&self, tx_hash: &TxHash) -> Result<bool> {
@@ -566,4 +559,90 @@ fn swap_wallet_path(swap_id: Uuid, wallet_dir: &PathBuf, spendable: bool) -> Pat
     let name = format!("swap_{}_{}", &swap_id.to_string(), suffix);
 
     wallet_dir.join(name)
+}
+
+fn validate_node_sync_status(
+    status: &monero_wallet_ng::rpc::NodeSyncStatus,
+    expected_network: Network,
+    regtest: bool,
+) -> Result<()> {
+    use monero_wallet_ng::rpc::NodeNetwork;
+
+    if status.offline && !regtest {
+        bail!("Monero node is running in offline mode");
+    }
+
+    let expected_network = if regtest {
+        NodeNetwork::Fakechain
+    } else {
+        match expected_network {
+            Network::Mainnet => NodeNetwork::Mainnet,
+            Network::Stagenet => NodeNetwork::Stagenet,
+            Network::Testnet => NodeNetwork::Testnet,
+        }
+    };
+
+    if status.network != expected_network {
+        bail!(
+            "Monero node is on the wrong network (expected {:?}, got {:?})",
+            expected_network,
+            status.network
+        );
+    }
+
+    if !status.synchronized {
+        bail!(
+            "Monero node is not fully synced (synced to height {})",
+            status.height
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use monero_wallet_ng::rpc::{NodeNetwork, NodeSyncStatus};
+
+    use super::*;
+
+    fn node_status(network: NodeNetwork, offline: bool, synchronized: bool) -> NodeSyncStatus {
+        NodeSyncStatus {
+            synchronized,
+            height: 123,
+            offline,
+            network,
+        }
+    }
+
+    #[test]
+    fn validates_node_sync_status() {
+        validate_node_sync_status(
+            &node_status(NodeNetwork::Mainnet, false, true),
+            Network::Mainnet,
+            false,
+        )
+        .expect("Synced mainnet node to be accepted");
+        validate_node_sync_status(
+            &node_status(NodeNetwork::Fakechain, true, true),
+            Network::Mainnet,
+            true,
+        )
+        .expect("Offline fakechain node to be accepted in regtest");
+
+        for (network, offline, synchronized, expected_error) in [
+            (NodeNetwork::Mainnet, true, true, "offline mode"),
+            (NodeNetwork::Stagenet, false, true, "wrong network"),
+            (NodeNetwork::Mainnet, false, false, "not fully synced"),
+        ] {
+            let error = validate_node_sync_status(
+                &node_status(network, offline, synchronized),
+                Network::Mainnet,
+                false,
+            )
+            .expect_err("Node status to be rejected");
+
+            assert!(error.to_string().contains(expected_error));
+        }
+    }
 }
