@@ -195,6 +195,7 @@ pub struct DockerBuildInput {
     pub context: String,
     // Usually this is the path to the Dockerfile
     pub dockerfile: &'static str,
+    pub keep_git_dir: bool,
 }
 
 /// Specified a docker image to use
@@ -895,6 +896,10 @@ impl IntoImageAttribute for OrchestratorImage {
     fn to_image_attribute(self) -> String {
         match self {
             OrchestratorImage::Registry(image) => format!("image: {image}"),
+            OrchestratorImage::Build(input) if input.keep_git_dir => format!(
+                r#"build: {{ context: "{}", dockerfile: "{}", network: "host", args: {{ BUILDKIT_CONTEXT_KEEP_GIT_DIR: "1" }} }}"#,
+                input.context, input.dockerfile
+            ),
             OrchestratorImage::Build(input) => format!(
                 r#"build: {{ context: "{}", dockerfile: "{}", network: "host" }}"#,
                 input.context, input.dockerfile

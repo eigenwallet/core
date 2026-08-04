@@ -67,6 +67,7 @@ pub fn asb_image_from_source(context: &str) -> DockerBuildInput {
     DockerBuildInput {
         context: context.to_string(),
         dockerfile: "./swap-asb/Dockerfile",
+        keep_git_dir: true,
     }
 }
 
@@ -74,6 +75,7 @@ pub fn asb_controller_image_from_source(context: &str) -> DockerBuildInput {
     DockerBuildInput {
         context: context.to_string(),
         dockerfile: "./swap-controller/Dockerfile",
+        keep_git_dir: false,
     }
 }
 
@@ -81,5 +83,6 @@ pub fn rendezvous_node_image_from_source(context: &str) -> DockerBuildInput {
     DockerBuildInput {
         context: context.to_string(),
         dockerfile: "./libp2p-rendezvous-node/Dockerfile",
+        keep_git_dir: false,
     }
 }
