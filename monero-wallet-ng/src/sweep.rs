@@ -146,6 +146,12 @@ where
         return Err(BuildSweepError::from(DestinationsError::Empty).into());
     }
 
+    tracing::debug!(
+        tx_id = %hex::encode(tx_id),
+        destinations = destinations.len(),
+        "Constructing sweep transaction"
+    );
+
     let input = select_input(
         &provider,
         &private_spend_key,
@@ -198,6 +204,12 @@ where
         + Send
         + Sync,
 {
+    tracing::debug!(
+        tx_id = %hex::encode(tx_id),
+        data_parts = data.len(),
+        "Constructing data transaction"
+    );
+
     let input = select_input(
         &provider,
         &private_spend_key,
@@ -231,6 +243,11 @@ where
     .map_err(BuildSweepError::from)?
     .sign(&mut OsRng, &private_spend_key)
     .map_err(BuildSweepError::from)?;
+
+    tracing::debug!(
+        txid = %hex::encode(tx.hash()),
+        "Built and signed data transaction"
+    );
 
     Ok(tx)
 }
@@ -266,6 +283,12 @@ where
         TransactionStatus::Unknown => return Err(SweepError::TransactionNotFound { tx_id }),
     };
 
+    tracing::debug!(
+        tx_id = %hex::encode(tx_id),
+        block_height,
+        "Located transaction to spend in block"
+    );
+
     // Scanner for finding sweepable outputs
     let mut scanner = {
         let public_spend_key = public_key(private_spend_key);
@@ -295,6 +318,11 @@ where
             .ok_or(SweepError::NoOutputsInTransaction { tx_id })?
     };
 
+    tracing::debug!(
+        amount = largest_output.commitment().amount,
+        "Selected largest output to spend"
+    );
+
     // Generate decoys for the input
     let block_number = with_retry(
         inner_retry.clone(),
@@ -313,6 +341,8 @@ where
         .await
     })
     .await?;
+
+    tracing::debug!(ring_len = RING_LEN, "Selected decoys for input");
 
     Ok(input)
 }
@@ -387,6 +417,13 @@ fn build_sweep_transaction(
                 input: amount,
             })?;
 
+    tracing::debug!(
+        input_amount = amount,
+        fee = probed_necessary_fee,
+        distributable,
+        "Probed necessary fee for sweep transaction"
+    );
+
     let tx = {
         // Distribute the distributable amount across the destinations
         let mut payments = distribute(distributable, destinations)?;
@@ -431,6 +468,12 @@ fn build_sweep_transaction(
                 actual: actual_fee,
             });
         }
+
+        tracing::debug!(
+            txid = %hex::encode(signed.hash()),
+            fee = actual_fee,
+            "Built and signed sweep transaction"
+        );
     }
 
     Ok(signed)
