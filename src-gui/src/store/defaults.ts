@@ -9,8 +9,7 @@ export const DEFAULT_RENDEZVOUS_POINTS = [
   "/onion3/m6rboz5lv4wxldgybgox4pr4s6xci3h2exi5nogxaox762xji2gokuad:8891/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov",
   "/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
   "/onion3/av2jauifny7dgpvzhsnhra3cwivf6ofaefxvwhhuh5y7hsolabehhaad:8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
-  "/dns4/atomic.exolix.com/tcp/443/wss/p2p/12D3KooWBk6GbgkZaeTAUByD1tJX6SdFHtzrVj3jTmurPMRvtGoY",
-  "/onion3/kjbdwt7dvtbkj2vmrxyfifjjqowp6mln4dkmpxzpftluucnfz7tlfbad:9939/p2p/12D3KooWBk6GbgkZaeTAUByD1tJX6SdFHtzrVj3jTmurPMRvtGoY"
+  "/dns4/atomic.myexchange.cash/tcp/443/wss/p2p/12D3KooWQQeUXdMkwJo8zESkKo7xek7NtVgqh1Q4RPnJCTmESX1Z",
 ];
 
 // Known broken rendezvous points to remove when applying defaults

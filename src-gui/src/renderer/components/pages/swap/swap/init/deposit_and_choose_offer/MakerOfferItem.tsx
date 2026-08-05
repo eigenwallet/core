@@ -43,7 +43,7 @@ import { useGuiVersion } from "utils/useGuiVersion";
 import { RefundPolicy } from "store/features/settingsSlice";
 import { useAppSelector } from "store/hooks";
 import { BobStateName } from "models/tauriModelExt";
-import { getPriorityMaker } from "utils/priorityMakers";
+import { isPriorityMaker } from "utils/priorityMakers";
 
 const FULL_WARNING_ANTI_SPAM_DEPOSIT_RATIO = 0.1;
 
@@ -67,7 +67,7 @@ export default function MakerOfferItem({
   const { multiaddr, peer_id, quote, version } = quoteWithAddress;
   const isOutOfLiquidity = quote.max_quantity == 0;
   const isTooOld = isMakerVersionTooOld(version);
-  const priorityMaker = showAsPriority ? getPriorityMaker(peer_id) : undefined;
+  const priorityMaker = showAsPriority && isPriorityMaker(peer_id);
   const resolveSelectMakerApproval = useResolveSelectMakerApproval();
 
   return (
@@ -114,21 +114,7 @@ export default function MakerOfferItem({
             minWidth: 0,
           }}
         >
-          {priorityMaker ? (
-            <Box
-              component="img"
-              src={priorityMaker.avatar}
-              sx={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                objectFit: "cover",
-                flexShrink: 0,
-              }}
-            />
-          ) : (
-            <Jdenticon value={peer_id} size={40} />
-          )}
+          <Jdenticon value={peer_id} size={40} />
           <Box
             sx={{
               display: "flex",
@@ -138,17 +124,9 @@ export default function MakerOfferItem({
               flex: 1,
             }}
           >
-            {priorityMaker ? (
-              <Typography variant="body1" noWrap>
-                <Box component="span" sx={{ color: "text.secondary" }}>
-                  {peer_id}
-                </Box>
-              </Typography>
-            ) : (
-              <Typography variant="body1" color="text.secondary" noWrap>
-                {peer_id}
-              </Typography>
-            )}
+            <Typography variant="body1" color="text.secondary" noWrap>
+              {peer_id}
+            </Typography>
             <Typography variant="body2" color="text.secondary" noWrap>
               {multiaddr}
             </Typography>
