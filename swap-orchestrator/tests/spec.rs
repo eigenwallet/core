@@ -163,6 +163,7 @@ fn test_gh_token_inlined_into_build_context() {
 
     let compose = input.to_spec();
     assert_eq!(compose.matches("ghp_exampletoken@github.com").count(), 3);
+    assert_eq!(compose.matches("BUILDKIT_CONTEXT_KEEP_GIT_DIR").count(), 1);
 }
 
 #[test]
