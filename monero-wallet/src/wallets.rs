@@ -322,6 +322,24 @@ impl Wallets {
         Ok(!matches!(status, TransactionStatus::Unknown))
     }
 
+    /// Returns true if any of `tx`'s inputs has already been spent by a transaction confirmed
+    /// in the blockchain. Combined with `tx` itself not being present on-chain, this indicates
+    /// a different transaction spent our inputs (a confirmed double spend).
+    pub async fn has_input_confirmed_spent(&self, tx: &Transaction<NotPruned>) -> Result<bool> {
+        use monero_wallet_ng::rpc::IsKeyImageSpent;
+
+        let key_images = tx_key_images(tx);
+
+        let statuses = self
+            .rpc_client()
+            .await?
+            .is_key_image_spent(&key_images)
+            .await
+            .context("Failed to query key image spend status")?;
+
+        Ok(any_confirmed_spent(&statuses))
+    }
+
     pub async fn direct_rpc_block_height(&self) -> Result<u64> {
         use monero_daemon_rpc::prelude::ProvidesBlockchainMeta;
         let rpc_client = self.rpc_client().await?;
@@ -332,6 +350,28 @@ impl Wallets {
             .context("Failed to get block height from daemon")?;
 
         Ok(height as u64)
+    }
+
+    pub async fn has_received_outputs(
+        &self,
+        public_spend_key: monero_oxide_ext::PublicKey,
+        private_view_key: PrivateViewKey,
+        start_height: BlockHeight,
+        inner_retry: Option<backoff::ExponentialBackoff>,
+    ) -> Result<bool> {
+        let rpc_client = self.rpc_client().await?;
+        let public_spend_key = public_spend_key.decompress();
+        let private_view_key = Zeroizing::new(private_view_key.0.scalar);
+
+        monero_wallet_ng::empty::has_received_outputs(
+            &rpc_client,
+            public_spend_key,
+            private_view_key,
+            start_height.height as usize,
+            inner_retry,
+        )
+        .await
+        .context("Failed to check for received outputs")
     }
 
     /// Construct and sign a sweep transaction for the largest output of
@@ -707,4 +747,68 @@ fn swap_wallet_path(swap_id: Uuid, wallet_dir: &PathBuf, spendable: bool) -> Pat
     let name = format!("swap_{}_{}", &swap_id.to_string(), suffix);
 
     wallet_dir.join(name)
+}
+
+/// Extracts the key images of all `ToKey` inputs of `tx`.
+fn tx_key_images(tx: &Transaction<NotPruned>) -> Vec<[u8; 32]> {
+    use monero_oxide_wallet::transaction::Input;
+
+    tx.prefix()
+        .inputs
+        .iter()
+        .filter_map(|input| match input {
+            Input::ToKey { key_image, .. } => Some(key_image.to_bytes()),
+            Input::Gen(_) => None,
+        })
+        .collect()
+}
+
+/// Returns true if any key image was spent by a transaction confirmed in the
+/// blockchain. A spend that only exists in the mempool does not count: the
+/// conflicting transaction may still be displaced by our own transaction.
+fn any_confirmed_spent(statuses: &[monero_wallet_ng::rpc::KeyImageSpentStatus]) -> bool {
+    use monero_wallet_ng::rpc::KeyImageSpentStatus;
+
+    statuses
+        .iter()
+        .any(|status| matches!(status, KeyImageSpentStatus::SpentInBlockchain))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::any_confirmed_spent;
+    use monero_wallet_ng::rpc::KeyImageSpentStatus;
+
+    #[test]
+    fn no_statuses_is_not_a_confirmed_spend() {
+        assert!(!any_confirmed_spent(&[]));
+    }
+
+    #[test]
+    fn unspent_is_not_a_confirmed_spend() {
+        assert!(!any_confirmed_spent(&[KeyImageSpentStatus::Unspent]));
+    }
+
+    /// Crucial anti-manipulation property: a key image spent only by a mempool
+    /// transaction must never be treated as a confirmed double spend.
+    #[test]
+    fn pool_spend_is_not_a_confirmed_spend() {
+        assert!(!any_confirmed_spent(&[KeyImageSpentStatus::SpentInPool]));
+        assert!(!any_confirmed_spent(&[
+            KeyImageSpentStatus::Unspent,
+            KeyImageSpentStatus::SpentInPool,
+        ]));
+    }
+
+    #[test]
+    fn blockchain_spend_is_a_confirmed_spend() {
+        assert!(any_confirmed_spent(&[
+            KeyImageSpentStatus::SpentInBlockchain
+        ]));
+        assert!(any_confirmed_spent(&[
+            KeyImageSpentStatus::Unspent,
+            KeyImageSpentStatus::SpentInPool,
+            KeyImageSpentStatus::SpentInBlockchain,
+        ]));
+    }
 }

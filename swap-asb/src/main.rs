@@ -630,6 +630,7 @@ pub async fn main() -> Result<()> {
                 .filter_map(|state| match state {
                     State::Alice(AliceState::Started { state3 })
                     | State::Alice(AliceState::BtcLocked { state3 })
+                    | State::Alice(AliceState::XmrReadyToLock { state3, .. })
                     | State::Alice(AliceState::BtcLockTransactionSeen { state3 }) => {
                         Some(state3.clone())
                     }

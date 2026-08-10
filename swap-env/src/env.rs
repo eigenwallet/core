@@ -23,6 +23,10 @@ pub struct Config {
     pub monero_lock_retry_timeout: Duration,
     // After this many confirmations we assume that the Monero transaction is safe from double spending
     pub monero_double_spend_safe_confirmations: u64,
+    // Whether the configured Monero daemon is trusted. You should generally only consider
+    // self-hosted Monero nodes on your own hardware as trusted. If an attacker controls your
+    // node and you set this to true, they might be able to steal your funds.
+    pub monero_trusted_daemon: bool,
     #[serde(with = "swap_serde::monero::network")]
     pub monero_network: monero_address::Network,
 }
@@ -70,6 +74,7 @@ impl GetConfig for Mainnet {
             monero_lock_retry_timeout: 10.std_minutes(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
+            monero_trusted_daemon: false,
             monero_network: monero_address::Network::Mainnet,
         }
     }
@@ -91,6 +96,7 @@ impl GetConfig for Testnet {
             monero_lock_retry_timeout: 10.std_minutes(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
+            monero_trusted_daemon: false,
             monero_network: monero_address::Network::Stagenet,
         }
     }
@@ -112,6 +118,7 @@ impl GetConfig for Regtest {
             monero_lock_retry_timeout: 1.std_minutes(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
+            monero_trusted_daemon: false,
             monero_network: monero_address::Network::Mainnet, // yes this is strange
         }
     }
@@ -138,13 +145,19 @@ pub fn new(is_testnet: bool, asb_config: &AsbConfig) -> Config {
             env_config
         };
 
-    if let Some(monero_finality_confirmations) = asb_config.monero.finality_confirmations {
-        Config {
-            monero_finality_confirmations,
-            ..env_config
-        }
-    } else {
-        env_config
+    let env_config =
+        if let Some(monero_finality_confirmations) = asb_config.monero.finality_confirmations {
+            Config {
+                monero_finality_confirmations,
+                ..env_config
+            }
+        } else {
+            env_config
+        };
+
+    Config {
+        monero_trusted_daemon: asb_config.monero.trusted_daemon,
+        ..env_config
     }
 }
 
