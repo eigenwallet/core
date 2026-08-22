@@ -50,7 +50,7 @@ async fn hermes_happy_path() -> anyhow::Result<()> {
     let funding_block = daemon.block_by_number(funding_height).await?;
     let funding_output = Scanner::new(bob_view_pair.clone())
         .scan(daemon.expand_to_scannable_block(funding_block).await?)?
-        .ignore_additional_timelock()
+        .not_additionally_locked()
         .swap_remove(0);
 
     // The shared wallet of which both parties know the private view key
