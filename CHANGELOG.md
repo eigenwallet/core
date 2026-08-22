@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: The `get-swaps` RPC response now includes the Bitcoin redeem address for each swap.
 - GUI: Fix a number of small ui issues / inconsistencies
 
 ## [4.13.2] - 2026-07-23

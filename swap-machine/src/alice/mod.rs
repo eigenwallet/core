@@ -884,6 +884,10 @@ impl State3 {
         TxRedeem::new(&self.tx_lock, &self.redeem_address, self.tx_redeem_fee)
     }
 
+    pub fn redeem_address(&self) -> &bitcoin::Address {
+        &self.redeem_address
+    }
+
     pub fn verify_tx_redeem_encsig(
         &self,
         encrypted_signature: &swap_core::bitcoin::EncryptedSignature,
