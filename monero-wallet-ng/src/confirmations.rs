@@ -13,7 +13,7 @@ use crate::{
     rpc::{ProvidesTransactionStatus, TransactionStatusError},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmationStatus {
     /// We haven't seen the transaction yet
     Unseen,
@@ -165,7 +165,17 @@ where
                 match get_confirmations(&provider, tx_id).await {
                     Ok(status) => {
                         backoff.reset();
-                        if sender.send(status).is_err() {
+                        // Only notify subscribers when the status actually changed, so consumers
+                        // observe an "update" per change rather than on every poll.
+                        sender.send_if_modified(|current| {
+                            if *current == status {
+                                false
+                            } else {
+                                *current = status;
+                                true
+                            }
+                        });
+                        if sender.is_closed() {
                             return;
                         }
                         tokio::time::sleep(poll_interval).await;
