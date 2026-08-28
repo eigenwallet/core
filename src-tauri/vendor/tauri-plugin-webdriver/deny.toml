@@ -1,0 +1,44 @@
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+all-features = true
+
+[advisories]
+unmaintained = "workspace"
+ignore = [
+    "atk-sys",
+    "fxhash",
+    "gdk",
+    "gdk-sys",
+    "gdkwayland-sys",
+    "gdkx11",
+    "proc-macro-error",
+    "RUSTSEC-2024-0429",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MPL-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+exceptions = [
+    # Use exceptions for these as they only have a single user
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-roots" },
+]
