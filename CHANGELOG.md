@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [4.13.3] - 2026-08-05
 
 - GUI: Fix a number of small ui issues / inconsistencies
+- ASB + GUI + CLI: Allow Tor onion-service connection attempts up to five minutes to complete
+  high-effort proof-of-work challenges while retaining the 15-second timeout for other addresses.
 
 ## [4.13.2] - 2026-07-23
 
