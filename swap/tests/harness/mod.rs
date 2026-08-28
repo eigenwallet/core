@@ -771,16 +771,18 @@ impl BobParams {
     ) -> Result<(cli::EventLoop, cli::EventLoopHandle)> {
         let identity = self.seed.derive_libp2p_identity();
 
-        let behaviour = cli::Behaviour::new(
-            self.env_config,
-            self.bitcoin_wallet.clone(),
-            identity.clone(),
-            XmrBtcNamespace::Testnet,
-            Vec::new(),
-            db.clone(),
-        );
-        let (mut swarm, tor_priority_tracker) =
-            swarm::cli(identity.clone(), None, behaviour).await?;
+        let (mut swarm, tor_priority_tracker) = swarm::cli(identity.clone(), None, |relay| {
+            cli::Behaviour::new(
+                self.env_config,
+                self.bitcoin_wallet.clone(),
+                identity,
+                relay,
+                XmrBtcNamespace::Testnet,
+                Vec::new(),
+                db.clone(),
+            )
+        })
+        .await?;
         swarm.add_peer_address(self.alice_peer_id, self.alice_address.clone());
 
         cli::EventLoop::new(swarm, db.clone(), None, tor_priority_tracker)

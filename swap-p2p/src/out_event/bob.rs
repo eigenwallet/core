@@ -4,7 +4,7 @@ use libp2p::{
         InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
     },
 };
-use libp2p::{identify, ping};
+use libp2p::{identify, ping, relay};
 
 use crate::observe;
 use crate::protocols::{
@@ -99,6 +99,12 @@ impl From<ping::Event> for OutEvent {
 
 impl From<identify::Event> for OutEvent {
     fn from(_: identify::Event) -> Self {
+        OutEvent::Other
+    }
+}
+
+impl From<relay::client::Event> for OutEvent {
+    fn from(_: relay::client::Event) -> Self {
         OutEvent::Other
     }
 }

@@ -51,8 +51,9 @@ export function isValidMultiAddressWithPeerId(
   try {
     const multiAddress = new Multiaddr(multiAddressStr);
     const peerId = multiAddress.getPeerId();
+    const protocols = multiAddress.protoNames();
 
-    return peerId !== null;
+    return peerId !== null && protocols[protocols.length - 1] === "p2p";
   } catch {
     return false;
   }

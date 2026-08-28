@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Support outbound connections to makers through libp2p circuit relays.
 - ASB: The `get-swaps` RPC response now includes the Bitcoin redeem address for each swap.
 
 ## [4.13.3] - 2026-08-05
