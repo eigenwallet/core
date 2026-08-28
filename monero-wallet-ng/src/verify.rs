@@ -61,7 +61,7 @@ pub async fn verify_transfer<P: ProvidesTransactions>(
     let outputs = scanner.scan(scannable_block)?;
 
     // Ignore any timelocked outputs to protect against unspendable outputs
-    let outputs = outputs.ignore_additional_timelock();
+    let outputs = outputs.not_additionally_locked();
 
     // Check if any of the outputs have the expected amount
     let has_expected_amount_output = outputs
@@ -86,7 +86,7 @@ pub async fn largest_received_utxo<P: ProvidesTransactions>(
     let mut scanner = Scanner::new(view_pair);
 
     let scannable_block = create_scannable_block_for_tx(tx_id, tx);
-    let outputs = scanner.scan(scannable_block)?.ignore_additional_timelock();
+    let outputs = scanner.scan(scannable_block)?.not_additionally_locked();
 
     Ok(outputs
         .iter()
