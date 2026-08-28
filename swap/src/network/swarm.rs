@@ -9,7 +9,7 @@ use libp2p::connection_limits::ConnectionLimits;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::metrics::{BandwidthTransport, Registry};
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{Multiaddr, Swarm, identity};
+use libp2p::{Multiaddr, Swarm, identity, noise, relay, yamux};
 use libp2p::{PeerId, SwarmBuilder};
 use libp2p_tor::TorDialPriorityTracker;
 use std::fmt::Debug;
@@ -132,20 +132,22 @@ where
     Ok((swarm, onion_addresses, onion_service_handle))
 }
 
-pub async fn cli<T>(
+pub async fn cli<T, B>(
     identity: identity::Keypair,
     maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
-    behaviour: T,
+    build_behaviour: B,
 ) -> Result<(Swarm<T>, Option<TorDialPriorityTracker>)>
 where
     T: NetworkBehaviour,
+    B: FnOnce(relay::client::Behaviour) -> T,
 {
     let (transport, tor_priority_tracker) = cli::transport::new(&identity, maybe_tor_client)?;
 
     let swarm = SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
         .with_other_transport(|_| transport)?
-        .with_behaviour(|_| behaviour)?
+        .with_relay_client(noise::Config::new, yamux::Config::default)?
+        .with_behaviour(|_, relay| build_behaviour(relay))?
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build();
 

@@ -8,7 +8,7 @@ use crate::network::{
 use anyhow::Result;
 use bitcoin_wallet::BitcoinWallet;
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{PeerId, identify, identity, ping};
+use libp2p::{PeerId, identify, identity, ping, relay};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_env::env;
@@ -25,6 +25,9 @@ const MAX_REDIAL_INTERVAL: Duration = Duration::from_secs(30);
 #[behaviour(to_swarm = "OutEvent")]
 #[allow(missing_debug_implementations)]
 pub struct Behaviour {
+    /// Enables outbound connections through circuit relays.
+    relay: relay::client::Behaviour,
+
     /// Fetch a quote from a specific peer, usually before starting a swap
     pub direct_quote: quote::Behaviour,
     /// Periodically request quotes from any peers that might offer them
@@ -57,6 +60,7 @@ impl Behaviour {
         env_config: env::Config,
         bitcoin_wallet: Arc<dyn BitcoinWallet>,
         identity: identity::Keypair,
+        relay: relay::client::Behaviour,
         namespace: XmrBtcNamespace,
         rendezvous_nodes: Vec<PeerId>,
         wormhole_store: Arc<dyn wormhole::WormholeStore + Send + Sync>,
@@ -67,6 +71,7 @@ impl Behaviour {
         let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
 
         Self {
+            relay,
             direct_quote: quote::bob(),
             quotes: quotes_cached::Behaviour::new(identifyConfig),
 
