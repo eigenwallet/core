@@ -6,7 +6,7 @@
 //!  - send money from one wallet to another.
 pub use monero_sys::{Daemon, TxReceipt, WalletHandle as Wallet, WalletHandleListener};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use monero_address::Network;
 use monero_daemon_rpc::MoneroDaemon;
 use monero_oxide_wallet::transaction::{NotPruned, Transaction};
@@ -299,13 +299,17 @@ impl Wallets {
         Ok(rpc_client)
     }
 
-    /// Check that the daemon RPC is reachable, connecting if necessary.
+    /// Check that the daemon RPC is reachable and the node is fully synced.
     pub async fn rpc_health_check(&self) -> Result<()> {
-        self.direct_rpc_block_height()
+        use monero_wallet_ng::rpc::ProvidesNodeInfo;
+
+        let rpc_client = self.rpc_client().await?;
+        let status = rpc_client
+            .node_sync_status()
             .await
             .context("Monero daemon RPC health check failed")?;
 
-        Ok(())
+        validate_node_sync_status(&status, self.regtest)
     }
 
     pub async fn is_transaction_present(&self, tx_hash: &TxHash) -> Result<bool> {
@@ -707,4 +711,55 @@ fn swap_wallet_path(swap_id: Uuid, wallet_dir: &PathBuf, spendable: bool) -> Pat
     let name = format!("swap_{}_{}", &swap_id.to_string(), suffix);
 
     wallet_dir.join(name)
+}
+
+fn validate_node_sync_status(
+    status: &monero_wallet_ng::rpc::NodeSyncStatus,
+    regtest: bool,
+) -> Result<()> {
+    if status.offline && !regtest {
+        bail!("Monero node is running in offline mode");
+    }
+
+    if !status.synchronized {
+        bail!(
+            "Monero node is not fully synced (synced to height {})",
+            status.height
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use monero_wallet_ng::rpc::NodeSyncStatus;
+
+    use super::*;
+
+    fn node_status(offline: bool, synchronized: bool) -> NodeSyncStatus {
+        NodeSyncStatus {
+            synchronized,
+            height: 123,
+            offline,
+        }
+    }
+
+    #[test]
+    fn validates_node_sync_status() {
+        validate_node_sync_status(&node_status(false, true), false)
+            .expect("Synced online node to be accepted");
+        validate_node_sync_status(&node_status(true, true), true)
+            .expect("Offline node to be accepted in regtest");
+
+        for (offline, synchronized, expected_error) in [
+            (true, true, "offline mode"),
+            (false, false, "not fully synced"),
+        ] {
+            let error = validate_node_sync_status(&node_status(offline, synchronized), false)
+                .expect_err("Node status to be rejected");
+
+            assert!(error.to_string().contains(expected_error));
+        }
+    }
 }
