@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + CLI + ASB: Add `/dns4/p2p.btc-xmr.com/tcp/8890/p2p/12D3KooWBPe3sx6dDqE1RSzeBpH1ayghtBp4cgyymti5rPy79xWz` to the default list of rendezvous points
+
 - GUI: Support outbound connections to makers through libp2p circuit relays.
 
 ## [4.14.0] - 2026-08-22

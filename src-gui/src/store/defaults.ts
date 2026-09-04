@@ -10,6 +10,7 @@ export const DEFAULT_RENDEZVOUS_POINTS = [
   "/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
   "/onion3/av2jauifny7dgpvzhsnhra3cwivf6ofaefxvwhhuh5y7hsolabehhaad:8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
   "/dns4/p2p.myexchange.cash/tcp/443/wss/p2p/12D3KooWQQeUXdMkwJo8zESkKo7xek7NtVgqh1Q4RPnJCTmESX1Z",
+  "/dns4/p2p.btc-xmr.com/tcp/8890/p2p/12D3KooWBPe3sx6dDqE1RSzeBpH1ayghtBp4cgyymti5rPy79xWz",
 ];
 
 // Known broken rendezvous points to remove when applying defaults
