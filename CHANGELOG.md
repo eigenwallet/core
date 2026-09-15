@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [4.13.3] - 2026-08-05
 
 - GUI: Fix a number of small ui issues / inconsistencies
+- ASB: Continue Bitcoin cancellation and release Monero reservations when lock-wallet scans find funds or cannot establish emptiness.
+  Preserve recovery state and refund keys when the Monero transfer proof is unknown; automatic recovery of those funds is not yet implemented.
 
 ## [4.13.2] - 2026-07-23
 
