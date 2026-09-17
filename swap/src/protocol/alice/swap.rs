@@ -202,7 +202,11 @@ where
                             .shared_wallet_has_received_outputs(
                                 &monero_wallet,
                                 monero_wallet_restore_blockheight,
-                                None,
+                                Some(
+                                    backoff::ExponentialBackoffBuilder::new()
+                                        .with_max_elapsed_time(Some(Duration::from_secs(60)))
+                                        .build(),
+                                ),
                             )
                             .await
                             .map_err(backoff::Error::transient)?;
@@ -483,7 +487,11 @@ where
                             .shared_wallet_has_received_outputs(
                                 &monero_wallet,
                                 monero_wallet_restore_blockheight,
-                                None,
+                                Some(
+                                    backoff::ExponentialBackoffBuilder::new()
+                                        .with_max_elapsed_time(Some(Duration::from_secs(60)))
+                                        .build(),
+                                ),
                             )
                             .await
                             .context("Failed to scan shared wallet before rebuilding Monero lock transaction")

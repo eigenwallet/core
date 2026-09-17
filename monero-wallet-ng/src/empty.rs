@@ -102,18 +102,7 @@ where
             return Ok(true);
         }
 
-        let mempool_tip_height = latest_block_number(provider, inner_retry.clone()).await?;
-        let mempool_tip_hash =
-            block_hash(provider, mempool_tip_height, inner_retry.clone()).await?;
-        if scan_mempool(
-            provider,
-            &scanner,
-            mempool_tip_height,
-            mempool_tip_hash,
-            inner_retry.clone(),
-        )
-        .await?
-        {
+        if scan_mempool(provider, &scanner, inner_retry.clone()).await? {
             return Ok(true);
         }
 
@@ -255,8 +244,6 @@ where
 async fn scan_mempool<P>(
     provider: &P,
     scanner: &Scanner,
-    tip_height: usize,
-    tip_hash: [u8; 32],
     inner_retry: Option<backoff::ExponentialBackoff>,
 ) -> Result<bool, EmptyError>
 where
@@ -270,12 +257,8 @@ where
     backoff::future::retry(retry_backoff, || {
         let mut scanner = scanner.clone();
         async move {
-            let current_height = latest_block_number(provider, None).await?;
-            if current_height != tip_height
-                || block_hash(provider, tip_height, None).await? != tip_hash
-            {
-                return Err(backoff::Error::permanent(EmptyError::ChainTipChanged));
-            }
+            let tip_height = latest_block_number(provider, None).await?;
+            let tip_hash = block_hash(provider, tip_height, None).await?;
 
             let mempool_tx_hashes = provider
                 .mempool_transaction_hashes()
@@ -301,6 +284,12 @@ where
                         return Ok(true);
                     }
                 }
+            }
+
+            if latest_block_number(provider, None).await? != tip_height
+                || block_hash(provider, tip_height, None).await? != tip_hash
+            {
+                return Err(backoff::Error::transient(EmptyError::ChainTipChanged));
             }
 
             Ok(false)
@@ -619,7 +608,7 @@ mod tests {
     async fn live_scan_detects_output_mined_during_mempool_transition() {
         let transaction = received_transaction();
         let provider = MockProvider {
-            latest: Mutex::new(VecDeque::from([10, 10, 10, 11])),
+            latest: Mutex::new(VecDeque::from([10, 10, 11, 11, 11, 11])),
             mempool_transactions: Mutex::new(vec![transaction.clone()]),
             chain: Mutex::new(MockChain {
                 mine_before_next_mempool_snapshot: Some((11, transaction)),
@@ -635,7 +624,7 @@ mod tests {
             private_view_key,
             10,
             None,
-            None,
+            Some(backoff::ExponentialBackoff::default()),
         )
         .await
         .unwrap();
@@ -645,7 +634,7 @@ mod tests {
             *provider.requested_ranges.lock().unwrap(),
             vec![10..=10, 11..=11]
         );
-        assert_eq!(*provider.mempool_hash_calls.lock().unwrap(), 1);
+        assert_eq!(*provider.mempool_hash_calls.lock().unwrap(), 2);
     }
 
     #[tokio::test]
@@ -709,7 +698,7 @@ mod tests {
     #[tokio::test]
     async fn same_height_reorg_restarts_and_detects_output() {
         let provider = MockProvider {
-            latest: Mutex::new(VecDeque::from([10; 4])),
+            latest: Mutex::new(VecDeque::from([10; 6])),
             chain: Mutex::new(MockChain {
                 mine_before_next_mempool_snapshot: Some((10, received_transaction())),
                 ..MockChain::default()
@@ -724,7 +713,7 @@ mod tests {
             private_view_key,
             10,
             None,
-            None,
+            Some(backoff::ExponentialBackoff::default()),
         )
         .await
         .unwrap();
@@ -739,7 +728,7 @@ mod tests {
     #[tokio::test]
     async fn same_height_reorg_restarts_and_returns_empty_for_unrelated_wallet() {
         let provider = MockProvider {
-            latest: Mutex::new(VecDeque::from([10; 7])),
+            latest: Mutex::new(VecDeque::from([10; 9])),
             chain: Mutex::new(MockChain {
                 mine_before_next_mempool_snapshot: Some((10, received_transaction())),
                 ..MockChain::default()
@@ -754,7 +743,7 @@ mod tests {
             private_view_key,
             10,
             None,
-            None,
+            Some(backoff::ExponentialBackoff::default()),
         )
         .await
         .unwrap();
@@ -764,7 +753,7 @@ mod tests {
             *provider.requested_ranges.lock().unwrap(),
             vec![10..=10, 10..=10]
         );
-        assert_eq!(*provider.mempool_hash_calls.lock().unwrap(), 2);
+        assert_eq!(*provider.mempool_hash_calls.lock().unwrap(), 3);
     }
 
     #[tokio::test]
