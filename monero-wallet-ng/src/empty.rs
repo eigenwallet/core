@@ -45,7 +45,7 @@ struct ScanOutcome {
     pub found_funds: bool,
 }
 
-/// Scan the wallet for incoming funds both on chain and in mempool.
+/// Scans from `start_height` to `target_tip` or the current tip, then the mempool; this can take a long time.
 ///
 /// If `target_tip` is set, scans exactly through that block and then scans the mempool. Otherwise,
 /// continues to scan until the currently latest block is scanned and then the mempool.
@@ -183,6 +183,7 @@ where
     Ok(block.block.hash())
 }
 
+/// Scans from `next_height` through `end_height` in batches; this can take a long time.
 /// Returns the last scanned block hash and whether funds were found.
 async fn scan_blocks<P>(
     provider: &P,

@@ -365,8 +365,8 @@ impl Wallets {
         Ok(any_confirmed_spent(&statuses))
     }
 
-    /// Check for a conflicting input spend at the required canonical confirmation depth.
-    pub async fn has_input_spent_with_confirmations(
+    /// May scan from `restore_height` to the latest sufficiently confirmed block for a conflict; this can take a long time.
+    pub async fn has_confirmed_double_spent(
         &self,
         tx: &Transaction<NotPruned>,
         restore_height: BlockHeight,
@@ -400,6 +400,7 @@ impl Wallets {
         Ok(height as u64)
     }
 
+    /// Scans from `start_height` to `target_tip` or the current tip, then the mempool; this can take a long time.
     pub async fn has_received_outputs(
         &self,
         public_spend_key: monero_oxide_ext::PublicKey,
@@ -656,7 +657,7 @@ impl Wallets {
         Ok(())
     }
 
-    /// Wait for an incoming transfer using the new monero-wallet-ng scanner.
+    /// Scans from `restore_height` to the current tip and follows new blocks until a matching transfer arrives; this can take a long time.
     ///
     /// This scans the blockchain from `restore_height` looking for an output
     /// with the expected amount sent to the given view pair. Returns the
@@ -703,9 +704,7 @@ impl Wallets {
         Ok(TxHash(tx_hash))
     }
 
-    /// Scan the wallet of the given view pair from `restore_height` until an
-    /// output carries a Hermes message that `extract` accepts, returning the
-    /// extracted value.
+    /// Scans from `restore_height` to the current tip and follows new blocks until `extract` accepts a message; this can take a long time.
     ///
     /// Outputs that do not contain a Hermes message at all are skipped
     /// silently. Outputs that do contain a Hermes message but are rejected by

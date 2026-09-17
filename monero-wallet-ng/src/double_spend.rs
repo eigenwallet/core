@@ -6,11 +6,7 @@ use monero_oxide_wallet::transaction::Input;
 
 const BLOCKS_PER_BATCH: usize = 10;
 
-#[cfg(test)]
-#[path = "double_spend_tests.rs"]
-mod tests;
-
-/// Find any other transaction spending one of `key_images` in sufficiently deep blocks.
+/// Scans from `restore_height` to the latest sufficiently confirmed block for a conflict; this can take a long time.
 /// The caller must first establish that an input is blockchain-spent using the trusted daemon.
 /// Absence from the searched range does not establish finality and returns false.
 pub async fn has_confirmed_conflict<P>(
@@ -28,11 +24,17 @@ where
         "Rebuild confirmations must be positive"
     );
     let tip = provider.latest_block_number().await?;
+    ensure!(
+        restore_height <= tip,
+        "Conflict-search restore height {restore_height} exceeds Monero chain tip {tip}"
+    );
     let Some(last_eligible_height) = tip.checked_sub(required_confirmations - 1) else {
+        // Too few blocks have elapsed for any conflict to have the required confirmations.
         return Ok(false);
     };
 
     let mut start = restore_height;
+    let mut previous_hash = None;
     while start <= last_eligible_height {
         let end = start
             .saturating_add(BLOCKS_PER_BATCH - 1)
@@ -48,28 +50,50 @@ where
                 block.block.number() == height,
                 "Unexpected conflict-search block height"
             );
+            if let Some(previous_hash) = previous_hash {
+                ensure!(
+                    block.block.header.previous == previous_hash,
+                    "Monero chain changed between conflict-search blocks"
+                );
+            }
+            previous_hash = Some(block.block.hash());
             if !contains_conflict(&block, original_tx, key_images)? {
                 continue;
             }
 
             // The search may take time: verify both depth and canonical identity again.
             let current_tip = provider.latest_block_number().await?;
-            if current_tip
+            let current_depth = current_tip
                 .checked_sub(height)
-                .is_none_or(|depth| depth < required_confirmations - 1)
-            {
-                return Ok(false);
-            }
+                .context("Monero chain moved below the conflicting block during verification")?;
+            ensure!(
+                current_depth >= required_confirmations - 1,
+                "Monero conflicting spend lost the required confirmation depth during verification"
+            );
             let canonical = provider
                 .scannable_block_by_number(height)
                 .await
                 .context("Failed to recheck conflicting spend's canonical block")?;
-            return Ok(canonical.block.hash() == block.block.hash());
+            ensure!(
+                canonical.block.hash() == block.block.hash(),
+                "Monero conflicting spend's block changed during verification"
+            );
+            return Ok(true);
         }
         if end == last_eligible_height {
             break;
         }
         start = end + 1;
+    }
+    if let Some(last_hash) = previous_hash {
+        let canonical = provider
+            .scannable_block_by_number(last_eligible_height)
+            .await
+            .context("Failed to recheck conflict-search checkpoint")?;
+        ensure!(
+            canonical.block.hash() == last_hash,
+            "Monero conflict-search checkpoint changed during verification"
+        );
     }
     Ok(false)
 }

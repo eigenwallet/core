@@ -511,7 +511,7 @@ where
                         {
                             Some("Lock transaction is present after publication error")
                         } else if !monero_wallet
-                            .has_input_spent_with_confirmations(
+                            .has_confirmed_double_spent(
                                 &xmr_lock_tx,
                                 monero_wallet_restore_blockheight,
                                 env_config.monero_lock_rebuild_confirmations,
@@ -540,7 +540,7 @@ where
                         {
                             Some("Lock transaction is present after scanning shared wallet")
                         } else if !monero_wallet
-                            .has_input_spent_with_confirmations(
+                            .has_confirmed_double_spent(
                                 &xmr_lock_tx,
                                 monero_wallet_restore_blockheight,
                                 env_config.monero_lock_rebuild_confirmations,

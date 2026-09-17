@@ -133,6 +133,9 @@ jobs:
       - name: Run library tests
         run: cargo test  --lib
 
+      - name: Run Monero conflict tests
+        run: cargo test --package monero-tests --test double_spend
+
   docker_tests:
     strategy:
       fail-fast: false

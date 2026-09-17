@@ -61,7 +61,7 @@ const BLOCKS_PER_BATCH: usize = 10;
 // How many blocks to queue up before blocking the fetcher
 const BLOCK_QUEUE_SIZE: usize = BLOCKS_PER_BATCH * 5;
 
-/// Spawn a scanner which catches up from `restore_height` and then follows the chain tip.
+/// Starts a background scan from `restore_height` to the current tip and follows new blocks; catching up can take a long time.
 ///
 /// The returned subscription yields `WalletOutput`s as they are discovered.
 /// The background tasks automatically stop when the `Subscription` is dropped.

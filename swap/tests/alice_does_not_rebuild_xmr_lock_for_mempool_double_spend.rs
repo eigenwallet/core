@@ -24,6 +24,7 @@ async fn alice_does_not_rebuild_xmr_lock_for_mempool_double_spend() {
         None,
         None,
         |mut ctx| async move {
+            assert!(ctx.monero.start_miner().await.is_err());
             // Freeze the Monero blockchain so the double spend cannot confirm
             ctx.monero.stop_miner().await;
 

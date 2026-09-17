@@ -422,12 +422,14 @@ impl<'c> Monerod {
         let monerod = self.client().clone();
         let address =
             monero_address::MoneroAddress::from_str_with_unchecked_network(miner_wallet_address)?;
+        let mut miner_task = self.miner_task.0.lock().await;
+        anyhow::ensure!(miner_task.is_none(), "Miner already started");
         let handle = tokio::spawn(async move {
             if let Err(error) = mine(monerod, address).await {
                 tracing::error!(?error, "Miner task failed");
             }
         });
-        *self.miner_task.0.lock().await = Some(handle);
+        *miner_task = Some(handle);
         Ok(())
     }
 

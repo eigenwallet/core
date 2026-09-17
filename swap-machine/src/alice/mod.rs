@@ -1003,7 +1003,7 @@ impl State3 {
         )
     }
 
-    /// Scan the shared wallet's chain history and mempool for received outputs.
+    /// Scans from `restore_height` to the current tip, then the mempool, for received outputs; this can take a long time.
     pub async fn shared_wallet_has_received_outputs(
         &self,
         monero_wallet: &Wallets,
