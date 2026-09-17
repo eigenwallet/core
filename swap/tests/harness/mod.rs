@@ -511,6 +511,7 @@ async fn init_test_wallets(
         true,
         None,
         None,
+        env_config.monero_lock_construction_cooldown,
     )
     .await
     .unwrap();
@@ -759,7 +760,9 @@ impl BobParams {
             monero_receive_pool,
             self.bitcoin_wallet.new_address().await?,
             btc_amount,
-            bitcoin::Amount::from_sat(1000), // Fixed fee of 1000 satoshis for now
+            self.bitcoin_wallet
+                .estimate_fee(swap_core::bitcoin::TxLock::weight(), Some(btc_amount))
+                .await?,
         );
 
         Ok((swap, event_loop))

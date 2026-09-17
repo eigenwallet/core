@@ -70,6 +70,36 @@ fn public_pool_remains_available_without_trust() {
 }
 
 #[test]
+fn construction_cooldown_defaults_and_override() {
+    for is_testnet in [false, true] {
+        for (options, expected_secs) in [
+            ("", 300),
+            ("lock_construction_cooldown_secs = 42", 42),
+            ("lock_construction_cooldown_secs = 0", 0),
+        ] {
+            let config = config(options);
+            let runtime = env::new(is_testnet, &config);
+            assert_eq!(
+                runtime.monero_lock_construction_cooldown,
+                std::time::Duration::from_secs(expected_secs)
+            );
+        }
+    }
+}
+
+#[test]
+fn construction_cooldown_must_fit_the_system_clock() {
+    let mut config = config("");
+    config.monero.lock_construction_cooldown_secs = u64::MAX;
+    let error = validate_config(&config, env::new(false, &config)).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("lock_construction_cooldown_secs")
+    );
+}
+
+#[test]
 fn cli_network_selection_is_not_overwritten_by_file() {
     let mut config = config("");
     config.bitcoin.finality_confirmations = Some(7);

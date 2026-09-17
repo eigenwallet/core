@@ -21,6 +21,7 @@ pub struct Config {
     pub monero_finality_confirmations: u64,
     // If Alice does manage to lock her Monero within this timeout, she will initiate an early refund of the Bitcoin.
     pub monero_lock_retry_timeout: Duration,
+    pub monero_lock_construction_cooldown: Duration,
     // After this many confirmations we assume that the Monero transaction is safe from double spending
     pub monero_double_spend_safe_confirmations: u64,
     // Whether the configured Monero daemon is trusted. You should generally only consider
@@ -74,6 +75,7 @@ impl GetConfig for Mainnet {
             // If Alice cannot lock her Monero within this timeout,
             // she will initiate an early refund of Bobs Bitcoin
             monero_lock_retry_timeout: 10.std_minutes(),
+            monero_lock_construction_cooldown: 5.std_minutes(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
             monero_trusted_daemon: false,
@@ -97,6 +99,7 @@ impl GetConfig for Testnet {
             bitcoin_network: bitcoin::Network::Testnet,
             monero_avg_block_time: 2.std_minutes(),
             monero_lock_retry_timeout: 10.std_minutes(),
+            monero_lock_construction_cooldown: 5.std_minutes(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
             monero_trusted_daemon: false,
@@ -120,6 +123,7 @@ impl GetConfig for Regtest {
             bitcoin_network: bitcoin::Network::Regtest,
             monero_avg_block_time: 1.std_seconds(),
             monero_lock_retry_timeout: 1.std_minutes(),
+            monero_lock_construction_cooldown: 5.std_seconds(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
             monero_trusted_daemon: false,
@@ -163,6 +167,9 @@ pub fn new(is_testnet: bool, asb_config: &AsbConfig) -> Config {
     Config {
         monero_trusted_daemon: asb_config.monero.trusted_daemon,
         monero_lock_rebuild_confirmations: asb_config.monero.lock_rebuild_confirmations,
+        monero_lock_construction_cooldown: Duration::from_secs(
+            asb_config.monero.lock_construction_cooldown_secs,
+        ),
         ..env_config
     }
 }

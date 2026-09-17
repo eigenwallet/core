@@ -10,6 +10,7 @@ use crate::monero::TransferProof;
 use crate::protocol::alice::{AliceState, HermesFundingPolicy, Swap, TipConfig};
 use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{Context, Result, bail};
+use backoff::backoff::Backoff;
 use bitcoin_wallet::BitcoinWallet;
 use monero_interface::PublishTransaction;
 use monero_oxide_wallet::transaction::{NotPruned, Transaction};
@@ -20,7 +21,7 @@ use swap_core::monero::BlockHeight;
 use swap_env::env::Config;
 use swap_machine::alice::State3;
 use tokio::select;
-use tokio::time::timeout;
+use tokio::time::{Instant, sleep, timeout};
 use uuid::Uuid;
 
 pub async fn run<LR>(swap: Swap, rate_service: LR) -> Result<AliceState>
@@ -193,94 +194,107 @@ where
             // We will retry indefinitely to lock the Monero funds, until either:
             // - the cancel timelock expires
             // - we do not manage to lock the Monero funds within the timeout
-            let backoff = backoff::ExponentialBackoffBuilder::new()
+            let mut backoff = backoff::ExponentialBackoffBuilder::new()
                 .with_max_elapsed_time(Some(env_config.monero_lock_retry_timeout))
                 .with_max_interval(Duration::from_secs(30))
                 .build();
 
-            let constructed = backoff::future::retry_notify(
-                backoff,
-                || async {
-                    // We check the status of the Bitcoin lock transaction
-                    // If the swap is cancelled, there is no need to lock the Monero funds anymore
-                    // because there is no way for the swap to succeed.
-                    if !cancel_timelock_not_expired(&state3, &*bitcoin_wallet)
-                        .await
-                        .context("Failed to check for expired timelocks before locking Monero")
-                        .map_err(backoff::Error::transient)?
-                    {
-                        return Ok(None);
+            let construction = async {
+                let mut turn_expires_at = Instant::now();
+                loop {
+                    if Instant::now() >= turn_expires_at {
+                        let queued_at = std::time::Instant::now();
+                        turn_expires_at = monero_wallet.wait_for_construction_turn().await;
+                        backoff.start_time += queued_at.elapsed();
                     }
 
-                    let has_received_outputs = tokio::select! {
-                        biased;
-                        result = tx_lock_status_subscription.wait_until_confirmed_with(state3.cancel_timelock) => {
-                            result
-                                .context("Failed to watch Bitcoin cancel timelock while scanning before construction")
-                                .map_err(backoff::Error::transient)?;
+                    let attempt = async {
+                        // We check the status of the Bitcoin lock transaction
+                        // If the swap is cancelled, there is no need to lock the Monero funds anymore
+                        // because there is no way for the swap to succeed.
+                        if !cancel_timelock_not_expired(&state3, &*bitcoin_wallet)
+                            .await
+                            .context("Failed to check for expired timelocks before locking Monero")
+                            .map_err(backoff::Error::transient)?
+                        {
                             return Ok(None);
                         }
-                        result = state3.shared_wallet_has_received_outputs(
-                            &monero_wallet,
-                            monero_wallet_restore_blockheight,
-                            None,
-                        ) => result.map_err(backoff::Error::transient)?,
-                    };
 
-                    if has_received_outputs {
-                        return Err(backoff::Error::permanent(anyhow::anyhow!(
-                            "Shared Monero wallet is not empty"
-                        )));
+                        let has_received_outputs = tokio::select! {
+                            biased;
+                            result = tx_lock_status_subscription.wait_until_confirmed_with(state3.cancel_timelock) => {
+                                result
+                                    .context("Failed to watch Bitcoin cancel timelock while scanning before construction")
+                                    .map_err(backoff::Error::transient)?;
+                                return Ok(None);
+                            }
+                            result = state3.shared_wallet_has_received_outputs(
+                                &monero_wallet,
+                                monero_wallet_restore_blockheight,
+                                None,
+                            ) => result.map_err(backoff::Error::transient)?,
+                        };
+
+                        if has_received_outputs {
+                            return Err(backoff::Error::permanent(anyhow::anyhow!(
+                                "Shared Monero wallet is not empty"
+                            )));
+                        }
+
+                        let (lock_address, amount) = state3
+                            .lock_xmr_transfer_request()
+                            .address_and_amount(env_config.monero_network);
+
+                        let hermes_funding_amount = hermes_funding_policy.funding_amount(state3.btc);
+
+                        let hermes_funding = state3
+                            .hermes_funding_transfer_request(hermes_funding_amount)
+                            .address_and_amount(env_config.monero_network);
+
+                        let destinations = build_transfer_destinations(
+                            lock_address,
+                            amount,
+                            hermes_funding,
+                            developer_tip.clone(),
+                        )?;
+
+                        let (xmr_lock_tx, receipt) = monero_wallet
+                            .construct_multi_destination_tx(&destinations)
+                            .await
+                            .context("Failed to construct Monero lock transaction")
+                            .map_err(backoff::Error::transient)?;
+
+                        let tx_key = receipt.tx_keys.get(&lock_address.to_string()).expect("monero-sys guarantees that the address has a valid tx key or the tx isn't published");
+
+                        Ok(Some((
+                            TransferProof::new(monero::TxHash(receipt.txid), *tx_key),
+                            xmr_lock_tx,
+                        )))
                     }
+                    .await;
 
-                    let (lock_address, amount) =
-                        state3.lock_xmr_transfer_request().address_and_amount(env_config.monero_network);
+                    match attempt {
+                        Ok(constructed) => break Ok(constructed),
+                        Err(backoff::Error::Permanent(error)) => break Err(error),
+                        Err(backoff::Error::Transient { err, retry_after }) => {
+                            let Some(delay) = retry_after.or_else(|| backoff.next_backoff()) else {
+                                break Err(err);
+                            };
+                            tracing::warn!(%swap_id, error = ?err, ?delay, "Failed to construct Monero lock transaction; retrying after backoff");
+                            sleep(delay).await;
+                        }
+                    }
+                }
+            };
 
-                    let hermes_funding_amount = hermes_funding_policy.funding_amount(state3.btc);
-
-                    let hermes_funding = state3
-                        .hermes_funding_transfer_request(hermes_funding_amount)
-                        .address_and_amount(env_config.monero_network);
-
-                    let destinations = build_transfer_destinations(
-                        lock_address,
-                        amount,
-                        hermes_funding,
-                        developer_tip.clone(),
-                    )?;
-
-                    let constructed = monero_wallet
-                        .construct_multi_destination_tx(&destinations)
-                        .await
-                        .map_err(|e| tracing::error!(err=%e, "Failed to construct Monero lock transaction"))
-                        .ok();
-
-                    let Some((xmr_lock_tx, receipt)) = constructed else {
-                        return Err(backoff::Error::transient(anyhow::anyhow!(
-                            "Failed to construct Monero lock transaction"
-                        )));
-                    };
-
-                    let tx_key = receipt.tx_keys.get(&lock_address.to_string()).expect("monero-sys guarantees that the address has a valid tx key or the tx isn't published");
-
-                    Ok(Some((
-                        TransferProof::new(
-                            monero::TxHash(receipt.txid),
-                            *tx_key,
-                        ),
-                        xmr_lock_tx,
-                    )))
-                },
-                |e, wait_time: Duration| {
-                    tracing::warn!(
-                        swap_id = %swap_id,
-                        error = ?e,
-                        "Failed to construct Monero lock transaction. We will retry in {} seconds",
-                        wait_time.as_secs()
-                    )
-                },
-            )
-            .await;
+            let constructed = tokio::select! {
+                biased;
+                result = tx_lock_status_subscription.wait_until_confirmed_with(state3.cancel_timelock) => {
+                    result.context("Failed to watch Bitcoin cancel timelock during Monero construction")?;
+                    Ok(None)
+                }
+                result = construction => result,
+            };
 
             match constructed {
                 // If the construction was successful, we transition to the next state

@@ -181,6 +181,12 @@ jobs:
           - package: swap
             test_name: concurrent_bobs_after_xmr_lock_proof_sent
           - package: swap
+            test_name: alice_cancels_while_waiting_for_xmr_construction_turn
+          - package: swap
+            test_name: alice_waits_for_xmr_construction_cooldown
+          - package: swap
+            test_name: xmr_construction_discards_cancelled_native_result
+          - package: swap
             test_name: alice_manually_redeems_after_enc_sig_learned
           - package: swap
             test_name: alice_refuses_cooperative_redeem_for_malicious_swap

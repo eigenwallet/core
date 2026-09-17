@@ -19,6 +19,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::compat::tx_hash_to_bytes;
+use crate::construction_throttle::ConstructionThrottle;
 use crate::listener::{MoneroTauriHandle, TauriWalletListener};
 
 /// Default poll interval for blockchain queries.
@@ -37,6 +38,7 @@ pub struct Wallets {
     daemon: Arc<RwLock<(Daemon, Option<MoneroDaemon<SimpleRequestTransport>>)>>,
     /// Keep the main wallet open and synced.
     main_wallet: Arc<Wallet>,
+    construction_throttle: ConstructionThrottle,
     /// Since Network::Regtest isn't a thing we have to use an extra flag.
     /// When we're in regtest mode, we need to unplug some safety nets to make the wallet work.
     regtest: bool,
@@ -63,6 +65,7 @@ impl Wallets {
         regtest: bool,
         tauri_handle: Option<TauriHandle>,
         wallet_database: Option<Arc<monero_sys::Database>>,
+        construction_interval: Duration,
     ) -> Result<Self> {
         let main_wallet = Wallet::open_or_create(
             wallet_dir.join(&main_wallet_name).display().to_string(),
@@ -108,6 +111,7 @@ impl Wallets {
             network,
             daemon,
             main_wallet,
+            construction_throttle: ConstructionThrottle::new(construction_interval),
             regtest,
             tauri_handle,
             wallet_database,
@@ -130,6 +134,7 @@ impl Wallets {
         tauri_handle: Option<TauriHandle>,
         existing_wallet: Wallet,
         wallet_database: Option<Arc<monero_sys::Database>>,
+        construction_interval: Duration,
     ) -> Result<Self> {
         // TODO: This code is duplicated in [`Wallets::new`]. Unify it.
         if regtest {
@@ -167,6 +172,7 @@ impl Wallets {
             network,
             daemon,
             main_wallet,
+            construction_throttle: ConstructionThrottle::new(construction_interval),
             regtest,
             tauri_handle,
             wallet_database,
@@ -195,6 +201,10 @@ impl Wallets {
     /// Get the main wallet (specified when initializing the `Wallets` instance).
     pub async fn main_wallet(&self) -> Arc<Wallet> {
         self.main_wallet.clone()
+    }
+
+    pub async fn wait_for_construction_turn(&self) -> tokio::time::Instant {
+        self.construction_throttle.wait_for_my_turn().await
     }
 
     /// Open the lock wallet of a specific swap from a given Monero TxLock ID.
