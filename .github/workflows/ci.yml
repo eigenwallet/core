@@ -136,11 +136,16 @@ jobs:
       - name: Run Monero conflict tests
         run: cargo test --package monero-tests --test double_spend
 
+      - name: Run Monero construction throttle tests
+        run: cargo test --manifest-path monero-wallet/Cargo.toml --test construction_throttle
+
   docker_tests:
     strategy:
       fail-fast: false
       matrix:
         include:
+          - package: bitcoin-wallet
+            test_name: integration
           - package: swap
             test_name: happy_path
           - package: swap

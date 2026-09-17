@@ -370,6 +370,9 @@ pub const MIN_BTC_REDEEM_FEE_MULTIPLIER: Decimal = Decimal::from_parts(1, 0, 0, 
 pub const MAX_BTC_REDEEM_FEE_MULTIPLIER: Decimal = Decimal::from_parts(10, 0, 0, false, 0); // 10
 
 pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Result<()> {
+    if env_config.monero_lock_construction_cooldown.is_zero() {
+        bail!("monero.lock_construction_cooldown_secs must be positive");
+    }
     if std::time::Instant::now()
         .checked_add(env_config.monero_lock_construction_cooldown)
         .is_none()

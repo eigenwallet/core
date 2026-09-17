@@ -72,19 +72,29 @@ fn public_pool_remains_available_without_trust() {
 #[test]
 fn construction_cooldown_defaults_and_override() {
     for is_testnet in [false, true] {
-        for (options, expected_secs) in [
-            ("", 300),
-            ("lock_construction_cooldown_secs = 42", 42),
-            ("lock_construction_cooldown_secs = 0", 0),
-        ] {
+        for (options, expected_secs) in [("", 300), ("lock_construction_cooldown_secs = 42", 42)] {
             let config = config(options);
             let runtime = env::new(is_testnet, &config);
+            assert_eq!(
+                runtime.monero_lock_retry_timeout,
+                std::time::Duration::from_secs(30 * 60)
+            );
             assert_eq!(
                 runtime.monero_lock_construction_cooldown,
                 std::time::Duration::from_secs(expected_secs)
             );
         }
     }
+}
+
+#[test]
+fn construction_cooldown_must_be_positive() {
+    let config = config("lock_construction_cooldown_secs = 0");
+    let error = validate_config(&config, env::new(false, &config)).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "monero.lock_construction_cooldown_secs must be positive"
+    );
 }
 
 #[test]

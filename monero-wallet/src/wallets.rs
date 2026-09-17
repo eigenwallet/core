@@ -67,6 +67,7 @@ impl Wallets {
         wallet_database: Option<Arc<monero_sys::Database>>,
         construction_interval: Duration,
     ) -> Result<Self> {
+        let construction_throttle = ConstructionThrottle::new(construction_interval)?;
         let main_wallet = Wallet::open_or_create(
             wallet_dir.join(&main_wallet_name).display().to_string(),
             daemon.clone(),
@@ -111,7 +112,7 @@ impl Wallets {
             network,
             daemon,
             main_wallet,
-            construction_throttle: ConstructionThrottle::new(construction_interval),
+            construction_throttle,
             regtest,
             tauri_handle,
             wallet_database,
@@ -136,6 +137,7 @@ impl Wallets {
         wallet_database: Option<Arc<monero_sys::Database>>,
         construction_interval: Duration,
     ) -> Result<Self> {
+        let construction_throttle = ConstructionThrottle::new(construction_interval)?;
         // TODO: This code is duplicated in [`Wallets::new`]. Unify it.
         if regtest {
             existing_wallet.unsafe_prepare_for_regtest().await;
@@ -172,7 +174,7 @@ impl Wallets {
             network,
             daemon,
             main_wallet,
-            construction_throttle: ConstructionThrottle::new(construction_interval),
+            construction_throttle,
             regtest,
             tauri_handle,
             wallet_database,
@@ -203,7 +205,7 @@ impl Wallets {
         self.main_wallet.clone()
     }
 
-    pub async fn wait_for_construction_turn(&self) -> tokio::time::Instant {
+    pub async fn wait_for_construction_turn(&self) -> Duration {
         self.construction_throttle.wait_for_my_turn().await
     }
 

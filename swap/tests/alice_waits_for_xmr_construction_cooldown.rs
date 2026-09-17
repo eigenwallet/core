@@ -26,7 +26,8 @@ async fn alice_waits_for_xmr_construction_cooldown() {
 
         ctx.restart_alice().await;
         let alice_swap = ctx.alice_next_swap().await;
-        let next_turn = wallets.wait_for_construction_turn().await;
+        let turn_duration = wallets.wait_for_construction_turn().await;
+        let next_turn = Instant::now() + turn_duration;
         let mut alice_handle = tokio::spawn(alice::run_until(
             alice_swap,
             |state| matches!(state, AliceState::XmrLockTransactionConstructed { .. }),

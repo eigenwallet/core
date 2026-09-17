@@ -49,14 +49,16 @@ async fn alice_zero_xmr_refunds_bitcoin() {
         let alice_swap = ctx.alice_next_swap().await;
         let interval = alice_swap.env_config.monero_lock_construction_cooldown;
         let wallets = ctx.alice_monero_wallet.clone();
-        let mut previous_turn = wallets.wait_for_construction_turn().await;
+        let turn_duration = wallets.wait_for_construction_turn().await;
+        let mut previous_turn = tokio::time::Instant::now() + turn_duration;
         let mut alice_turns = 0;
         let mut alice_swap = tokio::spawn(alice::run(alice_swap, FixedRate::default()));
 
         let alice_state = loop {
             tokio::select! {
                 result = &mut alice_swap => break result??,
-                next_turn = wallets.wait_for_construction_turn() => {
+                turn_duration = wallets.wait_for_construction_turn() => {
+                    let next_turn = tokio::time::Instant::now() + turn_duration;
                     if next_turn.duration_since(previous_turn) >= interval * 2 {
                         alice_turns += 1;
                     }
