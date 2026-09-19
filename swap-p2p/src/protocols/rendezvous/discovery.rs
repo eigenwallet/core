@@ -5,7 +5,7 @@ use libp2p::{
     swarm::{NetworkBehaviour, THandlerInEvent, ToSwarm},
 };
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     task::Poll,
 };
 
@@ -45,6 +45,9 @@ pub struct Behaviour {
 
     // Used to trigger an immediate refresh of discovery
     refresh: Trigger,
+    // Cookie for the next page of registrations at a rendezvous node and the number of pages
+    // fetched so far, present only while a paged discovery is in progress at that node
+    next_page: HashMap<PeerId, (rendezvous::Cookie, u32)>,
 }
 
 // This could use notice to recursively discover other rendezvous nodes
@@ -99,6 +102,7 @@ impl Behaviour {
             to_swarm: VecDeque::new(),
             rendezvous_nodes: rendezvous_nodes.into_iter().collect(),
             refresh: Trigger::new(),
+            next_page: HashMap::new(),
         }
     }
 
@@ -128,6 +132,7 @@ impl NetworkBehaviour for Behaviour {
             self.inner.redial.refresh();
             self.pending_to_discover.clear();
             self.to_discover.clear();
+            self.next_page.clear();
 
             // Schedule immediate discovery for all rendezvous nodes
             for node in self.rendezvous_nodes.clone() {
@@ -152,11 +157,12 @@ impl NetworkBehaviour for Behaviour {
                     return true;
                 }
 
-                // If we are connected to the peer, send a discovery request
+                // If we are connected to the peer, send a discovery request for the next page
+                let cookie = self.next_page.get(peer).map(|(cookie, _)| cookie.clone());
                 self.inner.rendezvous.discover(
                     Some(self.namespace.clone()),
-                    None,
-                    None,
+                    cookie,
+                    Some(crate::defaults::DISCOVERY_PAGE_LIMIT),
                     peer.clone(),
                 );
 
@@ -170,12 +176,13 @@ impl NetworkBehaviour for Behaviour {
                     libp2p::rendezvous::client::Event::Discovered {
                         rendezvous_node,
                         registrations,
-                        ..
+                        cookie,
                     },
                 )) => {
+                    let num_registrations = registrations.len();
                     tracing::trace!(
                         ?rendezvous_node,
-                        num_registrations = %registrations.len(),
+                        %num_registrations,
                         "Discovered peers at rendezvous node"
                     );
 
@@ -199,12 +206,27 @@ impl NetworkBehaviour for Behaviour {
                                     "Discovered peer at rendezvous node"
                                 );
                             }
-
-                            self.pending_to_discover.insert(
-                                rendezvous_node,
-                                tokio::time::sleep(crate::defaults::DISCOVERY_INTERVAL).boxed(),
-                            );
                         }
+                    }
+
+                    // A full page means the node may hold more registrations: ask for the next
+                    // page right away. Otherwise we have seen them all, start over later. The
+                    // page cap stops a node that ignores the cookie from looping us forever.
+                    let pages = self
+                        .next_page
+                        .remove(&rendezvous_node)
+                        .map_or(0, |(_, n)| n)
+                        + 1;
+                    if page_is_full(num_registrations)
+                        && pages < crate::defaults::DISCOVERY_MAX_PAGES
+                    {
+                        self.next_page.insert(rendezvous_node, (cookie, pages));
+                        self.to_discover.push_back(rendezvous_node);
+                    } else {
+                        self.pending_to_discover.insert(
+                            rendezvous_node,
+                            tokio::time::sleep(crate::defaults::DISCOVERY_INTERVAL).boxed(),
+                        );
                     }
                     continue;
                 }
@@ -216,6 +238,8 @@ impl NetworkBehaviour for Behaviour {
                     },
                 )) => {
                     let backoff = self.backoff.increment(&rendezvous_node);
+                    // Start from the first page again, the cookie may be what the node rejected
+                    self.next_page.remove(&rendezvous_node);
 
                     self.pending_to_discover
                         .insert(rendezvous_node, tokio::time::sleep(backoff).boxed());
@@ -315,4 +339,9 @@ impl NetworkBehaviour for Behaviour {
             effective_role,
         )
     }
+}
+
+/// Whether a DISCOVER response filled the page we asked for, i.e. whether there may be more
+fn page_is_full(num_registrations: usize) -> bool {
+    num_registrations as u64 >= crate::defaults::DISCOVERY_PAGE_LIMIT
 }

@@ -130,6 +130,67 @@ mod tests {
         rendezvous_handle.abort();
     }
 
+    /// More registrations than fit in one 8 KiB read: libp2p-rendezvous 0.14 fails to decode such
+    /// a DISCOVER response, so every one must be found through pages of DISCOVERY_PAGE_LIMIT.
+    #[tokio::test]
+    async fn discover_more_registrations_than_one_response_can_carry() {
+        const REGISTRARS: usize = 60;
+        let (rendezvous_peer_id, rendezvous_addr, rendezvous_handle) =
+            spawn_rendezvous_node().await;
+
+        let mut registrar_ids = std::collections::HashSet::new();
+        let mut registrar_tasks = Vec::new();
+        for _ in 0..REGISTRARS {
+            let mut registrar = new_swarm(|identity| {
+                register::Behaviour::new(
+                    identity,
+                    vec![rendezvous_peer_id],
+                    XmrBtcNamespace::Testnet.into(),
+                )
+            });
+            registrar.add_peer_address(rendezvous_peer_id, rendezvous_addr.clone());
+            registrar.listen_on_random_memory_address().await;
+            registrar_ids.insert(*registrar.local_peer_id());
+            registrar_tasks.push(tokio::spawn(async move {
+                loop {
+                    registrar.next().await;
+                }
+            }));
+        }
+
+        // Let every registration land before the first DISCOVER, so that an unpaged request
+        // would receive all of them in a single response
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let mut discoverer = new_swarm(|identity| {
+            discovery::Behaviour::new(
+                identity,
+                vec![rendezvous_peer_id],
+                XmrBtcNamespace::Testnet.into(),
+            )
+        });
+        discoverer.add_peer_address(rendezvous_peer_id, rendezvous_addr);
+
+        let discovery_task = tokio::spawn(async move {
+            let mut missing = registrar_ids;
+            while !missing.is_empty() {
+                if let SwarmEvent::Behaviour(discovery::Event::DiscoveredPeer { peer_id }) =
+                    discoverer.select_next_some().await
+                {
+                    missing.remove(&peer_id);
+                }
+            }
+        });
+
+        tokio::time::timeout(Duration::from_secs(20), discovery_task)
+            .await
+            .expect("not every registration was discovered")
+            .unwrap();
+
+        registrar_tasks.iter().for_each(|task| task.abort());
+        rendezvous_handle.abort();
+    }
+
     /// Spawns a rendezvous server that continuously processes events
     async fn spawn_rendezvous_node() -> (PeerId, Multiaddr, tokio::task::JoinHandle<()>) {
         let mut rendezvous_node = new_swarm(|_| {

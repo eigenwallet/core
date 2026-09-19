@@ -17,6 +17,16 @@ pub const DISCOVERY_INITIAL_INTERVAL: Duration = Duration::from_secs(1);
 pub const DISCOVERY_MAX_INTERVAL: Duration = Duration::from_secs(60 * 3);
 pub const DISCOVERY_INTERVAL: Duration = Duration::from_secs(60);
 
+/// Registrations requested per DISCOVER page. libp2p-rendezvous 0.14 cannot decode a response
+/// larger than one 8 KiB read (its codec builds a fresh protobuf decoder for every read, so the
+/// length prefix of a message split across reads is lost). A registration is roughly 280 bytes,
+/// so 33 of them (9.3 KB, the public nodes in September 2026) never decode and the node shows
+/// as `Unavailable`. Pages of 20 stay well below the limit; the cookie fetches the rest.
+pub const DISCOVERY_PAGE_LIMIT: u64 = 20;
+
+/// Most DISCOVER pages fetched from one rendezvous node in a row (200 registrations).
+pub const DISCOVERY_MAX_PAGES: u32 = 10;
+
 // Rendezvous register
 pub const RENDEZVOUS_RETRY_INITIAL_INTERVAL: Duration = Duration::from_secs(1);
 pub const RENDEZVOUS_RETRY_MAX_INTERVAL: Duration = Duration::from_secs(60);
