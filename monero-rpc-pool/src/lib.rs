@@ -185,3 +185,84 @@ pub async fn start_server_with_random_port(
 
     Ok((server_info, status_receiver, pool_handle))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use monero_address::Network;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn app_startup_emits_initial_zero_status() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let config = Config::new_with_port(
+            "127.0.0.1".to_string(),
+            0,
+            dir.path().to_path_buf(),
+            Network::Testnet,
+        );
+
+        let (_app, mut status_receiver, pool_handle) =
+            create_app_with_receiver(config).await.expect("create app");
+
+        let status = status_receiver
+            .try_recv()
+            .expect("initial status published at startup");
+        assert_eq!(status.total_node_count, 0);
+        assert_eq!(status.healthy_node_count, 0);
+        assert_eq!(status.successful_health_checks, 0);
+        assert_eq!(status.unsuccessful_health_checks, 0);
+        assert!(status.top_reliable_nodes.is_empty());
+
+        assert_eq!(pool_handle.server_info().port, 0);
+        assert_eq!(pool_handle.server_info().host, "127.0.0.1");
+
+        assert_eq!(
+            String::from(ServerInfo {
+                port: 1234,
+                host: "node.example".to_string(),
+            }),
+            "http://node.example:1234"
+        );
+    }
+
+    #[tokio::test]
+    async fn random_port_server_answers_stats_over_tcp() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let config = Config::new_random_port(dir.path().to_path_buf(), Network::Testnet);
+
+        let (server_info, _status_receiver, _pool_handle) = start_server_with_random_port(config)
+            .await
+            .expect("start server on random port");
+
+        assert_ne!(server_info.port, 0);
+
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", server_info.port))
+            .await
+            .expect("connect to the started server");
+
+        let request = format!(
+            "GET /stats HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+            server_info.host
+        );
+        stream
+            .write_all(request.as_bytes())
+            .await
+            .expect("send stats request");
+
+        let mut response = Vec::new();
+        stream
+            .read_to_end(&mut response)
+            .await
+            .expect("read stats response");
+        let response = String::from_utf8_lossy(&response);
+
+        assert!(
+            response.starts_with("HTTP/1.1 200"),
+            "unexpected status line: {response}"
+        );
+        assert!(response.contains("total_node_count"));
+        assert!(response.contains("healthy_node_count"));
+        assert!(response.contains("top_reliable_nodes"));
+    }
+}

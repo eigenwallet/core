@@ -294,3 +294,270 @@ impl Database {
         Ok(addresses)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    async fn test_db() -> (tempfile::TempDir, Database) {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Database::new(dir.path().to_path_buf())
+            .await
+            .expect("database with migrations applied");
+        (dir, db)
+    }
+
+    /// Inserts a fixture node on the testnet network, which the migrations
+    /// leave empty, so tests stay independent of the seeded node lists.
+    async fn insert_node(db: &Database, host: &str) {
+        sqlx::query(
+            r#"
+            INSERT INTO monero_nodes (scheme, host, port, network, first_seen_at)
+            VALUES ('http', ?, 18081, 'testnet', datetime('now'))
+            "#,
+        )
+        .bind(host)
+        .execute(&db.pool)
+        .await
+        .expect("insert fixture node");
+    }
+
+    /// Records a health check for a fixture node (all fixtures use http and
+    /// port 18081).
+    async fn record(db: &Database, host: &str, was_successful: bool, latency_ms: Option<f64>) {
+        db.record_health_check("http", host, 18081, was_successful, latency_ms)
+            .await
+            .expect("record health check");
+    }
+
+    /// Inserts a health check with an explicit timestamp, which the production
+    /// write path cannot do because it always stores datetime('now').
+    async fn insert_check(db: &Database, host: &str, was_successful: bool, timestamp: &str) {
+        sqlx::query(
+            r#"
+            INSERT INTO health_checks (node_id, timestamp, was_successful)
+            SELECT id, ?, ? FROM monero_nodes WHERE host = ? AND network = 'testnet'
+            "#,
+        )
+        .bind(timestamp)
+        .bind(was_successful)
+        .bind(host)
+        .execute(&db.pool)
+        .await
+        .expect("insert fixture health check");
+    }
+
+    #[test]
+    fn parse_network_accepts_all_networks_case_insensitively_and_rejects_others() {
+        assert!(matches!(
+            parse_network("mainnet").expect("mainnet parses"),
+            Network::Mainnet
+        ));
+        assert!(matches!(
+            parse_network("MAINNET").expect("uppercase mainnet parses"),
+            Network::Mainnet
+        ));
+        assert!(matches!(
+            parse_network("Stagenet").expect("mixed case stagenet parses"),
+            Network::Stagenet
+        ));
+        assert!(matches!(
+            parse_network("testNet").expect("mixed case testnet parses"),
+            Network::Testnet
+        ));
+
+        assert!(parse_network("devnet").is_err());
+        assert!(parse_network("").is_err());
+    }
+
+    #[test]
+    fn network_to_string_round_trips_through_parse_network() {
+        for network in [Network::Mainnet, Network::Stagenet, Network::Testnet] {
+            let parsed = parse_network(network_to_string(&network)).expect("valid network string");
+            assert_eq!(parsed, network);
+        }
+    }
+
+    #[tokio::test]
+    async fn migrations_seed_mainnet_and_stagenet_but_no_testnet() {
+        let (_dir, db) = test_db().await;
+
+        // The exact counts are the node lists inserted by
+        // migrations/20250628093515_add_default_nodes_from_feather.sql plus the
+        // extra mainnet node from
+        // migrations/20250813225842_cryptostorm_mainnet_node.sql. They are a
+        // deliberate contract: a migration that adds or removes seed nodes
+        // must update this test in the same change.
+        assert_eq!(db.get_node_stats("mainnet").await.unwrap(), (18, 0, 0));
+        assert_eq!(db.get_node_stats("stagenet").await.unwrap(), (11, 0, 0));
+        assert_eq!(db.get_node_stats("testnet").await.unwrap(), (0, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn record_health_check_ignores_unknown_nodes() {
+        let (_dir, db) = test_db().await;
+        insert_node(&db, "known.example").await;
+
+        db.record_health_check("http", "unknown.example", 18081, true, Some(10.0))
+            .await
+            .expect("unknown node is skipped without error");
+
+        assert_eq!(db.get_health_check_stats("testnet").await.unwrap(), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn node_stats_distinguish_total_reachable_and_reliable() {
+        let (_dir, db) = test_db().await;
+
+        insert_node(&db, "unchecked.example").await;
+        insert_node(&db, "succeeding.example").await;
+        insert_node(&db, "failing.example").await;
+        insert_node(&db, "mostly-failing.example").await;
+
+        record(&db, "succeeding.example", true, Some(100.0)).await;
+        record(&db, "failing.example", false, None).await;
+        record(&db, "failing.example", false, None).await;
+        record(&db, "mostly-failing.example", true, Some(100.0)).await;
+        record(&db, "mostly-failing.example", false, None).await;
+        record(&db, "mostly-failing.example", false, None).await;
+
+        assert_eq!(db.get_node_stats("testnet").await.unwrap(), (4, 2, 1));
+    }
+
+    #[tokio::test]
+    async fn health_check_stats_are_scoped_to_network() {
+        let (_dir, db) = test_db().await;
+        insert_node(&db, "testnet-node.example").await;
+
+        for _ in 0..3 {
+            record(&db, "testnet-node.example", true, Some(100.0)).await;
+        }
+        for _ in 0..2 {
+            record(&db, "testnet-node.example", false, None).await;
+        }
+
+        assert_eq!(db.get_health_check_stats("testnet").await.unwrap(), (3, 2));
+
+        // A checked mainnet node must not leak into the testnet numbers.
+        let mainnet_nodes = db
+            .get_top_nodes_by_recent_success("mainnet", 1)
+            .await
+            .expect("seeded mainnet nodes");
+        let Some(mainnet_node) = mainnet_nodes.first() else {
+            panic!("expected at least one seeded mainnet node");
+        };
+        db.record_health_check(
+            &mainnet_node.scheme,
+            &mainnet_node.host,
+            mainnet_node.port,
+            true,
+            Some(10.0),
+        )
+        .await
+        .expect("record mainnet health check");
+
+        assert_eq!(db.get_health_check_stats("testnet").await.unwrap(), (3, 2));
+        assert_eq!(db.get_health_check_stats("mainnet").await.unwrap(), (1, 0));
+    }
+
+    #[tokio::test]
+    async fn health_check_stats_only_count_the_hundred_most_recent() {
+        let (_dir, db) = test_db().await;
+        insert_node(&db, "busy.example").await;
+
+        // 50 successes that are all older than 100 more recent failures. The
+        // timestamps are zero padded so their lexicographic order in SQLite
+        // matches the chronological order.
+        for minute in 0..150 {
+            let timestamp = format!("2026-01-01 {:02}:{:02}", minute / 60, minute % 60);
+            insert_check(&db, "busy.example", minute < 50, &timestamp).await;
+        }
+
+        assert_eq!(
+            db.get_health_check_stats("testnet").await.unwrap(),
+            (0, 100)
+        );
+    }
+
+    #[tokio::test]
+    async fn reliable_nodes_exclude_unchecked_and_rank_by_latency_score() {
+        let (_dir, db) = test_db().await;
+        insert_node(&db, "fast.example").await;
+        insert_node(&db, "slow.example").await;
+        insert_node(&db, "unchecked.example").await;
+
+        record(&db, "fast.example", true, Some(100.0)).await;
+        record(&db, "fast.example", true, Some(100.0)).await;
+        record(&db, "slow.example", true, Some(1500.0)).await;
+        record(&db, "slow.example", true, Some(1500.0)).await;
+        // A failure carrying a latency must not pollute the success-only
+        // latency aggregates.
+        record(&db, "fast.example", false, Some(50.0)).await;
+
+        let reliable = db.get_reliable_nodes("testnet").await.unwrap();
+
+        assert_eq!(reliable.len(), 2);
+        assert_eq!(reliable[0].address.host, "fast.example");
+        assert_eq!(reliable[1].address.host, "slow.example");
+
+        let fast = &reliable[0];
+        assert_eq!(fast.health.success_count, 2);
+        assert_eq!(fast.health.failure_count, 1);
+        assert_eq!(fast.health.avg_latency_ms, Some(100.0));
+        assert_eq!(fast.health.min_latency_ms, Some(100.0));
+        assert_eq!(fast.health.max_latency_ms, Some(100.0));
+
+        // The reliability score is the success ratio scaled by check volume
+        // plus a latency bonus, so the 100 ms node outranks the 1500 ms node.
+        let slow = &reliable[1];
+        assert_eq!(slow.health.success_count, 2);
+        assert_eq!(slow.health.failure_count, 0);
+        assert_eq!(slow.health.avg_latency_ms, Some(1500.0));
+        assert_eq!(slow.health.last_latency_ms, Some(1500.0));
+    }
+
+    #[tokio::test]
+    async fn reliable_nodes_cap_at_four_entries() {
+        let (_dir, db) = test_db().await;
+
+        for idx in 0..6 {
+            let host = format!("node-{idx}.example");
+            insert_node(&db, &host).await;
+            record(&db, &host, true, Some(100.0)).await;
+        }
+
+        assert_eq!(db.get_reliable_nodes("testnet").await.unwrap().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn top_nodes_include_unchecked_nodes_up_to_limit() {
+        let (_dir, db) = test_db().await;
+
+        let total = db.get_node_stats("mainnet").await.unwrap().0;
+
+        // The pool must offer nodes to try even before any health check exists.
+        let five = db
+            .get_top_nodes_by_recent_success("mainnet", 5)
+            .await
+            .unwrap();
+        assert_eq!(five.len(), 5);
+        let distinct: HashSet<_> = five.iter().collect();
+        assert_eq!(distinct.len(), 5);
+
+        // A limit beyond the number of candidates returns every candidate.
+        let all = db
+            .get_top_nodes_by_recent_success("mainnet", total + 10)
+            .await
+            .unwrap();
+        assert_eq!(all.len() as i64, total);
+
+        // The empty testnet network yields no candidates.
+        assert!(
+            db.get_top_nodes_by_recent_success("testnet", 5)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+}

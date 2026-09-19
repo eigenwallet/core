@@ -209,3 +209,66 @@ impl ConnectionPool {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper::client::conn::http1;
+    use hyper_util::rt::TokioIo;
+    use tokio::net::{TcpListener, TcpStream};
+
+    #[tokio::test]
+    async fn connections_are_reused_when_idle_and_dropped_when_marked_failed() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback listener");
+        let addr = listener.local_addr().expect("listener address");
+
+        // Accept and hold every connection. The lifecycle under test never
+        // sends a request, so no bytes have to flow.
+        tokio::spawn(async move {
+            let mut connections = Vec::new();
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    return;
+                };
+                connections.push(stream);
+            }
+        });
+
+        let stream = TcpStream::connect(addr).await.expect("connect to listener");
+        let (sender, connection) = http1::handshake(TokioIo::new(stream))
+            .await
+            .expect("http1 handshake");
+        tokio::spawn(async move {
+            let _ = connection.await;
+        });
+
+        let pool = ConnectionPool::new();
+        let key: StreamKey = (
+            "http".to_string(),
+            "node.example".to_string(),
+            addr.port(),
+            false,
+        );
+
+        // Nothing pooled yet.
+        assert!(!pool.has_available_connection(&key).await);
+        assert!(pool.try_get(&key).await.is_none());
+
+        // A fresh connection is handed out exclusively and is busy while held.
+        let guarded = pool.insert_and_lock(key.clone(), sender).await;
+        assert!(pool.try_get(&key).await.is_none());
+        assert!(!pool.has_available_connection(&key).await);
+
+        // After the guard is released the same connection is reusable.
+        drop(guarded);
+        assert!(pool.has_available_connection(&key).await);
+        let reused = pool.try_get(&key).await.expect("idle connection is reused");
+
+        // Once marked failed the entry disappears from the pool.
+        reused.mark_failed().await;
+        assert!(pool.try_get(&key).await.is_none());
+        assert!(!pool.has_available_connection(&key).await);
+    }
+}
