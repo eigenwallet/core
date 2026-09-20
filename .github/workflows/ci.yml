@@ -216,6 +216,14 @@ jobs:
             test_name: transfers_wrong_key
           - package: monero-tests
             test_name: sweep
+          - package: monero_wallet
+            test_name: lifecycle
+          - package: monero_wallet
+            test_name: transfers
+          - package: monero_wallet
+            test_name: swap_wallet
+          - package: monero_wallet
+            test_name: runtime
 
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
