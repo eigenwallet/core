@@ -23,6 +23,7 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;
@@ -86,6 +87,11 @@ pub const MAX_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(100_000);
 pub const MIN_ABSOLUTE_TX_FEE_SATS: u64 = 1000;
 pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(MIN_ABSOLUTE_TX_FEE_SATS);
 pub const DUST_AMOUNT: Amount = Amount::from_sat(546);
+
+/// How many generations of unconfirmed ancestors we take into account when
+/// computing the fee of a transaction that spends unconfirmed outputs
+/// (1 = parent, 2 = parent and grandparent).
+const MAX_UNCONFIRMED_ANCESTOR_DEPTH: usize = 2;
 
 /// This is our wrapper around a bdk wallet and a corresponding
 /// bdk electrum client.
@@ -1376,7 +1382,7 @@ where
 
         let script = address.script_pubkey();
 
-        let psbt = {
+        let (psbt, ancestors) = {
             let mut wallet = self.wallet.lock().await;
 
             // Build the transaction with a dummy fee rate
@@ -1387,11 +1393,15 @@ where
             tx_builder.add_recipient(script.clone(), amount);
             tx_builder.fee_absolute(Amount::ZERO);
 
-            tx_builder.finish()?
+            let psbt = tx_builder.finish()?;
+            let ancestors = unconfirmed_ancestors(&wallet, &psbt.unsigned_tx);
+
+            (psbt, ancestors)
         };
 
-        let weight = psbt.unsigned_tx.weight();
-        let fee = self.estimate_fee(weight, Some(amount)).await?;
+        let fee = self
+            .estimate_package_fee(psbt.unsigned_tx.weight(), ancestors, Some(amount))
+            .await?;
 
         self.send_to_address(address, amount, fee, change_override)
             .await
@@ -1500,16 +1510,15 @@ where
         // If we increase the fee, the output amount simply will decrease
         //
         // The inputs are constant, so only the output amount changes.
-        let (dummy_max_giveable, dummy_weight) = match tx_builder.finish() {
+        let (dummy_max_giveable, dummy_psbt) = match tx_builder.finish() {
             Ok(psbt) => {
                 if psbt.unsigned_tx.output.len() != 1 {
                     bail!("Expected a single output in the dummy transaction");
                 }
 
                 let max_giveable = psbt.unsigned_tx.output.first().expect("Expected a single output in the dummy transaction").value;
-                let weight = psbt.unsigned_tx.weight();
 
-                Ok((Some(max_giveable), weight))
+                Ok((Some(max_giveable), psbt))
             },
             Err(bdk_wallet::error::CreateTxError::CoinSelection(_)) => {
                 // We don't have enough funds to create a transaction (below dust limit)
@@ -1576,20 +1585,30 @@ where
                 // Try building the dummy drain transaction with the new fake UTXO
                 // If we fail now, we propagate the error to the caller
                 let psbt = tx_builder.finish()?;
-                let weight = psbt.unsigned_tx.weight();
 
                 tracing::trace!(
-                    weight = weight.to_wu(),
+                    weight = psbt.unsigned_tx.weight().to_wu(),
                     "Built dummy drain transaction with fake UTXO, max giveable is 0"
                 );
 
-                Ok((None, weight))
+                Ok((None, psbt))
             }
             Err(e) => Err(e)
         }.context("Failed to build transaction to figure out max giveable")?;
 
+        // The transaction may spend outputs of unconfirmed transactions. To
+        // make the package attractive for miners, the fee has to cover the fee
+        // deficit of these ancestors as well.
+        let ancestors = unconfirmed_ancestors(&wallet, &dummy_psbt.unsigned_tx);
+
         // Estimate the fee rate using our real fee rate estimation
-        let fee = self.estimate_fee(dummy_weight, dummy_max_giveable).await?;
+        let fee = self
+            .estimate_package_fee(
+                dummy_psbt.unsigned_tx.weight(),
+                ancestors,
+                dummy_max_giveable,
+            )
+            .await?;
 
         Ok(match dummy_max_giveable {
             // If the max giveable is less than the dust amount, we return 0
@@ -1639,6 +1658,22 @@ where
         let min_relay_fee = self.combined_min_relay_fee().await?;
 
         estimate_fee(weight, transfer_amount, fee_rate, min_relay_fee)
+    }
+
+    /// Estimate the absolute fee for a transaction of `weight` weight units
+    /// which additionally has to cover the fee deficit of its unconfirmed
+    /// `ancestors` so that the whole package reaches the recommended fee rate
+    /// (child-pays-for-parent).
+    async fn estimate_package_fee(
+        &self,
+        weight: Weight,
+        ancestors: UnconfirmedAncestors,
+        transfer_amount: Option<Amount>,
+    ) -> Result<Amount> {
+        let fee_rate = self.combined_fee_rate().await?;
+        let min_relay_fee = self.combined_min_relay_fee().await?;
+
+        estimate_package_fee(weight, ancestors, transfer_amount, fee_rate, min_relay_fee)
     }
 }
 
@@ -2563,18 +2598,7 @@ pub fn estimate_fee(
         bail!("A fee_rate or min_relay_fee of > 1BTC does not make sense")
     }
 
-    // Choose the highest fee rate of:
-    // 1. The fee rate provided by the user (comes from fee estimation source)
-    // 2. The minimum relay fee rate (comes from fee estimation source, might vary depending on mempool congestion)
-    // 3. The broadcast minimum fee rate (hardcoded in the Bitcoin library)
-    // We round up to the next sat/vbyte
-    let recommended_fee_rate = FeeRate::from_sat_per_vb(
-        fee_rate_estimation
-            .to_sat_per_vb_ceil()
-            .max(min_relay_fee_rate.to_sat_per_vb_ceil())
-            .max(FeeRate::BROADCAST_MIN.to_sat_per_vb_ceil()),
-    )
-    .context("Failed to compute recommended fee rate")?;
+    let recommended_fee_rate = recommended_fee_rate(fee_rate_estimation, min_relay_fee_rate)?;
 
     if recommended_fee_rate > fee_rate_estimation {
         tracing::warn!(
@@ -2597,6 +2621,36 @@ pub fn estimate_fee(
         "Estimated fee for transaction",
     );
 
+    Ok(apply_fee_bounds(
+        recommended_fee_absolute_sats,
+        transfer_amount,
+    ))
+}
+
+/// The fee rate we actually use for fee estimation: the highest of
+///
+/// 1. The fee rate provided by the user (comes from fee estimation source)
+/// 2. The minimum relay fee rate (comes from fee estimation source, might vary depending on mempool congestion)
+/// 3. The broadcast minimum fee rate (hardcoded in the Bitcoin library)
+///
+/// We round up to the next sat/vbyte
+fn recommended_fee_rate(
+    fee_rate_estimation: FeeRate,
+    min_relay_fee_rate: FeeRate,
+) -> Result<FeeRate> {
+    FeeRate::from_sat_per_vb(
+        fee_rate_estimation
+            .to_sat_per_vb_ceil()
+            .max(min_relay_fee_rate.to_sat_per_vb_ceil())
+            .max(FeeRate::BROADCAST_MIN.to_sat_per_vb_ceil()),
+    )
+    .context("Failed to compute recommended fee rate")
+}
+
+/// Applies the fee bounds to `fee`: the relative fee cap (a percentage of the
+/// transfer amount, if known), the absolute minimum fee and the absolute
+/// maximum fee.
+fn apply_fee_bounds(fee: Amount, transfer_amount: Option<Amount>) -> Amount {
     // If the recommended fee is above the absolute max allowed fee, we fall back to the absolute max allowed fee
     //
     // We only care about this if the transfer amount is known
@@ -2611,7 +2665,7 @@ pub fn estimate_fee(
                 .expect("Max relative tx fee to fit into u64"),
         );
 
-        if recommended_fee_absolute_sats > absolute_max_allowed_fee {
+        if fee > absolute_max_allowed_fee {
             let max_relative_tx_fee_percentage = MAX_RELATIVE_TX_FEE
                 .saturating_mul(Decimal::from(100))
                 .ceil()
@@ -2624,34 +2678,157 @@ pub fn estimate_fee(
                 absolute_max_allowed_fee.to_sat()
             );
 
-            return Ok(absolute_max_allowed_fee);
+            return absolute_max_allowed_fee;
         }
     }
 
     // Bitcoin Core has a minimum relay fee of 1000 sats, regardless of the transaction size
     // Essentially this is an extension of the minimum relay fee rate
     // but some nodes ceil the transaction size to 1000 vbytes
-    if recommended_fee_absolute_sats < MIN_ABSOLUTE_TX_FEE {
+    if fee < MIN_ABSOLUTE_TX_FEE {
         tracing::warn!(
             "Recommended fee rate is below the absolute minimum relay fee. Falling back to: {} sats",
             MIN_ABSOLUTE_TX_FEE.to_sat()
         );
 
-        return Ok(MIN_ABSOLUTE_TX_FEE);
+        return MIN_ABSOLUTE_TX_FEE;
     }
 
     // We have a hard limit of 100M sats on the absolute fee
-    if recommended_fee_absolute_sats > MAX_ABSOLUTE_TX_FEE {
+    if fee > MAX_ABSOLUTE_TX_FEE {
         tracing::warn!(
             "Hard bound of transaction fee reached. Falling back to: {} sats",
             MAX_ABSOLUTE_TX_FEE.to_sat()
         );
 
-        return Ok(MAX_ABSOLUTE_TX_FEE);
+        return MAX_ABSOLUTE_TX_FEE;
     }
 
-    // Return the recommended fee without any safety margin
-    Ok(recommended_fee_absolute_sats)
+    fee
+}
+
+/// The aggregate fee and weight of a transaction's unconfirmed ancestors.
+///
+/// Only ancestors known to the wallet's local transaction graph are taken
+/// into account. An ancestor whose fee cannot be calculated is disregarded
+/// entirely: we would rather risk underpaying than assume a fee of zero and
+/// overpay immensely if that assumption breaks down.
+#[derive(Debug, Clone, Copy)]
+struct UnconfirmedAncestors {
+    /// The total fee the unconfirmed ancestors pay.
+    fee: Amount,
+    /// The total weight of the unconfirmed ancestors.
+    weight: Weight,
+}
+
+impl Default for UnconfirmedAncestors {
+    fn default() -> Self {
+        Self {
+            fee: Amount::ZERO,
+            weight: Weight::ZERO,
+        }
+    }
+}
+
+/// Estimate the absolute fee for a transaction that spends outputs of
+/// unconfirmed ancestors (child-pays-for-parent).
+///
+/// To get the transaction confirmed in time, the child has to cover the fee
+/// deficit of its unconfirmed ancestors: the fee is chosen such that the
+/// whole package (ancestors + transaction) reaches the recommended fee rate.
+/// The same fee bounds as in [`estimate_fee`] apply.
+fn estimate_package_fee(
+    weight: Weight,
+    ancestors: UnconfirmedAncestors,
+    transfer_amount: Option<Amount>,
+    fee_rate_estimation: FeeRate,
+    min_relay_fee_rate: FeeRate,
+) -> Result<Amount> {
+    // The fee the transaction would pay on its own. Performs the sanity
+    // checks on the fee rates and enforces the fee bounds.
+    let standalone_fee = estimate_fee(
+        weight,
+        transfer_amount,
+        fee_rate_estimation,
+        min_relay_fee_rate,
+    )?;
+
+    if ancestors.weight == Weight::ZERO {
+        return Ok(standalone_fee);
+    }
+
+    // The fee the transaction would have to pay such that the whole package
+    // pays the recommended fee rate in total.
+    let recommended_fee_rate = recommended_fee_rate(fee_rate_estimation, min_relay_fee_rate)?;
+    let package_weight = weight
+        .checked_add(ancestors.weight)
+        .context("Failed to compute package weight")?;
+    let package_fee = recommended_fee_rate
+        .checked_mul_by_weight(package_weight)
+        .context("Failed to compute package fee")?;
+    let required_fee = package_fee
+        .checked_sub(ancestors.fee)
+        .unwrap_or(Amount::ZERO);
+
+    // We never pay less than we would have paid without the ancestors.
+    let fee = standalone_fee.max(required_fee);
+
+    Ok(apply_fee_bounds(fee, transfer_amount))
+}
+
+/// Collects the unconfirmed ancestors of `tx`'s inputs known to the wallet,
+/// at most `MAX_UNCONFIRMED_ANCESTOR_DEPTH` generations deep.
+///
+/// This only walks the wallet's local transaction graph which is populated by
+/// `sync()` and never performs any network requests. Ancestors are not taken
+/// into account if they are confirmed, unknown to the wallet, or their fee
+/// cannot be calculated.
+fn unconfirmed_ancestors<P>(wallet: &PersistedWallet<P>, tx: &Transaction) -> UnconfirmedAncestors {
+    let mut ancestors = UnconfirmedAncestors::default();
+    let mut seen = HashSet::<Txid>::new();
+    let mut stack: Vec<(Txid, usize)> = tx
+        .input
+        .iter()
+        .map(|input| (input.previous_output.txid, 1))
+        .collect();
+
+    while let Some((txid, depth)) = stack.pop() {
+        if depth > MAX_UNCONFIRMED_ANCESTOR_DEPTH || !seen.insert(txid) {
+            continue;
+        }
+
+        let Some(wallet_tx) = wallet.get_tx(txid) else {
+            continue;
+        };
+
+        if wallet_tx.chain_position.is_confirmed() {
+            continue;
+        }
+
+        let tx = wallet_tx.tx_node.tx;
+        let fee = match wallet.calculate_fee(&tx) {
+            Ok(fee) => fee,
+            Err(error) => {
+                tracing::debug!(
+                    %txid,
+                    %error,
+                    "Cannot calculate fee of unconfirmed ancestor, not taking it into account"
+                );
+                continue;
+            }
+        };
+
+        ancestors.fee += fee;
+        ancestors.weight += tx.weight();
+
+        stack.extend(
+            tx.input
+                .iter()
+                .map(|input| (input.previous_output.txid, depth + 1)),
+        );
+    }
+
+    ancestors
 }
 
 mod mempool_client {
@@ -3094,5 +3271,531 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
 
     async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
         unimplemented!("stub method called erroneously")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bdk_wallet::chain::{BlockId, ConfirmationBlockTime};
+    use bdk_wallet::test_utils::{insert_anchor, insert_tx};
+    use bitcoin::hashes::Hash;
+    use bitcoin::{BlockHash, OutPoint, Sequence, TxIn, TxOut};
+
+    /// The fee rate estimation used by the wallet-level tests.
+    fn fee_rate() -> FeeRate {
+        FeeRate::from_sat_per_vb(10).unwrap()
+    }
+
+    /// The minimum relay fee rate used by the wallet-level tests.
+    fn min_relay_fee() -> FeeRate {
+        FeeRate::from_sat_per_vb(1).unwrap()
+    }
+
+    /// A wallet funded with a single confirmed utxo of `utxo_amount` sats.
+    async fn funded_wallet(utxo_amount: u64) -> Wallet<Connection, StaticFeeRate> {
+        TestWalletBuilder::new(utxo_amount)
+            .with_fees(10, 1)
+            .build()
+            .await
+    }
+
+    /// The confirmed utxo the test wallet was funded with.
+    async fn confirmed_utxo(wallet: &Wallet<Connection, StaticFeeRate>) -> OutPoint {
+        let wallet = wallet.wallet.lock().await;
+        wallet
+            .list_unspent()
+            .next()
+            .expect("test wallet has a confirmed utxo")
+            .outpoint
+    }
+
+    /// Builds a transaction that spends `spends` and pays `values` to the
+    /// wallet's first receive address, then inserts it into the wallet's local
+    /// transaction graph as an unconfirmed transaction.
+    fn insert_self_spend(
+        wallet: &mut PersistedWallet<Connection>,
+        spends: &[OutPoint],
+        values: &[u64],
+    ) -> Transaction {
+        let addr = wallet.peek_address(KeychainKind::External, 0).address;
+
+        let tx = Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
+            input: spends
+                .iter()
+                .map(|previous_output| TxIn {
+                    previous_output: *previous_output,
+                    script_sig: Default::default(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: Default::default(),
+                })
+                .collect(),
+            output: values
+                .iter()
+                .map(|value| TxOut {
+                    value: Amount::from_sat(*value),
+                    script_pubkey: addr.script_pubkey(),
+                })
+                .collect(),
+        };
+
+        insert_tx(wallet, tx.clone());
+        tx
+    }
+
+    /// Confirms `tx` at the tip of the test wallet's chain.
+    async fn confirm(wallet: &Wallet<Connection, StaticFeeRate>, txid: Txid) {
+        let mut wallet = wallet.wallet.lock().await;
+        insert_anchor(
+            &mut wallet,
+            txid,
+            ConfirmationBlockTime {
+                block_id: BlockId {
+                    height: 43,
+                    hash: BlockHash::all_zeros(),
+                },
+                confirmation_time: 0,
+            },
+        );
+    }
+
+    /// The weight of the transaction `send_to_address_dynamic_fee` builds for
+    /// the given send amount, mirroring the dummy build inside the wallet.
+    async fn weight_for_send(
+        wallet: &Wallet<Connection, StaticFeeRate>,
+        dest: &Address,
+        amount: Amount,
+    ) -> Weight {
+        let mut wallet = wallet.wallet.lock().await;
+        let mut tx_builder = wallet.build_tx();
+        tx_builder.add_recipient(dest.script_pubkey(), amount);
+        tx_builder.fee_absolute(Amount::ZERO);
+        tx_builder
+            .finish()
+            .expect("dummy transaction must build")
+            .unsigned_tx
+            .weight()
+    }
+
+    /// What `estimate_package_fee` must return for the given inputs.
+    fn expected_package_fee(
+        weight: Weight,
+        ancestors: UnconfirmedAncestors,
+        transfer_amount: Amount,
+    ) -> Amount {
+        let standalone =
+            estimate_fee(weight, Some(transfer_amount), fee_rate(), min_relay_fee()).unwrap();
+        let package_fee = recommended_fee_rate(fee_rate(), min_relay_fee())
+            .unwrap()
+            .checked_mul_by_weight(weight.checked_add(ancestors.weight).unwrap())
+            .unwrap();
+        let required = package_fee
+            .checked_sub(ancestors.fee)
+            .unwrap_or(Amount::ZERO);
+        apply_fee_bounds(standalone.max(required), Some(transfer_amount))
+    }
+
+    #[tokio::test]
+    async fn fee_accounts_for_unconfirmed_parent() {
+        let wallet = funded_wallet(100_000).await;
+        let utxo = confirmed_utxo(&wallet).await;
+
+        // Spend our confirmed utxo in an unconfirmed transaction which pays
+        // 99_800 sats back to us and therefore pays a fee of 200 sats.
+        let parent = {
+            let mut wallet = wallet.wallet.lock().await;
+            insert_self_spend(&mut wallet, &[utxo], &[99_800])
+        };
+
+        let dest = wallet.new_address().await.unwrap();
+        let amount = Amount::from_sat(50_000);
+        let psbt = wallet
+            .send_to_address_dynamic_fee(dest.clone(), amount, None)
+            .await
+            .unwrap();
+
+        let parent_txid = parent.compute_txid();
+        assert!(
+            psbt.unsigned_tx
+                .input
+                .iter()
+                .any(|input| input.previous_output.txid == parent_txid),
+            "child does not spend the unconfirmed parent's output"
+        );
+
+        let child_fee = psbt.fee().unwrap();
+        let child_weight = weight_for_send(&wallet, &dest, amount).await;
+
+        // Without the parent we would only pay the standalone fee.
+        let standalone =
+            estimate_fee(child_weight, Some(amount), fee_rate(), min_relay_fee()).unwrap();
+        let expected = expected_package_fee(
+            child_weight,
+            UnconfirmedAncestors {
+                fee: Amount::from_sat(200),
+                weight: parent.weight(),
+            },
+            amount,
+        );
+
+        assert_eq!(child_fee, expected);
+        assert!(child_fee > standalone);
+    }
+
+    #[tokio::test]
+    async fn fee_ignores_confirmed_parent() {
+        let wallet = funded_wallet(100_000).await;
+        let utxo = confirmed_utxo(&wallet).await;
+
+        let parent_txid = {
+            let mut wallet = wallet.wallet.lock().await;
+            insert_self_spend(&mut wallet, &[utxo], &[99_800]).compute_txid()
+        };
+        confirm(&wallet, parent_txid).await;
+
+        let dest = wallet.new_address().await.unwrap();
+        let amount = Amount::from_sat(50_000);
+        let psbt = wallet
+            .send_to_address_dynamic_fee(dest.clone(), amount, None)
+            .await
+            .unwrap();
+
+        let child_fee = psbt.fee().unwrap();
+        let child_weight = weight_for_send(&wallet, &dest, amount).await;
+        let standalone =
+            estimate_fee(child_weight, Some(amount), fee_rate(), min_relay_fee()).unwrap();
+
+        assert_eq!(child_fee, standalone);
+    }
+
+    #[tokio::test]
+    async fn fee_accounts_for_parent_and_grandparent_only() {
+        let wallet = funded_wallet(100_000).await;
+        let utxo = confirmed_utxo(&wallet).await;
+
+        // A chain of unconfirmed self-spends, each paying a fee of 200 sats:
+        // a spends the confirmed utxo, b spends a, c spends b.
+        let (_a, b, c) = {
+            let mut wallet = wallet.wallet.lock().await;
+            let a = insert_self_spend(&mut wallet, &[utxo], &[99_800]);
+            let b = insert_self_spend(
+                &mut wallet,
+                &[OutPoint::new(a.compute_txid(), 0)],
+                &[99_600],
+            );
+            let c = insert_self_spend(
+                &mut wallet,
+                &[OutPoint::new(b.compute_txid(), 0)],
+                &[99_400],
+            );
+            (a, b, c)
+        };
+
+        let dest = wallet.new_address().await.unwrap();
+        let amount = Amount::from_sat(50_000);
+        let psbt = wallet
+            .send_to_address_dynamic_fee(dest.clone(), amount, None)
+            .await
+            .unwrap();
+
+        let c_txid = c.compute_txid();
+        assert!(
+            psbt.unsigned_tx
+                .input
+                .iter()
+                .any(|input| input.previous_output.txid == c_txid),
+            "child does not spend the unconfirmed parent's output"
+        );
+
+        let child_fee = psbt.fee().unwrap();
+        let child_weight = weight_for_send(&wallet, &dest, amount).await;
+        let standalone =
+            estimate_fee(child_weight, Some(amount), fee_rate(), min_relay_fee()).unwrap();
+
+        // The parent c and grandparent b are taken into account, the
+        // great-grandparent a is not.
+        let expected = expected_package_fee(
+            child_weight,
+            UnconfirmedAncestors {
+                fee: Amount::from_sat(400),
+                weight: b.weight().checked_add(c.weight()).unwrap(),
+            },
+            amount,
+        );
+
+        assert_eq!(child_fee, expected);
+        assert!(child_fee > standalone);
+    }
+
+    #[tokio::test]
+    async fn fee_accounts_for_unconfirmed_foreign_parent() {
+        let wallet = funded_wallet(50_000).await;
+
+        // Simulate a deposit paying to our wallet from a foreign utxo. The
+        // prevout's TxOut is known because our sync fetched it, so the fee of
+        // the parent can be calculated: 60_500 - 60_000 = 500 sats.
+        let foreign_outpoint = OutPoint::new(Txid::all_zeros(), 0);
+        let parent = {
+            let mut wallet = wallet.wallet.lock().await;
+            let spk = wallet
+                .peek_address(KeychainKind::External, 0)
+                .address
+                .script_pubkey();
+            wallet.insert_txout(
+                foreign_outpoint,
+                TxOut {
+                    value: Amount::from_sat(60_500),
+                    script_pubkey: spk.clone(),
+                },
+            );
+            let tx = Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
+                input: vec![TxIn {
+                    previous_output: foreign_outpoint,
+                    script_sig: Default::default(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: Default::default(),
+                }],
+                output: vec![TxOut {
+                    value: Amount::from_sat(60_000),
+                    script_pubkey: spk,
+                }],
+            };
+            insert_tx(&mut wallet, tx.clone());
+            tx
+        };
+
+        // Send more than the confirmed balance so the child must spend the
+        // unconfirmed foreign-funded output.
+        let dest = wallet.new_address().await.unwrap();
+        let amount = Amount::from_sat(80_000);
+        let psbt = wallet
+            .send_to_address_dynamic_fee(dest.clone(), amount, None)
+            .await
+            .unwrap();
+
+        let parent_txid = parent.compute_txid();
+        assert!(
+            psbt.unsigned_tx
+                .input
+                .iter()
+                .any(|input| input.previous_output.txid == parent_txid),
+            "child does not spend the unconfirmed deposit's output"
+        );
+
+        let child_fee = psbt.fee().unwrap();
+        let child_weight = weight_for_send(&wallet, &dest, amount).await;
+        let standalone =
+            estimate_fee(child_weight, Some(amount), fee_rate(), min_relay_fee()).unwrap();
+        let expected = expected_package_fee(
+            child_weight,
+            UnconfirmedAncestors {
+                fee: Amount::from_sat(500),
+                weight: parent.weight(),
+            },
+            amount,
+        );
+
+        assert_eq!(child_fee, expected);
+        assert!(child_fee > standalone);
+    }
+
+    #[tokio::test]
+    async fn fee_ignores_parent_with_unknown_fee() {
+        let wallet = funded_wallet(50_000).await;
+
+        // A foreign-funded deposit whose input prevout is unknown to the
+        // wallet, so its fee cannot be calculated.
+        let foreign_outpoint = OutPoint::new(Txid::all_zeros(), 0);
+        let parent = {
+            let mut wallet = wallet.wallet.lock().await;
+            let tx = Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
+                input: vec![TxIn {
+                    previous_output: foreign_outpoint,
+                    script_sig: Default::default(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: Default::default(),
+                }],
+                output: vec![TxOut {
+                    value: Amount::from_sat(60_000),
+                    script_pubkey: wallet
+                        .peek_address(KeychainKind::External, 0)
+                        .address
+                        .script_pubkey(),
+                }],
+            };
+            insert_tx(&mut wallet, tx.clone());
+            tx
+        };
+
+        let dest = wallet.new_address().await.unwrap();
+        let amount = Amount::from_sat(80_000);
+        let psbt = wallet
+            .send_to_address_dynamic_fee(dest.clone(), amount, None)
+            .await
+            .unwrap();
+
+        let parent_txid = parent.compute_txid();
+        assert!(
+            psbt.unsigned_tx
+                .input
+                .iter()
+                .any(|input| input.previous_output.txid == parent_txid),
+            "child does not spend the unconfirmed deposit's output"
+        );
+
+        // The parent is not taken into account at all: we pay the standalone
+        // fee rather than assuming a fee of zero.
+        let child_fee = psbt.fee().unwrap();
+        let child_weight = weight_for_send(&wallet, &dest, amount).await;
+        let standalone =
+            estimate_fee(child_weight, Some(amount), fee_rate(), min_relay_fee()).unwrap();
+
+        assert_eq!(child_fee, standalone);
+    }
+
+    #[tokio::test]
+    async fn max_giveable_accounts_for_unconfirmed_parent() {
+        let wallet = funded_wallet(100_000).await;
+        let utxo = confirmed_utxo(&wallet).await;
+
+        let parent = {
+            let mut wallet = wallet.wallet.lock().await;
+            insert_self_spend(&mut wallet, &[utxo], &[99_800])
+        };
+
+        // The drain transaction spends the parent's output and nothing else.
+        let drain_weight = {
+            let mut wallet = wallet.wallet.lock().await;
+            let mut tx_builder = wallet.build_tx();
+            tx_builder.drain_to(ScriptBuf::from(vec![0u8; 32]));
+            tx_builder.fee_absolute(Amount::ZERO);
+            tx_builder.drain_wallet();
+            tx_builder
+                .finish()
+                .expect("dummy drain transaction must build")
+                .unsigned_tx
+                .weight()
+        };
+
+        let expected = expected_package_fee(
+            drain_weight,
+            UnconfirmedAncestors {
+                fee: Amount::from_sat(200),
+                weight: parent.weight(),
+            },
+            Amount::from_sat(99_800),
+        );
+
+        let (max_giveable, fee) = wallet.max_giveable(32).await.unwrap();
+
+        assert_eq!(fee, expected);
+        assert_eq!(max_giveable, Amount::from_sat(99_800) - fee);
+    }
+
+    #[test]
+    fn estimate_package_fee_matches_estimate_fee_without_ancestors() {
+        let weight = Weight::from_wu(600);
+        let transfer_amount = Amount::from_sat(100_000);
+
+        let standalone =
+            estimate_fee(weight, Some(transfer_amount), fee_rate(), min_relay_fee()).unwrap();
+        let fee = estimate_package_fee(
+            weight,
+            UnconfirmedAncestors::default(),
+            Some(transfer_amount),
+            fee_rate(),
+            min_relay_fee(),
+        )
+        .unwrap();
+
+        assert_eq!(fee, standalone);
+    }
+
+    #[test]
+    fn estimate_package_fee_covers_ancestor_deficit() {
+        // 150 vB child, 150 vB parent paying only 200 sats: the package has to
+        // pay 10 sat/vB * 300 vB = 3_000 sats, so the child covers 2_800.
+        let ancestors = UnconfirmedAncestors {
+            fee: Amount::from_sat(200),
+            weight: Weight::from_wu(600),
+        };
+
+        let fee = estimate_package_fee(
+            Weight::from_wu(600),
+            ancestors,
+            Some(Amount::from_sat(100_000)),
+            fee_rate(),
+            min_relay_fee(),
+        )
+        .unwrap();
+
+        assert_eq!(fee, Amount::from_sat(2_800));
+    }
+
+    #[test]
+    fn estimate_package_fee_never_pays_less_than_standalone() {
+        // The ancestors already pay enough for the package: the child still
+        // pays its own standalone fee.
+        let ancestors = UnconfirmedAncestors {
+            fee: Amount::from_sat(5_000),
+            weight: Weight::from_wu(600),
+        };
+
+        let fee = estimate_package_fee(
+            Weight::from_wu(600),
+            ancestors,
+            Some(Amount::from_sat(100_000)),
+            fee_rate(),
+            min_relay_fee(),
+        )
+        .unwrap();
+
+        assert_eq!(fee, Amount::from_sat(1_500));
+    }
+
+    #[test]
+    fn estimate_package_fee_respects_relative_bound() {
+        // 1_000 vB of ancestors on a 10_000 sat transfer exceed the 20%
+        // relative bound: the fee is capped at 2_000 sats.
+        let ancestors = UnconfirmedAncestors {
+            fee: Amount::ZERO,
+            weight: Weight::from_wu(4_000),
+        };
+
+        let fee = estimate_package_fee(
+            Weight::from_wu(600),
+            ancestors,
+            Some(Amount::from_sat(10_000)),
+            fee_rate(),
+            min_relay_fee(),
+        )
+        .unwrap();
+
+        assert_eq!(fee, Amount::from_sat(2_000));
+    }
+
+    #[test]
+    fn estimate_package_fee_respects_absolute_bound() {
+        let ancestors = UnconfirmedAncestors {
+            fee: Amount::ZERO,
+            weight: Weight::from_wu(40_000_000),
+        };
+
+        let fee = estimate_package_fee(
+            Weight::from_wu(600),
+            ancestors,
+            None,
+            fee_rate(),
+            min_relay_fee(),
+        )
+        .unwrap();
+
+        assert_eq!(fee, MAX_ABSOLUTE_TX_FEE);
     }
 }
