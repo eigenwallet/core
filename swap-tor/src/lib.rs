@@ -187,7 +187,11 @@ pub static TOR_ENVIRONMENT: once_cell::sync::Lazy<Option<SpecialTorEnvironment>>
             Some(SpecialTorEnvironment::Whonix)
         } else if fs::read_to_string("/etc/os-release")
             .unwrap_or_default()
-            .contains(r#"ID="tails""#)
+            .lines()
+            .any(|line| {
+                line.strip_prefix("ID=")
+                    .is_some_and(|id| id.trim_matches('"') == "tails")
+            })
         {
             Some(SpecialTorEnvironment::Tails)
         } else {

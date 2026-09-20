@@ -722,8 +722,8 @@ export function TorSettings() {
         <SettingLabel
           label="Use Tor"
           tooltip={
-            "Route network traffic through Tor to hide your IP address from the maker. " +
-            torForced
+            "Route network traffic through Tor to hide your IP address from the maker." +
+            (torForced ? ` ${torForced}` : "")
           }
         />
       </TableCell>

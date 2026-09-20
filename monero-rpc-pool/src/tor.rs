@@ -46,9 +46,9 @@ impl TorBackendRpc for TorBackend {
 // Parse order matches tokio::net::ToSocketAddrs
 fn pair_to_socks((host, port): (&'_ str, u16)) -> TargetAddr<'_> {
     if let Ok(addr) = host.parse::<Ipv4Addr>() {
-        TargetAddr::Ip(SocketAddr::new(addr.into(), 10))
+        TargetAddr::Ip(SocketAddr::new(addr.into(), port))
     } else if let Ok(addr) = host.parse::<Ipv6Addr>() {
-        TargetAddr::Ip(SocketAddr::new(addr.into(), 10))
+        TargetAddr::Ip(SocketAddr::new(addr.into(), port))
     } else {
         TargetAddr::Domain(host.into(), port)
     }
@@ -70,7 +70,9 @@ mod tests {
                     13
                 ),
                 ("127.0.0.1", 10),
+                ("127.0.0.1", 18081),
                 ("::1", 10),
+                ("::1", 18083),
             ]
             .map(super::pair_to_socks),
             [
@@ -82,7 +84,9 @@ mod tests {
                     13,
                 ),
                 TargetAddr::Ip(SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 10)),
+                TargetAddr::Ip(SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 18081)),
                 TargetAddr::Ip(SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 10)),
+                TargetAddr::Ip(SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 18083)),
             ],
         );
     }

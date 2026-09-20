@@ -12,6 +12,11 @@ The "Use Tor" setting is enabled permanently and cannot be turned off.
   Swapping (as a taker) works normally.
 </Callout>
 
+<Callout type="info">
+  The standalone `monero-rpc-pool` binaries (`monero-rpc-pool`, `stress_test`, `stress_test_downloader`) do not consult `TOR_ENVIRONMENT`.
+  On Tails and Whonix they only use Tor when started with `--tor`, which routes through the built-in Arti client rather than the system Tor daemon.
+</Callout>
+
 <Tabs items={['Tails', 'Whonix']}>
   <Tabs.Tab>
     <Steps>
