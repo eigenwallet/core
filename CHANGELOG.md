@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + ASB + CLI: Switch the Bitcoin wallet's Electrum backend to the sans-IO
+  `electrum_streaming_client` library, replacing `bdk_electrum`.
 - GUI: Support outbound connections to makers through libp2p circuit relays.
 
 ## [4.14.0] - 2026-08-22

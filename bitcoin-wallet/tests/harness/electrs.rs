@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use bitcoin::Network;
-use testcontainers::{core::WaitFor, Image, ImageArgs};
+use testcontainers::{Image, ImageArgs, core::WaitFor};
 
 use super::bitcoind;
 

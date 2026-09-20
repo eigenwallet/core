@@ -42,10 +42,12 @@ impl bitcoin_wallet::BitcoinWalletSeed for TestSeed {
     fn derive_extended_private_key(
         &self,
         network: bitcoin::Network,
-    ) -> anyhow::Result<bitcoin::bip32::ExtendedPrivKey> {
+    ) -> anyhow::Result<bitcoin::bip32::Xpriv> {
         #[allow(deprecated)]
         {
-            Ok(bitcoin::bip32::ExtendedPrivKey::new_master(network, &self.0)?)
+            Ok(bitcoin::bip32::ExtendedPrivKey::new_master(
+                network, &self.0,
+            )?)
         }
     }
 
@@ -54,8 +56,7 @@ impl bitcoin_wallet::BitcoinWalletSeed for TestSeed {
         network: bdk::bitcoin::Network,
     ) -> anyhow::Result<bdk::bitcoin::util::bip32::ExtendedPrivKey> {
         Ok(bdk::bitcoin::util::bip32::ExtendedPrivKey::new_master(
-            network,
-            &self.0,
+            network, &self.0,
         )?)
     }
 }
