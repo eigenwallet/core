@@ -6,10 +6,10 @@ use crate::network::transport::authenticate_and_multiplex;
 use anyhow::Result;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::core::transport::Boxed;
+use libp2p::websocket;
 use libp2p::{PeerId, Transport, identity};
-use libp2p::{dns, tcp, websocket};
 use libp2p_tor::{
-    AddressConversion, TorDialLimiter, TorDialPriorityConfig, TorDialPriorityTracker, TorTransport,
+    AddressConversion, TorDialLimiter, TorDialPriorityConfig, TorDialPriorityTracker,
 };
 use swap_tor::TorBackend;
 
@@ -44,20 +44,6 @@ fn new_tor_dial_limiter() -> (TorDialLimiter, TorDialPriorityTracker) {
     let dial_limiter = TorDialLimiter::new(priority_tracker.clone(), high, normal, low);
 
     (dial_limiter, priority_tracker)
-}
-
-fn new_dns_transport(
-    inner: tcp::tokio::Transport,
-) -> std::io::Result<dns::tokio::Transport<tcp::tokio::Transport>> {
-    if cfg!(target_os = "android") {
-        return Ok(dns::tokio::Transport::custom(
-            inner,
-            dns::ResolverConfig::cloudflare(),
-            dns::ResolverOpts::default(),
-        ));
-    }
-
-    dns::tokio::Transport::system(inner)
 }
 
 /// Creates the libp2p transport for the swap CLI.

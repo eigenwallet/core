@@ -21,7 +21,7 @@ pub async fn create_tor_client(data_dir: &Path, tor: bool) -> Result<TorBackend,
         tracing::info!("On {ste:?}, not starting Tor");
         ste.backend()
     } else if tor {
-        TorBackend::Arti(Arc::new(create_arti_tor_client(data_dir).await?))
+        TorBackend::Arti(create_arti_tor_client(data_dir).await?)
     } else {
         TorBackend::None
     })
@@ -69,7 +69,7 @@ impl TorBackendSwap for TorBackend {
     ) -> std::io::Result<IntoTransportT> {
         fn plain_transport() -> std::io::Result<TcpTransport> {
             let tcp = libp2p::tcp::tokio::Transport::new(libp2p::tcp::Config::new().nodelay(true));
-            libp2p::dns::tokio::Transport::system(tcp)
+            new_dns_transport(tcp)
         }
         let tcp_with_dns = plain_transport()?;
 
@@ -94,10 +94,24 @@ impl TorBackendSwap for TorBackend {
     }
 }
 
+fn new_dns_transport(inner: libp2p::tcp::tokio::Transport) -> std::io::Result<TcpTransport> {
+    if cfg!(target_os = "android") {
+        return Ok(libp2p::dns::tokio::Transport::custom(
+            inner,
+            libp2p::dns::ResolverConfig::cloudflare(),
+            libp2p::dns::ResolverOpts::default(),
+        ));
+    }
+
+    libp2p::dns::tokio::Transport::system(inner)
+}
+
 const TOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const TOR_RESOLVE_TIMEOUT: Duration = Duration::from_secs(20);
 
-async fn create_arti_tor_client(data_dir: &Path) -> Result<TorClient<TokioRustlsRuntime>, Error> {
+async fn create_arti_tor_client(
+    data_dir: &Path,
+) -> Result<Arc<TorClient<TokioRustlsRuntime>>, Error> {
     // We store the Tor state in the data directory
     let data_dir = data_dir.join("tor");
     let state_dir = data_dir.join("state");
