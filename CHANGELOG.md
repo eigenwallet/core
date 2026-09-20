@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI: Support outbound connections to makers through libp2p circuit relays.
+- GUI: Update the Flatpak GNOME runtime from 48 (end-of-life) to 50.
 
 ## [4.14.0] - 2026-08-22
 
