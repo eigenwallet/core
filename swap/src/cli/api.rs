@@ -4,7 +4,7 @@ mod wallet_setup;
 
 use crate::cli::api::tauri_bindings::ContextStatus;
 use crate::cli::command::{Bitcoin, Monero};
-use crate::common::tor::{create_tor_client, TorBackendSwap};
+use crate::common::tor::{TorBackendSwap, create_tor_client};
 use crate::common::tracing_util::Format;
 use crate::database::{AccessMode, open_db};
 use crate::network::rendezvous::XmrBtcNamespace;
@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
-use swap_tor::{TorBackend, TOR_ENVIRONMENT};
+use swap_tor::{TOR_ENVIRONMENT, TorBackend};
 use tauri_bindings::{MoneroNodeConfig, TauriBackgroundProgress, TauriEmitter, TauriHandle};
 use tokio::sync::{Mutex as TokioMutex, RwLock, broadcast, broadcast::Sender};
 use tokio::task::JoinHandle;

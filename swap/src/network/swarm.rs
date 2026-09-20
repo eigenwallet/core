@@ -12,12 +12,12 @@ use libp2p::{Multiaddr, Swarm, identity, noise, relay, yamux};
 use libp2p::{PeerId, SwarmBuilder};
 use libp2p_tor::TorDialPriorityTracker;
 use std::fmt::Debug;
+use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
 use swap_p2p::protocols::metered::RequestResponseMetrics;
-use std::sync::Arc;
 use tor_hsservice::RunningOnionService;
 
 // We keep connections open for 2 minutes

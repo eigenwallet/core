@@ -9,8 +9,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::net::TcpStream;
-use tokio_socks::tcp::Socks5Stream;
 use tokio_socks::TargetAddr;
+use tokio_socks::tcp::Socks5Stream;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 fn onion3_to_dotonion(service: &[u8; 35]) -> String {

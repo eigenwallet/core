@@ -18,8 +18,8 @@ use tokio_rustls::rustls::{
 };
 use tracing::{Instrument, error, info_span};
 
-use crate::tor::*;
 use crate::AppState;
+use crate::tor::*;
 
 /// wallet2.h has a default timeout of 3 minutes + 30 seconds.
 /// We assume this is a reasonable timeout. We use half of that that.

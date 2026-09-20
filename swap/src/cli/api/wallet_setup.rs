@@ -54,9 +54,13 @@ pub(super) async fn open_monero_wallet(
     // the legacy wallet to monitor the blockchain.
     let proxy_address = TOR_ENVIRONMENT.and_then(|ste| ste.wallet2_proxy());
     let Some(seed_choice) = seed_choice else {
-        let wallet =
-            request_and_open_monero_wallet_legacy(legacy_data_dir, env_config, daemon, proxy_address)
-                .await?;
+        let wallet = request_and_open_monero_wallet_legacy(
+            legacy_data_dir,
+            env_config,
+            daemon,
+            proxy_address,
+        )
+        .await?;
         let seed = Seed::from_file_or_generate(legacy_data_dir)
             .await
             .context("Failed to read legacy seed from file")?;

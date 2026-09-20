@@ -5,8 +5,8 @@ use crate::cli::api::tauri_bindings::{
 };
 use arti_client::{Error, TorClient, config::TorClientConfigBuilder, status::BootstrapStatus};
 use futures::StreamExt;
-use libp2p::core::transport::{OptionalTransport, OrTransport};
 use libp2p::Transport;
+use libp2p::core::transport::{OptionalTransport, OrTransport};
 use libp2p_tor::{AddressConversion, TorTransport};
 use swap_tor::*;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
@@ -75,8 +75,7 @@ impl TorBackendSwap for TorBackend {
 
         let tor = match self {
             TorBackend::Arti(tor_client) => {
-                let tor_transport =
-                    TorTransport::from_client(tor_client, arti_address_conversion);
+                let tor_transport = TorTransport::from_client(tor_client, arti_address_conversion);
                 let tor_transport = arti_transport_hook(tor_transport);
                 OrTransport::new(
                     OptionalTransport::some(tor_transport),

@@ -282,7 +282,15 @@ impl WalletHandle {
         network: monero_address::Network,
         background_sync: bool,
     ) -> anyhow::Result<Self> {
-        Self::open_or_create_with_password(path, None, daemon, proxy_address, network, background_sync).await
+        Self::open_or_create_with_password(
+            path,
+            None,
+            daemon,
+            proxy_address,
+            network,
+            background_sync,
+        )
+        .await
     }
 
     /// Common implementation used by all `open_*` helpers.
@@ -1689,7 +1697,12 @@ impl FfiWallet {
     const MAIN_ACCOUNT_INDEX: u32 = 0;
 
     /// Create and initialize new wallet from a raw C++ wallet pointer.
-    fn new(inner: RawWallet, background_sync: bool, daemon: Daemon, proxy_address: Option<&str>,) -> anyhow::Result<Self> {
+    fn new(
+        inner: RawWallet,
+        background_sync: bool,
+        daemon: Daemon,
+        proxy_address: Option<&str>,
+    ) -> anyhow::Result<Self> {
         if inner.inner.is_null() {
             anyhow::bail!("Failed to create wallet: got null pointer");
         }
@@ -2494,7 +2507,14 @@ impl FfiWallet {
 
             let tx_hex = pending_tx.raw_tx_hex(&txid)?;
 
-            Ok((TxReceipt { txid, tx_keys, height }, tx_hex))
+            Ok((
+                TxReceipt {
+                    txid,
+                    tx_keys,
+                    height,
+                },
+                tx_hex,
+            ))
         })();
 
         if let Err(e) = self.dispose_pending_transaction(pending_tx) {

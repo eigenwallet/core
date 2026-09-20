@@ -45,7 +45,12 @@ import {
   RefundPolicy,
 } from "store/features/settingsSlice";
 import { Blockchain, Network } from "store/types";
-import { useAppDispatch, useAppSelector, useNodes, useSettings } from "store/hooks";
+import {
+  useAppDispatch,
+  useAppSelector,
+  useNodes,
+  useSettings,
+} from "store/hooks";
 import ValidatedTextField from "renderer/components/other/ValidatedTextField";
 import HelpIcon from "@mui/icons-material/HelpOutline";
 import { ReactNode, useState } from "react";

@@ -91,23 +91,25 @@ pub fn new(
     // that ws connections are routed over Tor when available.
     let ws_inner = maybe_tor_client
         .clone()
-        .into_transport(AddressConversion::IpAndDns, |transport| {
-            match &maybe_tor_dial_limiter {
+        .into_transport(
+            AddressConversion::IpAndDns,
+            |transport| match &maybe_tor_dial_limiter {
                 Some(dial_limiter) => transport.with_dial_limiter(dial_limiter.clone()),
                 None => transport,
-            }
-        })
+            },
+        )
         .map_err(anyhow::Error::from)?;
     let ws_transport = websocket::WsConfig::new(ws_inner);
 
     // Build the plain Tor-or-TCP+DNS transport for non-websocket addresses.
     let plain_transport = maybe_tor_client
-        .into_transport(AddressConversion::IpAndDns, |transport| {
-            match &maybe_tor_dial_limiter {
+        .into_transport(
+            AddressConversion::IpAndDns,
+            |transport| match &maybe_tor_dial_limiter {
                 Some(dial_limiter) => transport.with_dial_limiter(dial_limiter.clone()),
                 None => transport,
-            }
-        })
+            },
+        )
         .map_err(anyhow::Error::from)?;
 
     // WsConfig only matches addresses ending in /ws or /wss, so it must come
