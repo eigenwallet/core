@@ -1096,12 +1096,8 @@ mod tests {
         let config = ElectrumBalancerConfig {
             request_timeout: 15,
             min_retries: 7,
-<<<<<<< HEAD
             socks5: None,
-||||||| 8bbdb488c
-=======
             min_parallel_responses: 3,
->>>>>>> upstream/master
         };
 
         let factory = Arc::new(MockElectrumClientFactory::new());

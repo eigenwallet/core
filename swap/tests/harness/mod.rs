@@ -424,7 +424,7 @@ async fn start_alice(
         env_config,
         XmrBtcNamespace::Testnet,
         &[],
-        None,
+        swap_tor::TorBackend::None,
         false,
         1,
         16,
@@ -771,18 +771,19 @@ impl BobParams {
     ) -> Result<(cli::EventLoop, cli::EventLoopHandle)> {
         let identity = self.seed.derive_libp2p_identity();
 
-        let (mut swarm, tor_priority_tracker) = swarm::cli(identity.clone(), None, |relay| {
-            cli::Behaviour::new(
-                self.env_config,
-                self.bitcoin_wallet.clone(),
-                identity,
-                relay,
-                XmrBtcNamespace::Testnet,
-                Vec::new(),
-                db.clone(),
-            )
-        })
-        .await?;
+        let (mut swarm, tor_priority_tracker) =
+            swarm::cli(identity.clone(), swap_tor::TorBackend::None, |relay| {
+                cli::Behaviour::new(
+                    self.env_config,
+                    self.bitcoin_wallet.clone(),
+                    identity,
+                    relay,
+                    XmrBtcNamespace::Testnet,
+                    Vec::new(),
+                    db.clone(),
+                )
+            })
+            .await?;
         swarm.add_peer_address(self.alice_peer_id, self.alice_address.clone());
 
         cli::EventLoop::new(swarm, db.clone(), None, tor_priority_tracker)
