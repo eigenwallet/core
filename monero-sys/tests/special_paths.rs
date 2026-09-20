@@ -25,6 +25,7 @@ async fn test_wallet_with_special_paths() {
                 let result = WalletHandle::open_or_create(
                     path.display().to_string(),
                     daemon,
+                    None::<&str>,
                     Network::Mainnet,
                     true,
                 )
