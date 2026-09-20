@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI: Support outbound connections to makers through libp2p circuit relays.
+- GUI + ASB: Take the fee of unconfirmed ancestor transactions into account when computing the fee for a new Bitcoin transaction. A transaction spending unconfirmed outputs now covers its ancestors' fee deficit so that the whole package pays the recommended fee rate (child-pays-for-parent).
 
 ## [4.14.0] - 2026-08-22
 
