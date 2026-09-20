@@ -6,6 +6,8 @@ import {
   isPendingBackgroundProcess,
   isPendingLockBitcoinApprovalEvent,
   isPendingSeedSelectionApprovalEvent,
+  isPendingSeedBackupApprovalEvent,
+  PendingSeedBackupApprovalRequest,
   PendingApprovalRequest,
   PendingLockBitcoinApprovalRequest,
   PendingSelectMakerApprovalRequest,
@@ -230,6 +232,11 @@ export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalReque
 export function usePendingSeedSelectionApproval(): PendingSeedSelectionApprovalRequest[] {
   const approvals = usePendingApprovals();
   return approvals.filter((c) => isPendingSeedSelectionApprovalEvent(c));
+}
+
+export function usePendingSeedBackupApproval(): PendingSeedBackupApprovalRequest[] {
+  const approvals = usePendingApprovals();
+  return approvals.filter((c) => isPendingSeedBackupApprovalEvent(c));
 }
 
 export function usePendingPasswordApproval(): PendingPasswordApprovalRequest[] {

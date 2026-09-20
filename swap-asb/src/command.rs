@@ -1,7 +1,7 @@
-use anyhow::{bail, Context, Result};
-use bitcoin::address::NetworkUnchecked;
+use anyhow::{Context, Result, bail};
 use bitcoin::Address;
-use bitcoin_wallet::{bitcoin_address, Amount};
+use bitcoin::address::NetworkUnchecked;
+use bitcoin_wallet::{Amount, bitcoin_address};
 use std::ffi::OsString;
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
@@ -30,6 +30,7 @@ where
             resume_only,
             rpc_bind_host,
             rpc_bind_port,
+            rpc_auth_file,
         } => {
             // Validate RPC bind arguments early
             validate_rpc_bind_args(&rpc_bind_host, &rpc_bind_port)?;
@@ -44,6 +45,7 @@ where
                     resume_only,
                     rpc_bind_host,
                     rpc_bind_port,
+                    rpc_auth_file,
                 },
             }
         }
@@ -177,6 +179,14 @@ where
             env_config: env_config(testnet),
             cmd: Command::SafelyAbort { swap_id },
         },
+        RawCommand::ManualRecovery(ManualRecovery::GrantMercy { swap_id }) => Arguments {
+            testnet,
+            json,
+            trace,
+            config_path: config_path(config, testnet)?,
+            env_config: env_config(testnet),
+            cmd: Command::GrantMercy { swap_id },
+        },
     };
 
     Ok(arguments)
@@ -218,6 +228,7 @@ pub enum Command {
         resume_only: bool,
         rpc_bind_host: Option<String>,
         rpc_bind_port: Option<u16>,
+        rpc_auth_file: Option<PathBuf>,
     },
     History {
         only_unfinished: bool,
@@ -247,6 +258,9 @@ pub enum Command {
         swap_id: Uuid,
     },
     SafelyAbort {
+        swap_id: Uuid,
+    },
+    GrantMercy {
         swap_id: Uuid,
     },
     ExportBitcoinWallet,
@@ -308,6 +322,11 @@ pub enum RawCommand {
             help = "Port to bind the JSON-RPC server to (e.g., 9944). Must be used together with --rpc-bind-host."
         )]
         rpc_bind_port: Option<u16>,
+        #[structopt(
+            long = "rpc-auth-file",
+            help = "Path to the RPC auth verifier file. Required when the JSON-RPC server is enabled."
+        )]
+        rpc_auth_file: Option<PathBuf>,
     },
     #[structopt(about = "Prints all logging messages issued in the past.")]
     Logs {
@@ -411,6 +430,16 @@ pub enum ManualRecovery {
         )]
         swap_id: Uuid,
     },
+    #[structopt(
+        about = "Grant mercy to a swap in BtcWithholdConfirmed state, allowing the taker to claim the remaining funds."
+    )]
+    GrantMercy {
+        #[structopt(
+            long = "swap-id",
+            help = "The swap id can be retrieved using the history subcommand"
+        )]
+        swap_id: Uuid,
+    },
 }
 
 #[derive(structopt::StructOpt, Debug)]
@@ -433,10 +462,14 @@ fn validate_rpc_bind_args(host: &Option<String>, port: &Option<u16>) -> Result<(
         }
         (None, None) => Ok(()),
         (Some(_), None) => {
-            bail!("--rpc-bind-host was provided but --rpc-bind-port was not. Both must be provided together or neither.");
+            bail!(
+                "--rpc-bind-host was provided but --rpc-bind-port was not. Both must be provided together or neither."
+            );
         }
         (None, Some(_)) => {
-            bail!("--rpc-bind-port was provided but --rpc-bind-host was not. Both must be provided together or neither.");
+            bail!(
+                "--rpc-bind-port was provided but --rpc-bind-host was not. Both must be provided together or neither."
+            );
         }
     }
 }
@@ -469,6 +502,7 @@ mod tests {
                 resume_only: false,
                 rpc_bind_host: None,
                 rpc_bind_port: None,
+                rpc_auth_file: None,
             },
         };
         let args = parse_args(raw_ars).unwrap();
@@ -682,6 +716,7 @@ mod tests {
                 resume_only: false,
                 rpc_bind_host: None,
                 rpc_bind_port: None,
+                rpc_auth_file: None,
             },
         };
         let args = parse_args(raw_ars).unwrap();
@@ -923,6 +958,7 @@ mod tests {
                 resume_only: false,
                 rpc_bind_host: None,
                 rpc_bind_port: None,
+                rpc_auth_file: None,
             },
         };
         let args = parse_args(raw_ars).unwrap();

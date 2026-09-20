@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT\n                peers.peer_id,\n                oldest.swap_id,\n                oldest.state       AS \"first_state!: String\",\n                newest.state       AS \"last_state!: String\",\n                oldest.entered_at  AS start_date\n            FROM (SELECT swap_id, state, entered_at, MIN(id) AS id\n                  FROM swap_states GROUP BY swap_id) oldest\n            JOIN (SELECT swap_id, state, MAX(id) AS id\n                  FROM swap_states GROUP BY swap_id) newest\n                ON newest.swap_id = oldest.swap_id\n            JOIN peers ON peers.swap_id = oldest.swap_id\n            WHERE NOT (\n                json_extract(oldest.state, '$.Alice.Done') IS 'SafelyAborted'\n                AND json_extract(newest.state, '$.Alice.Done') IS 'SafelyAborted'\n            )\n            ORDER BY oldest.id\n            LIMIT ?\n            OFFSET ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "peer_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "swap_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "first_state!: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_state!: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "start_date",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "e7457aff93d5f508192fe7478ca63f2b225d397a4884178390439eefb2362dc3"
+}

@@ -1,26 +1,26 @@
 use super::tauri_bindings::TauriHandle;
+use crate::cli::api::Context;
 use crate::cli::api::tauri_bindings::{
     ApprovalRequestType, MoneroNodeConfig, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
     TauriSwapProgressEvent,
 };
-use crate::cli::api::Context;
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::common::{get_logs, redact};
-use crate::monero::wallet_rpc::MoneroDaemon;
 use crate::monero::MoneroAddressPool;
+use crate::monero::wallet_rpc::MoneroDaemon;
 use crate::network::quote::BidQuote;
-use crate::protocol::bob::{self, BobState, Swap};
 use crate::protocol::State;
+use crate::protocol::bob::{self, BobState, Swap};
 use crate::{cli, monero};
-use ::bitcoin::address::NetworkUnchecked;
 use ::bitcoin::Txid;
+use ::bitcoin::address::NetworkUnchecked;
 use ::monero_address::Network;
-use anyhow::{bail, Context as AnyContext, Result};
+use anyhow::{Context as AnyContext, Result, bail};
+use futures::StreamExt;
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
-use libp2p::core::Multiaddr;
 use libp2p::PeerId;
+use libp2p::core::Multiaddr;
 use monero_seed::{Language, Seed as MoneroSeed};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -33,10 +33,10 @@ use swap_core::bitcoin;
 use swap_core::bitcoin::{CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use thiserror::Error;
 use tokio_util::task::AbortOnDropHandle;
-use tracing::debug_span;
-use tracing::error;
 use tracing::Instrument;
 use tracing::Span;
+use tracing::debug_span;
+use tracing::error;
 use typeshare::typeshare;
 use url::Url;
 use uuid::Uuid;
@@ -139,7 +139,7 @@ impl Request for MoneroRecoveryArgs {
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WithdrawBtcArgs {
     #[typeshare(serialized_as = "number")]
-    #[serde(default, with = "::bitcoin::amount::serde::as_sat::opt")]
+    #[serde(default)]
     pub amount: Option<bitcoin::Amount>,
     #[typeshare(serialized_as = "string")]
     #[serde(with = "swap_serde::bitcoin::address_serde")]
@@ -150,7 +150,6 @@ pub struct WithdrawBtcArgs {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct WithdrawBtcResponse {
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub amount: bitcoin::Amount,
     pub txid: String,
 }
@@ -184,18 +183,14 @@ pub struct GetSwapInfoResponse {
     #[typeshare(serialized_as = "number")]
     pub xmr_amount: monero::Amount,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_amount: bitcoin::Amount,
     #[typeshare(serialized_as = "string")]
     pub tx_lock_id: Txid,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_cancel_fee: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_lock_fee: bitcoin::Amount,
     pub btc_refund_address: String,
     pub cancel_timelock: CancelTimelock,
@@ -246,7 +241,6 @@ pub struct BalanceArgs {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BalanceResponse {
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub balance: bitcoin::Amount,
 }
 
@@ -915,7 +909,7 @@ pub async fn get_swap_infos_all(context: Arc<Context>) -> Result<Vec<GetSwapInfo
     let swap_ids = db.all().await?;
     let mut swap_infos = Vec::new();
 
-    for (swap_id, _) in swap_ids {
+    for (_, swap_id, _) in swap_ids {
         match get_swap_info(GetSwapInfoArgs { swap_id }, context.clone()).await {
             Ok(swap_info) => swap_infos.push(swap_info),
             Err(error) => {
@@ -1363,7 +1357,7 @@ pub async fn get_history(context: Arc<Context>) -> Result<GetHistoryResponse> {
     let db = context.try_get_db().await?;
     let swaps = db.all().await?;
     let mut vec: Vec<GetHistoryEntry> = Vec::new();
-    for (swap_id, state) in swaps {
+    for (_, swap_id, state) in swaps {
         let state: BobState = state.try_into()?;
         vec.push(GetHistoryEntry {
             swap_id,
@@ -1402,36 +1396,7 @@ pub async fn withdraw_btc(
     let WithdrawBtcArgs { address, amount } = withdraw_btc;
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
 
-    let (withdraw_tx_unsigned, amount) = match amount {
-        Some(amount) => {
-            let withdraw_tx_unsigned = bitcoin_wallet
-                .send_to_address_dynamic_fee(address, amount, None)
-                .await?;
-
-            (withdraw_tx_unsigned, amount)
-        }
-        None => {
-            let (max_giveable, spending_fee) = bitcoin_wallet
-                .max_giveable(address.script_pubkey().len())
-                .await?;
-
-            let withdraw_tx_unsigned = bitcoin_wallet
-                .send_to_address(address, max_giveable, spending_fee, None)
-                .await?;
-
-            (withdraw_tx_unsigned, max_giveable)
-        }
-    };
-
-    let withdraw_tx = bitcoin_wallet
-        .sign_and_finalize(withdraw_tx_unsigned)
-        .await?;
-
-    bitcoin_wallet
-        .broadcast(withdraw_tx.clone(), "withdraw")
-        .await?;
-
-    let txid = withdraw_tx.compute_txid();
+    let (txid, amount) = bitcoin_wallet::withdraw(bitcoin_wallet.as_ref(), address, amount).await?;
 
     Ok(WithdrawBtcResponse {
         txid: txid.to_string(),
@@ -1472,7 +1437,7 @@ pub async fn export_bitcoin_wallet(context: Arc<Context>) -> Result<serde_json::
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
 
     let wallet_export = bitcoin_wallet.wallet_export("cli").await?;
-    tracing::info!(descriptor=%wallet_export.to_string(), "Exported bitcoin wallet");
+    tracing::info!("Exported bitcoin wallet");
     Ok(json!({
         "descriptor": wallet_export.to_string(),
     }))
@@ -1489,31 +1454,34 @@ pub async fn monero_recovery(
 
     let swap_state: BobState = db.get_state(swap_id).await?.try_into()?;
 
-    if let BobState::BtcRedeemed(state5) = swap_state {
-        let (spend_key, view_key) = state5.xmr_keys();
-        let restore_height = state5.monero_wallet_restore_blockheight.height;
-
-        let address = monero_address::MoneroAddress::new(
-            config.env_config.monero_network,
-            monero_address::AddressType::Legacy,
-            monero_oxide_ext::PublicKey::from_private_key(&spend_key).decompress(),
-            view_key.public().0.decompress(),
-        );
-
-        tracing::info!(restore_height=%restore_height, address=%address, spend_key=%spend_key, view_key=%view_key, "Monero recovery information");
-
-        Ok(json!({
-            "address": address.to_string(),
-            "spend_key": spend_key.to_string(),
-            "view_key": view_key.to_string(),
-            "restore_height": state5.monero_wallet_restore_blockheight.height,
-        }))
-    } else {
-        bail!(
-            "Cannot print monero recovery information in state {}, only possible for BtcRedeemed",
+    let state5 = match &swap_state {
+        BobState::BtcRedeemed(state5)
+        | BobState::XmrRedeemConstructed { state: state5, .. }
+        | BobState::XmrRedeemPublished { state: state5, .. } => state5,
+        _ => bail!(
+            "Cannot print monero recovery information in state {}, only possible once Bitcoin has been redeemed",
             swap_state
-        )
-    }
+        ),
+    };
+
+    let (spend_key, view_key) = state5.xmr_keys();
+    let restore_height = state5.monero_wallet_restore_blockheight.height;
+
+    let address = monero_address::MoneroAddress::new(
+        config.env_config.monero_network,
+        monero_address::AddressType::Legacy,
+        monero_oxide_ext::PublicKey::from_private_key(&spend_key).decompress(),
+        view_key.public().0.decompress(),
+    );
+
+    tracing::info!(restore_height=%restore_height, address=%address, spend_key=%spend_key, view_key=%view_key, "Monero recovery information");
+
+    Ok(json!({
+        "address": address.to_string(),
+        "spend_key": spend_key.to_string(),
+        "view_key": view_key.to_string(),
+        "restore_height": restore_height,
+    }))
 }
 
 #[tracing::instrument(fields(method = "get_current_swap"), skip(context))]
@@ -1543,14 +1511,25 @@ where
 
     let handle = tokio::task::spawn(async move {
         loop {
-            // Sync wallet before checking balance
-            let _ = sync_fn().await;
-
-            if let (Ok(balance), Ok((max_giveable, _fee))) =
-                (balance_fn().await, max_giveable_fn().await)
-            {
-                let _ = tx.send((balance, max_giveable));
+            if let Err(e) = sync_fn().await {
+                tracing::warn!(?e, "Failed to sync Bitcoin wallet in refresh_wallet_task");
             }
+
+            let balance_result = balance_fn().await;
+            let max_giveable_result = max_giveable_fn().await;
+
+            match (&balance_result, &max_giveable_result) {
+                (Ok(balance), Ok((max_giveable, _fee))) => {
+                    let _ = tx.send((*balance, *max_giveable));
+                }
+                (Err(e), _) => {
+                    tracing::warn!(?e, "Failed to fetch Bitcoin balance in refresh_wallet_task");
+                }
+                (_, Err(e)) => {
+                    tracing::warn!(?e, "Failed to compute max_giveable in refresh_wallet_task");
+                }
+            }
+
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     });
@@ -1731,6 +1710,12 @@ pub struct GetDataDirArgs {
     pub is_testnet: bool,
 }
 
+#[typeshare]
+#[derive(Deserialize, Serialize)]
+pub struct DeleteAllLogsArgs {
+    pub is_testnet: bool,
+}
+
 #[derive(Error, Debug)]
 #[error("this is not one of the known monero networks")]
 struct UnknownMoneroNetwork(String);
@@ -1800,13 +1785,20 @@ impl CheckElectrumNodeArgs {
             return Ok(CheckElectrumNodeResponse { available: false });
         };
 
-        // Check if the node is available
-        let res =
-            bitcoin_wallet::Client::new(&[url.as_str().to_string()], Duration::from_secs(60)).await;
+        // Check if the node is available by performing a lightweight RPC call.
+        // This forces a real connection and TLS handshake (for ssl:// URLs).
+        let client =
+            match bitcoin_wallet::Client::new(&[url.as_str().to_string()], Duration::from_secs(60))
+                .await
+            {
+                Ok(client) => client,
+                Err(_) => return Ok(CheckElectrumNodeResponse { available: false }),
+            };
 
-        Ok(CheckElectrumNodeResponse {
-            available: res.is_ok(),
-        })
+        // Force a rpc call for blockchain height.
+        let available = client.update_state(true).await.is_ok();
+
+        Ok(CheckElectrumNodeResponse { available })
     }
 }
 
@@ -1920,13 +1912,6 @@ impl Request for GetMoneroSeedArgs {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetPendingApprovalsResponse {
     pub approvals: Vec<crate::cli::api::tauri_bindings::ApprovalRequest>,
-}
-
-#[typeshare]
-#[derive(Serialize, Deserialize, Debug)]
-pub struct DfxAuthenticateResponse {
-    pub access_token: String,
-    pub kyc_url: String,
 }
 
 // ChangeMoneroNode

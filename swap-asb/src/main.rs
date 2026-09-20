@@ -12,32 +12,36 @@
 #![forbid(unsafe_code)]
 #![allow(non_snake_case)]
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use comfy_table::Table;
 use monero_sys::Daemon;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use std::convert::TryInto;
 use std::env;
 use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
 mod command;
-use command::{parse_args, Arguments, Command};
+use command::{Arguments, Command, parse_args};
+use swap::asb::metrics;
 use swap::asb::rpc::RpcServer;
-use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
-use swap::common::tor::{create_tor_client, TorBackendSwap};
+use swap::asb::{
+    EventLoop, ExchangeRate, Finality, cancel, grant_mercy, punish, redeem, refund, safely_abort,
+};
+use swap::common::tor::{TorBackendSwap, create_tor_client};
 use swap::common::tracing_util::Format;
 use swap::common::{self, get_logs, warn_if_outdated};
-use swap::database::{open_db, AccessMode};
+use swap::database::{AccessMode, open_db};
 use swap::monero;
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
-use swap::protocol::alice::{run, AliceState, TipConfig};
+use swap::protocol::alice::{AliceState, HermesFundingPolicy, TipConfig, run};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;
 use swap_env::config::{
-    initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
+    Config, ConfigNotInitialized, initial_setup, query_user_for_initial_config, read_config,
+    validate_config,
 };
 use swap_feed;
 use swap_machine::alice::is_complete;
@@ -139,19 +143,7 @@ pub async fn main() -> Result<()> {
     // Initialize tracing
     initialize_tracing(json, &config, trace)?;
 
-    // Check for conflicting env / config values
-    if config.monero.network != env_config.monero_network {
-        bail!(format!(
-            "Expected monero network in config file to be {:?} but was {:?}",
-            env_config.monero_network, config.monero.network
-        ));
-    }
-    if config.bitcoin.network != env_config.bitcoin_network {
-        bail!(format!(
-            "Expected bitcoin network in config file to be {:?} but was {:?}",
-            env_config.bitcoin_network, config.bitcoin.network
-        ));
-    }
+    validate_config(&config, env_config)?;
 
     let seed = Seed::from_file_or_generate(&config.data.dir)
         .await
@@ -164,7 +156,18 @@ pub async fn main() -> Result<()> {
             resume_only,
             rpc_bind_host,
             rpc_bind_port,
+            rpc_auth_file,
         } => {
+            let rpc_auth_verifier = match (&rpc_bind_host, &rpc_bind_port) {
+                (Some(_), Some(_)) => {
+                    let auth_file = rpc_auth_file.context(
+                        "The JSON-RPC server requires authentication: pass --rpc-auth-file pointing at the RPC auth verifier file",
+                    )?;
+                    Some(swap_env::rpc_auth::load_verifier(&auth_file)?)
+                }
+                _ => None,
+            };
+
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
             let developer_tip = config.maker.developer_tip;
@@ -213,29 +216,78 @@ pub async fn main() -> Result<()> {
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
-            // Connect to Kraken, Bitfinex, and KuCoin
-            let kraken_price_updates =
-                swap_feed::connect_kraken(config.maker.price_ticker_ws_url_kraken.clone())?;
-            let bitfinex_price_updates =
-                swap_feed::connect_bitfinex(config.maker.price_ticker_ws_url_bitfinex.clone())?;
-            let kucoin_price_updates = swap_feed::connect_kucoin(
-                config.maker.price_ticker_rest_url_kucoin.clone(),
-                reqwest::Client::new(),
-            )?;
+            // Connect to each enabled price feed. Each source is
+            // independently toggleable via config; Exolix additionally
+            // requires an API key.
+            let kraken_price_updates = if config.maker.price_ticker_source_kraken_enabled {
+                Some(swap_feed::connect_kraken(
+                    config.maker.price_ticker_ws_url_kraken.clone(),
+                )?)
+            } else {
+                None
+            };
+            let bitfinex_price_updates = if config.maker.price_ticker_source_bitfinex_enabled {
+                Some(swap_feed::connect_bitfinex(
+                    config.maker.price_ticker_ws_url_bitfinex.clone(),
+                )?)
+            } else {
+                None
+            };
+            let kucoin_price_updates = if config.maker.price_ticker_source_kucoin_enabled {
+                Some(swap_feed::connect_kucoin(
+                    config.maker.price_ticker_rest_url_kucoin.clone(),
+                    reqwest::Client::new(),
+                )?)
+            } else {
+                None
+            };
+            let exolix_poll_interval = std::time::Duration::from_secs(
+                config.maker.price_ticker_rest_poll_interval_exolix_secs,
+            );
+            let exolix_price_updates = config
+                .maker
+                .price_ticker_source_exolix_api_key
+                .as_ref()
+                .map(|api_key| {
+                    swap_feed::connect_exolix(
+                        config.maker.price_ticker_rest_url_exolix.clone(),
+                        api_key.clone(),
+                        exolix_poll_interval,
+                        reqwest::Client::new(),
+                    )
+                })
+                .transpose()?;
+            tracing::info!(
+                kraken = kraken_price_updates.is_some(),
+                bitfinex = bitfinex_price_updates.is_some(),
+                kucoin = kucoin_price_updates.is_some(),
+                exolix = exolix_price_updates.is_some(),
+                "Price feed sources",
+            );
 
+            let price_validity_duration =
+                std::time::Duration::from_secs(config.maker.price_ticker_validity_duration_secs);
             let kraken_rate = ExchangeRate::new(
                 config.maker.ask_spread,
                 kraken_price_updates,
                 bitfinex_price_updates,
                 kucoin_price_updates,
-            );
+                exolix_price_updates,
+                price_validity_duration,
+            )
+            .context("Invalid price feed configuration")?;
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 
             // Initialize and bootstrap Tor client
             let tor_client = create_tor_client(&config.data.dir, true).await?;
             tor_client.bootstrap(None).await?;
 
-            let (mut swarm, onion_addresses) = swarm::asb(
+            let mut metrics_registry = config
+                .network
+                .prometheus_port
+                .map(|_| metrics::Registry::default());
+
+            let (mut swarm, onion_addresses, onion_service_handle) = swarm::asb(
                 &seed,
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
@@ -247,11 +299,22 @@ pub async fn main() -> Result<()> {
                 tor_client,
                 config.tor.register_hidden_service,
                 config.tor.hidden_service_num_intro_points,
+                config.tor.max_concurrent_rend_requests,
+                config.tor.wormhole_enabled,
+                config.tor.wormhole_max_concurrent_rend_requests,
+                config.tor.wormhole_num_intro_points,
+                config.tor.wormhole_swap_freshness_hours,
+                db.clone(),
+                metrics_registry.as_mut(),
             )?;
 
             for listen in &config.network.listen {
                 if let Err(e) = swarm.listen_on(listen.clone()) {
-                    tracing::warn!("Failed to listen on network interface {}: {}. Consider removing it from the config.", listen, e);
+                    tracing::warn!(
+                        "Failed to listen on network interface {}: {}. Consider removing it from the config.",
+                        listen,
+                        e
+                    );
                 }
             }
 
@@ -302,9 +365,26 @@ pub async fn main() -> Result<()> {
                 }
             };
 
+            let hermes_funding_policy = HermesFundingPolicy {
+                enabled: config.maker.hermes_enabled,
+                amount: monero::Amount::from_pico(config.maker.hermes_funding_amount_piconero),
+                min_swap_amount: config.maker.hermes_min_swap_amount,
+            };
+
+            let (metrics, _metrics_server) =
+                match (config.network.prometheus_port, metrics_registry) {
+                    (Some(port), Some(mut registry)) => {
+                        let metrics = metrics::Metrics::new(&mut registry);
+                        let server = metrics::MetricsServer::start(port, registry).await?;
+                        (Some(metrics), Some(server))
+                    }
+                    _ => (None, None),
+                };
+
             let bitcoin_wallet = Arc::new(bitcoin_wallet);
             let (event_loop, mut swap_receiver, event_loop_service) = EventLoop::new(
                 swarm,
+                metrics,
                 env_config,
                 bitcoin_wallet.clone(),
                 monero_wallet.clone(),
@@ -313,7 +393,12 @@ pub async fn main() -> Result<()> {
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
+                config.maker.btc_redeem_fee_multiplier,
                 tip_config,
+                hermes_funding_policy,
+                config.maker.refund_policy,
+                onion_service_handle,
+                config_path.clone(),
             )
             .unwrap();
 
@@ -322,6 +407,7 @@ pub async fn main() -> Result<()> {
                 let rpc_server = RpcServer::start(
                     host,
                     port,
+                    rpc_auth_verifier,
                     bitcoin_wallet.clone(),
                     monero_wallet.clone(),
                     event_loop_service,
@@ -354,7 +440,8 @@ pub async fn main() -> Result<()> {
             event_loop.run().await;
         }
         Command::History { only_unfinished } => {
-            let db = open_db(db_file, AccessMode::ReadOnly, None).await?;
+            let db: Arc<dyn Database + Send + Sync> =
+                open_db(db_file, AccessMode::ReadOnly, None).await?;
             let mut table = Table::new();
 
             table.set_header(vec![
@@ -370,7 +457,7 @@ pub async fn main() -> Result<()> {
             ]);
 
             let all_swaps = db.all().await?;
-            for (swap_id, state) in all_swaps {
+            for (_, swap_id, state) in all_swaps {
                 let state: AliceState = state
                     .try_into()
                     .expect("Alice database only has Alice states");
@@ -481,6 +568,13 @@ pub async fn main() -> Result<()> {
 
             tracing::info!("Swap safely aborted");
         }
+        Command::GrantMercy { swap_id } => {
+            let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
+
+            grant_mercy(swap_id, db).await?;
+
+            tracing::info!("Mercy granted for swap {}", swap_id);
+        }
         Command::Redeem {
             swap_id,
             do_not_await_finality,
@@ -542,7 +636,8 @@ pub async fn main() -> Result<()> {
                 .next()
                 .context("Couldn't find state Started for this swap")?;
 
-            let secret_spend_key = match state3.watch_for_btc_tx_refund(&bitcoin_wallet).await {
+            let secret_spend_key = match state3.watch_for_btc_tx_full_refund(&bitcoin_wallet).await
+            {
                 Ok(secret) => secret,
                 Err(error) => {
                     tracing::error!(

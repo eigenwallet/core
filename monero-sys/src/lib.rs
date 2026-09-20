@@ -16,21 +16,20 @@ pub mod database;
 pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex};
 use std::{
     any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
-    path::PathBuf, pin::Pin, time::Duration,
+    pin::Pin, time::Duration,
 };
 use throttle::Throttle;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use backoff::{future::retry_notify, retry_notify as blocking_retry_notify};
-use cxx::{let_cxx_string, CxxString, CxxVector, UniquePtr};
-use monero_oxide_ext::Amount;
+use cxx::{CxxString, CxxVector, UniquePtr, let_cxx_string};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{
-    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     oneshot,
 };
 use url::Url;
@@ -87,6 +86,47 @@ type AnyBox = Box<dyn Any + Send>;
 struct WalletManager {
     /// A wrapper around the raw C++ wallet manager pointer.
     inner: RawWalletManager,
+    _log_guard: LogCallbackGuard,
+}
+
+/// Refcounted guard for the process-wide C++ log callback.
+///
+/// `WalletManagerFactory` and the easylogging++ callback registry are global,
+/// so the callback must stay installed while any [`WalletManager`] exists and
+/// be uninstalled once the last one drops. If a new [`WalletManager`] is later
+/// constructed, the callback is re-installed; install/uninstall stay balanced.
+struct LogCallbackGuard;
+
+static LOG_CALLBACK_USERS: Mutex<usize> = Mutex::new(0);
+
+impl LogCallbackGuard {
+    fn acquire(span_name: &str) -> anyhow::Result<Self> {
+        let mut count = LOG_CALLBACK_USERS
+            .lock()
+            .expect("log callback mutex not poisoned");
+        if *count == 0 {
+            let_cxx_string!(span_name = span_name);
+            bridge::log::install_log_callback(&span_name)
+                .context("Failed to install log callback: FFI call failed with exception")?;
+        }
+        *count += 1;
+
+        Ok(Self)
+    }
+}
+
+impl Drop for LogCallbackGuard {
+    fn drop(&mut self) {
+        let mut count = LOG_CALLBACK_USERS
+            .lock()
+            .expect("log callback mutex not poisoned");
+        *count -= 1;
+        if *count == 0 {
+            if let Err(e) = bridge::log::uninstall_log_callback() {
+                tracing::error!(error=%e, "Failed to uninstall C++ log callback");
+            }
+        }
+    }
 }
 
 /// This is our own wrapper around a raw C++ wallet manager pointer.
@@ -215,6 +255,8 @@ pub enum TransactionDirection {
 /// A wrapper around a pending transaction.
 ///
 /// Safety: do _not_ implement copy, send, sync, ...
+///
+/// Must be manually dropped via FfiWallet::dispose_pending_transaction.
 pub struct PendingTransactionHandle(*mut ffi::PendingTransaction);
 
 /// Struct containing a raw pointer to a transaction history.
@@ -598,32 +640,23 @@ impl WalletHandle {
         .map_err(|e| anyhow!("Failed to transfer funds after multiple attempts: {e:?}"))
     }
 
-    /// Sweep all funds to a set of addresses.
-    /// If the address is `None`, the address will be set to the primary address of the
-    /// wallet
-    pub async fn sweep_multi_destination(
+    pub async fn construct_multi_destination_tx(
         &self,
-        // TOOD: Change this to &[(Address, f64)]
-        addresses: &[monero_address::MoneroAddress],
-        percentages: &[f64],
-    ) -> anyhow::Result<TxReceipt> {
-        tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping to multiple destinations");
-
-        let percentages = percentages.to_vec();
-        let addresses = addresses.to_vec();
+        destinations: &[(monero_address::MoneroAddress, monero_oxide_ext::Amount)],
+    ) -> anyhow::Result<(TxReceipt, String)> {
+        let destinations = destinations.to_vec();
 
         retry_notify(backoff(None, None), || async {
-            let addresses = addresses.clone();
-            let percentages = percentages.clone();
+            let destinations = destinations.clone();
 
-            self.call(move |wallet| wallet.sweep_multi(&addresses, &percentages))
-                .await
-                .map_err(backoff::Error::transient)
+            self.call(move |wallet| wallet.construct_multi_destination_tx(&destinations))
+            .await
+            .map_err(backoff::Error::transient)
         }, |error, duration: Duration| {
-            tracing::error!(error=?error, "Failed to sweep to multiple destinations, retrying in {} secs", duration.as_secs());
+            tracing::error!(error=?error, "Failed to construct transaction, retrying in {} secs", duration.as_secs());
         })
         .await?
-        .map_err(|e| anyhow!("Failed to sweep to multiple destinations after multiple attempts: {e:?}"))
+        .map_err(|e| anyhow!("Failed to construct transaction after multiple attempts: {e:?}"))
     }
 
     /// Sweep all funds to an address.
@@ -631,14 +664,6 @@ impl WalletHandle {
         &self,
         address: &monero_address::MoneroAddress,
     ) -> anyhow::Result<TxReceipt> {
-        // TODO: This could call sweep_multi_destination under the hood?
-        //  however this here calls a completely different function in wallet2 (create_transactions_all instead of create_transactions_2)
-        //  I think there is a case to be made that going full in with our custom implementation is better
-        //  because the code will behave the same regardless of sweep or sweep_multi
-        //
-        // Ideally sweep(address) should behave the same as sweep_multi_destination([address, 1.0])
-        // currently this cannot be guaranteed however because sweep_multi_destination uses our own logic
-        // while sweep(..) delegated to wallet2
         tracing::debug!(address=?address, "Sweeping to a single destination");
 
         let address = *address;
@@ -1016,7 +1041,9 @@ impl WalletHandle {
                 let (txid, amount, fee) = match result {
                     Ok(values) => values,
                     Err(e) => {
-                        wallet.dispose_pending_transaction(pending_tx);
+                        if let Err(dispose_error) = wallet.dispose_pending_transaction(pending_tx) {
+                            tracing::error!(error=%dispose_error, "Failed to dispose pending transaction after validation error");
+                        }
                         return Err(e);
                     }
                 };
@@ -1044,16 +1071,20 @@ impl WalletHandle {
                     let receipt_result =
                         wallet.publish_pending_transaction(&mut pending_tx, &[address]);
 
-                    // Dispose the pending transaction independent of whether the publish was successful or not
-                    wallet.dispose_pending_transaction(pending_tx);
+                    // Dispose independent of whether the publish succeeded. Log the
+                    // disposal error rather than propagating it, so it can't mask a
+                    // publish result that may have already moved funds.
+                    if let Err(dispose_error) = wallet.dispose_pending_transaction(pending_tx) {
+                        tracing::error!(error=%dispose_error, "Failed to dispose pending transaction after publishing");
+                    }
 
                     let receipt = receipt_result?;
 
                     return Ok(Some((receipt, amount, fee)));
                 }
 
-                // Dispose the pending transaction if the user didn't approve
-                wallet.dispose_pending_transaction(pending_tx);
+                // Nothing was published, so propagate a disposal failure directly.
+                wallet.dispose_pending_transaction(pending_tx)?;
 
                 Ok(None)
             })
@@ -1233,11 +1264,22 @@ impl Wallet {
 
             if call.sender.send(result).is_err() {
                 // Err() contains only the Box<dyn Any> value, so we don't care about the specific value
-                tracing::error!("Failed to send result back to caller, because the channel was closed. Dropping the result.");
+                tracing::error!(
+                    "Failed to send result back to caller, because the channel was closed. Dropping the result."
+                );
             }
         }
 
         tracing::info!("Wallet handle dropped, closing wallet and exiting thread",);
+
+        // Dispose any pending transactions still awaiting approval, otherwise their
+        // C++ objects leak when the map is dropped (PendingTransactionHandle has no
+        // Drop impl). This must run while the wallet is still open.
+        for (_, pending_tx) in self.pending_transactions.drain() {
+            if let Err(e) = self.wallet.dispose_pending_transaction(pending_tx) {
+                tracing::error!(error=%e, "Failed to dispose pending transaction during shutdown");
+            }
+        }
 
         let result = self.manager.close_wallet(&mut self.wallet);
 
@@ -1248,16 +1290,6 @@ impl Wallet {
         }
         // TODO: dispose of the manager
 
-        // Uninstall the log callback.
-        // We need to do this because easylogging++ may send logs after we end this thread, leading
-        // to a tracing panic.
-
-        if let Err(e) =
-            bridge::log::uninstall_log_callback().context("Error uninstalling log callback")
-        {
-            tracing::error!(error=%e, "Failed to uninstall C++ tracing log callback, continuing anyway");
-        }
-
         Ok(())
     }
 }
@@ -1266,20 +1298,31 @@ impl WalletManager {
     /// For now we don't support custom difficulty
     const DEFAULT_KDF_ROUNDS: u64 = 1;
 
+    fn ensure_wallet_parent_directory_exists(path: &str) -> Result<()> {
+        let Some(directory) = std::path::Path::new(path).parent() else {
+            return Ok(());
+        };
+
+        std::fs::create_dir_all(directory).with_context(|| {
+            format!(
+                "failed to create wallet directory `{}`",
+                directory.display()
+            )
+        })
+    }
+
     /// Get the wallet manager instance.
     /// You can optionally pass a daemon with which the wallet manager and
     /// all wallets opened by the manager will connect.
     pub fn new(daemon: Daemon, span_name: &str) -> anyhow::Result<Self> {
-        // Install the log callback to route c++ logs to tracing.
-        let_cxx_string!(span_name = span_name);
-        bridge::log::install_log_callback(&span_name)
-            .context("Failed to install log callback: FFI call failed with exception")?;
+        let log_guard = LogCallbackGuard::acquire(span_name)?;
 
         let manager = ffi::getWalletManager()
             .context("Couldn't get wallet manager: FFi call failed with exception")?;
 
         let mut manager = Self {
             inner: RawWalletManager::new(manager),
+            _log_guard: log_guard,
         };
 
         manager
@@ -1320,12 +1363,7 @@ impl WalletManager {
 
         tracing::debug!(%path, "Wallet doesn't exist, creating it");
 
-        // Ensure the parent directory exists so the Monero library can write the wallet files
-        if let Some(dir) = std::path::Path::new(path).parent() {
-            std::fs::create_dir_all(dir).with_context(|| {
-                format!("failed to create wallet directory `{}`", dir.display())
-            })?;
-        }
+        Self::ensure_wallet_parent_directory_exists(path)?;
 
         // Otherwise, create (and open) a new wallet.
         let kdf_rounds = Self::DEFAULT_KDF_ROUNDS;
@@ -1384,19 +1422,7 @@ impl WalletManager {
                 .context(format!("Failed to open wallet `{}`", &path));
         }
 
-        let pathbuf = PathBuf::from(path);
-        if let Some(directory) = pathbuf.parent() {
-            tracing::debug!(
-                "Making sure to create wallet directory `{}`",
-                directory.display()
-            );
-            std::fs::create_dir_all(directory).context(format!(
-                "failed to create wallet directory `{}`",
-                directory.display()
-            ))?;
-        }
-
-        let path = pathbuf.display().to_string();
+        Self::ensure_wallet_parent_directory_exists(path)?;
 
         tracing::debug!(restore_height, %address, "Creating wallet from keys");
 
@@ -1451,6 +1477,8 @@ impl WalletManager {
         proxy_address: Option<&str>,
     ) -> anyhow::Result<FfiWallet> {
         tracing::debug!(%path, "Recovering wallet from seed");
+
+        Self::ensure_wallet_parent_directory_exists(path)?;
 
         let_cxx_string!(path = path);
         let_cxx_string!(password = password.unwrap_or(""));
@@ -2402,66 +2430,12 @@ impl FfiWallet {
             .publish_pending_transaction(&mut pending_tx, &[*address])
             .context("Failed to publish sweep transaction");
 
-        // Dispose the pending transaction after we're done with it
-        // independent of whether the publish was successful or not
-        self.dispose_pending_transaction(pending_tx);
-
-        result
-    }
-
-    /// Sweep all funds to a set of addresses with a set of ratios.
-    fn sweep_multi(
-        &mut self,
-        // TOOD: Change this to &[(Address, f64)]
-        addresses: &[monero_address::MoneroAddress],
-        ratios: &[f64],
-    ) -> anyhow::Result<TxReceipt> {
-        self.ensure_synchronized_blocking()
-            .context("Cannot multi-sweep when wallet is not synchronized")?;
-
-        if addresses.is_empty() {
-            bail!("No addresses to sweep to");
+        // Dispose the pending transaction after we're done with it, independent of
+        // whether the publish succeeded. Log a disposal error rather than
+        // propagating it, so a cleanup failure doesn't override the publish result.
+        if let Err(e) = self.dispose_pending_transaction(pending_tx) {
+            tracing::error!(error=%e, "Failed to dispose pending transaction after sweeping");
         }
-
-        if addresses.len() != ratios.len() {
-            bail!("Number of addresses and ratios must match");
-        }
-
-        tracing::info!(
-            "Sweeping funds to {} addresses, refreshing wallet first",
-            addresses.len()
-        );
-
-        let balance = self.unlocked_balance();
-
-        // Since we're using "subtract fee from outputs", we distribute the full balance
-        // The underlying transaction creation will subtract the fee proportionally from each output
-        let amounts = FfiWallet::distribute(balance, ratios)?;
-
-        tracing::debug!(%balance, num_outputs = addresses.len(), outputs=?amounts, "Distributing funds to outputs");
-
-        // Build destinations vector for create_pending_transaction_multi_dest
-        let destinations: Vec<(monero_address::MoneroAddress, monero_oxide_ext::Amount)> =
-            addresses
-                .iter()
-                .zip(amounts.iter())
-                .map(|(addr, &amount)| (addr.clone(), amount))
-                .collect();
-
-        // Create the multi-sweep pending transaction using the shared function
-        // Use subtract_fee_from_outputs=true since we're sweeping and want to distribute the full balance
-        let mut pending_tx = self
-            .create_pending_transaction_multi_dest(&destinations, true)
-            .context("Failed to create multi-sweep transaction")?;
-
-        // Publish the transaction
-        let result = self
-            .publish_pending_transaction(&mut pending_tx, &addresses)
-            .context("Failed to publish multi-sweep transaction");
-
-        // Dispose the pending transaction after we're done with it
-        // independent of whether the publish was successful or not
-        self.dispose_pending_transaction(pending_tx);
 
         result
     }
@@ -2487,11 +2461,47 @@ impl FfiWallet {
         // Publish the transaction
         let result = self.publish_pending_transaction(&mut pending_tx, &output_addresses);
 
-        // Dispose the pending transaction after we're done with it
-        // independent of whether the publish was successful or not
-        self.dispose_pending_transaction(pending_tx);
+        // Dispose the pending transaction after we're done with it, independent of
+        // whether the publish succeeded. Log a disposal error rather than
+        // propagating it, so a cleanup failure doesn't override the publish result.
+        if let Err(e) = self.dispose_pending_transaction(pending_tx) {
+            tracing::error!(error=%e, "Failed to dispose pending transaction after transferring");
+        }
 
         result
+    }
+
+    pub fn construct_multi_destination_tx(
+        &mut self,
+        destinations: &[(monero_address::MoneroAddress, monero_oxide_ext::Amount)],
+    ) -> anyhow::Result<(TxReceipt, String)> {
+        self.ensure_synchronized_blocking()
+            .context("Cannot construct transaction when wallet is not synchronized")?;
+
+        let output_addresses = destinations
+            .iter()
+            .map(|(address, _)| *address)
+            .collect::<Vec<_>>();
+
+        let mut pending_tx = self.create_pending_transaction_multi_dest(destinations, false)?;
+
+        let built = (|| -> anyhow::Result<(TxReceipt, String)> {
+            let (txid, tx_keys) = pending_tx.validate_single_txid(&output_addresses).context(
+                "Failed to ensure transaction has one txid and at least one tx key before constructing",
+            )?;
+
+            let height = self.blockchain_height();
+
+            let tx_hex = pending_tx.raw_tx_hex(&txid)?;
+
+            Ok((TxReceipt { txid, tx_keys, height }, tx_hex))
+        })();
+
+        if let Err(e) = self.dispose_pending_transaction(pending_tx) {
+            tracing::error!(error=%e, "Failed to dispose pending transaction after constructing");
+        }
+
+        built
     }
 
     /// Create a pending transaction without publishing it.
@@ -2557,12 +2567,36 @@ impl FfiWallet {
             "Failed to create multi-destination transaction: FFI call failed with exception",
         )?;
 
+        self.finalize_created_pending_transaction(raw_tx)
+            .context("Failed to create multi-destination transaction")
+    }
+
+    /// Wrap a freshly created pending transaction pointer, propagating any error
+    /// recorded during construction.
+    ///
+    /// wallet2 returns a non-null object even when construction fails, recording the
+    /// cause in the transaction's own status; checking it here keeps that error from
+    /// being masked by the empty-txid check during publishing.
+    fn finalize_created_pending_transaction(
+        &mut self,
+        raw_tx: *mut ffi::PendingTransaction,
+    ) -> anyhow::Result<PendingTransactionHandle> {
         if raw_tx.is_null() {
-            self.check_error()
-                .context("Failed to create multi-destination transaction")?;
+            self.check_error()?;
+            bail!("wallet returned a null pending transaction");
         }
 
-        Ok(PendingTransactionHandle(raw_tx))
+        // A failed construction still allocates the object, so it must be
+        // disposed rather than leaked when we propagate the error.
+        let pending_tx = PendingTransactionHandle(raw_tx);
+        if let Err(error) = pending_tx.check_error() {
+            if let Err(dispose_error) = self.dispose_pending_transaction(pending_tx) {
+                tracing::error!(error=%dispose_error, "Failed to dispose pending transaction after construction error");
+            }
+            return Err(error);
+        }
+
+        Ok(pending_tx)
     }
 
     /// Create a pending sweep transaction without publishing it.
@@ -2576,12 +2610,11 @@ impl FfiWallet {
 
         let_cxx_string!(address_str = address.to_string());
 
-        let pending_tx = PendingTransactionHandle(
-            ffi::createSweepTransaction(self.inner.pinned(), &address_str)
-                .context("Failed to create sweep transaction: FFI call failed with exception")?,
-        );
+        let raw_tx = ffi::createSweepTransaction(self.inner.pinned(), &address_str)
+            .context("Failed to create sweep transaction: FFI call failed with exception")?;
 
-        Ok(pending_tx)
+        self.finalize_created_pending_transaction(raw_tx)
+            .context("Failed to create sweep transaction")
     }
 
     /// Publish a pending transaction and return a receipt.
@@ -2648,70 +2681,6 @@ impl FfiWallet {
         unreachable!()
     }
 
-    /// Distribute the funds in the wallet to a set of addresses with a set of percentages,
-    /// such that the complete balance is spent (takes fee into account).
-    ///
-    /// # Arguments
-    ///
-    /// * `balance` - The total balance to distribute
-    /// * `percentages` - A slice of percentages that must sum to 100.0
-    ///
-    /// # Returns
-    ///
-    /// A vector of Monero amounts proportional to the input percentages.
-    /// The last amount gets any remainder to ensure exact distribution.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Percentages don't sum to 1.0
-    /// - Balance is zero
-    /// - There are more outputs than piconeros in balance
-    fn distribute(
-        balance: monero_oxide_ext::Amount,
-        percentages: &[f64],
-    ) -> Result<Vec<monero_oxide_ext::Amount>> {
-        if percentages.is_empty() {
-            bail!("No ratios to distribute to");
-        }
-
-        const TOLERANCE: f64 = 1e-6;
-        let sum: f64 = percentages.iter().sum();
-        if (sum - 1.0).abs() > TOLERANCE {
-            bail!("Percentages must sum to 1 (actual sum: {})", sum);
-        }
-
-        // Handle the case where distributable amount is zero
-        if balance.as_pico() == 0 {
-            bail!("Zero balance to distribute");
-        }
-
-        // Check if the distributable amount is enough to cover at least one piconero per output
-        if balance.as_pico() < percentages.len() as u64 {
-            bail!("More outputs than piconeros in balance");
-        }
-
-        let mut amounts = Vec::new();
-        let mut total = Amount::ZERO;
-
-        // Distribute amounts according to ratios, except for the last one
-        for &percentage in &percentages[..percentages.len() - 1] {
-            let amount_pico = ((balance.as_pico() as f64) * percentage).floor() as u64;
-            let amount = Amount::from_pico(amount_pico);
-            amounts.push(amount);
-            total += amount;
-        }
-
-        // Give the remainder to the last recipient to ensure exact distribution
-        let remainder = balance.checked_sub(total).context(format!(
-            "Underflow when calculating rest (unexpected) - balance {}, distributed: {}",
-            balance, total,
-        ))?;
-        amounts.push(remainder);
-
-        Ok(amounts)
-    }
-
     /// Get the transaction history.
     /// Returns an empty vector if the transaction history is missing.
     fn history(&mut self) -> Vec<TransactionInfo> {
@@ -2773,14 +2742,17 @@ impl FfiWallet {
     /// Dispose (deallocate) a pending transaction object.
     /// Always call this before dropping a pending transaction object,
     /// otherwise we leak memory.
-    fn dispose_pending_transaction(&mut self, tx: PendingTransactionHandle) {
+    ///
+    /// Returns an error if the underlying FFI call fails. Callers decide whether
+    /// to propagate it: where it would mask a more important result (e.g. after a
+    /// publish attempt) it should be logged instead.
+    fn dispose_pending_transaction(&mut self, tx: PendingTransactionHandle) -> anyhow::Result<()> {
         // Safety: we pass a valid pointer and we verified it's not used again since PendingTransaction is moved into this function
         unsafe {
             self.inner
                 .pinned()
                 .disposeTransaction(tx.0)
                 .context("Failed to dispose transaction: FFI call failed with exception")
-                .expect("Shouldn't panic");
         }
     }
 
@@ -2907,7 +2879,9 @@ impl FfiWallet {
         if proof.is_empty() {
             self.check_error()
                 .context("Failed to construct reserve proof")?;
-            anyhow::bail!("Failed to construct reserve proof because wallet2 returned an empty string but no error was returned");
+            anyhow::bail!(
+                "Failed to construct reserve proof because wallet2 returned an empty string but no error was returned"
+            );
         }
 
         Ok(proof)
@@ -2970,15 +2944,16 @@ impl PendingTransactionHandle {
         let status = self
             .status()
             .context("Failed to get pending transaction status: FFI call failed with exception")?;
+
+        if status == 0 {
+            return Ok(());
+        }
+
         let error_string = ffi::pendingTransactionErrorString(self)
             .context(
                 "Failed to get pending transaction error string: FFI call failed with exception",
             )?
             .to_string();
-
-        if status == 0 {
-            return Ok(());
-        }
 
         let error_type = if status == 2 { "critical" } else { "error" };
 
@@ -3109,6 +3084,20 @@ impl PendingTransactionHandle {
 
         Ok((txid, keys_map))
     }
+
+    fn raw_tx_hex(&self, txid: &str) -> anyhow::Result<String> {
+        self.check_error()
+            .context("Pending transaction is in an error state")?;
+
+        let_cxx_string!(txid_cxx = txid);
+        let hex = ffi::pendingTransactionRawTxHex(self, &txid_cxx)
+            .context(
+                "Failed to get raw transaction hex from pending transaction: FFI call failed with exception",
+            )?
+            .to_string();
+
+        Ok(hex)
+    }
 }
 
 impl SyncProgress {
@@ -3120,7 +3109,7 @@ impl SyncProgress {
         }
     }
 
-    /// Create a new sync progress object with zero progess.
+    /// Create a new sync progress object with zero progress.
     fn zero() -> Self {
         Self {
             current_block: 0,
@@ -3491,176 +3480,4 @@ fn backoff(
         .with_max_elapsed_time(Some(max_elapsed_time))
         .with_max_interval(max_interval)
         .build()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
-
-    #[quickcheck]
-    fn prop_distribute_sum_equals_balance(balance_pico: u64, percentages: Vec<f64>) -> TestResult {
-        // Filter out invalid inputs
-        if percentages.is_empty() || balance_pico == 0 {
-            return TestResult::discard();
-        }
-
-        // Ensure percentages are valid (non-negative and sum to approximately 1.0)
-        if percentages.iter().any(|&p| !(0.0..=1.0).contains(&p)) {
-            return TestResult::discard();
-        }
-
-        let percentage_sum: f64 = percentages.iter().sum();
-        if (percentage_sum - 1.0).abs() > 1e-6 {
-            return TestResult::discard();
-        }
-
-        let balance = monero_oxide_ext::Amount::from_pico(balance_pico);
-
-        let amounts = FfiWallet::distribute(balance, &percentages);
-
-        // Property: sum of distributed amounts should equal balance
-        let total_distributed: u64 = amounts.unwrap().iter().map(|a| a.as_pico()).sum();
-        let expected = balance.as_pico();
-
-        TestResult::from_bool(total_distributed == expected)
-    }
-
-    #[quickcheck]
-    fn prop_distribute_count_matches_percentages(
-        balance_pico: u64,
-        percentages: Vec<f64>,
-    ) -> TestResult {
-        if percentages.is_empty() || balance_pico == 0 {
-            return TestResult::discard();
-        }
-
-        if percentages.iter().any(|&p| !(0.0..=1.0).contains(&p)) {
-            return TestResult::discard();
-        }
-
-        let percentage_sum: f64 = percentages.iter().sum();
-        if (percentage_sum - 1.0).abs() > 1e-6 {
-            return TestResult::discard();
-        }
-
-        let balance = monero_oxide_ext::Amount::from_pico(balance_pico);
-
-        let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
-
-        // Property: number of amounts should equal number of percentages
-        TestResult::from_bool(amounts.len() == percentages.len())
-    }
-
-    #[quickcheck]
-    fn prop_distribute_respects_percentages(
-        balance_pico: u64,
-        percentages: Vec<f64>,
-    ) -> TestResult {
-        if percentages.len() < 2 || balance_pico == 0 {
-            return TestResult::discard();
-        }
-
-        if percentages.iter().any(|&p| !(0.0..=1.0).contains(&p)) {
-            return TestResult::discard();
-        }
-
-        let percentage_sum: f64 = percentages.iter().sum();
-        if (percentage_sum - 1.0).abs() > 1e-6 {
-            return TestResult::discard();
-        }
-
-        let balance = monero_oxide_ext::Amount::from_pico(balance_pico);
-
-        let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
-
-        // Property: percentages should be approximately respected (except for rounding)
-        // We check all but the last amount since the last one gets the remainder
-        let mut percentages_respected = true;
-        for i in 0..percentages.len() - 1 {
-            let expected_amount = ((balance.as_pico() as f64) * percentages[i]).floor() as u64;
-            if amounts[i].as_pico() != expected_amount {
-                percentages_respected = false;
-                break;
-            }
-        }
-
-        TestResult::from_bool(percentages_respected)
-    }
-
-    #[test]
-    fn test_distribute_empty_percentages() {
-        let balance = monero_oxide_ext::Amount::from_pico(1000);
-        let percentages: Vec<f64> = vec![];
-
-        let amounts = FfiWallet::distribute(balance, &percentages);
-        assert!(amounts.is_err());
-    }
-
-    #[test]
-    fn test_distribute_zero_balance() {
-        let balance = monero_oxide_ext::Amount::from_pico(0);
-        let percentages = vec![0.5, 0.5];
-
-        let amounts = FfiWallet::distribute(balance, &percentages);
-        assert!(amounts.is_err());
-    }
-
-    #[test]
-    fn test_distribute_insufficient_balance_for_outputs() {
-        let balance = monero_oxide_ext::Amount::from_pico(2);
-        let percentages = vec![0.3, 0.3, 0.4]; // 3 outputs but only 2 piconeros
-
-        let amounts = FfiWallet::distribute(balance, &percentages);
-        assert!(amounts.is_err());
-    }
-
-    #[test]
-    fn test_distribute_simple_case() {
-        let balance = monero_oxide_ext::Amount::from_pico(1000);
-        let percentages = vec![0.5, 0.3, 0.2];
-
-        let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
-
-        assert_eq!(amounts.len(), 3);
-
-        // Total should equal balance
-        let total: u64 = amounts.iter().map(|a| a.as_pico()).sum();
-        assert_eq!(total, 1000);
-
-        // First two amounts should respect percentages exactly
-        assert_eq!(amounts[0].as_pico(), 500); // 50% of 1000
-        assert_eq!(amounts[1].as_pico(), 300); // 30% of 1000
-                                               // Last amount gets remainder: 1000 - 500 - 300 = 200
-        assert_eq!(amounts[2].as_pico(), 200);
-    }
-
-    #[test]
-    fn test_distribute_small_donation() {
-        let balance = monero_oxide_ext::Amount::from_pico(1000);
-        let percentages = vec![0.999, 0.001];
-
-        let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
-
-        assert_eq!(amounts.len(), 2);
-
-        // Total should equal balance
-        let total: u64 = amounts.iter().map(|a| a.as_pico()).sum();
-        assert_eq!(total, 1000);
-
-        // First amount should respect percentage exactly
-        assert_eq!(amounts[0].as_pico(), 999); // 99.9% of 1000 (floored)
-                                               // Last amount gets remainder: 1000 - 999 = 1
-        assert_eq!(amounts[1].as_pico(), 1);
-    }
-
-    #[test]
-    fn test_distribute_percentages_not_sum_to_1() {
-        let balance = monero_oxide_ext::Amount::from_pico(1000);
-        let percentages = vec![0.5, 0.3]; // Only sums to 0.8
-
-        let amounts = FfiWallet::distribute(balance, &percentages);
-        assert!(amounts.is_err());
-    }
 }

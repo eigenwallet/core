@@ -10,6 +10,7 @@ export type TransactionInfoBoxProps = {
   additionalContent: ReactNode;
   loading: boolean;
   icon: ReactNode;
+  secondaryAction?: ReactNode;
 };
 
 export default function TransactionInfoBox({
@@ -19,6 +20,7 @@ export default function TransactionInfoBox({
   icon,
   loading,
   explorerUrlCreator,
+  secondaryAction,
 }: TransactionInfoBoxProps) {
   return (
     <InfoBox
@@ -34,14 +36,20 @@ export default function TransactionInfoBox({
       additionalContent={
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
           <Typography variant="subtitle2">{additionalContent}</Typography>
-          {explorerUrlCreator != null &&
-            txId != null && ( // Only show the link if the txId is not null and we have a creator for the explorer URL
-              <Typography variant="body1">
-                <Link href={explorerUrlCreator(txId)} target="_blank">
-                  View on explorer
-                </Link>
-              </Typography>
-            )}
+          {((explorerUrlCreator != null && txId != null) || secondaryAction) && (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              {explorerUrlCreator != null && txId != null && (
+                <Typography variant="body1">
+                  <Link href={explorerUrlCreator(txId)} target="_blank">
+                    View on explorer
+                  </Link>
+                </Typography>
+              )}
+              {secondaryAction && (
+                <Box sx={{ ml: "auto" }}>{secondaryAction}</Box>
+              )}
+            </Box>
+          )}
         </Box>
       }
       icon={icon}

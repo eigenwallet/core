@@ -22,7 +22,7 @@
 //! Also provides standalone JSON RPC clients for monerod and monero-wallet-rpc.
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 pub use testcontainers::clients::Cli;
 use testcontainers::{Container, RunnableImage};
 use tokio::time;
@@ -32,7 +32,7 @@ use monero_daemon_rpc::MoneroDaemon;
 use monero_oxide_ext::Amount;
 use monero_simple_request_rpc::SimpleRequestTransport;
 use monero_sys::SubaddressSummary;
-use monero_sys::{no_listener, Daemon, SyncProgress, TxReceipt, TxStatus, WalletHandle};
+use monero_sys::{Daemon, SyncProgress, TxReceipt, TxStatus, WalletHandle, no_listener};
 use std::collections::HashMap;
 
 use crate::image::{MONEROD_DAEMON_CONTAINER_NAME, MONEROD_DEFAULT_NETWORK, RPC_PORT};
@@ -300,7 +300,8 @@ impl<'c> Monero {
         Ok(())
     }
 
-    pub async fn generate_block(&self) -> Result<()> {
+    /// Generates 15 blocks
+    pub async fn generate_blocks(&self) -> Result<()> {
         let miner_wallet = self.wallet("miner")?;
         let miner_address = miner_wallet.address().await?.to_string();
         self.monerod().generate_blocks(15, &miner_address).await?;
@@ -572,21 +573,22 @@ impl MoneroWallet {
             .context("Failed to perform sweep")
     }
 
-    /// Sweep multiple addresses with different ratios
-    /// If the address is `None`, the address will be set to the primary address of the
-    /// main wallet.
-    pub async fn sweep_multi(
-        &self,
-        addresses: &[MoneroAddress],
-        ratios: &[f64],
-    ) -> Result<TxReceipt> {
-        tracing::info!("`{}` sweeping multi ({:?})", self.name, ratios);
-        self.balance().await?;
+    pub async fn transfer_multi(&self, destinations: &[(MoneroAddress, u64)]) -> Result<TxReceipt> {
+        tracing::info!(
+            "`{}` transferring to {} destinations",
+            self.name,
+            destinations.len()
+        );
+
+        let destinations: Vec<(MoneroAddress, Amount)> = destinations
+            .iter()
+            .map(|(addr, pico)| (*addr, Amount::from_pico(*pico)))
+            .collect();
 
         self.wallet
-            .sweep_multi_destination(addresses, ratios)
+            .transfer_multi_destination(&destinations)
             .await
-            .context("Failed to perform sweep")
+            .context("Failed to perform multi-destination transfer")
     }
 
     pub async fn blockchain_height(&self) -> Result<u64> {

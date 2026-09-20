@@ -30,10 +30,10 @@ test-ffi-address:
 
 # Start the Tauri app
 tauri:
-	cd src-tauri && cargo tauri dev --no-watch -- -vv -- --testnet
+	cd src-tauri && RUST_BACKTRACE=1 cargo tauri dev --no-watch -- -vv -- --testnet
 
 tauri-mainnet:
-	cd src-tauri && cargo tauri dev --no-watch -- -vv
+	cd src-tauri && RUST_BACKTRACE=1 cargo tauri dev --no-watch -- -vv
 
 # Install the GUI dependencies
 gui_install:
@@ -60,9 +60,13 @@ build-gui-windows:
 tests:
         cargo nextest run
 
+# List all available docker integration tests
+list-docker-tests:
+	@find swap/tests -maxdepth 1 -type f -name "*.rs" | xargs -n1 basename | sed 's/\.rs$//' | sort
+
 # Run docker tests (e.g., "just docker_test happy_path_alice_developer_tip")
 docker_test test_name:
-	cargo test --package swap --test {{test_name}} -- --nocapture
+	RUST_BACKTRACE=1 cargo test --package swap --test {{test_name}} -- --nocapture
 
 docker_test_happy_path:
 	just docker_test happy_path
@@ -81,9 +85,13 @@ test_monero_sys:
 swap:
 	cargo build -p swap-asb --bin asb && cd swap && cargo build --bin=swap
 
+# Generate the ASB RPC auth keyfile
+gen-rpc-auth:
+	cargo run -p swap-orchestrator --bin orchestrator -- gen-rpc-auth
+
 # Run the asb on testnet
 asb-testnet:
-	ASB_DEV_ADDR_OUTPUT_PATH="$PWD/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --testnet --trace start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
+	cargo run -p swap-asb --bin asb -- --testnet --trace start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0 --rpc-auth-file rpc-auth
 
 # Launch the ASB controller REPL against a local testnet ASB instance
 asb-testnet-controller:
@@ -108,9 +116,13 @@ fmt:
 generate-sqlx-cache:
 	./dev-scripts/regenerate_sqlx_cache.sh
 
+
+alias eslint := check_gui_eslint
 # Run eslint for the GUI frontend
 check_gui_eslint:
 	cd src-gui && yarn run eslint
+
+alias tsc := check_gui_tsc
 
 # Run the typescript type checker for the GUI frontend
 check_gui_tsc:

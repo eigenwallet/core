@@ -32,14 +32,14 @@ pub fn system_data_dir_eigenwallet(testnet: bool) -> Result<PathBuf> {
 }
 
 pub fn ensure_directory_exists(file: &Path) -> Result<(), std::io::Error> {
-    if let Some(path) = file.parent() {
-        if !path.exists() {
-            tracing::info!(
-                directory = %file.display(),
-                "Parent directory does not exist, creating recursively",
-            );
-            return std::fs::create_dir_all(path);
-        }
+    if let Some(path) = file.parent()
+        && !path.exists()
+    {
+        tracing::info!(
+            directory = %file.display(),
+            "Parent directory does not exist, creating recursively",
+        );
+        return std::fs::create_dir_all(path);
     }
     Ok(())
 }

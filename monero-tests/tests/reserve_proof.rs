@@ -31,7 +31,7 @@ async fn setup(cli: &Cli) -> anyhow::Result<TestSetup<'_>> {
 
     // Fund alice's wallet
     miner.sweep(&alice.address().await?).await?;
-    monero.generate_block().await?;
+    monero.generate_blocks().await?;
     alice.refresh().await?;
 
     let alice_balance = alice.balance().await?;

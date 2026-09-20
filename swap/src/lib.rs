@@ -9,7 +9,7 @@
     clippy::dbg_macro
 )]
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![allow(
     non_snake_case,
     missing_debug_implementations,

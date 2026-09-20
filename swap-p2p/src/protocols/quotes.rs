@@ -1,4 +1,5 @@
 use libp2p::{
+    Multiaddr, PeerId, StreamProtocol,
     core::Endpoint,
     identify,
     request_response::{self, OutboundFailure},
@@ -6,11 +7,10 @@ use libp2p::{
         ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandlerInEvent,
         THandlerOutEvent, ToSwarm,
     },
-    Multiaddr, PeerId, StreamProtocol,
 };
 
 use crate::{
-    behaviour_util::{extract_semver_from_agent_str, BackoffTracker, ConnectionTracker, Trigger},
+    behaviour_util::{BackoffTracker, ConnectionTracker, Trigger, extract_semver_from_agent_str},
     futures_util::FuturesHashSet,
     patches,
     protocols::{
@@ -32,7 +32,7 @@ pub struct Behaviour {
     /// Track connected peers
     connection_tracker: ConnectionTracker,
 
-    /// Peers which have explictly told us that they do not support our protocol
+    /// Peers which have explicitly told us that they do not support our protocol
     does_not_support: HashSet<PeerId>,
 
     /// Peers to dispatch a quote request to as soon as we are connected to them
@@ -388,7 +388,7 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::{new_swarm, SwarmExt};
+    use crate::test::{SwarmExt, new_swarm};
     use futures::StreamExt;
     use libp2p::swarm::{Swarm, SwarmEvent};
     use tokio::task::JoinHandle;
@@ -402,7 +402,7 @@ mod tests {
         // Create the swarm for Alice
         // Let her listen on a random memory address
         // Let her respond to requests
-        let alice = new_swarm(|_| quote::alice());
+        let alice = new_swarm(|_| quote::alice(None));
         let (alice_peer_id, alice_addr, alice_handle) = serve_quotes(alice).await;
 
         // Tell Bob about Alice's address

@@ -1,5 +1,5 @@
-use super::api::tauri_bindings::{BackgroundRefundProgress, TauriBackgroundProgress, TauriEmitter};
 use super::api::SwapLock;
+use super::api::tauri_bindings::{BackgroundRefundProgress, TauriBackgroundProgress, TauriEmitter};
 use super::cancel_and_refund;
 use crate::cli::api::tauri_bindings::TauriHandle;
 use crate::protocol::bob::BobState;
@@ -107,9 +107,17 @@ impl Watcher {
             self.cached_timelocks.insert(swap_id, new_timelock_status);
 
             // If the swap has to be refunded, do it in the background
-            if let Some(ExpiredTimelocks::Cancel { .. }) = new_timelock_status {
+            if matches!(
+                new_timelock_status,
+                Some(ExpiredTimelocks::Cancel { .. }) | Some(ExpiredTimelocks::RemainingRefund)
+            ) {
                 // If the swap is already refunded, we can skip the refund
-                if matches!(state, BobState::BtcRefunded(_)) {
+                if matches!(
+                    state,
+                    BobState::BtcRefunded(_)
+                        | BobState::BtcWithheld(_)
+                        | BobState::BtcMercyConfirmed(_)
+                ) {
                     continue;
                 }
 
@@ -161,7 +169,7 @@ impl Watcher {
             .await?
             .into_iter()
             // Filter for BobState
-            .filter_map(|(uuid, state)| match state {
+            .filter_map(|(_, uuid, state)| match state {
                 State::Bob(bob_state) => Some((uuid, bob_state)),
                 _ => None,
             })

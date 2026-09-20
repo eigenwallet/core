@@ -1,3 +1,4 @@
+use crate::config::RefundPolicy;
 use crate::env::{Mainnet, Testnet};
 use anyhow::{Context, Result};
 use libp2p::Multiaddr;
@@ -41,16 +42,18 @@ pub const DEFAULT_SPREAD: f64 = 0.02f64;
 pub const KRAKEN_PRICE_TICKER_WS_URL: &str = "wss://ws.kraken.com";
 pub const BITFINEX_PRICE_TICKER_WS_URL: &str = "wss://api-pub.bitfinex.com/ws/2";
 pub const KUCOIN_PRICE_TICKER_REST_URL: &str = "https://api.kucoin.com/api/v1/bullet-public";
+pub const EXOLIX_PRICE_TICKER_REST_URL: &str = "https://exolix.com/api/v2/rate";
 
 pub fn default_rendezvous_points() -> Vec<Multiaddr> {
     vec![
-        "/dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE".parse().unwrap(),
-        "/dns4/discover2.unstoppableswap.net/tcp/8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw".parse().unwrap(),
-        "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU".parse().unwrap(),
-        "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT".parse().unwrap(),
-        "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa".parse().unwrap(),
-        "/dns4/aswap.click/tcp/8888/p2p/12D3KooWQzW52mdsLHTMu1EPiz3APumG6vGwpCuyy494MAQoEa5X".parse().unwrap(),
-        "/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk".parse().unwrap()
+        "/dns4/discovery.eigenwallet.org/tcp/443/wss/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw".parse().unwrap(),
+        "/onion3/3xl2zfur4tpebogsrgn3l7l2illzkhwi3755jplmycmn4q77nxsrl6qd:8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw".parse().unwrap(),
+        "/dns4/rendezvous.atomicworld.fun/tcp/443/wss/p2p/12D3KooWMc39w7bZz4RLmJKuUiK9YkbKoEHACZWcL71XNns5dPuD".parse().unwrap(),
+        "/onion3/m2iuwp3fvdlqtlqqaz3egrzjl5uehmdhjgmzhznvjoudljl2xzjaomyd:8890/p2p/12D3KooWMc39w7bZz4RLmJKuUiK9YkbKoEHACZWcL71XNns5dPuD".parse().unwrap(),
+        "/dns4/dht.stealthswap.ninja/tcp/443/wss/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov".parse().unwrap(),
+        "/onion3/m6rboz5lv4wxldgybgox4pr4s6xci3h2exi5nogxaox762xji2gokuad:8891/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov".parse().unwrap(),
+        "/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE".parse().unwrap(),
+        "/onion3/av2jauifny7dgpvzhsnhra3cwivf6ofaefxvwhhuh5y7hsolabehhaad:8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE".parse().unwrap(),
     ]
 }
 
@@ -62,21 +65,19 @@ pub fn default_electrum_servers_mainnet() -> Vec<Url> {
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://bitcoin.stackwallet.com:50002")
             .expect("default electrum server url to be valid"),
-        Url::parse("ssl://b.1209k.com:50002").expect("default electrum server url to be valid"),
-        Url::parse("ssl://mainnet.foundationdevices.com:50002")
-            .expect("default electrum server url to be valid"),
         Url::parse("tcp://bitcoin.lu.ke:50001").expect("default electrum server url to be valid"),
-        Url::parse("ssl://electrum.coinfinity.co:50002")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://electrum1.bluewallet.io:50001")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://electrum2.bluewallet.io:50001")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://electrum3.bluewallet.io:50001")
-            .expect("default electrum server url to be valid"),
         Url::parse("ssl://btc-electrum.cakewallet.com:50002")
             .expect("default electrum server url to be valid"),
         Url::parse("tcp://bitcoin.aranguren.org:50001")
+            .expect("default electrum server url to be valid"),
+        Url::parse("ssl://bitcoin.mullvad.net:5010")
+            .expect("default electrum server url to be valid"),
+        Url::parse("tcp://electrs.cakewallet.com:50001")
+            .expect("default electrum server url to be valid"),
+        Url::parse("ssl://blockstream.info:700").expect("default electrum server url to be valid"),
+        Url::parse("ssl://electrum.diynodes.com:50022")
+            .expect("default electrum server url to be valid"),
+        Url::parse("ssl://electrum.acinq.co:50002")
             .expect("default electrum server url to be valid"),
     ]
 }
@@ -85,20 +86,10 @@ pub fn default_electrum_servers_testnet() -> Vec<Url> {
     vec![
         Url::parse("ssl://blackie.c3-soft.com:57006")
             .expect("default electrum server url to be valid"),
-        Url::parse("ssl://v22019051929289916.bestsrv.de:50002")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://v22019051929289916.bestsrv.de:50001")
-            .expect("default electrum server url to be valid"),
         Url::parse("ssl://electrum.blockstream.info:60002")
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://blockstream.info:993").expect("default electrum server url to be valid"),
         Url::parse("tcp://testnet.aranguren.org:51001")
-            .expect("default electrum server url to be valid"),
-        Url::parse("ssl://testnet.aranguren.org:51002")
-            .expect("default electrum server url to be valid"),
-        Url::parse("ssl://bitcoin.devmole.eu:5010")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://bitcoin.devmole.eu:5000")
             .expect("default electrum server url to be valid"),
     ]
 }
@@ -115,9 +106,11 @@ pub struct Defaults {
     pub price_ticker_ws_url_kraken: Url,
     pub price_ticker_ws_url_bitfinex: Url,
     pub price_ticker_rest_url_kucoin: Url,
+    pub price_ticker_rest_url_exolix: Url,
     pub bitcoin_confirmation_target: u16,
     pub use_mempool_space_fee_estimation: bool,
     pub developer_tip: Decimal,
+    pub refund_policy: RefundPolicy,
 }
 
 impl GetDefaults for Mainnet {
@@ -132,9 +125,11 @@ impl GetDefaults for Mainnet {
             price_ticker_ws_url_kraken: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             price_ticker_ws_url_bitfinex: Url::parse(BITFINEX_PRICE_TICKER_WS_URL)?,
             price_ticker_rest_url_kucoin: Url::parse(KUCOIN_PRICE_TICKER_REST_URL)?,
+            price_ticker_rest_url_exolix: Url::parse(EXOLIX_PRICE_TICKER_REST_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,
+            refund_policy: RefundPolicy::default(),
         };
 
         Ok(defaults)
@@ -153,9 +148,11 @@ impl GetDefaults for Testnet {
             price_ticker_ws_url_kraken: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             price_ticker_ws_url_bitfinex: Url::parse(BITFINEX_PRICE_TICKER_WS_URL)?,
             price_ticker_rest_url_kucoin: Url::parse(KUCOIN_PRICE_TICKER_REST_URL)?,
+            price_ticker_rest_url_exolix: Url::parse(EXOLIX_PRICE_TICKER_REST_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,
+            refund_policy: RefundPolicy::default(),
         };
 
         Ok(defaults)

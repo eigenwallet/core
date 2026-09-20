@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::{request::Parts, response, StatusCode},
+    http::{StatusCode, request::Parts, response},
     response::Response,
 };
 use http_body_util::BodyExt;
@@ -12,11 +12,11 @@ use std::time::Duration;
 use tokio::time::timeout;
 
 use tokio_rustls::rustls::{
+    DigitallySignedStruct, Error as TlsError, SignatureScheme,
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
     pki_types::{CertificateDer, ServerName, UnixTime},
-    DigitallySignedStruct, Error as TlsError, SignatureScheme,
 };
-use tracing::{error, info_span, Instrument};
+use tracing::{Instrument, error, info_span};
 
 use crate::tor::*;
 use crate::AppState;

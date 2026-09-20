@@ -273,7 +273,7 @@ pub mod ffi {
             dest_address: &CxxString,
         ) -> Result<*mut PendingTransaction>;
 
-        /// Create a multi-sweep transaction.
+        /// Create a multi-destination transaction.
         fn createTransactionMultiDest(
             wallet: Pin<&mut Wallet>,
             dest_addresses: &CxxVector<CxxString>,
@@ -299,6 +299,11 @@ pub mod ffi {
             tx: &PendingTransaction,
             tx_hash: &CxxString,
         ) -> Result<UniquePtr<CxxVector<TxKey>>>;
+
+        fn pendingTransactionRawTxHex(
+            tx: &PendingTransaction,
+            tx_hash: &CxxString,
+        ) -> Result<UniquePtr<CxxString>>;
 
         /// Get the fee of a pending transaction.
         fn pendingTransactionFee(tx: &PendingTransaction) -> Result<u64>;

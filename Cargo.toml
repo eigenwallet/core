@@ -41,12 +41,12 @@ bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
 
 # monero-oxide
-monero-address = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-daemon-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-interface = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-oxide = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-oxide-wallet = { git = "https://github.com/kayabaNerve/monero-oxide.git", package = "monero-wallet", branch = "rpc-rewrite" }
-monero-simple-request-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+monero-address = { git = "https://github.com/kayabaNerve/monero-oxide.git" }
+monero-daemon-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git" }
+monero-interface = { git = "https://github.com/kayabaNerve/monero-oxide.git" }
+monero-oxide = { git = "https://github.com/kayabaNerve/monero-oxide.git" }
+monero-oxide-wallet = { git = "https://github.com/kayabaNerve/monero-oxide.git", package = "monero-wallet" }
+monero-simple-request-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git" }
 
 # Cryptography
 curve25519-dalek = { version = "4", package = "curve25519-dalek", features = ["rand_core", "serde"] }
@@ -84,6 +84,7 @@ thiserror = "1"
 data-encoding = "2.6.0"
 hex = "0.4"
 toml = "0.9.5"
+toml_edit = "0.25"
 tracing = { version = "0.1", features = ["attributes"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
 typeshare = "1.0"
@@ -96,19 +97,19 @@ tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"
 tokio-util = { version = "0.7", features = ["io", "codec", "rt"] }
 
 # Tor/Arti crates
-arti-client = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0", default-features = false }
-safelog = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-cell = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-hsservice = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-proto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-rtcompat = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
+arti-client = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_4_0", default-features = false }
+libp2p-tor = { path = "./libp2p-tor" }
+safelog = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_4_0" }
+tor-cell = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_4_0" }
+tor-hscrypto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_4_0" }
+tor-hsservice = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_4_0" }
+tor-llcrypto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_4_0" }
+tor-proto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_4_0" }
+tor-rtcompat = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_4_0" }
 
 # Terminal Utilities
 console = "0.16"
 dialoguer = "0.11"
-
-# Our dependencies in other git repositories
-dfx-swiss-sdk = { git = "https://github.com/eigenwallet/dfx-swiss-rs" }
 
 # Build dependencies
 vergen = { version = "8.3", default-features = false, features = ["build", "git", "git2"] }
@@ -123,6 +124,8 @@ crunchy = { git = "https://github.com/eira-fransham/crunchy", rev = "ba7b86cea6b
 
 [workspace.lints]
 rust.unused_crate_dependencies = "warn"
+# prevents accidental infinite recursion when implementing a trait method by calling a method with the same name
+rust.unconditional_recursion = "deny"
 
 [profile.release]
 codegen-units = 1

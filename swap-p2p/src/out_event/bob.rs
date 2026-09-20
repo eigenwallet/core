@@ -1,10 +1,10 @@
-use libp2p::{identify, ping};
 use libp2p::{
+    Multiaddr, PeerId,
     request_response::{
         InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
     },
-    Multiaddr, PeerId,
 };
+use libp2p::{identify, ping, relay};
 
 use crate::observe;
 use crate::protocols::{
@@ -67,6 +67,8 @@ pub enum OutEvent {
         protocol: String,
     },
     Redial(redial::Event),
+    /// A peer was discovered via a rendezvous node.
+    Discovery(rendezvous::discovery::Event),
     /// "Fallback" variant that allows the event mapping code to swallow certain
     /// events that we don't want the caller to deal with.
     Other,
@@ -101,15 +103,27 @@ impl From<identify::Event> for OutEvent {
     }
 }
 
-impl From<rendezvous::discovery::Event> for OutEvent {
-    fn from(_: rendezvous::discovery::Event) -> Self {
+impl From<relay::client::Event> for OutEvent {
+    fn from(_: relay::client::Event) -> Self {
         OutEvent::Other
+    }
+}
+
+impl From<rendezvous::discovery::Event> for OutEvent {
+    fn from(event: rendezvous::discovery::Event) -> Self {
+        OutEvent::Discovery(event)
     }
 }
 
 impl From<observe::Event> for OutEvent {
     fn from(event: observe::Event) -> Self {
         OutEvent::Observe(event)
+    }
+}
+
+impl From<void::Void> for OutEvent {
+    fn from(event: void::Void) -> Self {
+        void::unreachable(event)
     }
 }
 

@@ -1,4 +1,4 @@
-use testcontainers::{core::WaitFor, Image, ImageArgs};
+use testcontainers::{Image, ImageArgs, core::WaitFor};
 
 pub const MONEROD_DAEMON_CONTAINER_NAME: &str = "monerod";
 pub const MONEROD_DEFAULT_NETWORK: &str = "monero_network";
@@ -33,7 +33,7 @@ impl Image for Monerod {
 
     fn entrypoint(&self) -> Option<String> {
         Some("".to_owned()) // an empty entrypoint disables the entrypoint
-                            // script and gives us full control
+        // script and gives us full control
     }
 }
 
@@ -57,7 +57,7 @@ impl Image for MoneroWalletRpc {
 
     fn entrypoint(&self) -> Option<String> {
         Some("".to_owned()) // an empty entrypoint disables the entrypoint
-                            // script and gives us full control
+        // script and gives us full control
     }
 }
 

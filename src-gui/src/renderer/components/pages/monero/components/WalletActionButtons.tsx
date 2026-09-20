@@ -1,16 +1,10 @@
 import {
   Box,
-  Button,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   IconButton,
   ListItemIcon,
   Menu,
   MenuItem,
-  TextField,
   Typography,
 } from "@mui/material";
 import {
@@ -20,22 +14,21 @@ import {
   MoreHoriz as MoreHorizIcon,
   FormatListBulleted as ListIcon,
   LockOutline as LockOutlineIcon,
+  Key as KeyIcon,
 } from "@mui/icons-material";
 import { useState } from "react";
-import { setMoneroRestoreHeight } from "renderer/rpc";
+import { getMoneroSeedAndRestoreHeight } from "renderer/rpc";
 import SendTransactionModal from "../SendTransactionModal";
 import SubaddressesModal from "../SubaddressesModal";
 import { useNavigate } from "react-router-dom";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import SetRestoreHeightModal from "../SetRestoreHeightModal";
 import SetPasswordModal from "../SetPasswordModal";
-import SeedPhraseButton from "../SeedPhraseButton";
 import SeedPhraseModal from "../SeedPhraseModal";
-import DfxButton from "./DFXWidget";
 import {
   GetMoneroSeedResponse,
   GetRestoreHeightResponse,
 } from "models/tauriModel";
+import AsyncActionButton from "renderer/components/AsyncActionButton";
 
 interface WalletActionButtonsProps {
   balance: {
@@ -116,7 +109,6 @@ export default function WalletActionButtons({
             variant="button"
             clickable
           />
-          <DfxButton />
         </Box>
         <Box>
           <IconButton onClick={handleMenuClick}>
@@ -138,10 +130,23 @@ export default function WalletActionButtons({
               </ListItemIcon>
               <Typography>Restore Height</Typography>
             </MenuItem>
-            <SeedPhraseButton
-              onMenuClose={handleMenuClose}
-              onSeedPhraseSuccess={setSeedPhrase}
-            />
+            <AsyncActionButton content={(state, startAction) =>
+              <MenuItem
+                onClick={() => {
+                  if (state.isLoading) { return; }
+
+                  startAction(async () => {
+                    const [seedPhrase, restoreHeight] = await getMoneroSeedAndRestoreHeight();
+                    setSeedPhrase([seedPhrase, restoreHeight]);
+                    handleMenuClose();
+                  })
+                }}>
+                <ListItemIcon>
+                  <KeyIcon />
+                </ListItemIcon>
+                <Typography>Seedphrase</Typography>
+              </MenuItem>
+            } />
             <MenuItem
               onClick={() => {
                 setSetPasswordDialogOpen(true);

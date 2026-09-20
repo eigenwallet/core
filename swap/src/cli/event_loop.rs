@@ -6,16 +6,17 @@ use crate::network::cooperative_xmr_redeem_after_punish::{self, Request, Respons
 use crate::network::encrypted_signature;
 use crate::network::quote::BidQuote;
 use crate::network::swap_setup::bob::NewSwap;
+use crate::protocol::Database;
 use crate::protocol::bob::swap::has_already_processed_transfer_proof;
 use crate::protocol::bob::{BobState, State2};
-use crate::protocol::Database;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
+use libp2p_tor::{TorDialPriority, TorDialPriorityTracker};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -146,6 +147,8 @@ pub struct EventLoop {
     /// Channel for triggering a refresh of most backoffs. It will do things like redial disconnected peers,
     /// re-fetching quotes, rediscovering peers at rendezvous nodes, etc.
     refresh_requests: bmrng::unbounded::UnboundedRequestReceiverStream<(), ()>,
+
+    tor_priority_tracker: Option<TorDialPriorityTracker>,
 }
 
 impl EventLoop {
@@ -153,6 +156,7 @@ impl EventLoop {
         swarm: Swarm<Behaviour>,
         db: Arc<dyn Database + Send + Sync>,
         tauri_handle: Option<TauriHandle>,
+        tor_priority_tracker: Option<TorDialPriorityTracker>,
     ) -> Result<(Self, EventLoopHandle)> {
         // We still use a timeout here because we trust our own implementation of the swap setup protocol less than the libp2p library
         let (execution_setup_sender, execution_setup_receiver) =
@@ -191,6 +195,7 @@ impl EventLoop {
             cached_quotes_sender,
             tauri_handle,
             refresh_requests: refresh_receiver.into(),
+            tor_priority_tracker,
         };
 
         let handle = EventLoopHandle {
@@ -438,6 +443,11 @@ impl EventLoop {
                         SwarmEvent::Behaviour(OutEvent::Observe(event)) => {
                             self.tauri_handle.emit_peer_connection_change(event.peer_id, event.update);
                         }
+                        SwarmEvent::Behaviour(OutEvent::Discovery(crate::network::rendezvous::discovery::Event::DiscoveredPeer { peer_id })) => {
+                            if let Some(tor_priority_tracker) = &self.tor_priority_tracker {
+                                tor_priority_tracker.set_peer_priority(peer_id, TorDialPriority::Normal);
+                            }
+                        }
                         _ => {}
                     }
                 },
@@ -540,9 +550,12 @@ impl EventLoop {
                     // This registers the swap_id -> peer_id and swap_id -> transfer_proof_sender
                     self.registered_swap_handlers.insert(swap_id, (peer_id, sender, span.clone()));
 
-                    // Instruct the swarm to contineously redial the peer
+                    // Instruct the swarm to continuously redial the peer
                     // TODO: We must remove it again once the swap is complete, otherwise we will redial indefinitely
                     self.swarm.behaviour_mut().redial.add_peer(peer_id);
+                    if let Some(tor_priority_tracker) = &self.tor_priority_tracker {
+                        tor_priority_tracker.mark_high_priority(peer_id);
+                    }
 
                     // Acknowledge the registration
                     let _ = responder.respond(());
@@ -710,7 +723,14 @@ impl EventLoopHandle {
                 }
                 // These are errors thrown by the swap_setup/bob behaviour
                 Ok(Err(err)) => {
-                    Err(backoff::Error::transient(err.context("A network error occurred while setting up the swap")))
+                    use swap_p2p::protocols::swap_setup::bob::Error as SetupError;
+                    if err.downcast_ref::<SetupError>()
+                        .is_some_and(|e| matches!(e, SetupError::SwapRejected(_)))
+                    {
+                        Err(backoff::Error::permanent(err))
+                    } else {
+                        Err(backoff::Error::transient(err.context("A network error occurred while setting up the swap")))
+                    }
                 }
                 // This will happen if we don't establish a connection to Alice within the timeout of the MPSC channel
                 // The protocol does not dial Alice it self

@@ -56,14 +56,10 @@ For example:
 ```toml
 [network]
 rendezvous_point = [
-  "/dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
-  "/dns4/discover2.unstoppableswap.net/tcp/8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw",
-  "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU",
-  "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT",
-  "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp",
-  "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa",
-  "/dns4/aswap.click/tcp/8888/p2p/12D3KooWQzW52mdsLHTMu1EPiz3APumG6vGwpCuyy494MAQoEa5X",
-  "/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk",
+  "/dns4/discovery.eigenwallet.org/tcp/443/wss/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw",
+  "/dns4/rendezvous.atomicworld.fun/tcp/443/wss/p2p/12D3KooWMc39w7bZz4RLmJKuUiK9YkbKoEHACZWcL71XNns5dPuD",
+  "/dns4/dht.stealthswap.ninja/tcp/443/wss/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov",
+  "/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
 ]
 external_addresses = ["/dns4/example.com/tcp/9939"]
 ```
@@ -125,6 +121,8 @@ If the option is not set, a new address from the internal wallet is used for eve
 
 `developer_tip` allows configuring your maker to donate a small part of swaps to funding further development of the project. This is disabled by default. You can manually enable it if you choose to do so. Set it to a number between 0 and 1. Setting it to 0.02 will donate 2% of each swap to the donation address of the project. The tip is sent by adding an additional output to the Monero lock transaction of a swap. This means this will not impact the availability of your UTXOs (unlocked funds) as it does not require an additonal transaction.
 
+`btc_redeem_fee_multiplier` scales the estimated BTC redeem fee. Defaults to `1.0`. Set higher (e.g. `2.0`) as a safety margin so the redeem still confirms when fee estimation undershoots actual mempool conditions. The fee is deducted from the BTC Alice receives, so a higher value reduces her net redeem amount.
+
 In order to be able to trade, the ASB must define a price to be able to agree on the amounts to be swapped with a CLI.
 The `XMR<>BTC` price is currently determined by the price from the central exchange Kraken.
 Upon startup the ASB connects to the Kraken price websocket and listens on the stream for price updates.
@@ -160,6 +158,8 @@ The ASB provider has to monitor Monero funds to make sure the ASB still has liqu
 #### Tor and hidden services
 
 If `tor.register_hidden_service` is set to `true` that asb will automatically start listening on an onion service.
+
+If `tor.wormhole_enabled` is set to `true` (default), the ASB will spawn dedicated per-peer onion services (wormholes) for peers that have committed funds to a swap. `tor.wormhole_max_concurrent_rend_requests` controls the maximum concurrent rendezvous requests per wormhole (default: 3). `tor.wormhole_num_intro_points` controls the number of introduction points per wormhole (default: 3). `tor.wormhole_swap_freshness_hours` bounds how far back swaps are considered when deciding wormhole eligibility; peers whose most recent swap state update is older than this window are ignored (default: 168, i.e. 7 days).
 
 ### Exporting the Bitcoin wallet descriptor
 

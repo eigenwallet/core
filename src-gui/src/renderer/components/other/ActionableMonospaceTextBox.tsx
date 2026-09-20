@@ -70,7 +70,7 @@ export default function ActionableMonospaceTextBox({
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [qrCodeOpen, setQrCodeOpen] = useState(false);
-  const [isQrCodeButtonHovered, setIsQrCodeButtonHovered] = useState(false);
+  const [isEitherButtonHovered, setEitherButtonHovered] = useState(false);
   const [isRevealed, setIsRevealed] = useState(!spoilerText);
 
   const handleCopy = async () => {
@@ -85,7 +85,7 @@ export default function ActionableMonospaceTextBox({
       <Box sx={{ position: "relative" }}>
         <Tooltip
           title={
-            isQrCodeButtonHovered
+            isEitherButtonHovered
               ? ""
               : copied
                 ? "Copied to clipboard"
@@ -108,7 +108,11 @@ export default function ActionableMonospaceTextBox({
                 <>
                   {displayCopyIcon && (
                     <Tooltip title="Copy to clipboard" arrow>
-                      <IconButton onClick={handleCopy} size="small">
+                      <IconButton onClick={handleCopy}
+                        size="small"
+                        onMouseEnter={() => setEitherButtonHovered(true)}
+                        onMouseLeave={() => setEitherButtonHovered(false)}
+                      >
                         <FileCopyOutlined />
                       </IconButton>
                     </Tooltip>
@@ -120,9 +124,9 @@ export default function ActionableMonospaceTextBox({
                           e.stopPropagation();
                           setQrCodeOpen(true);
                         }}
-                        onMouseEnter={() => setIsQrCodeButtonHovered(true)}
-                        onMouseLeave={() => setIsQrCodeButtonHovered(false)}
                         size="small"
+                        onMouseEnter={() => setEitherButtonHovered(true)}
+                        onMouseLeave={() => setEitherButtonHovered(false)}
                       >
                         <QrCodeIcon />
                       </IconButton>

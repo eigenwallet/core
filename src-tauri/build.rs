@@ -11,7 +11,9 @@ fn main() {
             .into_iter()
             .all(|dll| std::path::Path::new(dll).try_exists().unwrap_or(false))
         {
-            panic!("libstdc++-6.dll and libgcc_s_seh-1.dll don't exist in the src-tauri directory - run `just prepare-windows-build` to build them");
+            panic!(
+                "libstdc++-6.dll and libgcc_s_seh-1.dll don't exist in the src-tauri directory - run `just prepare-windows-build` to build them"
+            );
         }
 
         let home_dir = std::env::var("HOME").expect("HOME environment variable not set");

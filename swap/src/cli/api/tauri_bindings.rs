@@ -4,8 +4,9 @@ use crate::cli::api::request::{
 };
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
+use crate::protocol::bob::HermesProgress;
 use crate::{monero, network::quote::BidQuote};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use bitcoin::Txid;
 use libp2p::PeerId;
@@ -88,16 +89,19 @@ pub struct ContextStatus {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LockBitcoinDetails {
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_lock_amount: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_network_fee: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
     pub xmr_receive_amount: monero::Amount,
     pub monero_receive_pool: MoneroAddressPool,
     #[typeshare(serialized_as = "string")]
     pub swap_id: Uuid,
+    /// The amount of Bitcoin the taker will only be able to refund with cooperation from the maker
+    #[typeshare(serialized_as = "number")]
+    pub btc_amnesty_amount: bitcoin::Amount,
+    /// Whether we can guarantee we'll get the full refund
+    pub has_full_refund_signature: bool,
 }
 
 #[typeshare]
@@ -106,7 +110,6 @@ pub struct SelectMakerDetails {
     #[typeshare(serialized_as = "string")]
     pub swap_id: Uuid,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_amount_to_swap: bitcoin::Amount,
     pub maker: QuoteWithAddress,
 }
@@ -138,11 +141,19 @@ pub struct PasswordRequestDetails {
 pub enum SeedChoice {
     RandomSeed {
         password: String,
+        /// File name for the new wallet.
+        name: String,
+        /// Directory the new wallet file is stored in.
+        directory: String,
     },
     FromSeed {
         seed: String,
         restore_height: u32,
         password: String,
+        /// File name for the restored wallet.
+        name: String,
+        /// Directory the restored wallet file is stored in.
+        directory: String,
     },
     FromWalletPath {
         wallet_path: String,
@@ -155,6 +166,20 @@ pub enum SeedChoice {
 pub struct SeedSelectionDetails {
     /// List of recently used wallet paths
     pub recent_wallets: Vec<String>,
+    /// Default directory new wallet files are stored in.
+    pub default_wallet_directory: String,
+    /// Error from the previous wallet open or creation attempt.
+    pub error: Option<String>,
+}
+
+/// Seed phrase of a freshly created wallet, shown once so the user can back
+/// it up before startup continues.
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SeedBackupDetails {
+    pub seed: String,
+    #[typeshare(serialized_as = "number")]
+    pub restore_height: u64,
 }
 
 #[typeshare]
@@ -184,6 +209,9 @@ pub enum ApprovalRequestType {
     /// Request password for wallet file.
     /// User must provide password to unlock the selected wallet.
     PasswordRequest(PasswordRequestDetails),
+    /// Request the user to back up the seed of a freshly created wallet.
+    /// Resolved once the user confirms having recorded it.
+    SeedBackup(SeedBackupDetails),
 }
 
 #[typeshare]
@@ -479,10 +507,13 @@ impl bitcoin_wallet::BitcoinTauriBackgroundTask
     for TauriBackgroundProgressHandle<TauriBitcoinFullScanProgress>
 {
     fn update(&self, consumed: u64, total: u64) {
-        self.update(TauriBitcoinFullScanProgress::Known {
-            current_index: consumed,
-            assumed_total: total,
-        });
+        TauriBackgroundProgressHandle::update(
+            self,
+            TauriBitcoinFullScanProgress::Known {
+                current_index: consumed,
+                assumed_total: total,
+            },
+        );
     }
 
     fn finish(&self) {
@@ -494,7 +525,10 @@ impl bitcoin_wallet::BitcoinTauriBackgroundTask
     for TauriBackgroundProgressHandle<TauriBitcoinSyncProgress>
 {
     fn update(&self, consumed: u64, total: u64) {
-        self.update(TauriBitcoinSyncProgress::Known { consumed, total });
+        TauriBackgroundProgressHandle::update(
+            self,
+            TauriBitcoinSyncProgress::Known { consumed, total },
+        );
     }
 
     fn finish(&self) {
@@ -549,6 +583,7 @@ impl Display for ApprovalRequest {
             ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
             ApprovalRequestType::SendMonero(_) => write!(f, "SendMonero()"),
             ApprovalRequestType::PasswordRequest(_) => write!(f, "PasswordRequest()"),
+            ApprovalRequestType::SeedBackup(_) => write!(f, "SeedBackup()"),
         }
     }
 }
@@ -567,12 +602,9 @@ pub trait TauriEmitter {
         timeout_secs: u64,
     ) -> Result<bool>;
 
-    async fn request_seed_selection(&self) -> Result<SeedChoice>;
+    async fn request_seed_selection(&self, details: SeedSelectionDetails) -> Result<SeedChoice>;
 
-    async fn request_seed_selection_with_recent_wallets(
-        &self,
-        recent_wallets: Vec<String>,
-    ) -> Result<SeedChoice>;
+    async fn request_seed_backup(&self, details: SeedBackupDetails) -> Result<bool>;
 
     async fn request_password(&self, wallet_path: String) -> Result<String>;
 
@@ -687,17 +719,13 @@ impl TauriEmitter for TauriHandle {
             .unwrap_or(false))
     }
 
-    async fn request_seed_selection(&self) -> Result<SeedChoice> {
-        self.request_seed_selection_with_recent_wallets(vec![])
+    async fn request_seed_selection(&self, details: SeedSelectionDetails) -> Result<SeedChoice> {
+        self.request_approval(ApprovalRequestType::SeedSelection(details), None)
             .await
     }
 
-    async fn request_seed_selection_with_recent_wallets(
-        &self,
-        recent_wallets: Vec<String>,
-    ) -> Result<SeedChoice> {
-        let details = SeedSelectionDetails { recent_wallets };
-        self.request_approval(ApprovalRequestType::SeedSelection(details), None)
+    async fn request_seed_backup(&self, details: SeedBackupDetails) -> Result<bool> {
+        self.request_approval(ApprovalRequestType::SeedBackup(details), None)
             .await
     }
 
@@ -770,23 +798,16 @@ impl TauriEmitter for Option<TauriHandle> {
         }
     }
 
-    async fn request_seed_selection(&self) -> Result<SeedChoice> {
+    async fn request_seed_selection(&self, details: SeedSelectionDetails) -> Result<SeedChoice> {
         match self {
-            Some(tauri) => tauri.request_seed_selection().await,
+            Some(tauri) => tauri.request_seed_selection(details).await,
             None => bail!("No Tauri handle available"),
         }
     }
 
-    async fn request_seed_selection_with_recent_wallets(
-        &self,
-        recent_wallets: Vec<String>,
-    ) -> Result<SeedChoice> {
+    async fn request_seed_backup(&self, details: SeedBackupDetails) -> Result<bool> {
         match self {
-            Some(tauri) => {
-                tauri
-                    .request_seed_selection_with_recent_wallets(recent_wallets)
-                    .await
-            }
+            Some(tauri) => tauri.request_seed_backup(details).await,
             None => bail!("No Tauri handle available"),
         }
     }
@@ -1008,6 +1029,30 @@ pub enum TauriContextStatusEvent {
     Failed,
 }
 
+/// Data-less mirror of [`HermesProgress`] used to report how far the on-chain
+/// Hermes channel has progressed to the frontend.
+#[typeshare]
+#[derive(Display, Clone, Serialize)]
+pub enum HermesProgressKind {
+    None,
+    Constructing,
+    Constructed,
+    Published,
+    Confirmed,
+}
+
+impl From<&HermesProgress> for HermesProgressKind {
+    fn from(progress: &HermesProgress) -> Self {
+        match progress {
+            HermesProgress::None => HermesProgressKind::None,
+            HermesProgress::Constructing => HermesProgressKind::Constructing,
+            HermesProgress::Constructed(_) => HermesProgressKind::Constructed,
+            HermesProgress::Published(_) => HermesProgressKind::Published,
+            HermesProgress::Confirmed(_) => HermesProgressKind::Confirmed,
+        }
+    }
+}
+
 #[derive(Serialize, Clone)]
 #[typeshare]
 pub struct TauriSwapProgressEventWrapper {
@@ -1021,21 +1066,19 @@ pub struct TauriSwapProgressEventWrapper {
 #[serde(tag = "type", content = "content")]
 pub enum TauriSwapProgressEvent {
     Resuming,
+    CheckingMoneroNodeConnectivity,
     ReceivedQuote(BidQuote),
     WaitingForBtcDeposit {
         #[typeshare(serialized_as = "string")]
         deposit_address: bitcoin::Address,
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         max_giveable: bitcoin::Amount,
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         min_bitcoin_lock_tx_fee: bitcoin::Amount,
         known_quotes: Vec<QuoteWithAddress>,
     },
     SwapSetupInflight {
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         btc_lock_amount: bitcoin::Amount,
     },
     RetrievingMoneroBlockheight,
@@ -1058,10 +1101,19 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         xmr_lock_tx_target_confirmations: u64,
     },
-    PreflightEncSig,
-    InflightEncSig,
-    EncryptedSignatureSent,
-    RedeemingMonero,
+    InflightEncSig {
+        /// Whether the encrypted signature has been sent over p2p yet.
+        p2p_sent: bool,
+        /// How far the on-chain Hermes channel has progressed.
+        hermes: HermesProgressKind,
+    },
+    EncryptedSignatureSent {
+        hermes_used: bool,
+    },
+    ConstructingMoneroRedeem,
+    PublishingMoneroRedeem {
+        xmr_redeem_tx_hex: String,
+    },
     WaitingForXmrConfirmationsBeforeRedeem {
         #[typeshare(serialized_as = "string")]
         xmr_lock_txid: monero::TxHash,
@@ -1070,13 +1122,27 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         xmr_lock_tx_target_confirmations: u64,
     },
-    XmrRedeemInMempool {
+    XmrRedeemPublished {
+        #[typeshare(serialized_as = "Vec<string>")]
+        xmr_redeem_txids: Vec<monero::TxHash>,
+        xmr_receive_pool: MoneroAddressPool,
+        xmr_redeem_tx_hex: String,
+    },
+    XmrRedeemed {
         #[typeshare(serialized_as = "Vec<string>")]
         xmr_redeem_txids: Vec<monero::TxHash>,
         xmr_receive_pool: MoneroAddressPool,
     },
     WaitingForCancelTimelockExpiration, // TODO: Add current confirmations and target confirmations here?
     CancelTimelockExpired,
+    BtcCancelPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_cancel_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_cancel_confirmations: u32,
+        #[typeshare(serialized_as = "number")]
+        btc_cancel_target_confirmations: u32,
+    },
     BtcCancelled {
         #[typeshare(serialized_as = "string")]
         btc_cancel_txid: Txid,
@@ -1093,6 +1159,24 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "string")]
         btc_refund_txid: Txid,
     },
+    BtcPartialRefundPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_partial_refund_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    // BtcAmnesty was published but not yet confirmed.
+    // Requires BtcPartialRefund to be published first.
+    BtcAmnestyPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_amnesty_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
     // tx_early_refund has been confirmed
     BtcEarlyRefunded {
         #[typeshare(serialized_as = "string")]
@@ -1102,6 +1186,75 @@ pub enum TauriSwapProgressEvent {
     BtcRefunded {
         #[typeshare(serialized_as = "string")]
         btc_refund_txid: Txid,
+    },
+    // We got partially refunded. Might still be able to get amnesty.
+    BtcPartiallyRefunded {
+        #[typeshare(serialized_as = "string")]
+        btc_partial_refund_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    /// Waiting for the earnest deposit timelock to expire after partial refund confirmed.
+    WaitingForEarnestDepositTimelockExpiration {
+        #[typeshare(serialized_as = "string")]
+        btc_partial_refund_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+        /// Total blocks required for timelock (target)
+        #[typeshare(serialized_as = "number")]
+        target_blocks: u32,
+        /// Blocks remaining until expiry
+        #[typeshare(serialized_as = "number")]
+        blocks_until_expiry: u32,
+    },
+    // BtcAmnesty was confirmed.
+    BtcAmnestyReceived {
+        #[typeshare(serialized_as = "string")]
+        btc_amnesty_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    // TxWithhold has been published (waiting for confirmation)
+    BtcWithholdPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_withhold_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    // TxWithhold has been confirmed - amnesty output is withheld
+    BtcWithheld {
+        #[typeshare(serialized_as = "string")]
+        btc_withhold_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    // Alice published TxMercy
+    BtcMercyPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_mercy_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    // TxMercy has been confirmed - user received withheld funds back
+    BtcMercyConfirmed {
+        #[typeshare(serialized_as = "string")]
+        btc_mercy_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
     },
     BtcPunished,
     AttemptingCooperativeRedeem,

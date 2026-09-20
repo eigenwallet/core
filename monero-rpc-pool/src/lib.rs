@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use axum::{
-    routing::{any, get},
     Router,
+    routing::{any, get},
 };
 
 use tokio::task::JoinHandle;

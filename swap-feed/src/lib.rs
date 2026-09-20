@@ -1,11 +1,12 @@
 pub mod bitfinex;
+pub mod exolix;
 pub mod kraken;
 pub mod kucoin;
 pub mod rate;
 pub mod traits;
 
 // Re-exports for convenience
-pub use kraken::{connect, Error as KrakenError, PriceUpdates};
+pub use kraken::{Error as KrakenError, PriceUpdates, connect};
 pub use rate::{ExchangeRate, FixedRate, Rate};
 pub use traits::LatestRate;
 
@@ -25,4 +26,13 @@ pub fn connect_kucoin(
     client: reqwest::Client,
 ) -> anyhow::Result<kucoin::PriceUpdates> {
     kucoin::connect(url, client)
+}
+
+pub fn connect_exolix(
+    url: url::Url,
+    api_key: String,
+    poll_interval: std::time::Duration,
+    client: reqwest::Client,
+) -> anyhow::Result<exolix::PriceUpdates> {
+    exolix::connect(url, api_key, poll_interval, client)
 }

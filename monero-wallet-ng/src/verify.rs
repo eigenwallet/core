@@ -35,7 +35,7 @@ pub enum VerifyError {
 /// * `Ok(false)` if the amounts don't match or no outputs were found
 /// * `Err(...)` if there was an error fetching or scanning the transaction
 ///
-/// Note: This doesn't register any subaddresses which means it will only detect outputs that are sent to the primary addres of the wallet.
+/// Note: This doesn't register any subaddresses which means it will only detect outputs that are sent to the primary address of the wallet.
 pub async fn verify_transfer<P: ProvidesTransactions>(
     provider: &P,
     tx_id: [u8; 32],
@@ -61,7 +61,7 @@ pub async fn verify_transfer<P: ProvidesTransactions>(
     let outputs = scanner.scan(scannable_block)?;
 
     // Ignore any timelocked outputs to protect against unspendable outputs
-    let outputs = outputs.ignore_additional_timelock();
+    let outputs = outputs.not_additionally_locked();
 
     // Check if any of the outputs have the expected amount
     let has_expected_amount_output = outputs
@@ -69,6 +69,29 @@ pub async fn verify_transfer<P: ProvidesTransactions>(
         .any(|output| output.commitment().amount == expected_amount);
 
     Ok(has_expected_amount_output)
+}
+
+/// The amount of the largest output the given view pair receives in a
+/// transaction, or `None` if it receives no outputs. This mirrors what a sweep
+/// of the transaction can spend, which always picks the single largest output.
+pub async fn largest_received_utxo<P: ProvidesTransactions>(
+    provider: &P,
+    tx_id: [u8; 32],
+    public_spend_key: Point,
+    private_view_key: Zeroizing<Scalar>,
+) -> Result<Option<u64>, VerifyError> {
+    let tx: Transaction<Pruned> = provider.pruned_transaction(tx_id).await?;
+
+    let view_pair = ViewPair::new(public_spend_key, private_view_key)?;
+    let mut scanner = Scanner::new(view_pair);
+
+    let scannable_block = create_scannable_block_for_tx(tx_id, tx);
+    let outputs = scanner.scan(scannable_block)?.not_additionally_locked();
+
+    Ok(outputs
+        .iter()
+        .map(|output| output.commitment().amount)
+        .max())
 }
 
 /// Create a fake ScannableBlock containing a single transaction.

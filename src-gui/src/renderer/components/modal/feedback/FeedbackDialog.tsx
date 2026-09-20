@@ -69,7 +69,7 @@ export default function FeedbackDialog({
               }}
             >
               <ErrorOutline style={{ color: "hsla(0, 77%, 75%, 1)" }} />
-              <Typography style={{ color: "hsla(0, 83%, 91%, 1)" }} noWrap>
+              <Typography style={{ color: "hsla(0, 83%, 91%, 1)" }}>
                 {error}
               </Typography>
             </Box>

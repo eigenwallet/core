@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                SELECT entered_at as start_date\n                FROM swap_states\n                WHERE swap_id = ?\n                ORDER BY id ASC\n                LIMIT 1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "name": "start_date",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fe50517ee36f9140c7591cb30d1f40bb1c5482d7a1af1e86fa8e578454abc811"
+}

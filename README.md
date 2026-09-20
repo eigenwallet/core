@@ -13,13 +13,15 @@ If you're just here for the software, head over to the [releases](https://github
 
 Join our [Matrix room](https://matrix.to/#/#unstoppableswap-core:matrix.org) to follow development more closely.
 
-> The project was previously known as UnstoppableSwap. Read [this](https://eigenwallet.org/rename.html) for our motivation for the rename.
+> The project was previously known as UnstoppableSwap. Read [this](https://eigenwallet.org/rename) for our motivation for the rename.
 
 <img width="1824" height="1624" alt="image" src="https://github.com/user-attachments/assets/d3838b57-95ea-486b-9db7-aecb88f1174a" />
 <img width="1824" height="1624" alt="image" src="https://github.com/user-attachments/assets/4515198f-296a-4ea1-85be-ed23201056b7" />
 <img width="2060" height="1578" alt="image" src="https://github.com/user-attachments/assets/5f043d23-bd31-4ec8-a21c-85744da5c0c3" />
 
 ## Contributing
+
+**Important**: Before contributing, understand and follow our [**AI policy**](AI_POLICY.md).
 
 We have a `justfile` containing a lot of useful commands.
 Run `just help` to see all the available commands.

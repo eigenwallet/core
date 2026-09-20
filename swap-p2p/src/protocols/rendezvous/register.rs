@@ -1,14 +1,14 @@
 use crate::behaviour_util::{AddressTracker, BackoffTracker, ConnectionTracker};
 use crate::futures_util::FuturesHashSet;
 use crate::protocols::redial;
-use futures::{future, FutureExt};
-use libp2p::rendezvous::client::RegisterError;
+use futures::{FutureExt, future};
 use libp2p::rendezvous::ErrorCode;
+use libp2p::rendezvous::client::RegisterError;
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
     THandlerOutEvent, ToSwarm,
 };
-use libp2p::{identity, rendezvous, Multiaddr, PeerId};
+use libp2p::{Multiaddr, PeerId, identity, rendezvous};
 use std::collections::{HashSet, VecDeque};
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -104,7 +104,7 @@ impl Behaviour {
             // We want to redial all of the nodes periodically because we only dispatch requests once we are connected
             redial.add_peer(peer_id.clone());
 
-            // Schedule an intitial register
+            // Schedule an initial register
             pending_to_dispatch.insert(peer_id, Box::pin(future::ready(())));
         }
 
@@ -191,7 +191,7 @@ impl NetworkBehaviour for Behaviour {
         while let Poll::Ready(Some((peer_id, _))) = self.pending_to_dispatch.poll_next_unpin(cx) {
             self.to_dispatch.push_back(peer_id);
 
-            // We assume that if we have queued a register to be dispatched, then we are not registed anymore
+            // We assume that if we have queued a register to be dispatched, then we are not registered anymore
             // because we only queue a register if we failed to register or the ttl expired
             self.registered.remove(&peer_id);
         }
@@ -294,7 +294,7 @@ impl NetworkBehaviour for Behaviour {
                 other => {
                     return Poll::Ready(other.map_out(|_| {
                         unreachable!("we handled all generated events in the arm above")
-                    }))
+                    }));
                 }
             }
         }
@@ -376,7 +376,7 @@ impl NetworkBehaviour for Behaviour {
 mod tests {
     use super::*;
     use crate::protocols::rendezvous::XmrBtcNamespace;
-    use crate::test::{new_swarm, SwarmExt};
+    use crate::test::{SwarmExt, new_swarm};
     use futures::StreamExt;
     use libp2p::rendezvous;
     use libp2p::swarm::SwarmEvent;

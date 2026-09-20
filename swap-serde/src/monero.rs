@@ -15,7 +15,7 @@ pub enum network {
 pub mod private_key {
     use monero_oxide_ext::PrivateKey;
     use serde::de::Visitor;
-    use serde::{de, Deserializer, Serializer};
+    use serde::{Deserializer, Serializer, de};
     use std::fmt;
 
     fn trunc_at_32(s: &[u8]) -> &[u8] {
@@ -109,7 +109,7 @@ pub mod optional_private_key {
 }
 
 pub mod address {
-    use anyhow::{bail, Context, Result};
+    use anyhow::{Context, Result, bail};
 
     #[derive(thiserror::Error, Debug, Clone, Copy, PartialEq)]
     #[error(
@@ -151,6 +151,116 @@ pub mod address {
             monero_address::Network::Mainnet
         };
         validate(address, expected_network)
+    }
+}
+
+pub mod transaction {
+    //! Serialize a signed Monero `Transaction` as its wire-format hex string —
+    //! the same blob that would be submitted to the `send_raw_transaction` RPC.
+    //!
+    //! - Human-readable formats (JSON): lowercase hex string.
+    //! - Binary formats: raw wire bytes.
+
+    use monero_oxide_wallet::transaction::{NotPruned, Transaction};
+    use serde::de::Visitor;
+    use serde::{Deserializer, Serializer, de};
+    use std::fmt;
+
+    struct BytesVisitor;
+
+    impl Visitor<'_> for BytesVisitor {
+        type Value = Transaction<NotPruned>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(formatter, "a Monero transaction serialized as wire bytes")
+        }
+
+        fn visit_bytes<E>(self, s: &[u8]) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Transaction::read(&mut &*s).map_err(E::custom)
+        }
+
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            let bytes = data_encoding::HEXLOWER_PERMISSIVE
+                .decode(s.as_bytes())
+                .map_err(|err| E::custom(format!("{err:?}")))?;
+            self.visit_bytes(&bytes)
+        }
+    }
+
+    pub fn serialize<S>(tx: &Transaction<NotPruned>, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let bytes = tx.serialize();
+        if s.is_human_readable() {
+            s.serialize_str(&data_encoding::HEXLOWER.encode(&bytes))
+        } else {
+            s.serialize_bytes(&bytes)
+        }
+    }
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Transaction<NotPruned>, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_string(BytesVisitor)
+        } else {
+            deserializer.deserialize_bytes(BytesVisitor)
+        }
+    }
+
+    pub mod option {
+        use monero_oxide_wallet::transaction::{NotPruned, Transaction};
+        use serde::{Deserialize, Deserializer, Serializer, de};
+
+        pub fn serialize<S>(
+            tx: &Option<Transaction<NotPruned>>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            match tx {
+                Some(tx) => {
+                    let bytes = tx.serialize();
+                    if serializer.is_human_readable() {
+                        serializer.serialize_some(&data_encoding::HEXLOWER.encode(&bytes))
+                    } else {
+                        serializer.serialize_some(&bytes)
+                    }
+                }
+                None => serializer.serialize_none(),
+            }
+        }
+
+        pub fn deserialize<'de, D>(
+            deserializer: D,
+        ) -> Result<Option<Transaction<NotPruned>>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let bytes = if deserializer.is_human_readable() {
+                Option::<String>::deserialize(deserializer)?
+                    .map(|tx| data_encoding::HEXLOWER_PERMISSIVE.decode(tx.as_bytes()))
+                    .transpose()
+                    .map_err(de::Error::custom)?
+            } else {
+                Option::<Vec<u8>>::deserialize(deserializer)?
+            };
+
+            bytes
+                .map(|bytes| Transaction::read(&mut &*bytes).map_err(de::Error::custom))
+                .transpose()
+        }
     }
 }
 
@@ -206,7 +316,7 @@ pub mod scalar {
                         .next_element()?
                         .ok_or_else(|| serde::de::Error::invalid_length(i, &"expected 32 bytes"))?;
                 }
-                Scalar::read(&mut &bytes[..]).map_err(|e| serde::de::Error::custom(e))
+                Scalar::read(&mut &bytes[..]).map_err(serde::de::Error::custom)
             }
         }
 

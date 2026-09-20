@@ -2,7 +2,7 @@
 // MIT License
 
 use std::pin::Pin;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{self, Duration};
 
 /// Spawn a throttled executor that runs `closure` at most once per `delay`,

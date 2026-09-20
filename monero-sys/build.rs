@@ -80,6 +80,11 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "Adds balancePerSubaddress() and unlockedBalancePerSubaddress() to wallet::WalletImpl in api/wallet.h",
         "patches/eigenwallet_0004_wallet_impl_balance_per_subaddress.patch"
     ),
+    embedded_patch!(
+        "eigenwallet_0005_pending_transaction_raw_tx_hex",
+        "Adds rawTxHex() to PendingTransaction in wallet2_api.h",
+        "patches/eigenwallet_0005_pending_transaction_raw_tx_hex.patch"
+    ),
 ];
 
 /// Find the workspace target directory from OUT_DIR
@@ -90,11 +95,15 @@ fn find_workspace_target_dir() -> std::path::PathBuf {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR to be set");
     let out_path = Path::new(&out_dir);
 
-    // Walk up from OUT_DIR to find "target" directory
+    // Walk up from OUT_DIR to find the target directory, then always resolve to the
+    // canonical "target/" so native deps are shared across all cargo target directories
+    // (e.g., target-check used by IDE/rust-analyzer).
     for ancestor in out_path.ancestors() {
-        // allow target dir and also target-check dir (latter one is for lsp to not interfere with cli build commands)
         if ancestor.ends_with("target") || ancestor.ends_with("target-check") {
-            return ancestor.to_path_buf();
+            return ancestor
+                .parent()
+                .expect("target dir to have a parent")
+                .join("target");
         }
     }
 
@@ -144,7 +153,7 @@ fn main() {
         .display()
         .to_string();
     config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file.clone());
-    println!("cargo:warning=Using toolchain file: {toolchain_file}");
+    println!("cargo:debug=Using toolchain file: {toolchain_file}");
 
     let depends_lib_dir = contrib_depends_dir.join(format!("{target}/lib"));
 
@@ -302,20 +311,22 @@ fn main() {
 
     // Add search paths for clang runtime libraries on macOS (not iOS)
     if target.contains("apple-darwin") {
-        // Dynamically detect Homebrew installation prefix (works on both Apple Silicon and Intel Macs)
-        let brew_prefix = std::process::Command::new("brew")
+        if let Some(brew_prefix) = std::process::Command::new("brew")
             .arg("--prefix")
             .output()
             .ok()
+            .filter(|o| o.status.success())
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "/opt/homebrew".into());
-
-        // add homebrew search paths using dynamic prefix
-        println!("cargo:rustc-link-search=native={brew_prefix}/lib",);
-        println!("cargo:rustc-link-search=native={brew_prefix}/opt/unbound/lib",);
-        println!("cargo:rustc-link-search=native={brew_prefix}/opt/expat/lib",);
-        println!("cargo:rustc-link-search=native={brew_prefix}/Cellar/protobuf@21/21.12_1/lib/",);
+            .filter(|s| !s.is_empty())
+        {
+            println!("cargo:rustc-link-search=native={brew_prefix}/lib",);
+            println!("cargo:rustc-link-search=native={brew_prefix}/opt/unbound/lib",);
+            println!("cargo:rustc-link-search=native={brew_prefix}/opt/expat/lib",);
+            println!(
+                "cargo:rustc-link-search=native={brew_prefix}/Cellar/protobuf@21/21.12_1/lib/",
+            );
+        }
 
         // Add search paths for clang runtime libraries
         let resource_dir = std::process::Command::new("clang")
@@ -375,24 +386,15 @@ fn main() {
     // Link libsodium statically
     println!("cargo:rustc-link-lib=static=sodium");
 
-    // Link OpenSSL statically (on android we use openssl-sys's vendored version instead)
-    #[cfg(not(target_os = "android"))]
-    {
-        println!("cargo:rustc-link-lib=static=ssl"); // This is OpenSSL (libsll)
-        println!("cargo:rustc-link-lib=static=crypto"); // This is OpenSSLs crypto library (libcrypto)
-    }
+    // Link OpenSSL statically
+    println!("cargo:rustc-link-lib=static=ssl"); // This is OpenSSL (libsll)
+    println!("cargo:rustc-link-lib=static=crypto"); // This is OpenSSLs crypto library (libcrypto)
 
     // Link unbound statically
     println!("cargo:rustc-link-lib=static=unbound");
     println!("cargo:rustc-link-lib=static=expat"); // Expat is required by unbound
-                                                   // println!("cargo:rustc-link-lib=static=nghttp2");
-                                                   // println!("cargo:rustc-link-lib=static=event");
-                                                   // Android
-    #[cfg(target_os = "android")]
-    {
-        println!("cargo:rustc-link-search=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/");
-        // println!("cargo:rustc-link-lib=static=c++_static");
-    }
+    // println!("cargo:rustc-link-lib=static=nghttp2");
+    // println!("cargo:rustc-link-lib=static=event");
 
     // Link protobuf statically
     // println!("cargo:rustc-link-lib=static=protobuf");
@@ -425,7 +427,9 @@ fn main() {
                 .to_string(),
         )
         .include(output_directory)
-        .flag("-fPIC"); // Position independent code
+        .flag("-fPIC") // Position independent code
+        .flag("-Wno-unused-parameter") // Suppress warnings from upstream Monero C++ headers
+        .flag("-Wno-reorder-ctor"); // Suppress harmless ctor init order warning from wallet2.h
 
     build.compile("monero-sys");
 }
@@ -443,7 +447,7 @@ fn compile_dependencies(
         "aarch64-apple-ios-sim" => "aarch64-apple-iossimulator".to_string(),
         _ => target,
     };
-    println!("cargo:warning=Building for target: {target}");
+    println!("cargo:debug=Building for target: {target}");
 
     match target.as_str() {
         "x86_64-apple-darwin"
@@ -459,7 +463,7 @@ fn compile_dependencies(
         _ => panic!("target unsupported: {target}"),
     }
 
-    println!("cargo:warning=Running make HOST={target} in contrib/depends",);
+    println!("cargo:debug=Running make HOST={target} in contrib/depends",);
 
     // Copy monero-depends to out_dir/depends in order to build the dependencies there
     match fs_extra::copy_items(
@@ -480,6 +484,9 @@ fn compile_dependencies(
         cmd.arg("-i");
         let path = std::env::var("PATH").unwrap_or_default();
         cmd.arg(format!("PATH={path}"));
+        if let Ok(aclocal_path) = std::env::var("ACLOCAL_PATH") {
+            cmd.arg(format!("ACLOCAL_PATH={aclocal_path}"));
+        }
     }
     cmd.arg("make")
         .arg(format!("HOST={target}"))
@@ -545,6 +552,13 @@ fn execute_child_with_pipe(
 }
 
 /// Applies the [`EMBEDDED_PATCHES`] to the monero codebase.
+///
+/// Idempotent across rebuilds: for each target file we reconstruct the fully-patched content from
+/// the file's pristine (committed) version plus every patch that touches it, and write only when
+/// the working file differs. This avoids the unreliable reverse-application check (which breaks
+/// when two patches modify adjacent lines of the same file, shifting each other's context) and
+/// self-heals a partially-applied tree, while never rewriting an already-correct file — a rewrite
+/// would change its mtime and force a full C++ recompile.
 fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
     let monero_dir = Path::new(MONERO_CPP_DIR);
 
@@ -552,13 +566,16 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Monero directory not found. Please ensure the monero submodule is initialized and present.".into());
     }
 
+    // Group every file patch by target file, preserving the order patches are listed so they
+    // compose against the pristine source the same way they were authored.
+    let mut patches_by_file: Vec<(String, Vec<String>)> = Vec::new();
+
     for embedded in EMBEDDED_PATCHES {
         println!(
-            "cargo:warning=Processing embedded patch: {} ({})",
+            "cargo:debug=Processing embedded patch: {} ({})",
             embedded.name, embedded.description
         );
 
-        // Split the patch into individual file patches
         let file_patches = split_patch_by_files(embedded.patch_unified)
             .map_err(|e| format!("Failed to split patch {}: {}", embedded.name, e))?;
 
@@ -566,51 +583,92 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("No file patches found in patch {}", embedded.name).into());
         }
 
-        println!(
-            "cargo:warning=Found {} file(s) in patch {}",
-            file_patches.len(),
-            embedded.name
-        );
-
-        // Apply each file patch individually
         for (file_path, patch_content) in file_patches {
-            println!("cargo:warning=Applying patch to file: {file_path}");
-
-            // Parse the individual file patch
-            let patch = diffy::Patch::from_str(&patch_content)
-                .map_err(|e| format!("Failed to parse patch for {file_path}: {e}"))?;
-
-            let target_path = monero_dir.join(&file_path);
-
-            if !target_path.exists() {
-                return Err(format!("Target file {file_path} not found!").into());
+            match patches_by_file
+                .iter_mut()
+                .find(|(path, _)| *path == file_path)
+            {
+                Some((_, contents)) => contents.push(patch_content),
+                None => patches_by_file.push((file_path, vec![patch_content])),
             }
+        }
+    }
 
-            let current = fs::read_to_string(&target_path)
-                .map_err(|e| format!("Failed to read {file_path}: {e}"))?;
+    for (file_path, patch_contents) in &patches_by_file {
+        let target_path = monero_dir.join(file_path);
 
-            // Check if patch is already applied by trying to reverse it
-            if diffy::apply(&current, &patch.reverse()).is_ok() {
-                println!("cargo:warning=Patch for {file_path} already applied – skipping",);
-                continue;
-            }
-
-            let patched = diffy::apply(&current, &patch)
-                .map_err(|e| format!("Failed to apply patch to {file_path}: {e}"))?;
-
-            fs::write(&target_path, patched)
-                .map_err(|e| format!("Failed to write {file_path}: {e}"))?;
-
-            println!("cargo:warning=Successfully applied patch to: {file_path}");
+        if !target_path.exists() {
+            return Err(format!("Target file {file_path} not found!").into());
         }
 
-        println!(
-            "cargo:warning=Successfully applied all file patches for: {} ({})",
-            embedded.name, embedded.description
-        );
+        // Reconstruct the expected fully-patched content by applying every patch for this file to
+        // its pristine version, so the decision below is a byte-exact content comparison.
+        let mut expected = pristine_file(monero_dir, file_path)?;
+        for patch_content in patch_contents {
+            let patch = diffy::Patch::from_str(patch_content)
+                .map_err(|e| format!("Failed to parse patch for {file_path}: {e}"))?;
+            expected = diffy::apply(&expected, &patch)
+                .map_err(|e| format!("Failed to apply patch to {file_path}: {e}"))?;
+        }
+
+        let current = fs::read_to_string(&target_path)
+            .map_err(|e| format!("Failed to read {file_path}: {e}"))?;
+
+        if current == expected {
+            println!("cargo:debug=Patches for {file_path} already applied – skipping");
+            continue;
+        }
+
+        fs::write(&target_path, &expected)
+            .map_err(|e| format!("Failed to write {file_path}: {e}"))?;
+
+        println!("cargo:debug=Successfully applied patches to: {file_path}");
     }
 
     Ok(())
+}
+
+/// Reads the pristine (committed) content of a patched file via `git show HEAD:<path>`, without
+/// touching the working tree. This is the source the embedded patches were authored against.
+///
+/// Some targets live in nested submodules (e.g. `external/randomx`), whose content isn't a blob in
+/// the monero repo's HEAD, so we resolve the repository that actually owns the file first and read
+/// the blob from there.
+fn pristine_file(monero_dir: &Path, rel_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let target = monero_dir.join(rel_path);
+
+    let repo_root = owning_repo_root(&target)
+        .ok_or_else(|| format!("Could not find the git repository owning {rel_path}"))?;
+    let path_in_repo = target
+        .strip_prefix(repo_root)
+        .map_err(|e| format!("Failed to resolve {rel_path} within its repository: {e}"))?
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    let output = std::process::Command::new("git")
+        .current_dir(repo_root)
+        .args(["show", &format!("HEAD:{path_in_repo}")])
+        .output()
+        .map_err(|e| format!("Failed to run git to read pristine {rel_path}: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git show HEAD:{path_in_repo} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+
+    String::from_utf8(output.stdout)
+        .map_err(|e| format!("Pristine {rel_path} is not valid UTF-8: {e}").into())
+}
+
+/// Finds the repository (or nested submodule) that directly tracks `file`: the nearest ancestor
+/// directory containing a `.git` entry (a directory for a repo, a file for a submodule).
+fn owning_repo_root(file: &Path) -> Option<&Path> {
+    file.ancestors()
+        .skip(1)
+        .find(|dir| dir.join(".git").exists())
 }
 
 /// Split a multi-file patch into individual file patches
@@ -627,10 +685,10 @@ fn split_patch_by_files(
     for line in lines {
         if line.starts_with("diff --git ") {
             // Save previous file patch if we have one
-            if let Some(file_path) = current_file_path.take() {
-                if !current_file_patch.trim().is_empty() {
-                    file_patches.push((file_path, current_file_patch.clone()));
-                }
+            if let Some(file_path) = current_file_path.take()
+                && !current_file_patch.trim().is_empty()
+            {
+                file_patches.push((file_path, current_file_patch.clone()));
             }
 
             // Start new file patch
@@ -652,10 +710,10 @@ fn split_patch_by_files(
     }
 
     // Don't forget the last file
-    if let Some(file_path) = current_file_path {
-        if !current_file_patch.trim().is_empty() {
-            file_patches.push((file_path, current_file_patch));
-        }
+    if let Some(file_path) = current_file_path
+        && !current_file_patch.trim().is_empty()
+    {
+        file_patches.push((file_path, current_file_patch));
     }
 
     Ok(file_patches)

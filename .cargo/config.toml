@@ -32,13 +32,7 @@ rustflags = [
   "link-arg=-static-libstdc++",
 ]
 
-[target.aarch64-linux-android]
-linker = "/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
-ar = "/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
-
-rustflags = [
-  "-Lnative=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/18/lib/linux",
-  "-lstatic=clang_rt.builtins-aarch64-android",
-  #  "-Lnative=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android",
-  #  "-lstatic=c++abi",
-]
+# Increase the default thread stack size to 40 MiB.
+# Our callstack can get pretty big (especially in debug mode).
+[env]
+RUST_MIN_STACK = "41943040"

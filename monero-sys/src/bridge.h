@@ -114,6 +114,11 @@ namespace Monero
         return std::make_unique<std::string>(err);
     }
 
+    inline std::unique_ptr<std::string> pendingTransactionRawTxHex(const PendingTransaction &tx, const std::string &tx_hash)
+    {
+        return std::make_unique<std::string>(tx.rawTxHex(tx_hash));
+    }
+
     /**
      * Wrapper for Wallet::checkTxKey to accommodate passing std::string by reference.
      * The original API takes the tx_key parameter by value which is not compatible
@@ -170,7 +175,10 @@ namespace Monero
     }
 
     /**
-     * Creates a transaction that spends the unlocked balance to multiple destinations with given ratios.
+     * Creates a transaction that pays a list of (address, amount) destinations.
+     * If subtract_fee_from_outputs is true, the fee is taken from the largest output
+     * (used to drain the wallet to the destinations); otherwise the wallet pays the
+     * fee and produces a change output.
      */
     inline PendingTransaction *createTransactionMultiDest(
         Wallet &wallet,
@@ -189,10 +197,10 @@ namespace Monero
             return nullptr;
         }
 
-        // Check if the number of destinations and sweep ratios match
+        // Check if the number of destinations and amounts match
         if (amounts.size() != n)
         {
-            // wallet.setStatusError("Number of destinations and sweep ratios must match");
+            // wallet.setStatusError("Number of destinations and amounts must match");
             return nullptr;
         }
 
@@ -692,12 +700,18 @@ namespace monero_rust_log
 #include <vector>
 #include <string>
 
-// The following is a hack to ensure the linker includes the pair destructor in the binary
 using String = std::string;
 using StringMap = std::map<String, String>;
 using StringVec = std::vector<String>;
 
+#ifdef __ANDROID__
+using MoneroSysAccountTagsPair = std::pair<StringMap, StringVec>;
+void monero_sys_account_tags_pair_dtor(MoneroSysAccountTagsPair* p) asm("_ZNSt6__ndk14pairINS_3mapINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEES7_NS_4lessIS7_EENS5_INS0_IKS7_S7_EEEEEENS_6vectorIS7_NS5_IS7_EEEEED1Ev");
+__attribute__((weak)) void monero_sys_account_tags_pair_dtor(MoneroSysAccountTagsPair* p) { p->~MoneroSysAccountTagsPair(); }
+#else
+// The following is a hack to ensure the linker includes the pair destructor in the binary
 static std::pair<StringMap, StringVec> _monero_sys_pair_instantiation;
+#endif
 
 namespace Monero
 {

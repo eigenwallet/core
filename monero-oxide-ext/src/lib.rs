@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use monero_oxide_wallet::ed25519::{CompressedPoint, Point, Scalar};
 use std::str::FromStr;
 use std::{fmt, ops};
@@ -252,6 +252,14 @@ impl Amount {
     /// Get the number of piconeros in this [`Amount`].
     pub const fn as_pico(self) -> u64 {
         self.0
+    }
+
+    /// Get the amount in Monero.
+    pub fn as_xmr(self) -> f64 {
+        // Inefficient, but most safe way: monero-rs does it this way, too
+        let mut buf = String::new();
+        fmt_piconero_in_xmr(self.as_pico(), &mut buf).expect("string to be writable");
+        buf.parse().expect("Monero amount is floating point number")
     }
 
     /// Create an [`Amount`] with monero precision and the given number of monero, string in the format `"1.2"` or `"1"`.

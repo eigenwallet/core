@@ -3,14 +3,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
+use backoff::backoff::Backoff;
 use futures::task::AtomicWaker;
-use libp2p::core::ConnectedPoint;
 use libp2p::Multiaddr;
+use libp2p::core::ConnectedPoint;
 use libp2p::{
-    swarm::{ConnectionId, FromSwarm},
     PeerId,
+    swarm::{ConnectionId, FromSwarm},
 };
 
 /// Used inside of a Behaviour to track connections to peers
@@ -279,12 +279,12 @@ pub fn extract_semver_from_agent_str(agent_str: &str) -> Option<semver::Version>
 mod tests {
     use super::*;
     use futures::task::ArcWake;
+    use libp2p::PeerId;
     use libp2p::core::{ConnectedPoint, Endpoint, Multiaddr};
     use libp2p::swarm::behaviour::{
         ConnectionClosed, ConnectionEstablished, DialFailure, NewExternalAddrOfPeer,
     };
     use libp2p::swarm::{ConnectionId, DialError, FromSwarm};
-    use libp2p::PeerId;
     use std::sync::Arc;
 
     struct TestWaker(AtomicBool);

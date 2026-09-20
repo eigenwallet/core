@@ -13,7 +13,7 @@ async fn monero_transfers() -> anyhow::Result<()> {
 
     let cli = Cli::default();
     let wallets = vec!["alice", "bob", "candice"];
-    // Disbale background sync for these wallet -- this way we _have_ to use the transfer proof to discover the transactions.
+    // Disable background sync for these wallet -- this way we _have_ to use the transfer proof to discover the transactions.
     let (monero, _container, _wallet_conainers) =
         monero_harness::Monero::new_with_sync_specified(&cli, wallets, false).await?;
 
@@ -32,15 +32,13 @@ async fn monero_transfers() -> anyhow::Result<()> {
 
     tracing::info!("Sending money");
 
+    let amount = 1_000_000_000;
     let proof = miner
-        .sweep_multi(
-            &[
-                alice.address().await?,
-                bob.address().await?,
-                candice.address().await?,
-            ],
-            &[0.33333333, 0.333333333, 0.3333333333],
-        )
+        .transfer_multi(&[
+            (alice.address().await?, amount),
+            (bob.address().await?, amount),
+            (candice.address().await?, amount),
+        ])
         .await?;
 
     assert_eq!(

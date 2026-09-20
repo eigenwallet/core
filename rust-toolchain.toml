@@ -1,5 +1,5 @@
 [toolchain]
 # also update this in the readme, changelog, and github actions
 channel = "1.90.0"
-components = ["clippy"]
-targets = ["armv7-unknown-linux-gnueabihf"]
+components = ["clippy", "rust-analyzer"]
+targets = ["armv7-unknown-linux-gnueabihf", "aarch64-linux-android", "x86_64-linux-android"]

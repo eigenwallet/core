@@ -7,8 +7,8 @@ use monero_rpc_pool::{
     database::{network_to_string, parse_network},
 };
 use reqwest;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
@@ -68,8 +68,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .config(config)
             .create_unbootstrapped_async()
             .await?;
-
-        let client = std::sync::Arc::new(client);
 
         let client_clone = client.clone();
         client_clone

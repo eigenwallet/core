@@ -41,9 +41,10 @@ async fn subaddress_methods_and_balances() -> anyhow::Result<()> {
     );
 
     // Send funds to both subaddresses in a single transaction
-    tracing::info!("Sending funds to Alice's subaddresses via sweep_multi");
+    tracing::info!("Sending funds to Alice's subaddresses");
+    let amount = 1_000_000_000;
     let tx_receipt = miner
-        .sweep_multi(&[alice_sa1.clone(), alice_sa2.clone()], &[0.5, 0.5])
+        .transfer_multi(&[(alice_sa1.clone(), amount), (alice_sa2.clone(), amount)])
         .await?;
 
     assert_eq!(
@@ -53,16 +54,16 @@ async fn subaddress_methods_and_balances() -> anyhow::Result<()> {
     );
 
     // Mine a block to confirm the transaction and make funds visible
-    monero.generate_block().await?;
+    monero.generate_blocks().await?;
 
     // Import tx keys so Alice scans this transaction explicitly
     let sa1_txkey = tx_receipt
         .tx_keys
-        .get(&alice_sa1)
+        .get(&alice_sa1.to_string())
         .context("tx key not found for alice subaddress 1")?;
     let sa2_txkey = tx_receipt
         .tx_keys
-        .get(&alice_sa2)
+        .get(&alice_sa2.to_string())
         .context("tx key not found for alice subaddress 2")?;
 
     tracing::info!("Importing tx keys for Alice subaddresses");
@@ -82,7 +83,7 @@ async fn subaddress_methods_and_balances() -> anyhow::Result<()> {
     let bal_sa1 = per_sub.get(&1).copied().unwrap_or(0);
     let bal_sa2 = per_sub.get(&2).copied().unwrap_or(0);
 
-    tracing::info!(bal_sa1=%monero::Amount::from_pico(bal_sa1), bal_sa2=%monero::Amount::from_pico(bal_sa2), "Per-subaddress balances");
+    tracing::info!(bal_sa1=%monero_oxide_ext::Amount::from_pico(bal_sa1), bal_sa2=%monero_oxide_ext::Amount::from_pico(bal_sa2), "Per-subaddress balances");
 
     assert!(bal_sa1 > 0, "Subaddress 1 expected to have received funds");
     assert!(bal_sa2 > 0, "Subaddress 2 expected to have received funds");

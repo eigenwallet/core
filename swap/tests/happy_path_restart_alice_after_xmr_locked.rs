@@ -1,14 +1,14 @@
 pub mod harness;
 
-use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::SlowCancelConfig;
+use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use swap::asb::FixedRate;
 use swap::protocol::alice::AliceState;
 use swap::protocol::{alice, bob};
 
 #[tokio::test]
 async fn given_alice_restarts_after_xmr_is_locked_resume_swap() {
-    harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
+    harness::setup_test(SlowCancelConfig, None, None, |mut ctx| async move {
         let (bob_swap, _) = ctx.bob_swap().await;
         let bob_swap = tokio::spawn(bob::run(bob_swap));
 

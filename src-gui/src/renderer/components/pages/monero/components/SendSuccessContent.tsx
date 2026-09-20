@@ -32,7 +32,7 @@ export default function SendSuccessContent({
         justifyContent: "center",
         alignItems: "center",
         minHeight: "400px",
-        minWidth: "500px",
+        minWidth: "min(500px, 85vw)",
         gap: 7,
         p: 4,
       }}

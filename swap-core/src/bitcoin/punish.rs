@@ -2,7 +2,7 @@
 
 use crate::bitcoin::{self, Address, Amount, PunishTimelock, Transaction, TxCancel, Txid};
 use ::bitcoin::sighash::SighashCache;
-use ::bitcoin::{secp256k1, sighash::SegwitV0Sighash as Sighash, EcdsaSighashType};
+use ::bitcoin::{EcdsaSighashType, secp256k1, sighash::SegwitV0Sighash as Sighash};
 use ::bitcoin::{ScriptBuf, Weight};
 use anyhow::{Context, Result};
 use bdk_wallet::miniscript::Descriptor;
@@ -51,6 +51,10 @@ impl TxPunish {
         self.digest
     }
 
+    pub fn txid(&self) -> Txid {
+        self.inner.compute_txid()
+    }
+
     pub fn complete(
         self,
         tx_punish_sig_bob: bitcoin::Signature,
@@ -93,6 +97,14 @@ impl TxPunish {
             .context("Failed to satisfy inputs with given signatures")?;
 
         Ok(tx_punish)
+    }
+
+    // The amount of BTC sent to the punish address.
+    pub fn amount(&self) -> Amount {
+        self.inner
+            .tx_out(0)
+            .expect("TxPunish has exactly one output by construction")
+            .value
     }
 
     pub fn weight() -> Weight {

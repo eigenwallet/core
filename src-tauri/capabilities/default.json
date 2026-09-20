@@ -6,6 +6,7 @@
   "permissions": [
     "core:event:allow-emit",
     "core:event:default",
+    "core:app:allow-version",
     "clipboard-manager:allow-write-text",
     "store:default",
     "process:default",

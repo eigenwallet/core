@@ -95,7 +95,6 @@ jobs:
           head: release/${{ github.event.inputs.version }}
           base: master
           title: Release version ${{ github.event.inputs.version }}
-          reviewers: ${{ github.actor }}
           body: |
             Hi @${{ github.actor }}!
 

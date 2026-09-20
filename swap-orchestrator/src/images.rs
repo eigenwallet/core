@@ -32,24 +32,57 @@ pub static TOR_IMAGE: &str = "thetorproject/obfs4-bridge@sha256:f86a942414716db7
 pub static ASB_TRACING_LOGGER_IMAGE: &str =
     "alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1";
 
-/// These are built from source
-pub static ASB_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
-    // The context is the root of the Cargo workspace
-    context: PINNED_GIT_REPOSITORY,
-    // The Dockerfile of the asb is in the swap-asb crate
-    dockerfile: "./swap-asb/Dockerfile",
-};
+/// cloudflared 2026.3.0 (https://hub.docker.com/r/cloudflare/cloudflared)
+pub static CLOUDFLARED_IMAGE: &str = "cloudflare/cloudflared@sha256:6b599ca3e974349ead3286d178da61d291961182ec3fe9c505e1dd02c8ac31b0";
 
-pub static ASB_CONTROLLER_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
-    // The context is the root of the Cargo workspace
-    context: PINNED_GIT_REPOSITORY,
-    // The Dockerfile of the asb-controller is in the swap-controller crate
-    dockerfile: "./swap-controller/Dockerfile",
-};
+/// promtail 3.4.1 (https://hub.docker.com/r/grafana/promtail)
+pub static PROMTAIL_IMAGE: &str =
+    "grafana/promtail@sha256:8b2aa61745bc4a9343cc47bd391fb935a80e7da0793c7566d5985c75858ba3f8";
 
-pub static RENDEZVOUS_NODE_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
-    // The context is the root of the Cargo workspace
-    context: PINNED_GIT_REPOSITORY,
-    // The Dockerfile of the rendezvous node is in the libp2p-rendezvous-node crate
-    dockerfile: "./libp2p-rendezvous-node/Dockerfile",
-};
+/// docker-socket-proxy 0.3.0 (https://hub.docker.com/r/tecnativa/docker-socket-proxy)
+pub static DOCKER_SOCKET_PROXY_IMAGE: &str = "tecnativa/docker-socket-proxy@sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2";
+
+/// cadvisor v0.55.1 (https://github.com/google/cadvisor/pkgs/container/cadvisor)
+pub static CADVISOR_IMAGE: &str = "gcr.io/cadvisor/cadvisor@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57";
+
+/// prometheus v3.1.0 (https://hub.docker.com/r/prom/prometheus)
+pub static PROMETHEUS_IMAGE: &str =
+    "prom/prometheus@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218";
+
+/// bitcoin-prometheus-exporter v0.9.0 (https://github.com/jvstein/bitcoin-prometheus-exporter)
+pub static BITCOIN_PROMETHEUS_EXPORTER_IMAGE: &str = "jvstein/bitcoin-prometheus-exporter@sha256:358132b6967554f4d30a43847bfc5fd941719eb257b2820cf8ebd16405733843";
+
+/// Build-context URL for the source-built images. A `gh_token` is inlined into
+/// the URL userinfo so Docker can fetch a private repository — note this writes
+/// the token into `docker-compose.yml` in plaintext.
+pub fn source_build_context(gh_token: Option<&str>) -> String {
+    match gh_token {
+        Some(token) => PINNED_GIT_REPOSITORY.replacen("https://", &format!("https://{token}@"), 1),
+        None => PINNED_GIT_REPOSITORY.to_string(),
+    }
+}
+
+/// Source-built images; `context` comes from [`source_build_context`].
+pub fn asb_image_from_source(context: &str) -> DockerBuildInput {
+    DockerBuildInput {
+        context: context.to_string(),
+        dockerfile: "./swap-asb/Dockerfile",
+        keep_git_dir: true,
+    }
+}
+
+pub fn asb_controller_image_from_source(context: &str) -> DockerBuildInput {
+    DockerBuildInput {
+        context: context.to_string(),
+        dockerfile: "./swap-controller/Dockerfile",
+        keep_git_dir: false,
+    }
+}
+
+pub fn rendezvous_node_image_from_source(context: &str) -> DockerBuildInput {
+    DockerBuildInput {
+        context: context.to_string(),
+        dockerfile: "./libp2p-rendezvous-node/Dockerfile",
+        keep_git_dir: false,
+    }
+}

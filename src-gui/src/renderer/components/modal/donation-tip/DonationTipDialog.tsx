@@ -23,7 +23,7 @@ import {
 } from "store/hooks";
 import ExternalLink from "renderer/components/other/ExternalLink";
 import GitHubIcon from "@mui/icons-material/GitHub";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 const GITHUB_BOUNTIES_URL = "https://eigenwallet.org/bounties";
 
@@ -239,15 +239,14 @@ export function GlobalDonationTipDialog() {
   // "Latch" pattern: once conditions are met, we remember that the dialog should be shown.
   // This prevents the dialog from closing when the user moves their mouse (which would
   // break the idle condition). Once triggered, it stays triggered.
+  // Uses "adjust state during render" pattern instead of useEffect.
   const [hasTriggered, setHasTriggered] = useState(false);
 
   const shouldOpen = hasntSelectedTipYet && isExperiencedUser && isIdle;
 
-  useEffect(() => {
-    if (shouldOpen && !hasTriggered) {
-      setHasTriggered(true);
-    }
-  }, [shouldOpen, hasTriggered]);
+  if (shouldOpen && !hasTriggered) {
+    setHasTriggered(true);
+  }
 
   // Show dialog if we've triggered and user hasn't dismissed
   const open = hasTriggered && !dismissed;

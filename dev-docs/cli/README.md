@@ -100,8 +100,8 @@ OPTIONS:
         --tor-socks5-port <tor-socks5-port>         Your local Tor socks5 proxy port [default: 9050]
 ```
 
-Running `swap --testnet list-sellers --rendezvous-point /dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE`
-or `swap --testnet list-sellers --rendezvous-point /dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa`
+Running `swap --testnet list-sellers --rendezvous-point /dns4/discovery.eigenwallet.org/tcp/443/wss/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw`
+or `swap --testnet list-sellers --rendezvous-point /dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE`
 will give you something like:
 
 ```

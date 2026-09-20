@@ -1,10 +1,10 @@
-use libp2p::{identify, ping};
 use libp2p::{
+    PeerId,
     request_response::{
         InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
     },
-    PeerId,
 };
+use libp2p::{identify, ping};
 use uuid::Uuid;
 
 use crate::protocols::rendezvous;
@@ -16,8 +16,14 @@ use crate::protocols::{
 #[derive(Debug)]
 pub enum OutEvent {
     SwapSetupInitiated {
-        send_wallet_snapshot:
-            bmrng::RequestReceiver<bitcoin::Amount, swap_setup::alice::WalletSnapshot>,
+        // run_swap_setup in connection handler sends us the amount of
+        // Bitcoin Bob wants to send.
+        // We respond with a snapshot of our wallets and how much of that
+        // should go into the amnesty output
+        send_wallet_snapshot: bmrng::RequestReceiver<
+            bitcoin::Amount,
+            (swap_setup::alice::WalletSnapshot, bitcoin::Amount, bool),
+        >,
     },
     SwapSetupCompleted {
         peer_id: PeerId,
@@ -47,6 +53,9 @@ pub enum OutEvent {
         peer: PeerId,
     },
     Rendezvous(rendezvous::register::Event),
+    // Carried purely so the event loop can record libp2p Prometheus metrics.
+    Ping(ping::Event),
+    Identify(Box<identify::Event>),
     OutboundRequestResponseFailure {
         peer: PeerId,
         error: OutboundFailure,
@@ -85,15 +94,21 @@ impl OutEvent {
 }
 
 // Some other behaviours which are not worth their own module
+impl From<void::Void> for OutEvent {
+    fn from(event: void::Void) -> Self {
+        void::unreachable(event)
+    }
+}
+
 impl From<ping::Event> for OutEvent {
-    fn from(_: ping::Event) -> Self {
-        OutEvent::Other
+    fn from(event: ping::Event) -> Self {
+        OutEvent::Ping(event)
     }
 }
 
 impl From<identify::Event> for OutEvent {
-    fn from(_: identify::Event) -> Self {
-        OutEvent::Other
+    fn from(event: identify::Event) -> Self {
+        OutEvent::Identify(Box::new(event))
     }
 }
 

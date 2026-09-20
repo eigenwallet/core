@@ -6,7 +6,7 @@ use tokio::sync::broadcast;
 use tracing::warn;
 use typeshare::typeshare;
 
-use crate::database::{network_to_string, Database};
+use crate::database::{Database, network_to_string};
 use crate::types::NodeAddress;
 
 #[derive(Debug, Clone, serde::Serialize)]

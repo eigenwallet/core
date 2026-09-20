@@ -1,5 +1,5 @@
 import { TextFieldProps, TextField } from "@mui/material";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 interface ValidatedTextFieldProps
   extends Omit<TextFieldProps, "onChange" | "value"> {
@@ -24,6 +24,10 @@ export default function ValidatedTextField({
 }: ValidatedTextFieldProps) {
   const [inputValue, setInputValue] = useState(value || "");
 
+  // Sync internal state with prop (controlled component pattern)
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- sync internal state with external prop
+  useEffect(() => setInputValue(value || ""), [value]);
+
   const handleChange = useCallback(
     (newValue: string) => {
       const trimmedValue = newValue.trim();
@@ -37,10 +41,6 @@ export default function ValidatedTextField({
     },
     [allowEmpty, isValid, onValidatedChange],
   );
-
-  useEffect(() => {
-    setInputValue(value || "");
-  }, [value]);
 
   const isError =
     (allowEmpty && inputValue === "") || (inputValue === "" && noErrorWhenEmpty)

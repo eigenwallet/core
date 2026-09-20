@@ -7,6 +7,260 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Support outbound connections to makers through libp2p circuit relays.
+
+## [4.14.0] - 2026-08-22
+
+- ASB: The `get-swaps` RPC response now includes the Bitcoin redeem address for each swap.
+
+## [4.13.3] - 2026-08-05
+
+- GUI: Fix a number of small ui issues / inconsistencies
+
+## [4.13.2] - 2026-07-23
+
+- GUI + ASB: Remove nine unusable Electrum defaults and add healthy Mullvad,
+  Cake Wallet, Blockstream, DIYnodes, and ACINQ mainnet servers.
+
+## [4.13.1] - 2026-07-23
+
+## [4.13.0] - 2026-07-23
+
+- ASB: Fix a bug in the algorithm used to the select the Bitcoin output used for the swap.
+- ASB+GUI: Fix a bug in the cross curve equality proof cryptography.
+
+## [4.12.0] - 2026-07-18
+
+- GUI: The wallet setup dialog is now a multi-step wizard. Creating a wallet lets you pick a name and location and requires backing up the seed phrase before continuing, and opening a wallet file supports drag & drop. Newly created wallets are named by the user instead of a Unix timestamp.
+
+## [4.11.5] - 2026-07-07
+
+- ASB: The Hermes protocol is now enabled by default (`hermes_enabled` defaults to `true`), and the default `hermes_min_swap_amount` was lowered from `0.01` to `0.001` BTC (~50 USD at a reference price of 50,000 USD/BTC).
+
+## [4.11.4] - 2026-06-30
+
+## [4.11.3] - 2026-06-24
+
+## [4.11.2] - 2026-06-23
+
+## [4.11.0] - 2026-06-23
+
+- PROTOCOL: A new protcol called "Hermes" has been implemented. It allows taker and maker to communicate through the Monero blockchain. Monero transactions are used for passing messages. This is used for the taker to transmit the encrypted signature to the maker without requiring a network connection. This means a swap can now succeed without any p2p connection to the other party after the intitial swap setup.
+- ASB: Added new `[maker]` config options for the Hermes protocol:
+  - `hermes_enabled`: whether to fund the on-chain Hermes encrypted-signature channel at all (default: `false`).
+  - `hermes_funding_amount_piconero`: amount of Monero (in piconero) attached to the Monero lock transaction to fund the Hermes transaction (default: `100000000`, i.e. 0.0001 XMR).
+  - `hermes_min_swap_amount`: minimum swap size (in BTC) below which the Hermes amount is not funded (default: `0.01`).
+
+## [4.10.2] - 2026-06-22
+
+## [4.10.1] - 2026-06-20
+
+## [4.10.0] - 2026-06-19
+
+- GUI + ASB: Speed up Bitcoin wallet calls by waiting for less than all Electrum servers to respond.
+
+## [4.9.6] - 2026-06-17
+
+- GUI: Allow user to copy raw hex of the Monero redeem transaction to broadcast externally.
+- GUI: Continuously republish the Monero redeem transaction while we are waiting for it to confirm.
+
+## [4.9.5] - 2026-06-16
+
+## [4.9.4] - 2026-06-16
+
+## [4.9.3] - 2026-06-15
+
+## [4.9.2] - 2026-06-13
+
+- Added a set of new community maintained rendezvous points. Please configure your makers to register at them:`/dns4/discovery.eigenwallet.org/tcp/443/wss/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw`,
+  `/onion3/3xl2zfur4tpebogsrgn3l7l2illzkhwi3755jplmycmn4q77nxsrl6qd:8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw`,
+  `/dns4/rendezvous.atomicworld.fun/tcp/443/wss/p2p/12D3KooWMc39w7bZz4RLmJKuUiK9YkbKoEHACZWcL71XNns5dPuD`,
+  `/onion3/m2iuwp3fvdlqtlqqaz3egrzjl5uehmdhjgmzhznvjoudljl2xzjaomyd:8890/p2p/12D3KooWMc39w7bZz4RLmJKuUiK9YkbKoEHACZWcL71XNns5dPuD`,
+  `/dns4/dht.stealthswap.ninja/tcp/443/wss/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov`,
+  `/onion3/m6rboz5lv4wxldgybgox4pr4s6xci3h2exi5nogxaox762xji2gokuad:8891/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov`,
+  `/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE`,
+  `/onion3/av2jauifny7dgpvzhsnhra3cwivf6ofaefxvwhhuh5y7hsolabehhaad:8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE`,
+
+## [4.9.1] - 2026-06-12
+
+## [4.9.0] - 2026-06-10
+
+- ASB+CONTROLLER: The JSON-RPC server now requires authentication. The ASB verifies a password against a hashed keyfile (`--rpc-auth-file`), and `asb-controller` prompts for the password on startup. Generate the keyfile with `orchestrator gen-rpc-auth`. Clients authenticate by sending the password with every request in an `Authorization: Bearer <password>` header.
+- ASB+GUI: Skip publishing the Monero redeem/refund transaction if it is already present on chain (e.g. after a restart)
+
+## [4.8.4] - 2026-06-09
+
+## [4.8.3] - 2026-06-08
+
+- Reliably retry Monero redeem step
+
+## [4.8.2] - 2026-06-06
+
+## [4.8.1] - 2026-06-05
+
+## [4.8.0] - 2026-06-05
+
+## [4.7.11] - 2026-06-05
+
+- GUI: Fix flickering of offers
+- Remove three dead rendezvous points
+
+## [4.7.10] - 2026-06-02
+
+## [4.7.9] - 2026-05-29
+
+- ASB: The ASB will refuse to cooperate with cooperative XMR redeem requests if the swap in question was deemed malicious. A swap is considered malicious if for any reason the Bitcoin amount the ASB receives is less than 75% of what was sent into the swap originally.
+
+## [4.7.8] - 2026-05-28
+
+## [4.6.7] - 2026-05-27
+
+## [4.6.6] - 2026-05-27
+
+- ASB+GUI: Both parties will now reject swaps where the other party's proposed fee is too far off from the own fee estimate.
+- ASB+CONTROLLER: `get-swaps` now includes the `btc_punish_txid` per swap: the Bitcoin punish transaction id. This is deterministic from the swap's locked state, so it is set even before the punish transaction is published.
+
+## [4.6.5] - 2026-05-26
+
+## [4.6.4] - 2026-05-21
+
+## [4.6.3] - 2026-05-21
+
+- CLI: Outbound Tor dials are now concurrency-limited and spaced out, with a separate higher-throughput lane for high-priority peers, so bursts of dials no longer overwhelm the embedded Tor client.
+- ASB+CONTROLLER: New `get-external-bitcoin-redeem-address` command returns the external Bitcoin redeem address currently used by the ASB (or `null` if the internal wallet is used).
+
+## [4.6.1] - 2026-05-15
+
+- ASB+CONTROLLER: New `set-external-bitcoin-redeem-address` command with parameter `address` (string) allows you to udpate the external bitcoin redeem address at runtime.
+  The change is persisted to the config file. Go back to using the internal Bitcoin wallet by using `clear-external-bitcoin-redeem-address`.
+
+## [4.6.0] - 2026-05-13
+
+- GUI: Exolix has become a community supporter. They support development and provide a reliable market maker. They are visually highlighted in the UI.
+
+## [4.5.5] - 2026-05-13
+
+## [4.5.4] - 2026-05-12
+
+## [4.5.3] - 2026-05-08
+
+- ASB: New `maker.btc_redeem_fee_multiplier` config option (default `1.0`) that scales the estimated BTC redeem fee. Setting it higher (e.g. `2.0`) acts as a safety margin so the redeem still confirms when fee estimation undershoots actual mempool conditions.
+
+## [4.5.2] - 2026-05-07
+
+- ASB+CONTROLLER: `get-swaps` now includes the `btc_redeem_txid` per swap: the Bitcoin redeem transaction id. This is deterministic from the swap's locked state, so it is set even before the redeem transaction is published.
+
+## [4.5.1] - 2026-05-05
+
+- ASB+CONTROLLER: `get-swaps` now accepts optional `limit` and `offset` parameters which can be used for pagination.
+  If not present, no pagination will be done.
+
+## [4.5.0] - 2026-04-27
+
+- ASB+CONTROLLER: `get-swaps` now includes the `btc_redeem_fee` per swap: the fee Alice paid (or will pay) for the Bitcoin redeem transaction.
+- GUI+ASB: New intermediate states around Monero redeem/refund. The signed transaction is now built and published as separate steps: `XmrRedeemConstructed` and `XmrRedeemPublished` (Bob/GUI), and `XmrRefundTxConstructed` and `XmrRefundTxPublished` (Alice/ASB). The GUI surfaces both phases — "constructing", then "publishing", then waiting for the first confirmation with the redeem txid shown.
+
+## [4.4.1] - 2026-04-15
+
+- ASB+CONTROLLER: New `get-current-quote` command returns the quote the ASB is currently serving to peers (price per XMR, min and max quantity). Reuses the in-flight quote cache so repeated calls don't trigger extra work.
+- ASB: Added Exolix as an optional XMR/BTC price source. Set `maker.price_ticker_source_exolix_api_key` in the config to enable; the polled rate is averaged alongside Kraken, Bitfinex, and KuCoin. Poll interval is configurable via `maker.price_ticker_rest_poll_interval_exolix_secs` (default: `10`).
+- ASB: Each price source can now be individually disabled via `maker.price_ticker_source_kraken_enabled`, `maker.price_ticker_source_bitfinex_enabled`, and `maker.price_ticker_source_kucoin_enabled` (all default `true`). At least one source must remain enabled.
+- ASB: How long a polled exchange-rate sample is considered valid is now configurable via `maker.price_ticker_validity_duration_secs` (default: `600`, i.e. 10 minutes).
+- ASB: Fix an issue where the Bitfinex price was broken due to a change in the Bitfinex API.
+
+## [4.4.0] - 2026-04-13
+
+- ASB: Wormhole eligibility now only considers swaps whose most recent state update falls within a configurable freshness window. This is controlled by the new `tor.wormhole_swap_freshness_hours` config option (default: `168`, i.e. 7 days). Inactive peers no longer keep their wormhole indefinitely.
+- GUI: Allow sorting of maker offers on the swap page by largest max amount (default), smallest min amount, or cheapest price, via a subtle sort button above the offer list.
+- Improve Tor connectivity
+
+## [4.3.1] - 2026-04-11
+
+## [4.3.0] - 2026-04-09
+
+- A new feature called "wormholes" allows makers to automatically give out dedidcated onion services to takers which have committed funds to at least one swap. Takers can then connect to the maker irrespective of any potential DOS attack against the makers public onion service address. Wormholes are enabled by default. To disable them, set `tor.wormhole_enabled = false` in the config file. You can tweak `wormhole_max_concurrent_rend_requests` to control the maximum number of concurrent rendezvous requests per wormhole (default: 3). A higher value means each "wormhole" can handle more concurrent connections but also means they become more susceptible to DOS attacks.
+
+## [4.2.4] - 2026-04-01
+
+## [4.2.3] - 2026-03-31
+
+- GUI: Fix an issue where we could get stuck in the "BtcCancelled" state if the swap was punished.
+- ASB: Fix issue where a database migration would cause the ASB to fail to start.
+
+## [4.2.2] - 2026-03-31
+
+- ASB+CONTROLLER: Fix a bug where `get-swaps` would show "No swaps found" despite there being swaps.
+- ASB: Add limits to prevent denial-of-service via resource exhaustion.
+
+## [4.1.1] - 2026-03-26
+
+- ASB: Optimize how we respond to network request
+
+## [4.1.0] - 2026-03-25
+
+- GUI: Fix an issue where the application would crash when the internal Tor client tried to execute a Proof-of-Work challenge due to a missing entitlement permission. ([#915](https://github.com/eigenwallet/core/issues/915))
+
+## [4.0.5] - 2026-03-24
+
+- Try to fix an issue where the response from the Monero daemon would be too large to parse when fetching the status of a transaction ([#885](https://github.com/eigenwallet/core/issues/885)).
+
+## [4.0.4] - 2026-03-20
+
+- ASB: Tweak some networking configurations to make DOS harder.
+
+## [4.0.3] - 2026-03-18
+
+- ASB: Attempt fix of `get-swaps` not showing swaps.
+- ASB: Fix `btc_amnesty_amount missing` bug which prevented swaps from before 4.0.0 from running.
+
+## [4.0.2] - 2026-03-18
+
+## [4.0.1] - 2026-03-17
+
+- ASB: Fix bug where old swaps would not deserialize if they we refunded.
+
+## [4.0.0] - 2026-03-16
+
+- Protocol: Reduce cancel timelock to 24 blocks (4 hours).
+  Swaps can now be refunded after 4 hours, instead of the previous 12 hours.
+  This also means the refund window ends after `4 + 24 = 28` hours instead of the previous `12 + 24 = 36` hours.
+  The punish timelock, which determines the length of the refund window, remains at 72 blocks (24 hours).
+
+- Protocol: Add possibility for maker to require an "anti-spam deposit".
+  The deposit is a part of the Bitcoin refund which the maker may withhold during a 30 minute timeframe
+  The deposit can still be released after the fact, by granting mercy.
+  Both parties will refuse an anti-spam deposit that makes up more than 20% of the swap's Bitcoin.
+
+- GUI: Add a reputation chip for each offer showing the number of successful, refunded and bad swaps.
+  Bad swaps are swaps during which the maker has behaved in a way that hurt the taker, like: punishing the taker or withholding the anti-spam deposit.
+  This can be remedied by cooperative redeem / granting mercy respectively.
+
+- GUI: Add a chip for each offer showing the guaranteed refund percentage and the required anti-spam deposit percentage.
+  Colorcoded on a gradient with 100% refund being green and 90% being yellow.
+
+- ASB + CONTROLLER: Add `set-withhold-deposit <swap-id> <true / false>` and `grant-mercy <swap-id>` commands.
+  `set-withhold-deposit` must be called before the maker reaches `XmrRefunded` to be effective.
+  `TxWithhold` will be published after the asb refunded the Monero.
+  `grant-mercy` can only be called once the maker has entered `BtcWithheld`.
+
+- ASB: New config option `maker.refund_policy.anti_spam_deposit_ratio`.
+  It sets the ratio of the Bitcoin lock that will go into the deposit in case of a refund.
+  Set it to `0.02` for an anti-spam deposit of 2%.
+  Set it to `0.00` to offer full refunds (0% anti-spam deposit).
+  Defaults to `0.00`.
+  ```toml
+  [maker.refund_policy]
+  anti_spam_deposit_ratio = 0.02
+  ```
+
+## [3.7.0] - 2026-03-05
+
+- ASB + CONTROLLER: Add `withdraw-btc` and `refresh-bitcoin-wallet` JSON-RPC commands. `withdraw-btc` allows withdrawing BTC from the internal Bitcoin wallet to a specified address. The amount parameter on the wire protocol is in satoshis (`Option<u64>`, `null` to sweep the entire balance). The `asb-controller` accepts human-friendly amounts (e.g. `0.1 BTC`, `10000 sat`). `refresh-bitcoin-wallet` syncs the internal Bitcoin wallet with the blockchain.
+
+## [3.6.7] - 2026-01-22
+
+## [3.6.6] - 2026-01-21
+
 ## [3.6.4] - 2026-01-05
 
 - GUI: Bump GNOME Flatpak runtime to 48
@@ -821,7 +1075,71 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.6.4...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.14.0...HEAD
+[4.14.0]: https://github.com/eigenwallet/core/compare/4.13.3...4.14.0
+[4.13.3]: https://github.com/eigenwallet/core/compare/4.13.2...4.13.3
+[4.13.2]: https://github.com/eigenwallet/core/compare/4.13.1...4.13.2
+[4.13.1]: https://github.com/eigenwallet/core/compare/4.13.0...4.13.1
+[4.13.0]: https://github.com/eigenwallet/core/compare/4.12.0...4.13.0
+[4.12.0]: https://github.com/eigenwallet/core/compare/4.11.5...4.12.0
+[4.11.5]: https://github.com/eigenwallet/core/compare/4.11.4...4.11.5
+[4.11.4]: https://github.com/eigenwallet/core/compare/4.11.3...4.11.4
+[4.11.3]: https://github.com/eigenwallet/core/compare/4.11.2...4.11.3
+[4.11.2]: https://github.com/eigenwallet/core/compare/4.11.0...4.11.2
+[4.11.0]: https://github.com/eigenwallet/core/compare/4.10.2...4.11.0
+[4.10.2]: https://github.com/eigenwallet/core/compare/4.10.1...4.10.2
+[4.10.1]: https://github.com/eigenwallet/core/compare/4.10.0...4.10.1
+[4.10.0]: https://github.com/eigenwallet/core/compare/4.9.6...4.10.0
+[4.9.6]: https://github.com/eigenwallet/core/compare/4.9.5...4.9.6
+[4.9.5]: https://github.com/eigenwallet/core/compare/4.9.4...4.9.5
+[4.9.4]: https://github.com/eigenwallet/core/compare/4.9.3...4.9.4
+[4.9.3]: https://github.com/eigenwallet/core/compare/4.9.2...4.9.3
+[4.9.2]: https://github.com/eigenwallet/core/compare/4.9.1...4.9.2
+[4.9.1]: https://github.com/eigenwallet/core/compare/4.9.0...4.9.1
+[4.9.0]: https://github.com/eigenwallet/core/compare/4.8.4...4.9.0
+[4.8.4]: https://github.com/eigenwallet/core/compare/4.8.3...4.8.4
+[4.8.3]: https://github.com/eigenwallet/core/compare/4.8.2...4.8.3
+[4.8.2]: https://github.com/eigenwallet/core/compare/4.8.1...4.8.2
+[4.8.1]: https://github.com/eigenwallet/core/compare/4.8.0...4.8.1
+[4.8.0]: https://github.com/eigenwallet/core/compare/4.7.11...4.8.0
+[4.7.11]: https://github.com/eigenwallet/core/compare/4.7.10...4.7.11
+[4.7.10]: https://github.com/eigenwallet/core/compare/3.7.10...4.7.10
+[3.7.10]: https://github.com/eigenwallet/core/compare/4.7.9...3.7.10
+[4.7.9]: https://github.com/eigenwallet/core/compare/4.7.8...4.7.9
+[4.7.8]: https://github.com/eigenwallet/core/compare/4.6.7...4.7.8
+[4.6.7]: https://github.com/eigenwallet/core/compare/4.6.6...4.6.7
+[4.6.6]: https://github.com/eigenwallet/core/compare/4.6.5...4.6.6
+[4.6.5]: https://github.com/eigenwallet/core/compare/4.6.4...4.6.5
+[4.6.4]: https://github.com/eigenwallet/core/compare/4.6.3...4.6.4
+[4.6.3]: https://github.com/eigenwallet/core/compare/4.6.1...4.6.3
+[4.6.1]: https://github.com/eigenwallet/core/compare/4.6.0...4.6.1
+[4.6.0]: https://github.com/eigenwallet/core/compare/4.5.5...4.6.0
+[4.5.5]: https://github.com/eigenwallet/core/compare/4.5.4...4.5.5
+[4.5.4]: https://github.com/eigenwallet/core/compare/4.5.3...4.5.4
+[4.5.3]: https://github.com/eigenwallet/core/compare/4.5.2...4.5.3
+[4.5.2]: https://github.com/eigenwallet/core/compare/4.5.1...4.5.2
+[4.5.1]: https://github.com/eigenwallet/core/compare/4.5.0...4.5.1
+[4.5.0]: https://github.com/eigenwallet/core/compare/4.4.1...4.5.0
+[4.4.1]: https://github.com/eigenwallet/core/compare/4.4.0...4.4.1
+[4.4.0]: https://github.com/eigenwallet/core/compare/4.3.1...4.4.0
+[4.3.1]: https://github.com/eigenwallet/core/compare/4.3.0...4.3.1
+[4.3.0]: https://github.com/eigenwallet/core/compare/4.2.4...4.3.0
+[4.2.4]: https://github.com/eigenwallet/core/compare/4.2.3...4.2.4
+[4.2.3]: https://github.com/eigenwallet/core/compare/4.2.2...4.2.3
+[4.2.2]: https://github.com/eigenwallet/core/compare/4.2.1...4.2.2
+[4.2.1]: https://github.com/eigenwallet/core/compare/4.2.0...4.2.1
+[4.2.0]: https://github.com/eigenwallet/core/compare/4.1.1...4.2.0
+[4.1.1]: https://github.com/eigenwallet/core/compare/4.1.0...4.1.1
+[4.1.0]: https://github.com/eigenwallet/core/compare/4.0.5...4.1.0
+[4.0.5]: https://github.com/eigenwallet/core/compare/4.0.4...4.0.5
+[4.0.4]: https://github.com/eigenwallet/core/compare/4.0.3...4.0.4
+[4.0.3]: https://github.com/eigenwallet/core/compare/4.0.2...4.0.3
+[4.0.2]: https://github.com/eigenwallet/core/compare/4.0.1...4.0.2
+[4.0.1]: https://github.com/eigenwallet/core/compare/4.0.0...4.0.1
+[4.0.0]: https://github.com/eigenwallet/core/compare/3.7.0...4.0.0
+[3.7.0]: https://github.com/eigenwallet/core/compare/3.6.7...3.7.0
+[3.6.7]: https://github.com/eigenwallet/core/compare/3.6.6...3.6.7
+[3.6.6]: https://github.com/eigenwallet/core/compare/3.6.4...3.6.6
 [3.6.4]: https://github.com/eigenwallet/core/compare/3.6.3...3.6.4
 [3.6.3]: https://github.com/eigenwallet/core/compare/3.6.2...3.6.3
 [3.6.2]: https://github.com/eigenwallet/core/compare/3.6.1...3.6.2

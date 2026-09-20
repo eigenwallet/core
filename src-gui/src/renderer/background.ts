@@ -19,6 +19,7 @@ import logger from "utils/logger";
 import { fetchAllConversations, updateAlerts, updateRates } from "./api";
 import {
   checkContextStatus,
+  deleteAllLogs,
   getSwapInfo,
   getSwapTimelock,
   initializeContext,
@@ -34,12 +35,16 @@ import {
 } from "store/features/walletSlice";
 import {
   applyDefaultNodes,
+  applyDefaultRendezvousPoints,
+  setHasClearedLogsOnUpgrade,
   validateDonateToDevelopmentTip,
 } from "store/features/settingsSlice";
 import {
   DEFAULT_NODES,
+  DEFAULT_RENDEZVOUS_POINTS,
   NEGATIVE_NODES_MAINNET,
   NEGATIVE_NODES_TESTNET,
+  NEGATIVE_RENDEZVOUS_POINTS,
 } from "store/defaults";
 import { setSubaddresses } from "store/features/walletSlice";
 
@@ -75,6 +80,14 @@ export async function setupBackgroundTasks(): Promise<void> {
     }),
   );
 
+  // Apply default rendezvous points on startup (same pattern as nodes)
+  store.dispatch(
+    applyDefaultRendezvousPoints({
+      defaultRendezvousPoints: DEFAULT_RENDEZVOUS_POINTS,
+      negativeRendezvousPoints: NEGATIVE_RENDEZVOUS_POINTS,
+    }),
+  );
+
   // Validate donation tip setting
   store.dispatch(validateDonateToDevelopmentTip());
 
@@ -104,13 +117,26 @@ export async function setupBackgroundTasks(): Promise<void> {
     !contextStatus.tor_available
   )
     // Warning: If we reload the page while the Context is being initialized, this function will throw an error
-    initializeContext().catch((e) => {
-      logger.error(
-        e,
-        "Failed to initialize context on page load. This might be because we reloaded the page while the context was being initialized",
-      );
-      store.dispatch(contextInitializationFailed(String(e)));
-    });
+    initializeContext()
+      .then(() => {
+        const settings = store.getState().settings;
+        if (settings.hasClearedLogsOnUpgrade !== true) {
+          deleteAllLogs()
+            .then(() => store.dispatch(setHasClearedLogsOnUpgrade(true)))
+            .catch((err) => {
+              logger.error(err, "Failed to clear logs after upgrade");
+            });
+        } else {
+          logger.info("Skipping clearing the logs because we already did it.");
+        }
+      })
+      .catch((e) => {
+        logger.error(
+          e,
+          "Failed to initialize context on page load. This might be because we reloaded the page while the context was being initialized",
+        );
+        store.dispatch(contextInitializationFailed(String(e)));
+      });
 }
 
 // Listen for the unified event
@@ -119,7 +145,10 @@ listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
 
   switch (channelName) {
     case "SwapProgress":
-      store.dispatch(swapProgressEventReceived(eventData));
+      // Skip when mocking is enabled (DEV only) - mock dispatches bypass this listener
+      if (!store.getState().swap._mockOnlyDisableTauriCallsOnSwapProgress) {
+        store.dispatch(swapProgressEventReceived(eventData));
+      }
       break;
 
     case "CliLog":

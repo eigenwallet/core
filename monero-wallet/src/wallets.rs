@@ -4,11 +4,12 @@
 //! Mostly we do two things:
 //!  - wait for transactions to be confirmed
 //!  - send money from one wallet to another.
-pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
+pub use monero_sys::{Daemon, TxReceipt, WalletHandle as Wallet, WalletHandleListener};
 
 use anyhow::{Context, Result};
 use monero_address::Network;
 use monero_daemon_rpc::MoneroDaemon;
+use monero_oxide_wallet::transaction::{NotPruned, Transaction};
 use monero_simple_request_rpc::SimpleRequestTransport;
 use std::time::Duration;
 use std::{path::PathBuf, sync::Arc};
@@ -32,12 +33,12 @@ pub struct Wallets {
     wallet_dir: PathBuf,
     /// The network we're on.
     network: Network,
-    /// The monero node we connect to.
-    daemon: Arc<RwLock<(Daemon, MoneroDaemon<SimpleRequestTransport>)>>,
+    /// The monero node we connect to. The RPC client is connected lazily.
+    daemon: Arc<RwLock<(Daemon, Option<MoneroDaemon<SimpleRequestTransport>>)>>,
     /// Keep the main wallet open and synced.
     main_wallet: Arc<Wallet>,
     /// Since Network::Regtest isn't a thing we have to use an extra flag.
-    /// When we're in regtest mode, we need to unplug some safty nets to make the wallet work.
+    /// When we're in regtest mode, we need to unplug some safety nets to make the wallet work.
     regtest: bool,
     /// A handle we use to send status updates to the UI i.e. when
     /// waiting for a transaction to be confirmed.
@@ -97,11 +98,11 @@ impl Wallets {
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
                 })
-                .await?;
+                .await
+                .context("Failed to install tauri wallet listener")?;
         }
 
-        let rpc_client = SimpleRequestTransport::new(daemon.to_url_string()).await?;
-        let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
+        let daemon = Arc::new(RwLock::new((daemon, None)));
 
         let wallets = Self {
             wallet_dir,
@@ -160,8 +161,7 @@ impl Wallets {
                 .await?;
         }
 
-        let rpc_client = SimpleRequestTransport::new(daemon.to_url_string()).await?;
-        let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
+        let daemon = Arc::new(RwLock::new((daemon, None)));
 
         let wallets = Self {
             wallet_dir,
@@ -181,11 +181,8 @@ impl Wallets {
     }
 
     pub async fn change_monero_node(&self, new_daemon: Daemon) -> Result<()> {
-        {
-            let mut daemon = self.daemon.write().await;
-            let rpc_client = SimpleRequestTransport::new(new_daemon.to_url_string()).await?;
-            *daemon = (new_daemon.clone(), rpc_client);
-        }
+        // Reconnect lazily on next use.
+        *self.daemon.write().await = (new_daemon.clone(), None);
 
         self.main_wallet
             .call(move |wallet| wallet.set_daemon(&new_daemon))
@@ -284,15 +281,52 @@ impl Wallets {
 }
 
 impl Wallets {
-    /// Get a clone of the RPC client for direct daemon communication.
-    pub async fn rpc_client(&self) -> MoneroDaemon<SimpleRequestTransport> {
-        let (_daemon, rpc_client) = self.daemon.read().await.clone();
-        rpc_client
+    /// Get the RPC client for direct daemon communication, connecting lazily on
+    /// first use (and after a node change) so an unreachable node never blocks init.
+    pub async fn rpc_client(&self) -> Result<MoneroDaemon<SimpleRequestTransport>> {
+        if let Some(rpc_client) = &self.daemon.read().await.1 {
+            return Ok(rpc_client.clone());
+        }
+
+        let mut guard = self.daemon.write().await;
+        if let Some(rpc_client) = &guard.1 {
+            return Ok(rpc_client.clone());
+        }
+
+        let rpc_client = SimpleRequestTransport::new(guard.0.to_url_string())
+            .await
+            .context("Failed to connect to Monero daemon")?;
+        guard.1 = Some(rpc_client.clone());
+
+        Ok(rpc_client)
+    }
+
+    /// Check that the daemon RPC is reachable, connecting if necessary.
+    pub async fn rpc_health_check(&self) -> Result<()> {
+        self.direct_rpc_block_height()
+            .await
+            .context("Monero daemon RPC health check failed")?;
+
+        Ok(())
+    }
+
+    pub async fn is_transaction_present(&self, tx_hash: &TxHash) -> Result<bool> {
+        use monero_wallet_ng::rpc::{ProvidesTransactionStatus, TransactionStatus};
+
+        let rpc_client = self.rpc_client().await?;
+        let tx_id = tx_hash_to_bytes(tx_hash)?;
+
+        let status = rpc_client
+            .transaction_status(tx_id)
+            .await
+            .context("Failed to query Monero transaction status")?;
+
+        Ok(!matches!(status, TransactionStatus::Unknown))
     }
 
     pub async fn direct_rpc_block_height(&self) -> Result<u64> {
         use monero_daemon_rpc::prelude::ProvidesBlockchainMeta;
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
 
         let height = rpc_client
             .latest_block_number()
@@ -300,6 +334,126 @@ impl Wallets {
             .context("Failed to get block height from daemon")?;
 
         Ok(height as u64)
+    }
+
+    /// Construct and sign a sweep transaction for the largest output of
+    /// `lock_tx_hash` (viewable by the given view-pair) across a set of
+    /// `destinations` split by ratio.
+    ///
+    /// This is the monero-wallet-ng-based replacement for the old monero-sys
+    /// `sweep_multi_destination` flow: the caller hands over the keys of a
+    /// single-use view-pair that only ever receives the lock transaction, and
+    /// this method locates the block that contains `lock_tx_hash`, scans it,
+    /// and sweeps its single output across the destinations.
+    ///
+    /// `destinations` must be non-empty and its ratios must sum to 1.
+    pub async fn construct_sweep_to(
+        &self,
+        lock_tx_hash: &TxHash,
+        spend_key: monero_oxide_ext::PrivateKey,
+        view_key: PrivateViewKey,
+        destinations: Vec<(monero_address::MoneroAddress, f64)>,
+        inner_retry: Option<backoff::ExponentialBackoff>,
+    ) -> Result<Transaction<NotPruned>> {
+        let rpc_client = self.rpc_client().await?;
+        let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
+
+        let spend_scalar = Zeroizing::new(spend_key.scalar);
+        let view_scalar = Zeroizing::new(view_key.0.scalar);
+
+        monero_wallet_ng::sweep::construct_sweep_tx_to(
+            rpc_client,
+            spend_scalar,
+            view_scalar,
+            tx_id,
+            destinations,
+            inner_retry,
+        )
+        .await
+        .context("Failed to construct sweep transaction to destinations")
+    }
+
+    /// Convenience wrapper around [`Self::construct_sweep_to`] for the single-destination case.
+    pub async fn construct_sweep_to_single(
+        &self,
+        lock_tx_hash: &TxHash,
+        spend_key: monero_oxide_ext::PrivateKey,
+        view_key: PrivateViewKey,
+        destination: monero_address::MoneroAddress,
+        inner_retry: Option<backoff::ExponentialBackoff>,
+    ) -> Result<Transaction<NotPruned>> {
+        let rpc_client = self.rpc_client().await?;
+        let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
+
+        let spend_scalar = Zeroizing::new(spend_key.scalar);
+        let view_scalar = Zeroizing::new(view_key.0.scalar);
+
+        monero_wallet_ng::sweep::construct_sweep_tx_to_single(
+            rpc_client,
+            spend_scalar,
+            view_scalar,
+            tx_id,
+            destination,
+            inner_retry,
+        )
+        .await
+        .context("Failed to construct sweep transaction to destination")
+    }
+
+    /// Construct a transaction carrying `data` in its tx_extra: it spends the
+    /// output of `funding_tx_hash`, pays a single piconero to `destination`
+    /// and the entire remainder as fee.
+    pub async fn construct_data_tx(
+        &self,
+        funding_tx_hash: &TxHash,
+        spend_key: monero_oxide_ext::PrivateKey,
+        view_key: PrivateViewKey,
+        destination: monero_address::MoneroAddress,
+        data: Vec<Vec<u8>>,
+        inner_retry: Option<backoff::ExponentialBackoff>,
+    ) -> Result<Transaction<NotPruned>> {
+        let rpc_client = self.rpc_client().await?;
+        let tx_id = tx_hash_to_bytes(funding_tx_hash)?;
+
+        let spend_scalar = Zeroizing::new(spend_key.scalar);
+        let view_scalar = Zeroizing::new(view_key.0.scalar);
+
+        monero_wallet_ng::sweep::construct_data_tx(
+            rpc_client,
+            spend_scalar,
+            view_scalar,
+            tx_id,
+            destination,
+            data,
+            inner_retry,
+        )
+        .await
+        .context("Failed to construct data transaction")
+    }
+
+    pub async fn construct_multi_destination_tx(
+        &self,
+        destinations: &[(monero_address::MoneroAddress, monero_oxide_ext::Amount)],
+    ) -> Result<(Transaction<NotPruned>, TxReceipt)> {
+        let (receipt, tx_hex) = self
+            .main_wallet()
+            .await
+            .construct_multi_destination_tx(destinations)
+            .await
+            .context("Failed to construct Monero transaction")?;
+
+        let tx = monero_wallet_ng::util::transaction_from_hex(&tx_hex)
+            .context("Failed to parse constructed Monero transaction")?;
+
+        let tx_hash = hex::encode(tx.hash());
+        anyhow::ensure!(
+            tx_hash == receipt.txid,
+            "Parsed Monero transaction hash {} does not match wallet-reported txid {}",
+            tx_hash,
+            receipt.txid
+        );
+
+        Ok((tx, receipt))
     }
 
     /// Verify a transfer using the new monero-wallet-ng implementation.
@@ -313,7 +467,7 @@ impl Wallets {
         private_view_key: PrivateViewKey,
         expected_amount: Amount,
     ) -> Result<bool> {
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
 
         let tx_id = tx_hash_to_bytes(tx_hash)?;
         let public_spend_key = public_spend_key.decompress();
@@ -333,6 +487,33 @@ impl Wallets {
         Ok(result)
     }
 
+    /// The amount of the largest output the given view pair receives in
+    /// `tx_hash`, or `None` if it receives no outputs. This mirrors what a
+    /// sweep of the transaction can spend.
+    pub async fn largest_received_utxo(
+        &self,
+        tx_hash: &TxHash,
+        public_spend_key: monero_oxide_ext::PublicKey,
+        private_view_key: PrivateViewKey,
+    ) -> Result<Option<Amount>> {
+        let rpc_client = self.rpc_client().await?;
+
+        let tx_id = tx_hash_to_bytes(tx_hash)?;
+        let public_spend_key = public_spend_key.decompress();
+        let private_view_key = Zeroizing::new(private_view_key.0.scalar);
+
+        let amount = monero_wallet_ng::verify::largest_received_utxo(
+            &rpc_client,
+            tx_id,
+            public_spend_key,
+            private_view_key,
+        )
+        .await
+        .context("Failed to scan transaction for received amount")?;
+
+        Ok(amount.map(Amount::from_pico))
+    }
+
     /// Wait until a transfer is verified and confirmed using monero-wallet-ng.
     ///
     /// This first verifies that the transaction sends the expected amount to the given view pair,
@@ -348,7 +529,7 @@ impl Wallets {
     ) -> Result<()> {
         use monero_wallet_ng::confirmations;
 
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
         let tx_id = tx_hash_to_bytes(tx_hash)?;
         let subscription = confirmations::subscribe(rpc_client, tx_id, POLL_INTERVAL);
 
@@ -394,7 +575,7 @@ impl Wallets {
     ) -> Result<TxHash> {
         use monero_wallet_ng::scanner;
 
-        let rpc_client = self.rpc_client().await;
+        let rpc_client = self.rpc_client().await?;
 
         let public_spend_key = public_spend_key.decompress();
         let private_view_key = Zeroizing::new(private_view_key.0.scalar);
@@ -425,6 +606,75 @@ impl Wallets {
         );
 
         Ok(TxHash(tx_hash))
+    }
+
+    /// Scan the wallet of the given view pair from `restore_height` until an
+    /// output carries a Hermes message that `extract` accepts, returning the
+    /// extracted value.
+    ///
+    /// Outputs that do not contain a Hermes message at all are skipped
+    /// silently. Outputs that do contain a Hermes message but are rejected by
+    /// `extract` are skipped too, but the rejection reason is debug-logged so we
+    /// can tell why an on-chain Hermes transaction was ignored. This keeps the
+    /// scanner moving past invalid messages instead of getting stuck on them.
+    pub async fn wait_for_hermes_message<T>(
+        &self,
+        public_spend_key: monero_oxide_ext::PublicKey,
+        private_view_key: PrivateViewKey,
+        restore_height: BlockHeight,
+        extract: impl Fn(&monero_wallet_ng::hermes::HermesMessage) -> Result<T>,
+    ) -> Result<T> {
+        use monero_wallet_ng::hermes::HermesMessage;
+        use monero_wallet_ng::scanner;
+
+        let rpc_client = self.rpc_client().await?;
+
+        let public_spend_key = public_spend_key.decompress();
+        let view_scalar = Zeroizing::new(private_view_key.0.scalar);
+
+        let mut subscription = scanner::naive_scanner(
+            rpc_client,
+            public_spend_key,
+            view_scalar.clone(),
+            restore_height.height as usize,
+            POLL_INTERVAL,
+        )
+        .context("Failed to create scanner")?;
+
+        let mut extracted: Option<T> = None;
+
+        subscription
+            .wait_until(|output| {
+                // Outputs that aren't Hermes messages are the common case while
+                // scanning; skip them without logging to avoid spamming.
+                let Ok(message) = HermesMessage::from_wallet_output(output, view_scalar.clone())
+                else {
+                    return false;
+                };
+
+                match extract(&message) {
+                    Ok(value) => {
+                        tracing::debug!(
+                            tx_hash = %hex::encode(output.transaction()),
+                            "Found accepted Hermes message"
+                        );
+                        extracted = Some(value);
+                        true
+                    }
+                    Err(error) => {
+                        tracing::debug!(
+                            tx_hash = %hex::encode(output.transaction()),
+                            error = ?error,
+                            "Ignoring Hermes message rejected by filter"
+                        );
+                        false
+                    }
+                }
+            })
+            .await
+            .context("Scanner subscription closed before finding an accepted Hermes message")?;
+
+        Ok(extracted.expect("output was accepted because extract returned Ok"))
     }
 }
 

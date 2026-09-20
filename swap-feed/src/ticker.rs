@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Result};
-use futures::stream::BoxStream;
+use anyhow::{Result, anyhow};
 use futures::TryStreamExt;
+use futures::stream::BoxStream;
 use std::convert::Infallible;
 use std::future::Future;
 use std::sync::Arc;

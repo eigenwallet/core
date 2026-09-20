@@ -1,26 +1,86 @@
 mod cli;
 mod repl;
 
+use anyhow::Context;
 use clap::Parser;
 use cli::{Cli, Cmd};
+use jsonrpsee::http_client::{HeaderMap, HeaderValue, HttpClient, HttpClientBuilder};
 use swap_controller_api::{AsbApiClient, MoneroSeedResponse};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let client = jsonrpsee::http_client::HttpClientBuilder::default().build(&cli.url)?;
+    let client = authenticate(&cli.url).await?;
 
     match cli.cmd {
-        None => repl::run(client, dispatch).await?,
+        None => repl::run(client, dispatch_or_exit).await?,
         Some(cmd) => {
-            if let Err(e) = dispatch(cmd.clone(), client.clone()).await {
+            if let Err(e) = dispatch_or_exit(cmd.clone(), client.clone()).await {
                 eprintln!("Command failed with error: {e:?}");
             }
         }
     }
 
     Ok(())
+}
+
+/// Exits when the ASB rejects the session's password (it changed while the
+/// controller was running); re-authenticating requires a restart.
+async fn dispatch_or_exit(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
+    let result = dispatch(cmd, client).await;
+
+    if let Err(e) = &result {
+        let rejected = e
+            .downcast_ref::<jsonrpsee::core::ClientError>()
+            .is_some_and(is_auth_failure);
+        if rejected {
+            eprintln!("The ASB rejected the password. It must have changed, exiting.");
+            std::process::exit(1);
+        }
+    }
+
+    result
+}
+
+/// Prompts for the RPC password and returns a client once the server accepts
+/// it, re-prompting on an authentication failure and bailing if the server is
+/// unreachable for any other reason.
+async fn authenticate(url: &str) -> anyhow::Result<HttpClient> {
+    loop {
+        let password = dialoguer::Password::new()
+            .with_prompt("ASB RPC password")
+            .interact()
+            .context("Failed to read password")?;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            HeaderValue::from_str(&format!("Bearer {password}"))
+                .context("Password is not a valid HTTP header value")?,
+        );
+        let client = HttpClientBuilder::default()
+            .set_headers(headers)
+            .build(url)?;
+
+        match client.check_connection().await {
+            Ok(()) => return Ok(client),
+            Err(e) if is_auth_failure(&e) => eprintln!("Authentication failed, try again."),
+            Err(e) => return Err(e).context("Failed to reach the ASB RPC server"),
+        }
+    }
+}
+
+fn is_auth_failure(error: &jsonrpsee::core::ClientError) -> bool {
+    use jsonrpsee::http_client::transport::Error as TransportError;
+
+    let jsonrpsee::core::ClientError::Transport(source) = error else {
+        return false;
+    };
+    matches!(
+        source.downcast_ref::<TransportError>(),
+        Some(TransportError::Rejected { status_code: 401 })
+    )
 }
 
 async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
@@ -66,7 +126,9 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         Cmd::PeerId => {
             let response = client.peer_id().await?;
             println!("Peer IDs are used to identify peers within the P2P network.");
-            println!("They are effectively the hash of your public key and are used for end-to-end encryption of network traffic.");
+            println!(
+                "They are effectively the hash of your public key and are used for end-to-end encryption of network traffic."
+            );
             println!();
             println!("Your Peer ID is: {}", response.peer_id);
         }
@@ -75,18 +137,55 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             println!("Connected to {} peers", response.connections);
         }
         Cmd::GetSwaps => {
-            let swaps = client.get_swaps().await?;
+            let swaps = client.get_swaps(None, None).await?;
+
+            let mut table = comfy_table::Table::new();
+            table.set_header([
+                "ID",
+                "Started",
+                "State",
+                "BTC Lock TxID",
+                "BTC",
+                "XMR",
+                "Rate (BTC/XMR)",
+                "BTC Redeem Fee",
+                "BTC Redeem TxID",
+                "BTC Punish TxID",
+                "Peer ID",
+                "Completed",
+            ]);
+
             if swaps.is_empty() {
-                println!("No swaps found");
+                table.add_row(["No swaps found"]);
             } else {
-                for swap in swaps {
-                    println!("{}: {}", swap.id, swap.state);
+                for swap in &swaps {
+                    let xmr = monero_oxide_ext::Amount::from_pico(swap.xmr_amount);
+                    table.add_row([
+                        &swap.swap_id,
+                        &swap.start_date,
+                        &swap.state,
+                        &swap.btc_lock_txid,
+                        &swap.btc_amount.to_string(),
+                        // Floating point may introduce very small inaccuracies here
+                        &format!("{:.12} XMR", xmr.as_xmr()),
+                        &swap.exchange_rate.to_string(),
+                        &swap.btc_redeem_fee.to_string(),
+                        &swap.btc_redeem_txid,
+                        &swap.btc_punish_txid,
+                        &swap.peer_id,
+                        &swap.completed.to_string(),
+                    ]);
                 }
             }
+
+            println!("{table}");
         }
         Cmd::BitcoinSeed => {
             let response = client.bitcoin_seed().await?;
-            println!("Descriptor (BIP-0382) containing the private keys of the internal Bitcoin wallet: \n{}", response.descriptor);
+            println!(
+                "Descriptor (BIP-0382) containing the private keys of the internal Bitcoin wallet: \n{}",
+                response.descriptor
+            );
         }
         Cmd::RegistrationStatus => {
             let response = client.registration_status().await?;
@@ -102,6 +201,99 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                     );
                 }
             }
+        }
+        Cmd::SetWithholdDeposit {
+            swap_id,
+            withhold: burn,
+        } => {
+            client.set_withhold_deposit(swap_id, burn).await?;
+            if burn {
+                println!("Withholding deposit should the taker refund for swap {swap_id}");
+            } else {
+                println!("Not withholding deposit should the taker refund for swap {swap_id}");
+            }
+        }
+        Cmd::SetExternalBitcoinRedeemAddress { address } => {
+            client
+                .set_external_bitcoin_redeem_address(address.clone())
+                .await?;
+            println!(
+                "Updated external Bitcoin redeem address. Future swaps will be redeemed to `{address}`."
+            );
+        }
+        Cmd::ClearExternalBitcoinRedeemAddress => {
+            client.clear_external_bitcoin_redeem_address().await?;
+            println!(
+                "Cleared external Bitcoin redeem address. Future swaps will be redeemed into the internal Bitcoin wallet."
+            );
+        }
+        Cmd::GetExternalBitcoinRedeemAddress => {
+            let response = client.get_external_bitcoin_redeem_address().await?;
+            match response.address {
+                Some(address) => println!("External Bitcoin redeem address: {address}"),
+                None => println!(
+                    "No external Bitcoin redeem address set. Swaps are redeemed into the internal Bitcoin wallet."
+                ),
+            }
+        }
+        Cmd::GrantMercy { swap_id } => {
+            client.grant_mercy(swap_id).await?;
+            println!("Mercy granted for swap {swap_id}");
+        }
+        Cmd::WithdrawBtc { address, amount } => {
+            let response = client
+                .withdraw_btc(address, amount.map(|a| a.to_sat()))
+                .await?;
+            println!(
+                "Withdrew {} in transaction {}",
+                response.amount, response.txid
+            );
+        }
+        Cmd::RefreshBitcoinWallet => {
+            client.refresh_bitcoin_wallet().await?;
+            println!("Bitcoin wallet refreshed");
+        }
+        Cmd::WormholeServices => {
+            println!(
+                "Wormholes are dedicated onion services spawned for peers that have committed funds to a swap.\n"
+            );
+            let response = client.wormhole_services().await?;
+            if response.services.is_empty() {
+                println!("No active wormhole services");
+            } else {
+                for (i, svc) in response.services.iter().enumerate() {
+                    if i > 0 {
+                        println!();
+                    }
+                    let state = svc.state.as_deref().unwrap_or("?");
+                    println!("Peer:      {}", svc.peer_id);
+                    println!("Address:   {}", svc.address);
+                    println!("State:     {state}");
+                    println!("Reachable: {}", svc.reachable);
+                    if let Some(problem) = &svc.problem {
+                        println!("Problem:   {problem}");
+                    }
+                }
+            }
+        }
+        Cmd::OnionServiceStatus => {
+            let response = client.onion_service_status().await?;
+            match response.state {
+                Some(state) => {
+                    println!("State:     {state}");
+                    println!("Reachable: {}", response.reachable);
+                    if let Some(problem) = response.problem {
+                        println!("Problem:   {problem}");
+                    }
+                }
+                None => println!("No primary onion service registered"),
+            }
+        }
+        Cmd::GetCurrentQuote => {
+            let response = client.get_current_quote().await?;
+            println!("Price (per 1 XMR): {}", response.price);
+            println!("Min quantity:      {}", response.min_quantity);
+            println!("Max quantity:      {}", response.max_quantity);
         }
     }
     Ok(())

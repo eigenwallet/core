@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::harness::bitcoind;
 use bitcoin::Network;
-use testcontainers::{core::WaitFor, Image, ImageArgs};
+use testcontainers::{Image, ImageArgs, core::WaitFor};
 
 pub const HTTP_PORT: u16 = 60401;
 pub const RPC_PORT: u16 = 3002;
@@ -42,7 +42,7 @@ impl Image for Electrs {
 impl Default for Electrs {
     fn default() -> Self {
         Electrs {
-            tag: "v0.16.0.3".into(),
+            tag: "latest".into(),
             args: ElectrsArgs::default(),
             entrypoint: Some("/build/electrs".into()),
             wait_for_message: "Running accept thread".to_string(),

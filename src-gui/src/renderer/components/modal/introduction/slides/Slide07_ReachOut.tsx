@@ -5,6 +5,7 @@ import GitHubIcon from "@mui/icons-material/GitHub";
 import MatrixIcon from "renderer/components/icons/MatrixIcon";
 import LinkIconButton from "renderer/components/icons/LinkIconButton";
 import { IntroSlideProps } from "./SlideTypes";
+import DiscordIcon from "renderer/components/icons/DiscordIcon";
 
 export default function Slide02_ChooseAMaker(props: IntroSlideProps) {
   return (
@@ -15,14 +16,16 @@ export default function Slide02_ChooseAMaker(props: IntroSlideProps) {
       customContinueButtonText="Get Started"
     >
       <Typography variant="subtitle1">
-        We would love to hear about your experience with Unstoppable Swap and
-        invite you to join our community.
+        Got questions or suggestions? Join one of our community channels!
       </Typography>
       <Box
         sx={{
           mt: 3,
         }}
       >
+        <LinkIconButton url="https://eigenwallet.org/discord">
+          <DiscordIcon />
+        </LinkIconButton>
         <LinkIconButton url="https://github.com/eigenwallet/core">
           <GitHubIcon />
         </LinkIconButton>

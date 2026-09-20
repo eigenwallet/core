@@ -3,32 +3,31 @@ use std::io::Write;
 use std::result::Result;
 use swap::cli::{
     api::{
-        data,
+        ContextBuilder, data,
         request::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
             CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
             CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, CreateMoneroSubaddressArgs,
-            DfxAuthenticateResponse, ExportBitcoinWalletArgs, GetBitcoinAddressArgs,
-            GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
-            GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
-            GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSubaddressesArgs,
-            GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
-            GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs,
-            RedactArgs, RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
+            DeleteAllLogsArgs, ExportBitcoinWalletArgs, GetBitcoinAddressArgs, GetCurrentSwapArgs,
+            GetDataDirArgs, GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs,
+            GetMoneroBalanceArgs, GetMoneroHistoryArgs, GetMoneroMainAddressArgs,
+            GetMoneroSeedArgs, GetMoneroSubaddressesArgs, GetMoneroSyncProgressArgs,
+            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
+            GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs, RedactArgs,
+            RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs,
+            ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
             SetMoneroWalletPasswordArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs,
             WithdrawBtcArgs,
         },
         tauri_bindings::{ContextStatus, TauriSettings},
-        ContextBuilder,
     },
     command::Bitcoin,
 };
 use swap_p2p::libp2p_ext::MultiAddrVecExt;
 use tauri_plugin_dialog::DialogExt;
-use zip::{write::SimpleFileOptions, ZipWriter};
+use zip::{ZipWriter, write::SimpleFileOptions};
 
-use crate::{commands::util::ToStringResult, State};
+use crate::{State, commands::util::ToStringResult};
 
 /// This macro returns the list of all command handlers
 /// You can call this and insert the output into [`tauri::app::Builder::invoke_handler`]
@@ -61,6 +60,7 @@ macro_rules! generate_command_handlers {
             resolve_approval_request,
             redact,
             save_txt_files,
+            delete_all_logs,
             get_monero_history,
             get_monero_main_address,
             get_monero_balance,
@@ -73,12 +73,12 @@ macro_rules! generate_command_handlers {
             reject_approval_request,
             get_restore_height,
             set_monero_wallet_password,
-            dfx_authenticate,
             change_monero_node,
             get_context_status,
             get_monero_subaddresses,
             create_monero_subaddress,
             set_monero_subaddress_label,
+            refresh_p2p,
             get_tor_network_config,
         ]
     };
@@ -160,7 +160,7 @@ pub async fn initialize_context(
     testnet: bool,
     state: tauri::State<'_, State>,
 ) -> Result<(), String> {
-    // We want to prevent multiple initalizations at the same time
+    // We want to prevent multiple initializations at the same time
     let _context_lock = state
         .context_lock
         .try_lock()
@@ -308,6 +308,51 @@ pub async fn get_data_dir(
         .to_string())
 }
 
+#[tauri::command(rename = "deleteAllLogs")]
+pub async fn delete_all_logs(args: DeleteAllLogsArgs) -> Result<(), String> {
+    let data_dir = data::data_dir_from(None, args.is_testnet).to_string_result()?;
+    let logs_dir = data_dir.join("logs");
+
+    if !logs_dir.exists() {
+        tracing::info!(
+            logs_dir = %logs_dir.display(),
+            "Log directory does not exist; nothing to clear"
+        );
+        return Ok(());
+    }
+
+    let delete_result: Result<(), String> = async {
+        let mut entries = tokio::fs::read_dir(&logs_dir).await.to_string_result()?;
+        while let Some(entry) = entries.next_entry().await.to_string_result()? {
+            let path = entry.path();
+            let file_type = entry.file_type().await.to_string_result()?;
+
+            if file_type.is_dir() {
+                tokio::fs::remove_dir_all(&path).await.to_string_result()?;
+            } else {
+                tokio::fs::remove_file(&path).await.to_string_result()?;
+            }
+        }
+        Ok(())
+    }
+    .await;
+
+    match delete_result {
+        Ok(()) => {
+            tracing::info!(logs_dir = %logs_dir.display(), "Cleared all log files");
+            Ok(())
+        }
+        Err(err) => {
+            tracing::error!(
+                logs_dir = %logs_dir.display(),
+                error = %err,
+                "Failed to clear log files"
+            );
+            Err(err)
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn save_txt_files(
     app: tauri::AppHandle,
@@ -351,99 +396,6 @@ pub async fn save_txt_files(
         .map_err(|e| format!("Failed to finish zip: {}", e))?;
 
     Ok(())
-}
-
-#[tauri::command]
-pub async fn dfx_authenticate(
-    state: tauri::State<'_, State>,
-) -> Result<DfxAuthenticateResponse, String> {
-    use dfx_swiss_sdk::{DfxClient, SignRequest};
-    use tokio::sync::{mpsc, oneshot};
-    use tokio_util::task::AbortOnDropHandle;
-
-    let context = state.context();
-
-    // Get the monero wallet manager
-    let monero_manager = context
-        .try_get_monero_manager()
-        .await
-        .map_err(|_| "Monero wallet manager not available for DFX authentication".to_string())?;
-
-    let wallet = monero_manager.main_wallet().await;
-    let address = wallet
-        .main_address()
-        .await
-        .map_err(|e| e.to_string())?
-        .to_string();
-
-    // Create channel for authentication
-    let (auth_tx, mut auth_rx) = mpsc::channel::<(SignRequest, oneshot::Sender<String>)>(10);
-
-    // Create DFX client
-    let mut client = DfxClient::new(address, Some("https://api.dfx.swiss".to_string()), auth_tx);
-
-    // Start signing task with AbortOnDropHandle
-    let signing_task = tokio::spawn(async move {
-        tracing::info!("DFX signing service started and listening for requests");
-
-        while let Some((sign_request, response_tx)) = auth_rx.recv().await {
-            tracing::debug!(
-                message = %sign_request.message,
-                blockchains = ?sign_request.blockchains,
-                "Received DFX signing request"
-            );
-
-            // Sign the message using the main Monero wallet
-            let signature = match wallet
-                .sign_message(&sign_request.message, None, false)
-                .await
-            {
-                Ok(sig) => {
-                    tracing::debug!(
-                        signature_preview = %&sig[..std::cmp::min(50, sig.len())],
-                        "Message signed successfully for DFX"
-                    );
-                    sig
-                }
-                Err(e) => {
-                    tracing::error!(error = ?e, "Failed to sign message for DFX");
-                    continue;
-                }
-            };
-
-            // Send signature back to DFX client
-            if let Err(_) = response_tx.send(signature) {
-                tracing::warn!("Failed to send signature response through channel to DFX client");
-            }
-        }
-
-        tracing::info!("DFX signing service stopped");
-    });
-
-    // Create AbortOnDropHandle so the task gets cleaned up
-    let _abort_handle = AbortOnDropHandle::new(signing_task);
-
-    // Authenticate with DFX
-    tracing::info!("Starting DFX authentication...");
-    client
-        .authenticate()
-        .await
-        .map_err(|e| format!("Failed to authenticate with DFX: {}", e))?;
-
-    let access_token = client
-        .access_token
-        .as_ref()
-        .ok_or("No access token available after authentication")?
-        .clone();
-
-    let kyc_url = format!("https://app.dfx.swiss/buy?session={}", access_token);
-
-    tracing::info!("DFX authentication completed successfully");
-
-    Ok(DfxAuthenticateResponse {
-        access_token,
-        kyc_url,
-    })
 }
 
 // Here we define the Tauri commands that will be available to the frontend

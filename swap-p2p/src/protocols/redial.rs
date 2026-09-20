@@ -1,10 +1,10 @@
 use crate::behaviour_util::{BackoffTracker, ConnectionTracker, Trigger};
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
+use libp2p::PeerId;
 use libp2p::core::Multiaddr;
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{DialError, FromSwarm, NetworkBehaviour, ToSwarm};
-use libp2p::PeerId;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -195,7 +195,7 @@ impl NetworkBehaviour for Behaviour {
             // Check if we discovered a new address for some peer
             // TODO: Use the AddressTracker here instead
             FromSwarm::NewExternalAddrOfPeer(event) => {
-                // TOOD: Ensure that if the address contains a peer id it matches the peer id in the event
+                // TODO: Ensure that if the address contains a peer id it matches the peer id in the event
                 if self.insert_address(&event.peer_id, event.addr.clone()) {
                     tracing::trace!(peer = %event.peer_id, address = %event.addr, "Cached an address for a peer");
                 }
@@ -439,7 +439,10 @@ mod tests {
 
         loop {
             if tokio::time::Instant::now() >= deadline {
-                panic!("behaviour did not emit Dial event for peer {} in time after a mocked dial failure", peer);
+                panic!(
+                    "behaviour did not emit Dial event for peer {} in time after a mocked dial failure",
+                    peer
+                );
             }
 
             match behaviour.poll(&mut cx) {

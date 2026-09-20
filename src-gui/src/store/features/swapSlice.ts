@@ -8,6 +8,8 @@ const initialState: SwapSlice = {
 
   // TODO: Remove this and replace logic entirely with Tauri events
   spawnType: null,
+
+  _mockOnlyDisableTauriCallsOnSwapProgress: false,
 };
 
 export const swapSlice = createSlice({
@@ -37,9 +39,19 @@ export const swapSlice = createSlice({
     swapReset() {
       return initialState;
     },
+    setMockOnlyDisableTauriCallsOnSwapProgress(
+      swap,
+      action: PayloadAction<boolean>,
+    ) {
+      swap._mockOnlyDisableTauriCallsOnSwapProgress = action.payload;
+    },
   },
 });
 
-export const { swapReset, swapProgressEventReceived } = swapSlice.actions;
+export const {
+  swapReset,
+  swapProgressEventReceived,
+  setMockOnlyDisableTauriCallsOnSwapProgress,
+} = swapSlice.actions;
 
 export default swapSlice.reducer;

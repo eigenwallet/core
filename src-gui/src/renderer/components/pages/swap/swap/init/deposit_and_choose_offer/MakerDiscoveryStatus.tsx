@@ -24,7 +24,7 @@ import {
   Close as CloseIcon,
   Refresh as RefreshIcon,
 } from "@mui/icons-material";
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAppSelector } from "store/hooks";
 import { QuoteStatus, ConnectionStatus } from "models/tauriModel";
 import { selectPeers } from "store/selectors";
@@ -48,15 +48,17 @@ export default function MakerDiscoveryStatus() {
     .filter((p) => p.connection === ConnectionStatus.Connected)
     .map((p) => p.peer_id);
 
-  // Track peers that have ever been connected
+  // Track peers that have ever been connected (accumulating historical state)
   useEffect(() => {
-    if (connectedPeerIds.length > 0) {
-      setEverConnectedPeers((prev) => {
-        const updated = new Set(prev);
-        connectedPeerIds.forEach((id) => updated.add(id));
-        return updated;
-      });
-    }
+    if (connectedPeerIds.length === 0) return;
+    setEverConnectedPeers((prev) => {
+      const newIds = connectedPeerIds.filter((id) => !prev.has(id));
+      if (newIds.length === 0) return prev;
+      const updated = new Set(prev);
+      newIds.forEach((id) => updated.add(id));
+      return updated;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- peers is the stable source
   }, [peers]);
 
   const quotesInflight = peers.filter(

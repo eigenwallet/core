@@ -3,7 +3,7 @@ use std::{path::Path, sync::Arc, time::Duration};
 use crate::cli::api::tauri_bindings::{
     TauriBackgroundProgress, TauriEmitter, TauriHandle, TorBootstrapStatus,
 };
-use arti_client::{config::TorClientConfigBuilder, status::BootstrapStatus, Error, TorClient};
+use arti_client::{Error, TorClient, config::TorClientConfigBuilder, status::BootstrapStatus};
 use futures::StreamExt;
 use libp2p::core::transport::{OptionalTransport, OrTransport};
 use libp2p::Transport;
@@ -34,7 +34,7 @@ pub trait TorBackendSwap {
     fn into_transport(
         self,
         arti_address_conversion: AddressConversion,
-        arti_transport_hook: impl FnOnce(&mut TorTransport),
+        arti_transport_hook: impl FnOnce(TorTransport) -> TorTransport,
     ) -> std::io::Result<IntoTransportT>;
 }
 type IntoTransportT = OrTransport<
@@ -65,7 +65,7 @@ impl TorBackendSwap for TorBackend {
     fn into_transport(
         self,
         arti_address_conversion: AddressConversion,
-        arti_transport_hook: impl FnOnce(&mut TorTransport),
+        arti_transport_hook: impl FnOnce(TorTransport) -> TorTransport,
     ) -> std::io::Result<IntoTransportT> {
         fn plain_transport() -> std::io::Result<TcpTransport> {
             let tcp = libp2p::tcp::tokio::Transport::new(libp2p::tcp::Config::new().nodelay(true));
@@ -75,9 +75,9 @@ impl TorBackendSwap for TorBackend {
 
         let tor = match self {
             TorBackend::Arti(tor_client) => {
-                let mut tor_transport =
+                let tor_transport =
                     TorTransport::from_client(tor_client, arti_address_conversion);
-                arti_transport_hook(&mut tor_transport);
+                let tor_transport = arti_transport_hook(tor_transport);
                 OrTransport::new(
                     OptionalTransport::some(tor_transport),
                     OptionalTransport::none(),
@@ -103,6 +103,13 @@ async fn create_arti_tor_client(data_dir: &Path) -> Result<TorClient<TokioRustls
     let data_dir = data_dir.join("tor");
     let state_dir = data_dir.join("state");
     let cache_dir = data_dir.join("cache");
+
+    // Workaround for when the machine is running in a managed work-environment.
+    // Arti will otherwise fail if the home directory is writable by another group.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("ARTI_FS_DISABLE_PERMISSION_CHECKS", "1")
+    };
 
     // Workaround for https://gitlab.torproject.org/tpo/core/arti/-/issues/2224
     // We delete guards.json (if it exists) on startup to prevent an issue where arti will not find any guards to connect to

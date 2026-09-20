@@ -1,28 +1,26 @@
 use crate::primitives::{Confirmed, EstimateFeeRate, ScriptStatus, Subscription, Watchable};
-use crate::{bitcoin_address, parse_rpc_error_code, BitcoinWallet, BlockHeight, RpcErrorCode};
-use anyhow::{anyhow, bail, Context, Result};
-use bdk_chain::spk_client::{SyncRequest, SyncRequestBuilder};
+use crate::{BitcoinWallet, BlockHeight, RpcErrorCode, bitcoin_address, parse_rpc_error_code};
+use anyhow::{Context, Result, anyhow, bail};
 use bdk_chain::CheckPoint;
+use bdk_chain::spk_client::{SyncRequest, SyncRequestBuilder};
 use bdk_electrum::electrum_client::{ElectrumApi, GetHistoryRes};
 
+use bdk_wallet::KeychainKind;
+use bdk_wallet::WalletPersister;
 use bdk_wallet::bitcoin::FeeRate;
 use bdk_wallet::bitcoin::Network;
 use bdk_wallet::export::FullyNodedExport;
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::template::{Bip84, DescriptorTemplate};
-use bdk_wallet::KeychainKind;
-use bdk_wallet::WalletPersister;
 use bdk_wallet::{Balance, PersistedWallet};
-#[allow(deprecated)]
-use bitcoin::bip32::ExtendedPrivKey;
 use bitcoin::bip32::Xpriv;
-use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Address, Amount, Transaction, Txid};
+use bitcoin::{Address, Amount, Transaction, Txid, psbt::Psbt as PartiallySignedTransaction};
 use bitcoin::{Psbt, ScriptBuf, Weight};
 use derive_builder::Builder;
 use electrum_pool::{ElectrumBalancer, ElectrumBalancerConfig};
 use moka;
-use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -34,9 +32,10 @@ use std::sync::Mutex as SyncMutex;
 use std::time::Duration;
 use std::time::Instant;
 use sync_ext::{CumulativeProgressHandle, InnerSyncCallback, SyncCallbackExt};
-use tokio::sync::watch;
 use tokio::sync::Mutex as TokioMutex;
-use tracing::{debug_span, Instrument};
+use tokio::sync::RwLock as TokioRwLock;
+use tokio::sync::watch;
+use tracing::{Instrument, debug_span};
 
 pub type TauriHandle = Option<Arc<dyn BitcoinTauriHandle>>;
 pub trait BitcoinTauriHandle: Send + Sync {
@@ -69,7 +68,7 @@ pub trait BitcoinTauriBackgroundTask: Send + Sync {
 }
 
 pub trait BitcoinWalletSeed {
-    fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<ExtendedPrivKey>;
+    fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<Xpriv>;
 
     /// Same as `derive_extended_private_key`, but using the legacy BDK API.
     ///
@@ -85,7 +84,8 @@ pub trait BitcoinWalletSeed {
 const TWENTY_PERCENT: Decimal = Decimal::from_parts(20, 0, 0, false, 2);
 pub const MAX_RELATIVE_TX_FEE: Decimal = TWENTY_PERCENT;
 pub const MAX_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(100_000);
-pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(1000);
+pub const MIN_ABSOLUTE_TX_FEE_SATS: u64 = 1000;
+pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(MIN_ABSOLUTE_TX_FEE_SATS);
 pub const DUST_AMOUNT: Amount = Amount::from_sat(546);
 
 /// This is our wrapper around a bdk wallet and a corresponding
@@ -102,7 +102,7 @@ pub struct Wallet<Persister = Connection, C = Client> {
     /// The database connection used to persist the wallet.
     persister: Arc<TokioMutex<Persister>>,
     /// The electrum client.
-    electrum_client: Arc<TokioMutex<C>>,
+    electrum_client: Arc<C>,
     /// The cached fee estimator for the electrum client.
     cached_electrum_fee_estimator: Arc<CachedFeeEstimator<C>>,
     /// The cached fee estimator for the mempool client.
@@ -127,16 +127,20 @@ pub struct Client {
     /// The underlying electrum balancer for load balancing across multiple servers.
     inner: Arc<ElectrumBalancer>,
     /// The history of transactions for each script.
-    script_history: BTreeMap<ScriptBuf, Vec<GetHistoryRes>>,
-    /// The subscriptions to the status of transactions.
-    subscriptions: HashMap<(Txid, ScriptBuf), Subscription>,
+    script_history: Arc<TokioRwLock<BTreeMap<ScriptBuf, Vec<GetHistoryRes>>>>,
+    /// The status-update channels we poll, keyed by the watched transaction and script.
+    subscriptions: Arc<TokioMutex<HashMap<(Txid, ScriptBuf), watch::Sender<ScriptStatus>>>>,
     /// The time of the last sync.
-    last_sync: Instant,
+    last_sync: Arc<SyncMutex<Instant>>,
     /// How often we sync with the server.
     sync_interval: Duration,
+    /// How long a subscription is kept alive after its last receiver is dropped.
+    subscription_idle_timeout: Duration,
     /// The height of the latest block we know about.
-    latest_block_height: BlockHeight,
+    latest_block_height: Arc<SyncMutex<BlockHeight>>,
 }
+
+const DEFAULT_SUBSCRIPTION_IDLE_TIMEOUT: Duration = Duration::from_secs(4 * 60);
 
 /// Holds the configuration parameters for creating a Bitcoin wallet.
 /// The actual Wallet<Connection> will be constructed from this configuration.
@@ -160,6 +164,8 @@ pub struct WalletConfig<Seed: BitcoinWalletSeed> {
     finality_confirmations: u32,
     target_block: u32,
     sync_interval: Duration,
+    #[builder(default = "DEFAULT_SUBSCRIPTION_IDLE_TIMEOUT")]
+    subscription_idle_timeout: Duration,
     #[builder(default)]
     tauri_handle: TauriHandle,
     #[builder(default = "true")]
@@ -175,9 +181,10 @@ impl<Seed: BitcoinWalletSeed> WalletBuilder<Seed> {
             .validate_config()
             .map_err(|e| anyhow!("Builder validation failed: {e}"))?;
 
-        let client = Client::new(&config.electrum_rpc_urls, config.sync_interval)
+        let mut client = Client::new(&config.electrum_rpc_urls, config.sync_interval)
             .await
             .context("Failed to create Electrum client")?;
+        client.subscription_idle_timeout = config.subscription_idle_timeout;
 
         match &config.persister {
             PersisterConfig::SqliteFile { data_dir } => {
@@ -556,24 +563,22 @@ impl Wallet {
 
         let progress_handle = tauri_handle.as_ref().map(|th| th.start_full_scan());
 
-        let callback = progress_handle.clone().and_then(|ph| InnerSyncCallback::new(move |consumed, total| {
-            ph.update(consumed,total);
-        })).chain(InnerSyncCallback::new(move |consumed, total| {
-            tracing::debug!(
-                "Full scanning Bitcoin wallet, currently at index {}. We will scan around {} in total.",
-                consumed,
-                total
-            );
-        }).throttle_callback(10.0)).to_full_scan_callback(Self::SCAN_STOP_GAP, 100);
+        let wallet = Arc::new(wallet);
+        let ph = progress_handle.clone();
+        let full_scan_response = client.inner.call("full_scan_wallet", move |electrum_client| {
+            let callback = ph.clone().and_then(|ph| InnerSyncCallback::new(move |consumed, total| {
+                ph.update(consumed, total);
+            })).chain(InnerSyncCallback::new(move |consumed, total| {
+                tracing::debug!(
+                    "Full scanning Bitcoin wallet, currently at index {}. We will scan around {} in total.",
+                    consumed,
+                    total
+                );
+            }).throttle_callback(10.0)).to_full_scan_callback(Self::SCAN_STOP_GAP, 100);
 
-        let full_scan = wallet.start_full_scan().inspect(callback);
-
-        let full_scan_response = client.inner.get_any_client().await?.full_scan(
-            full_scan,
-            Self::SCAN_STOP_GAP as usize,
-            Self::SCAN_BATCH_SIZE as usize,
-            true,
-        )?;
+            let full_scan = wallet.start_full_scan().inspect(callback);
+            electrum_client.full_scan(full_scan, Self::SCAN_STOP_GAP as usize, Self::SCAN_BATCH_SIZE as usize, true)
+        }).await?;
 
         // Only create the persister once we have the full scan result
         let mut persister = persister_constructor()?;
@@ -608,7 +613,7 @@ impl Wallet {
 
         Ok(Wallet {
             wallet: wallet.into_arc_mutex_async(),
-            electrum_client: client.into_arc_mutex_async(),
+            electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator,
             persister: persister.into_arc_mutex_async(),
@@ -667,7 +672,7 @@ impl Wallet {
 
         let wallet = Wallet {
             wallet: wallet.into_arc_mutex_async(),
-            electrum_client: client.into_arc_mutex_async(),
+            electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(cached_mempool_fee_estimator),
             persister: persister.into_arc_mutex_async(),
@@ -700,8 +705,8 @@ impl Wallet {
             )))
             .await;
 
-        let client = self.electrum_client.lock().await;
-        let broadcast_results = client
+        let broadcast_results = self
+            .electrum_client
             .transaction_broadcast_all(&transaction)
             .await
             .with_context(|| {
@@ -761,6 +766,25 @@ impl Wallet {
         Ok((txid, subscription))
     }
 
+    /// Broadcast a transaction, but only if it's not already in the mempool/blockchain.
+    /// Return txid and a subscription to it's status in either case.
+    pub async fn ensure_broadcasted(
+        &self,
+        tx: Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        let txid = tx.compute_txid();
+
+        let status = self.status_of_script(&tx).await?;
+
+        if matches!(status, ScriptStatus::InMempool | ScriptStatus::Confirmed(_)) {
+            let subscription = self.subscribe_to(Box::new(tx)).await;
+            return Ok((txid, subscription));
+        }
+
+        self.broadcast(tx, kind).await
+    }
+
     pub async fn get_raw_transaction(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
         self.get_tx(txid)
             .await
@@ -781,24 +805,15 @@ impl Wallet {
     }
 
     pub async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
-        self.electrum_client
-            .lock()
-            .await
-            .status_of_script(tx, true)
-            .await
+        self.electrum_client.status_of_script(tx, true).await
     }
 
     pub async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
         let txid = tx.id();
         let script = tx.script();
+        let idle_timeout = self.electrum_client.subscription_idle_timeout;
 
-        let initial_status = match self
-            .electrum_client
-            .lock()
-            .await
-            .status_of_script(&tx, false)
-            .await
-        {
+        let initial_status = match self.electrum_client.status_of_script(&tx, false).await {
             Ok(status) => Some(status),
             Err(err) => {
                 tracing::debug!(%txid, %err, "Failed to get initial status for subscription. We won't notify the caller and will try again later.");
@@ -806,22 +821,21 @@ impl Wallet {
             }
         };
 
-        let sub = self
-            .electrum_client
-            .lock()
-            .await
-            .subscriptions
+        let mut subscriptions = self.electrum_client.subscriptions.lock().await;
+
+        let sender = subscriptions
             .entry((txid, script.clone()))
             .or_insert_with(|| {
-                let (sender, receiver) = watch::channel(ScriptStatus::Unseen);
+                let (sender, _) = watch::channel(ScriptStatus::Unseen);
                 let client = self.electrum_client.clone();
+                let task_sender = sender.clone();
 
                 tokio::spawn(async move {
                     let mut last_status = initial_status;
+                    let mut idle_since: Option<Instant> = None;
 
                     loop {
-                        let new_status = client.lock()
-                            .await
+                        let new_status = client
                             .status_of_script(&tx, false)
                             .await
                             .unwrap_or_else(|error| {
@@ -829,32 +843,46 @@ impl Wallet {
                                 ScriptStatus::Retrying
                             });
 
-                        if new_status != ScriptStatus::Retrying
-                        {
+                        if new_status != ScriptStatus::Retrying {
                             last_status = Some(trace_status_change(txid, last_status, new_status));
+                            let _ = task_sender.send(new_status);
+                        }
 
-                            let all_receivers_gone = sender.send(new_status).is_err();
+                        if task_sender.receiver_count() > 0 {
+                            idle_since = None;
+                        } else if idle_since.get_or_insert_with(Instant::now).elapsed()
+                            >= idle_timeout
+                        {
+                            let mut subscriptions = client.subscriptions.lock().await;
 
-                            if all_receivers_gone {
-                                tracing::debug!(%txid, "All receivers gone, removing subscription");
-                                client.lock().await.subscriptions.remove(&(txid, script));
+                            if subscriptions
+                                .get(&(txid, script.clone()))
+                                .is_some_and(|sender| sender.receiver_count() == 0)
+                            {
+                                tracing::debug!(%txid, ?idle_timeout, "No subscribers for transaction status, dropping subscription");
+                                subscriptions.remove(&(txid, script));
                                 return;
                             }
+
+                            idle_since = None;
                         }
 
                         tokio::time::sleep(Duration::from_secs(5)).await;
                     }
                 }.instrument(debug_span!("BitcoinWalletSubscription")));
 
-                Subscription {
-                    receiver,
-                    finality_confirmations: self.finality_confirmations,
-                    txid,
-                }
-            })
-            .clone();
+                sender
+            });
 
-        sub
+        Subscription {
+            receiver: sender.subscribe(),
+            finality_confirmations: self.finality_confirmations,
+            txid,
+        }
+    }
+
+    pub async fn active_subscription_count(&self) -> usize {
+        self.electrum_client.subscriptions.lock().await.len()
     }
 
     pub async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
@@ -871,8 +899,8 @@ impl Wallet {
 
     /// Get a transaction from the Electrum server or the cache.
     pub async fn get_tx(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
-        let client = self.electrum_client.lock().await;
-        let tx = client
+        let tx = self
+            .electrum_client
             .get_tx(txid)
             .await
             .context("Failed to get transaction from cache or Electrum server")?;
@@ -1014,10 +1042,8 @@ impl Wallet {
 
         let sync_response = self
             .electrum_client
-            .lock()
-            .await
             .inner
-            .call_async("sync_wallet", move |client| {
+            .call("sync_wallet", move |client| {
                 let sync_request_factory = sync_request_factory.clone();
                 let callback = callback.clone();
 
@@ -1093,6 +1119,13 @@ impl Wallet {
         )
         .await
         .context("Failed to sync Bitcoin wallet after retries")
+    }
+
+    pub async fn health_check(&self) -> Result<()> {
+        self.electrum_client
+            .update_block_height()
+            .await
+            .context("Bitcoin wallet failed to reach the Electrum backend")
     }
 
     /// Calculate the fee for a given transaction.
@@ -1464,7 +1497,7 @@ where
         // because we are draining the wallet (using all inputs) and
         // always have one output of constant size
         //
-        // The only changable part is the amount of the output.
+        // The only changeable part is the amount of the output.
         // If we increase the fee, the output amount simply will decrease
         //
         // The inputs are constant, so only the output amount changes.
@@ -1564,11 +1597,11 @@ where
             Some(max_giveable) if max_giveable < DUST_AMOUNT => (Amount::ZERO, fee),
             Some(max_giveable) => {
                 // If we have enough funds, we subtract the fee from the max giveable
-                // and return the resul
+                // and return the result
                 match max_giveable.checked_sub(fee) {
                     Some(max_giveable) => (max_giveable, fee),
                     // Let's say we have 2000 sats in the wallet
-                    // The dummy script choses 0 sats as a fee
+                    // The dummy script chooses 0 sats as a fee
                     // and drains the 2000 sats
                     //
                     // Our smart fee estimation says we need 2500 sats to get the transaction confirmed
@@ -1623,32 +1656,38 @@ impl Client {
             },
         )
         .await?;
+        let initial_last_sync = Instant::now()
+            .checked_sub(sync_interval)
+            .ok_or(anyhow!("failed to set last sync time"))?;
 
         Ok(Self {
             inner: Arc::new(balancer),
-            script_history: Default::default(),
-            last_sync: Instant::now()
-                .checked_sub(sync_interval)
-                .ok_or(anyhow!("failed to set last sync time"))?,
+            script_history: Arc::new(TokioRwLock::new(BTreeMap::new())),
+            last_sync: Arc::new(SyncMutex::new(initial_last_sync)),
             sync_interval,
-            latest_block_height: BlockHeight::from(0),
-            subscriptions: Default::default(),
+            subscription_idle_timeout: DEFAULT_SUBSCRIPTION_IDLE_TIMEOUT,
+            latest_block_height: Arc::new(SyncMutex::new(BlockHeight::from(0))),
+            subscriptions: Arc::new(TokioMutex::new(HashMap::new())),
         })
     }
 
     /// Update the client state, if the refresh duration has passed.
     ///
     /// Optionally force an update even if the sync interval has not passed.
-    pub async fn update_state(&mut self, force: bool) -> Result<()> {
+    pub async fn update_state(&self, force: bool) -> Result<()> {
         let now = Instant::now();
 
-        if !force && now.duration_since(self.last_sync) < self.sync_interval {
-            return Ok(());
+        if !force {
+            let last_sync = *self.last_sync.lock().expect("last_sync mutex poisoned");
+            if now.duration_since(last_sync) < self.sync_interval {
+                return Ok(());
+            }
         }
 
-        self.last_sync = now;
         self.update_script_histories().await?;
         self.update_block_height().await?;
+
+        *self.last_sync.lock().expect("last_sync mutex poisoned") = Instant::now();
 
         Ok(())
     }
@@ -1658,7 +1697,7 @@ impl Client {
     /// As opposed to [`update_state`] this function does not
     /// check the time since the last update before refreshing
     /// It therefore also does not take a [`force`] parameter
-    pub async fn update_state_single(&mut self, script: &dyn Watchable) -> Result<()> {
+    pub async fn update_state_single(&self, script: &dyn Watchable) -> Result<()> {
         self.update_script_history(script).await?;
         self.update_block_height().await?;
 
@@ -1666,40 +1705,44 @@ impl Client {
     }
 
     /// Update the block height.
-    async fn update_block_height(&mut self) -> Result<()> {
+    pub async fn update_block_height(&self) -> Result<()> {
         let latest_block = self
             .inner
-            .call_async("block_headers_subscribe", |client| {
+            .call("block_headers_subscribe", |client| {
                 client.inner.block_headers_subscribe()
             })
             .await
             .context("Failed to subscribe to header notifications")?;
         let latest_block_height = BlockHeight::try_from(latest_block)?;
 
-        if latest_block_height > self.latest_block_height {
+        let mut current = self
+            .latest_block_height
+            .lock()
+            .expect("latest_block_height mutex poisoned");
+        if latest_block_height > *current {
             tracing::trace!(
                 block_height = u32::from(latest_block_height),
                 "Got notification for new block"
             );
-            self.latest_block_height = latest_block_height;
+            *current = latest_block_height;
         }
 
         Ok(())
     }
 
     /// Update the script histories.
-    async fn update_script_histories(&mut self) -> Result<()> {
-        let scripts: Vec<_> = self.script_history.keys().cloned().collect();
+    async fn update_script_histories(&self) -> Result<()> {
+        let scripts: Vec<_> = self.script_history.read().await.keys().cloned().collect();
 
         // No need to do any network request if we have nothing to fetch
         if scripts.is_empty() {
             return Ok(());
         }
 
-        // Concurrently fetch the script histories from ALL electrum servers
+        // Concurrently fetch the script histories from the electrum servers
         let results = self
             .inner
-            .join_all("batch_script_get_history", {
+            .join_quorum("batch_script_get_history", {
                 let scripts = scripts.clone();
 
                 move |client| {
@@ -1724,6 +1767,7 @@ impl Client {
 
         // Iterate through each script we fetched and find the highest
         // returned entry at any Electrum node
+        let mut script_history = self.script_history.write().await;
         for (script_index, script) in scripts.iter().enumerate() {
             let all_history_for_script: Vec<GetHistoryRes> = successful_results
                 .iter()
@@ -1745,32 +1789,36 @@ impl Client {
             }
 
             let final_history: Vec<GetHistoryRes> = best_history.into_values().collect();
-            self.script_history.insert(script.clone(), final_history);
+            script_history.insert(script.clone(), final_history);
         }
 
         Ok(())
     }
 
     /// Update the script history of a single script.
-    pub async fn update_script_history(&mut self, script: &dyn Watchable) -> Result<()> {
+    pub async fn update_script_history(&self, script: &dyn Watchable) -> Result<()> {
         let (script_buf, _) = script.script_and_txid();
         let script_clone = script_buf.clone();
 
-        // Call all electrum servers in parallel to get script history.
+        // Call the electrum servers in parallel to get the script history.
         let results = self
             .inner
-            .join_all("script_get_history", move |client| {
+            .join_quorum("script_get_history", move |client| {
                 client.inner.script_get_history(script_clone.as_script())
             })
             .await?;
 
         // Collect all successful history entries from all servers.
         let mut all_history_items: Vec<GetHistoryRes> = Vec::new();
+        let mut any_success = false;
         let mut first_error = None;
 
         for result in results {
             match result {
-                Ok(history) => all_history_items.extend(history),
+                Ok(history) => {
+                    any_success = true;
+                    all_history_items.extend(history);
+                }
                 Err(e) => {
                     if first_error.is_none() {
                         first_error = Some(e);
@@ -1779,12 +1827,10 @@ impl Client {
             }
         }
 
-        // If we got no history items at all, and there was an error, propagate it.
-        // Otherwise, it's valid for a script to have no history.
-        if all_history_items.is_empty() {
-            if let Some(err) = first_error {
-                return Err(err.into());
-            }
+        // If any of the calls succeeded, that is fine. Only if none
+        // succeeded we return the error.
+        if !any_success && let Some(err) = first_error {
+            return Err(err.into());
         }
 
         // Use a map to find the best (highest confirmation) entry for each transaction.
@@ -1802,7 +1848,10 @@ impl Client {
 
         let final_history: Vec<GetHistoryRes> = best_history.into_values().collect();
 
-        self.script_history.insert(script_buf, final_history);
+        self.script_history
+            .write()
+            .await
+            .insert(script_buf, final_history);
 
         Ok(())
     }
@@ -1828,15 +1877,23 @@ impl Client {
 
     /// Get the status of a script.
     pub async fn status_of_script(
-        &mut self,
+        &self,
         script: &dyn Watchable,
         force: bool,
     ) -> Result<ScriptStatus> {
         let (script_buf, txid) = script.script_and_txid();
 
-        if !self.script_history.contains_key(&script_buf) {
-            self.script_history.insert(script_buf.clone(), vec![]);
+        let is_first_time = {
+            let mut history = self.script_history.write().await;
+            if history.contains_key(&script_buf) {
+                false
+            } else {
+                history.insert(script_buf.clone(), vec![]);
+                true
+            }
+        };
 
+        if is_first_time {
             // Immediately refetch the status of the script
             // when we first subscribe to it.
             self.update_state_single(script).await?;
@@ -1849,10 +1906,12 @@ impl Client {
             self.update_state(false).await?;
         }
 
-        let history = self.script_history.entry(script_buf).or_default();
+        let history_guard = self.script_history.read().await;
+        let history = history_guard.get(&script_buf);
 
         let history_of_tx: Vec<&GetHistoryRes> = history
-            .iter()
+            .into_iter()
+            .flatten()
             .filter(|entry| entry.tx_hash == txid)
             .collect();
 
@@ -1867,6 +1926,11 @@ impl Client {
             tracing::warn!(%txid, "Found multiple history entries for the same txid. Ignoring all but the last one.");
         }
 
+        let latest_block_height = *self
+            .latest_block_height
+            .lock()
+            .expect("latest_block_height mutex poisoned");
+
         match last.height {
             // If the height is 0 or less, the transaction is still in the mempool.
             ..=0 => Ok(ScriptStatus::InMempool),
@@ -1874,74 +1938,95 @@ impl Client {
             height => Ok(ScriptStatus::Confirmed(
                 Confirmed::from_inclusion_and_latest_block(
                     u32::try_from(height)?,
-                    u32::from(self.latest_block_height),
+                    u32::from(latest_block_height),
                 ),
             )),
         }
     }
 
-    /// Get a transaction from the Electrum server.
-    /// Fails if the transaction is not found.
+    /// Get a transaction from the Electrum servers.
+    ///
+    /// A transaction returned by any single server is taken as proof of its
+    /// existence. Concluding that a transaction does *not* exist requires
+    /// `min_parallel_responses` servers to independently report it as not
+    /// found — or, if fewer servers are reachable, every reachable server (at
+    /// least one). If no server gives a valid answer, an error is returned.
     pub async fn get_tx(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
-        match self
+        let results = self
             .inner
-            .call_async_with_multi_error("get_raw_transaction", move |client| {
+            .join_quorum("get_raw_transaction", move |client| {
                 use bitcoin::consensus::Decodable;
-                client.inner.transaction_get_raw(&txid).and_then(|raw| {
-                    let mut cursor = std::io::Cursor::new(&raw);
-                    bitcoin::Transaction::consensus_decode(&mut cursor).map_err(|e| {
-                        bdk_electrum::electrum_client::Error::Protocol(
-                            format!("Failed to deserialize transaction: {}", e).into(),
-                        )
-                    })
-                })
+
+                match client.inner.transaction_get_raw(&txid) {
+                    Ok(raw) => {
+                        let mut cursor = std::io::Cursor::new(&raw);
+                        let tx =
+                            bitcoin::Transaction::consensus_decode(&mut cursor).map_err(|e| {
+                                bdk_electrum::electrum_client::Error::Protocol(
+                                    format!("Failed to deserialize transaction: {}", e).into(),
+                                )
+                            })?;
+
+                        Ok(Some(tx))
+                    }
+                    // A recognized "not found" is a valid answer, not a server failure
+                    Err(error) if indicates_tx_not_found(&error) => Ok(None),
+                    Err(error) => Err(error),
+                }
             })
             .await
+            .context("Failed to query Electrum servers for transaction")?;
+
+        if let Some(tx) = results
+            .iter()
+            .filter_map(|result| result.as_ref().ok())
+            .find_map(|response| response.as_ref())
         {
-            Ok(tx) => {
-                let tx = Arc::new(tx);
-                // Note: Perhaps it is better to only populate caches of the Electrum nodes
-                // that accepted our transaction?
-                self.inner.populate_tx_cache(vec![(*tx).clone()]);
-                Ok(Some(tx))
-            }
-            Err(multi_error) => {
-                // Check if any error indicates the transaction doesn't exist
-                let has_not_found = multi_error.any(|error| {
-                    let error_str = error.to_string();
-
-                    // Check for specific error patterns that indicate "not found"
-                    if error_str.contains("\"code\": Number(-5)")
-                        || error_str.contains("No such mempool or blockchain transaction")
-                        || error_str.contains("missing transaction")
-                    {
-                        return true;
-                    }
-
-                    // Also try to parse the RPC error code if possible
-                    let err_anyhow = anyhow::anyhow!(error_str);
-                    if let Ok(error_code) = parse_rpc_error_code(&err_anyhow) {
-                        if error_code == i64::from(RpcErrorCode::RpcInvalidAddressOrKey) {
-                            return true;
-                        }
-                    }
-
-                    false
-                });
-
-                if has_not_found {
-                    tracing::trace!(
-                        txid = %txid,
-                        error_count = multi_error.len(),
-                        "Transaction not found indicated by one or more Electrum servers"
-                    );
-                    Ok(None)
-                } else {
-                    let err = anyhow::anyhow!(multi_error);
-                    Err(err.context("Failed to get transaction from the Electrum server"))
-                }
-            }
+            let tx = Arc::new(tx.clone());
+            // Note: Perhaps it is better to only populate caches of the Electrum nodes
+            // that accepted our transaction?
+            self.inner.populate_tx_cache(vec![(*tx).clone()]);
+            return Ok(Some(tx));
         }
+
+        let not_found_responses = results
+            .iter()
+            .filter(|result| matches!(result, Ok(None)))
+            .count();
+        let required_not_found = self
+            .inner
+            .config()
+            .min_parallel_responses
+            .clamp(1, self.inner.client_count());
+
+        // If the quorum was not reached, join_quorum has waited for every server,
+        // so the reachable servers' answer is all the evidence there is
+        let all_servers_finished = results.len() >= self.inner.client_count();
+
+        if not_found_responses >= required_not_found
+            || (all_servers_finished && not_found_responses > 0)
+        {
+            tracing::trace!(
+                txid = %txid,
+                not_found_responses,
+                required_not_found,
+                "Transaction reported as not found by the reachable Electrum servers"
+            );
+            return Ok(None);
+        }
+
+        let errors: Vec<_> = results
+            .into_iter()
+            .filter_map(|result| result.err())
+            .collect();
+
+        Err(anyhow::Error::from(electrum_pool::MultiError::new(
+            errors,
+            format!(
+                "Could not determine whether transaction {} exists: only {} of the required {} servers reported it as not found",
+                txid, not_found_responses, required_not_found
+            ),
+        )))
     }
 
     /// Estimate the fee rate to be included in a block at the given offset.
@@ -1953,7 +2038,7 @@ impl Client {
         // Get the fee rate in Bitcoin per kilobyte
         let btc_per_kvb = self
             .inner
-            .call_async("estimate_fee", move |client| {
+            .call("estimate_fee", move |client| {
                 client.inner.estimate_fee(target_block as usize)
             })
             .await?;
@@ -1999,7 +2084,7 @@ impl Client {
         // First we fetch the fee histogram from the Electrum server
         let fee_histogram = self
             .inner
-            .call_async("get_fee_histogram", move |client| {
+            .call("get_fee_histogram", move |client| {
                 client.inner.raw_call("mempool.get_fee_histogram", vec![])
             })
             .await?;
@@ -2053,7 +2138,7 @@ impl Client {
     async fn min_relay_fee(&self) -> Result<FeeRate> {
         let min_relay_btc_per_kvb = self
             .inner
-            .call_async("relay_fee", |client| client.inner.relay_fee())
+            .call("relay_fee", |client| client.inner.relay_fee())
             .await?;
 
         // Convert to sat / kB without ever constructing an Amount from the float
@@ -2075,6 +2160,26 @@ impl Client {
 
         Ok(fee_rate)
     }
+}
+
+/// Returns true if the error is a server response indicating that the
+/// requested transaction does not exist (as opposed to the server failing
+/// to answer the query).
+fn indicates_tx_not_found(error: &bdk_electrum::electrum_client::Error) -> bool {
+    let error_str = error.to_string();
+
+    if error_str.contains("\"code\": Number(-5)")
+        || error_str.contains("No such mempool or blockchain transaction")
+        || error_str.contains("missing transaction")
+    {
+        return true;
+    }
+
+    let err_anyhow = anyhow!(error_str);
+    matches!(
+        parse_rpc_error_code(&err_anyhow),
+        Ok(code) if code == i64::from(RpcErrorCode::RpcInvalidAddressOrKey)
+    )
 }
 
 #[derive(Clone)]
@@ -2132,16 +2237,20 @@ impl BitcoinWallet for Wallet {
         Wallet::sign_and_finalize(self, psbt).await
     }
 
-    async fn broadcast(
+    async fn ensure_broadcasted(
         &self,
-        transaction: bitcoin::Transaction,
+        tx: bitcoin::Transaction,
         kind: &str,
     ) -> Result<(Txid, Subscription)> {
-        Wallet::broadcast(self, transaction, kind).await
+        Wallet::ensure_broadcasted(self, tx, kind).await
     }
 
     async fn sync(&self) -> Result<()> {
         Wallet::sync(self).await
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        Wallet::health_check(self).await
     }
 
     async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
@@ -2230,7 +2339,7 @@ impl EstimateFeeRate for Client {
     }
 
     async fn min_relay_fee(&self) -> Result<FeeRate> {
-        self.min_relay_fee().await
+        Client::min_relay_fee(self).await
     }
 }
 
@@ -2560,7 +2669,7 @@ mod mempool_client {
     static BASE_URL: &str = "https://mempool.space";
 
     use super::EstimateFeeRate;
-    use anyhow::{bail, Context, Result};
+    use anyhow::{Context, Result, bail};
     use bitcoin::{FeeRate, Network};
     use serde::Deserialize;
     use std::time::Duration;
@@ -2651,11 +2760,11 @@ pub mod pre_1_0_0_bdk {
     use std::path::Path;
     use std::sync::Arc;
 
-    use anyhow::{anyhow, Result};
-    use bdk::bitcoin::util::bip32::ExtendedPrivKey;
-    use bdk::bitcoin::Network;
-    use bdk::sled::Tree;
+    use anyhow::{Result, anyhow};
     use bdk::KeychainKind;
+    use bdk::bitcoin::Network;
+    use bdk::bitcoin::util::bip32::ExtendedPrivKey;
+    use bdk::sled::Tree;
     use tokio::sync::Mutex as TokioMutex;
 
     use super::IntoArcMutex;
@@ -2664,7 +2773,7 @@ pub mod pre_1_0_0_bdk {
     const SLED_TREE_NAME: &str = "default_tree";
 
     /// The is the old bdk wallet before the migration.
-    /// We need to contruct it before migration to get the keys and revelation indeces.
+    /// We need to construct it before migration to get the keys and revelation indices.
     pub struct OldWallet<D = Tree> {
         wallet: Arc<TokioMutex<bdk::Wallet<D>>>,
         network: Network,
@@ -2861,7 +2970,7 @@ impl TestWalletBuilder {
 
         let wallet = Wallet {
             wallet: bdk_core_wallet.into_arc_mutex_async(),
-            electrum_client: client.into_arc_mutex_async(),
+            electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(None), // We don't use mempool client in tests
             persister: persister.into_arc_mutex_async(),
@@ -2906,6 +3015,14 @@ impl TestWalletBuilder {
 #[async_trait::async_trait]
 #[allow(unused)]
 impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
+    async fn ensure_broadcasted(
+        &self,
+        tx: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        unimplemented!("stub method called erroneously")
+    }
+
     async fn balance(&self) -> Result<Amount> {
         unimplemented!("stub method called erroneously")
     }
@@ -2945,15 +3062,11 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         unimplemented!("stub method called erroneously")
     }
 
-    async fn broadcast(
-        &self,
-        transaction: bitcoin::Transaction,
-        kind: &str,
-    ) -> Result<(Txid, Subscription)> {
+    async fn sync(&self) -> Result<()> {
         unimplemented!("stub method called erroneously")
     }
 
-    async fn sync(&self) -> Result<()> {
+    async fn health_check(&self) -> Result<()> {
         unimplemented!("stub method called erroneously")
     }
 

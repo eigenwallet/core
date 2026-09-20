@@ -49,11 +49,9 @@ export function useFeedback() {
   });
   const [logsState, setLogsState] =
     useState<FeedbackLogsState>(initialLogsState);
-  const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const bodyTooLong = inputState.bodyText.length > MAX_FEEDBACK_LENGTH;
-
+  // Fetch swap logs when selection changes
   useEffect(() => {
     if (inputState.selectedSwap === null) {
       setLogsState((prev) => ({ ...prev, swapLogs: [] }));
@@ -76,41 +74,32 @@ export function useFeedback() {
       });
   }, [inputState.selectedSwap, inputState.isSwapLogsRedacted]);
 
+  // Fetch/process daemon logs when settings change
   useEffect(() => {
     if (!inputState.attachDaemonLogs) {
       setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
       return;
     }
 
-    try {
-      const hashedLogs = store.getState().logs?.state.logs ?? [];
+    const hashedLogs = store.getState().logs?.state.logs ?? [];
 
-      if (inputState.isDaemonLogsRedacted) {
-        const logs = hashedLogs.map((h) => h.log);
-        redactLogs(logs)
-          .then((redactedLogs) => {
-            setLogsState((prev) => ({
-              ...prev,
-              daemonLogs: hashLogs(redactedLogs),
-            }));
-            setError(null);
-          })
-          .catch((e) => {
-            logger.error(`Failed to redact daemon logs: ${e}`);
-            setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
-            setError(`Failed to redact daemon logs: ${e}`);
-          });
-      } else {
-        setLogsState((prev) => ({
-          ...prev,
-          daemonLogs: hashedLogs,
-        }));
-        setError(null);
-      }
-    } catch (e) {
-      logger.error(`Failed to fetch daemon logs: ${e}`);
-      setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
-      setError(`Failed to fetch daemon logs: ${e}`);
+    if (inputState.isDaemonLogsRedacted) {
+      const logs = hashedLogs.map((h) => h.log);
+      redactLogs(logs)
+        .then((redactedLogs) => {
+          setLogsState((prev) => ({
+            ...prev,
+            daemonLogs: hashLogs(redactedLogs),
+          }));
+          setError(null);
+        })
+        .catch((e) => {
+          logger.error(`Failed to redact daemon logs: ${e}`);
+          setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
+          setError(`Failed to redact daemon logs: ${e}`);
+        });
+    } else {
+      setLogsState((prev) => ({ ...prev, daemonLogs: hashedLogs }));
     }
   }, [inputState.attachDaemonLogs, inputState.isDaemonLogsRedacted]);
 
@@ -121,40 +110,48 @@ export function useFeedback() {
   };
 
   const submitFeedback = async () => {
-    if (inputState.bodyText.length === 0) {
-      setError("Please enter a message");
-      throw new Error("User did not enter a message");
-    }
+    try {
 
-    const attachments: AttachmentInput[] = [];
-    // Add swap logs as an attachment
-    if (logsState.swapLogs.length > 0) {
-      attachments.push({
-        key: `swap_logs_${inputState.selectedSwap}.txt`,
-        content: logsToRawString(logsState.swapLogs.map((h) => h.log)),
+      if (inputState.bodyText.length === 0) {
+        throw new Error("User did not enter a message");
+      }
+
+      const attachments: AttachmentInput[] = [];
+      // Add swap logs as an attachment
+      if (logsState.swapLogs.length > 0) {
+        attachments.push({
+          key: `swap_logs_${inputState.selectedSwap}.txt`,
+          content: logsToRawString(logsState.swapLogs.map((h) => h.log)),
+        });
+      }
+
+      // Handle daemon logs
+      if (logsState.daemonLogs.length > 0) {
+        attachments.push({
+          key: "daemon_logs.txt",
+          content: logsToRawString(logsState.daemonLogs.map((h) => h.log)),
+        });
+      }
+
+      // Call the updated API function
+      const feedbackId = await submitFeedbackViaHttp(
+        inputState.bodyText,
+        attachments,
+      );
+
+      enqueueSnackbar("Feedback submitted successfully", {
+        variant: "success",
       });
+
+      // Dispatch only the ID
+      store.dispatch(addFeedbackId(feedbackId));
+    } catch (error) {
+      // If there is an error, show it the message.
+      if (error instanceof Error) {
+        setError(error.message);
+        throw error
+      }
     }
-
-    // Handle daemon logs
-    if (logsState.daemonLogs.length > 0) {
-      attachments.push({
-        key: "daemon_logs.txt",
-        content: logsToRawString(logsState.daemonLogs.map((h) => h.log)),
-      });
-    }
-
-    // Call the updated API function
-    const feedbackId = await submitFeedbackViaHttp(
-      inputState.bodyText,
-      attachments,
-    );
-
-    enqueueSnackbar("Feedback submitted successfully", {
-      variant: "success",
-    });
-
-    // Dispatch only the ID
-    store.dispatch(addFeedbackId(feedbackId));
   };
 
   return {

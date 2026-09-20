@@ -77,7 +77,8 @@ impl<T: HttpTransport> ProvidesTransactionStatus for MoneroDaemon<T> {
                 .rpc_call(
                     "get_transactions",
                     Some(format!(r#"{{ "txs_hashes": ["{}"] }}"#, tx_hash_hex)),
-                    4096,
+                    // 64kb, fairly arbitrary, but should be enough
+                    65536,
                 )
                 .await?;
 
@@ -102,13 +103,13 @@ impl<T: HttpTransport> ProvidesTransactionStatus for MoneroDaemon<T> {
                 return Ok(TransactionStatus::InPool);
             }
 
-            return Ok(TransactionStatus::InBlock {
+            Ok(TransactionStatus::InBlock {
                 block_height: tx_info.block_height.ok_or_else(|| {
                     InterfaceError::InvalidInterface(
                         "Transaction has in_pool=false but has no block_height".to_string(),
                     )
                 })?,
-            });
+            })
         }
     }
 }

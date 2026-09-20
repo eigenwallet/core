@@ -1,5 +1,5 @@
-target/
-target-check/
+target
+target-check
 
 .vscode
 .claude/settings.local.json
@@ -17,6 +17,9 @@ tempdb.sqlite
 swap-orchestrator/docker-compose.yml
 swap-orchestrator/config.toml
 
+# ASB RPC auth keyfile
+rpc-auth
+
 # release build generator scripts
 release-build.sh
 cn_macos
@@ -24,3 +27,5 @@ libp2p-rendezvous-node/rendezvous-data
 rust-electrum-client/
 rust-libp2p/
 bdk/
+
+.direnv/

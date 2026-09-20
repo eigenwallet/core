@@ -105,9 +105,13 @@ function MoneroRecoveryKeysDialog({
 
 export function SwapMoneroRecoveryButton({
   swap,
+  children,
   ...props
 }: { swap: GetSwapInfoResponseExt } & ButtonProps) {
-  const isRecoverable = swap.state_name === BobStateName.BtcRedeemed;
+  const isRecoverable =
+    swap.state_name === BobStateName.BtcRedeemed ||
+    swap.state_name === BobStateName.XmrRedeemConstructed ||
+    swap.state_name === BobStateName.XmrRedeemPublished;
 
   if (!isRecoverable) {
     return <></>;
@@ -124,7 +128,7 @@ export function SwapMoneroRecoveryButton({
         }}
         {...props}
       >
-        Display Monero Recovery Keys
+        {children}
       </PromiseInvokeButton>
       <MoneroRecoveryKeysDialog {...swap} />
     </>

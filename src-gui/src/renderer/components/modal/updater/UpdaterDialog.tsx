@@ -66,7 +66,9 @@ export default function UpdaterDialog() {
 
   useEffect(() => {
     // Check for updates when component mounts
-    check({ proxy: proxy === null ? undefined : proxy! })
+    if (/android|iphone|ipad/i.test(navigator.userAgent)) return;
+
+    check({ proxy: proxy ?? undefined })
       .then((updateResponse) => {
         console.log("updateResponse", updateResponse);
         setAvailableUpdate(updateResponse);

@@ -60,8 +60,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .create_unbootstrapped_async()
             .await?;
 
-        let client = std::sync::Arc::new(client);
-
         let client_clone = client.clone();
         tokio::spawn(async move {
             match client_clone.bootstrap().await {
@@ -69,7 +67,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     info!("Tor client successfully bootstrapped");
                 }
                 Err(e) => {
-                    tracing::error!("Failed to bootstrap Tor client: {}. Tor functionality will be unavailable.", e);
+                    tracing::error!(
+                        "Failed to bootstrap Tor client: {}. Tor functionality will be unavailable.",
+                        e
+                    );
                 }
             }
         });

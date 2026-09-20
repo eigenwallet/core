@@ -4,12 +4,13 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::out_event;
+use crate::protocols::metered::{Metered, RequestResponseMetrics};
 
 const PROTOCOL: &str = "/comit/xmr/btc/transfer_proof/1.0.0";
 type OutEvent = request_response::Event<Request, ()>;
 type Message = request_response::Message<Request, ()>;
 
-pub type Behaviour = request_response::cbor::Behaviour<Request, ()>;
+pub type Behaviour = Metered<request_response::cbor::Behaviour<Request, ()>>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TransferProofProtocol;
@@ -26,19 +27,27 @@ pub struct Request {
     pub tx_lock_proof: swap_core::monero::TransferProof,
 }
 
-pub fn alice() -> Behaviour {
-    Behaviour::new(
-        vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Outbound)],
-        request_response::Config::default()
-            .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+pub fn alice(metrics: Option<RequestResponseMetrics>) -> Behaviour {
+    Metered::new(
+        request_response::cbor::Behaviour::new(
+            vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Outbound)],
+            request_response::Config::default()
+                .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+        ),
+        PROTOCOL,
+        metrics,
     )
 }
 
 pub fn bob() -> Behaviour {
-    Behaviour::new(
-        vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Inbound)],
-        request_response::Config::default()
-            .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+    Metered::new(
+        request_response::cbor::Behaviour::new(
+            vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Inbound)],
+            request_response::Config::default()
+                .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+        ),
+        PROTOCOL,
+        None,
     )
 }
 

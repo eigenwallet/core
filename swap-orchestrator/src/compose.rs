@@ -7,9 +7,29 @@ use std::{
     path::PathBuf,
 };
 
+/// Per-container docker `json-file` log rotation, referenced by every service.
+/// `max-file * max-size` is the hard cap on a container's daemon logs before the
+/// oldest file is dropped (5 * 1g = 5GB).
+pub const DOCKER_LOG_MAX_SIZE: &str = "1g";
+pub const DOCKER_LOG_MAX_FILE: &str = "5";
+
 pub const ASB_DATA_DIR: &str = "/asb-data";
 pub const ASB_CONFIG_FILE: &str = "config.toml";
+pub const ASB_RPC_AUTH_FILE_ON_HOST: &str = "./rpc-auth";
+pub const ASB_RPC_AUTH_FILE_IN_CONTAINER: &str = "/rpc-auth";
 pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
+pub const PROMTAIL_CONFIG_FILE: &str = "./promtail.yml";
+pub const PROMETHEUS_CONFIG_FILE: &str = "./prometheus.yml";
+
+/// Port `cloudflared` serves its built-in Prometheus metrics on, scraped by the
+/// prometheus-agent over the docker network.
+pub const CLOUDFLARED_METRICS_PORT: u16 = 2000;
+
+/// `bitcoin-exporter`'s default `METRICS_PORT`.
+pub const BITCOIN_EXPORTER_METRICS_PORT: u16 = 9332;
+
+/// `electrs`' default `--monitoring-addr` port.
+pub const ELECTRS_MONITORING_PORT: u16 = 4224;
 
 pub struct OrchestratorInput {
     pub ports: OrchestratorPorts,
@@ -17,6 +37,59 @@ pub struct OrchestratorInput {
     pub images: OrchestratorImages<OrchestratorImage>,
     pub directories: OrchestratorDirectories,
     pub want_tor: bool,
+    pub cloudflared: Option<CloudflaredConfig>,
+    pub promtail: Option<PromtailConfig>,
+    pub metrics: Option<MetricsConfig>,
+}
+
+/// Cloudflare Tunnel configuration.
+///
+/// When set, the orchestrator adds a `cloudflared` service to the compose file
+/// and configures the ASB to listen on a WebSocket transport and advertise the
+/// tunnel's public hostname as an external libp2p address.
+#[derive(Clone)]
+pub struct CloudflaredConfig {
+    /// The tunnel run token from the Cloudflare Zero Trust dashboard.
+    pub token: String,
+    /// The public hostname assigned to the tunnel in the Cloudflare dashboard
+    /// (e.g. `asb.example.com`). Advertised to peers as `/dns4/<host>/tcp/<port>/wss`.
+    pub external_host: String,
+    /// The port clients will dial on the public hostname.
+    /// Almost always `443` for `wss`.
+    pub external_port: u16,
+    /// The port the ASB will listen on inside the docker network for the
+    /// WebSocket transport. The tunnel's ingress rule should point at
+    /// `http://asb:<internal_port>`.
+    pub internal_port: u16,
+}
+
+/// Promtail log-shipper configuration.
+///
+/// When set, the orchestrator adds `promtail` and `docker-socket-proxy`
+/// services to the compose file and writes a `promtail.yml` next to
+/// `docker-compose.yml`. The shipper tails the JSON tracing logs from the
+/// `asb-data` volume (mounted read-only) and the stdout of the
+/// `bitcoind`/`monerod`/`electrs` containers (read via the socket proxy),
+/// then pushes everything to a Loki endpoint over HTTPS with a bearer token.
+#[derive(Clone)]
+pub struct PromtailConfig {
+    /// Loki push endpoint, e.g.
+    /// `https://loki-asb-logs.example.com/loki/api/v1/push`.
+    pub loki_push_url: String,
+    /// Bearer token presented to the Loki endpoint. Baked into the generated
+    /// `promtail.yml` only — never written to `docker-compose.yml`.
+    pub loki_push_token: String,
+    /// Short identifier for this host (e.g. `asb-de-1`). Exported as the
+    /// `host` Loki label on both the asb and node log streams so operators
+    /// can filter a whole deployment in Grafana.
+    pub instance: String,
+}
+
+#[derive(Clone)]
+pub struct MetricsConfig {
+    pub remote_write_url: String,
+    pub token: String,
+    pub instance: String,
 }
 
 pub struct OrchestratorDirectories {
@@ -38,6 +111,12 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub asb_controller: T,
     pub asb_tracing_logger: T,
     pub rendezvous_node: T,
+    pub cloudflared: T,
+    pub promtail: T,
+    pub docker_socket_proxy: T,
+    pub cadvisor: T,
+    pub prometheus_agent: T,
+    pub bitcoin_exporter: T,
 }
 
 pub struct OrchestratorPorts {
@@ -48,6 +127,7 @@ pub struct OrchestratorPorts {
     pub tor_socks: u16,
     pub asb_libp2p: u16,
     pub asb_rpc_port: u16,
+    pub asb_metrics_port: u16,
     pub rendezvous_node_port: u16,
 }
 
@@ -62,6 +142,7 @@ impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for O
                 tor_socks: 9050,
                 asb_libp2p: 9939,
                 asb_rpc_port: 9944,
+                asb_metrics_port: 9945,
                 rendezvous_node_port: 8888,
             },
             (monero_address::Network::Stagenet, bitcoin::Network::Testnet) => OrchestratorPorts {
@@ -72,6 +153,7 @@ impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for O
                 tor_socks: 9050,
                 asb_libp2p: 9839,
                 asb_rpc_port: 9944,
+                asb_metrics_port: 9945,
                 rendezvous_node_port: 8888,
             },
             _ => panic!("Unsupported Bitcoin / Monero network combination"),
@@ -109,10 +191,11 @@ impl OrchestratorDirectories {
 /// See: https://docs.docker.com/reference/compose-file/build/#illustrative-example
 #[derive(Debug, Clone)]
 pub struct DockerBuildInput {
-    // Usually this is the root of the Cargo workspace
-    pub context: &'static str,
+    // Root of the Cargo workspace; may embed a token in the URL userinfo for a private repo.
+    pub context: String,
     // Usually this is the path to the Dockerfile
     pub dockerfile: &'static str,
+    pub keep_git_dir: bool,
 }
 
 /// Specified a docker image to use
@@ -161,6 +244,7 @@ fn build(input: OrchestratorInput) -> String {
         flag!("start"),
         flag!("--rpc-bind-port={}", input.ports.asb_rpc_port),
         flag!("--rpc-bind-host=0.0.0.0"),
+        flag!("--rpc-auth-file={}", ASB_RPC_AUTH_FILE_IN_CONTAINER),
     ];
 
     // monerod's --proxy addr:port and --tx-proxy tor,addr;port can only take numeric addr,
@@ -192,7 +276,14 @@ fn build(input: OrchestratorInput) -> String {
         // flag!(input.want_tor; "--proxy=tor:{}", input.ports.tor_socks), // the shell program above does the equivalent of this
     ];
 
-    let command_bitcoind = command![
+    // bitcoind `-rpcauth` credential the bitcoin-exporter authenticates with;
+    // the plaintext password is reused in the exporter's environment below.
+    let bitcoind_metrics_auth: Option<(String, String)> = input
+        .metrics
+        .is_some()
+        .then(|| generate_bitcoind_rpcauth("metrics"));
+
+    let mut command_bitcoind = command![
         "bitcoind",
         input.networks.bitcoin.to_flag(),
         flag!("-rpcallowip=0.0.0.0/0"),
@@ -208,6 +299,10 @@ fn build(input: OrchestratorInput) -> String {
         flag!("-txindex=1"),
     ];
 
+    if let Some((rpcauth, _)) = bitcoind_metrics_auth.as_ref() {
+        command_bitcoind.0.push(flag!("-rpcauth={}", rpcauth));
+    }
+
     let electrs_network: containers::electrs::Network = input.networks.clone().into();
 
     let command_electrs = command![
@@ -218,6 +313,7 @@ fn build(input: OrchestratorInput) -> String {
         flag!("--daemon-rpc-addr=bitcoind:{}", input.ports.bitcoind_rpc),
         flag!("--daemon-p2p-addr=bitcoind:{}", input.ports.bitcoind_p2p),
         flag!("--electrum-rpc-addr=0.0.0.0:{}", input.ports.electrs),
+        flag!(input.metrics.is_some(); "--monitoring-addr=0.0.0.0:{}", ELECTRS_MONITORING_PORT),
         flag!("--log-filters=INFO"),
     ];
 
@@ -242,6 +338,150 @@ fn build(input: OrchestratorInput) -> String {
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
 
+    let cloudflared_segment = if let Some(cf) = input.cloudflared.as_ref() {
+        // We clear the image's ENTRYPOINT below, so `command` must start with
+        // the binary name, matching every other service in this compose file.
+        let command_cloudflared = command![
+            "cloudflared",
+            flag!("--no-autoupdate"),
+            flag!("tunnel"),
+            flag!("--metrics"),
+            flag!("0.0.0.0:{}", CLOUDFLARED_METRICS_PORT),
+            flag!("run"),
+            flag!("--token"),
+            flag!("{}", cf.token),
+        ];
+
+        format!(
+            "\
+  cloudflared:
+    container_name: cloudflared
+    {image_cloudflared}
+    restart: unless-stopped
+    logging: *default-logging
+    expose:
+      - {port_cloudflared_metrics}
+    entrypoint: ''
+    command: {command_cloudflared}\
+",
+            image_cloudflared = input.images.cloudflared.to_image_attribute(),
+            port_cloudflared_metrics = CLOUDFLARED_METRICS_PORT,
+        )
+    } else {
+        String::new()
+    };
+
+    let (promtail_segment, promtail_volume) = if input.promtail.is_some() {
+        // The promtail config file lives next to docker-compose.yml on the
+        // host. It is generated by the orchestrator at the same time as the
+        // compose file, with the URL/token/instance values baked in.
+        //
+        // docker-socket-proxy is the only container that mounts the docker
+        // socket. It exposes only the read-only container + network APIs
+        // (CONTAINERS=1, NETWORKS=1; POST stays disabled). promtail's docker
+        // service discovery needs /networks to compute the network labels in
+        // addition to listing containers, so both are required - but it still
+        // never holds write/root-equivalent access to the host.
+        let promtail_segment = format!(
+            "\
+  docker-socket-proxy:
+    container_name: docker-socket-proxy
+    {image_docker_socket_proxy}
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - CONTAINERS=1
+      - NETWORKS=1
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock:ro'
+    expose:
+      - 2375
+  promtail:
+    container_name: promtail
+    {image_promtail}
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - docker-socket-proxy
+    volumes:
+      - '{promtail_config_file}:/etc/promtail/promtail.yml:ro'
+      - 'asb-data:/asb-data:ro'
+      - 'promtail-positions:/var/lib/promtail'
+    command: [\"-config.file=/etc/promtail/promtail.yml\"]\
+",
+            image_docker_socket_proxy = input.images.docker_socket_proxy.to_image_attribute(),
+            image_promtail = input.images.promtail.to_image_attribute(),
+            promtail_config_file = PROMTAIL_CONFIG_FILE,
+        );
+        (promtail_segment, "promtail-positions:")
+    } else {
+        (String::new(), "")
+    };
+
+    let (metrics_segment, metrics_volume) = if input.metrics.is_some() {
+        let (_, exporter_password) = bitcoind_metrics_auth
+            .as_ref()
+            .expect("bitcoind metrics auth is generated whenever metrics are enabled");
+
+        let metrics_segment = format!(
+            "\
+  bitcoin-exporter:
+    container_name: bitcoin-exporter
+    {image_bitcoin_exporter}
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - bitcoind
+    environment:
+      - BITCOIN_RPC_HOST=bitcoind
+      - BITCOIN_RPC_PORT={bitcoind_rpc}
+      - BITCOIN_RPC_USER=metrics
+      - BITCOIN_RPC_PASSWORD={exporter_password}
+      - METRICS_PORT={bitcoin_exporter_metrics_port}
+    expose:
+      - {bitcoin_exporter_metrics_port}
+  cadvisor:
+    container_name: cadvisor
+    {image_cadvisor}
+    restart: unless-stopped
+    logging: *default-logging
+    privileged: true
+    cgroup: host
+    command:
+      # Workaround for cadvisor#3860
+      - '--disable_metrics=disk'
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - '/:/rootfs:ro'
+      - '/var/run:/var/run:ro'
+      - '/sys:/sys:ro'
+      - '/var/lib/docker/:/var/lib/docker:ro'
+      - '/dev/disk/:/dev/disk:ro'
+    expose:
+      - 8080
+  prometheus-agent:
+    container_name: prometheus-agent
+    {image_prometheus_agent}
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - '{prometheus_config_file}:/etc/prometheus/prometheus.yml:ro'
+      - 'prometheus-agent-data:/prometheus'
+    command: [\"--config.file=/etc/prometheus/prometheus.yml\", \"--agent\", \"--storage.agent.path=/prometheus\"]\
+",
+            image_bitcoin_exporter = input.images.bitcoin_exporter.to_image_attribute(),
+            image_cadvisor = input.images.cadvisor.to_image_attribute(),
+            image_prometheus_agent = input.images.prometheus_agent.to_image_attribute(),
+            prometheus_config_file = PROMETHEUS_CONFIG_FILE,
+            bitcoind_rpc = input.ports.bitcoind_rpc,
+            bitcoin_exporter_metrics_port = BITCOIN_EXPORTER_METRICS_PORT,
+        );
+        (metrics_segment, "prometheus-agent-data:")
+    } else {
+        (String::new(), "")
+    };
+
     let (tor_segment, tor_volume) = if input.want_tor {
         // This image comes with an empty /etc/tor/, so this is the entire config
         let command_tor = command![
@@ -258,6 +498,7 @@ fn build(input: OrchestratorInput) -> String {
     container_name: tor
     {image_tor}
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - 'tor-data:/var/lib/tor/'
     expose:
@@ -272,6 +513,13 @@ fn build(input: OrchestratorInput) -> String {
     } else {
         (String::new(), "")
     };
+
+    let electrs_monitoring_expose = if input.metrics.is_some() {
+        format!("\n      - {ELECTRS_MONITORING_PORT}")
+    } else {
+        String::new()
+    };
+
     let compose_str = format!(
         "\
 # This file was auto-generated by `orchestrator` on {date}
@@ -292,11 +540,17 @@ fn build(input: OrchestratorInput) -> String {
 #
 # Please check for new releases regularly. Breaking network changes are rare, but they do happen from time to time.
 name: {project_name}
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '{log_max_size}'
+    max-file: '{log_max_file}'
 services:
   monerod:
     container_name: monerod
     {image_monerod}
     restart: unless-stopped
+    logging: *default-logging
     user: root
     volumes:
       - 'monerod-data:/monerod-data/'
@@ -308,6 +562,7 @@ services:
     container_name: bitcoind
     {image_bitcoind}
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - 'bitcoind-data:/bitcoind-data/'
     expose:
@@ -320,6 +575,7 @@ services:
     container_name: electrs
     {image_electrs}
     restart: unless-stopped
+    logging: *default-logging
     user: root
     depends_on:
       - bitcoind
@@ -327,21 +583,38 @@ services:
       - 'bitcoind-data:/bitcoind-data'
       - 'electrs-data:/electrs-data'
     expose:
-      - {electrs_port}
+      - {electrs_port}{electrs_monitoring_expose}
     entrypoint: ''
     command: {command_electrs}
   {tor_segment}
+  {cloudflared_segment}
+  {promtail_segment}
+  {metrics_segment}
   asb:
     container_name: asb
     {image_asb}
     restart: unless-stopped
+    logging: *default-logging
+    cap_add:
+      - SYS_PTRACE
+    sysctls:
+      - net.ipv4.tcp_tw_reuse=1
+    ulimits:
+      nofile: 524288
     depends_on:
       - electrs
     volumes:
       - '{asb_config_path_on_host}:{asb_config_path_inside_container}'
+      # makes `docker compose up` fail if the keyfile is missing
+      - type: bind
+        source: '{asb_rpc_auth_file_on_host}'
+        target: '{asb_rpc_auth_file_in_container}'
+        read_only: true
+        bind:
+          create_host_path: false
       - 'asb-data:{asb_data_dir}'
     ports:
-      - '0.0.0.0:{asb_port}:{asb_port}'
+      - '0.0.0.0:{asb_libp2p_port}:{asb_libp2p_port}'
     entrypoint: ''
     command: {command_asb}
   asb-controller:
@@ -350,6 +623,7 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - asb
     entrypoint: ''
@@ -358,6 +632,7 @@ services:
     container_name: asb-tracing-logger
     {image_asb_tracing_logger}
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - asb
     volumes:
@@ -368,6 +643,7 @@ services:
     container_name: rendezvous-node
     {image_rendezvous_node}
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - 'rendezvous-data:/rendezvous-data'
     ports:
@@ -381,12 +657,17 @@ volumes:
   asb-data:
   rendezvous-data:
   {tor_volume}
+  {promtail_volume}
+  {metrics_volume}
 ",
+        log_max_size = DOCKER_LOG_MAX_SIZE,
+        log_max_file = DOCKER_LOG_MAX_FILE,
         port_monerod_rpc = input.ports.monerod_rpc,
         port_bitcoind_rpc = input.ports.bitcoind_rpc,
         port_bitcoind_p2p = input.ports.bitcoind_p2p,
         electrs_port = input.ports.electrs,
-        asb_port = input.ports.asb_libp2p,
+        electrs_monitoring_expose = electrs_monitoring_expose,
+        asb_libp2p_port = input.ports.asb_libp2p,
         rendezvous_node_port = input.ports.rendezvous_node_port,
         image_monerod = input.images.monerod.to_image_attribute(),
         image_electrs = input.images.electrs.to_image_attribute(),
@@ -399,11 +680,161 @@ volumes:
         asb_data_dir = input.directories.asb_data_dir.display(),
         asb_config_path_on_host = input.directories.asb_config_path_on_host(),
         asb_config_path_inside_container = input.directories.asb_config_path_inside_container().display(),
+        asb_rpc_auth_file_on_host = ASB_RPC_AUTH_FILE_ON_HOST,
+        asb_rpc_auth_file_in_container = ASB_RPC_AUTH_FILE_IN_CONTAINER,
     );
 
     validate_compose(&compose_str);
 
     compose_str
+}
+
+/// Builds the YAML body of `promtail.yml`.
+///
+/// Values from [`PromtailConfig`] are baked directly into the file — the
+/// container does not need env-var expansion at runtime, and the bearer
+/// token never appears in `docker-compose.yml`.
+///
+/// Two scrape jobs are emitted, both labelled with the same `host` so a
+/// deployment can be selected as a whole:
+/// - `asb-tracing` tails every `*.log` file under `/asb-data/logs/` (where
+///   `asb` writes `tracing.*`, `tracing-libp2p.*`, `tracing-monero-wallet.*`,
+///   `tracing-tor.*`, etc.) and labels each stream with the component
+///   extracted from the file name.
+/// - `node` discovers the `bitcoind`/`monerod`/`electrs` containers through
+///   the docker-socket-proxy and tails their stdout, labelling each stream
+///   with `job: node` and the `container` name. These daemons log plain text
+///   (electrs has no log file at all), so they are shipped as raw lines
+///   rather than parsed as JSON.
+pub fn build_promtail_yml(cfg: &PromtailConfig) -> String {
+    // The single quote in YAML single-quoted strings is escaped by doubling
+    // it. We single-quote every interpolated value so URLs containing
+    // colons/slashes and tokens with special characters stay literal.
+    fn yaml_single_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "''"))
+    }
+
+    format!(
+        "\
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /var/lib/promtail/positions.yaml
+
+clients:
+  - url: {url}
+    bearer_token: {token}
+    backoff_config:
+      min_period: 1s
+      max_period: 5m
+      max_retries: 0
+
+scrape_configs:
+  - job_name: asb-tracing
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: asb
+          host: {instance}
+          __path__: /asb-data/logs/*.log
+    pipeline_stages:
+      - regex:
+          source: filename
+          expression: '/asb-data/logs/(?P<component>[^./]+)'
+      - labels:
+          component:
+      - json:
+          expressions:
+            level: level
+            ts: timestamp
+            msg: fields.message
+      - timestamp:
+          source: ts
+          format: RFC3339Nano
+          fallback_formats:
+            - RFC3339
+          action_on_failure: skip
+      - labels:
+          level:
+  - job_name: node
+    docker_sd_configs:
+      - host: tcp://docker-socket-proxy:2375
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: [__meta_docker_container_name]
+        regex: '/?(bitcoind|monerod|electrs)'
+        action: keep
+      - source_labels: [__meta_docker_container_name]
+        regex: '/?(.*)'
+        target_label: container
+        replacement: '$1'
+      - target_label: job
+        replacement: node
+      - target_label: host
+        replacement: {instance}
+",
+        url = yaml_single_quote(&cfg.loki_push_url),
+        token = yaml_single_quote(&cfg.loki_push_token),
+        instance = yaml_single_quote(&cfg.instance),
+    )
+}
+
+/// Builds `prometheus.yml`. Always scrapes cadvisor, the ASB's libp2p endpoint,
+/// the bitcoin-exporter and electrs; also scrapes cloudflared when
+/// `scrape_cloudflared` is set.
+pub fn build_prometheus_agent_yml(
+    cfg: &MetricsConfig,
+    asb_metrics_port: u16,
+    scrape_cloudflared: bool,
+) -> String {
+    fn yaml_single_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "''"))
+    }
+
+    let cloudflared_scrape = if scrape_cloudflared {
+        format!(
+            "
+  - job_name: cloudflared
+    static_configs:
+      - targets: ['cloudflared:{CLOUDFLARED_METRICS_PORT}']"
+        )
+    } else {
+        String::new()
+    };
+
+    format!(
+        "\
+global:
+  scrape_interval: 30s
+  external_labels:
+    host: {instance}
+
+scrape_configs:
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']
+  - job_name: asb
+    static_configs:
+      - targets: ['asb:{asb_metrics_port}']
+  - job_name: bitcoind
+    static_configs:
+      - targets: ['bitcoin-exporter:{bitcoin_exporter_metrics_port}']
+  - job_name: electrs
+    static_configs:
+      - targets: ['electrs:{electrs_monitoring_port}']{cloudflared_scrape}
+
+remote_write:
+  - url: {url}
+    bearer_token: {token}
+",
+        instance = yaml_single_quote(&cfg.instance),
+        bitcoin_exporter_metrics_port = BITCOIN_EXPORTER_METRICS_PORT,
+        electrs_monitoring_port = ELECTRS_MONITORING_PORT,
+        url = yaml_single_quote(&cfg.remote_write_url),
+        token = yaml_single_quote(&cfg.token),
+    )
 }
 
 pub struct Flags(Vec<Flag>);
@@ -465,12 +896,51 @@ impl IntoImageAttribute for OrchestratorImage {
     fn to_image_attribute(self) -> String {
         match self {
             OrchestratorImage::Registry(image) => format!("image: {image}"),
+            OrchestratorImage::Build(input) if input.keep_git_dir => format!(
+                r#"build: {{ context: "{}", dockerfile: "{}", network: "host", args: {{ BUILDKIT_CONTEXT_KEEP_GIT_DIR: "1" }} }}"#,
+                input.context, input.dockerfile
+            ),
             OrchestratorImage::Build(input) => format!(
-                r#"build: {{ context: "{}", dockerfile: "{}" }}"#,
+                r#"build: {{ context: "{}", dockerfile: "{}", network: "host" }}"#,
                 input.context, input.dockerfile
             ),
         }
     }
+}
+
+/// Generates a bitcoind `-rpcauth` credential and the matching plaintext
+/// password, in Bitcoin Core's `rpcauth.py` format
+/// `<user>:<salt_hex>$<hmac_sha256(salt_hex, password)>`.
+///
+/// `-rpcauth` rather than `-rpcpassword` because the latter suppresses
+/// bitcoind's `.cookie` file, which electrs authenticates with. The password
+/// is alphanumeric so it is safe in an HTTP Basic Auth header and the compose
+/// file.
+fn generate_bitcoind_rpcauth(username: &str) -> (String, String) {
+    use hmac::{Hmac, Mac};
+    use rand::Rng;
+    use rand::distributions::Alphanumeric;
+    use sha2::Sha256;
+
+    let mut rng = rand::thread_rng();
+
+    // 16-byte salt, hex-encoded, exactly as rpcauth.py does.
+    let mut salt = [0u8; 16];
+    rng.fill(&mut salt[..]);
+    let salt = hex::encode(salt);
+
+    let password: String = (&mut rng)
+        .sample_iter(&Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
+
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(salt.as_bytes()).expect("HMAC accepts any key length");
+    mac.update(password.as_bytes());
+    let hash = hex::encode(mac.finalize().into_bytes());
+
+    (format!("{username}:{salt}${hash}"), password)
 }
 
 fn validate_compose(compose_str: &str) {

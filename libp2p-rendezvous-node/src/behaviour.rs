@@ -1,7 +1,7 @@
 use anyhow::Result;
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{identity, PeerId};
-use swap_p2p::protocols::rendezvous::{register, XmrBtcNamespace};
+use libp2p::{PeerId, identity};
+use swap_p2p::protocols::rendezvous::{XmrBtcNamespace, register};
 
 /// Acts as both a rendezvous server and registers at other rendezvous points
 #[derive(NetworkBehaviour)]

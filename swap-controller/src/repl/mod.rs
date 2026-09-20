@@ -6,8 +6,8 @@ use rustyline::completion::{Completer, Pair};
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
-use rustyline::{error::ReadlineError, Editor};
 use rustyline::{Context, Helper};
+use rustyline::{Editor, error::ReadlineError};
 use std::future::Future;
 use swap_controller_api::AsbApiClient;
 

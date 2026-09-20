@@ -1,9 +1,8 @@
-use futures::future::{self};
 use futures::FutureExt;
+use futures::future::{self};
 use libp2p::{
-    identity, rendezvous,
+    Multiaddr, PeerId, identity, rendezvous,
     swarm::{NetworkBehaviour, THandlerInEvent, ToSwarm},
-    Multiaddr, PeerId,
 };
 use std::{
     collections::{HashSet, VecDeque},
@@ -235,7 +234,7 @@ impl NetworkBehaviour for Behaviour {
                 other => {
                     return Poll::Ready(other.map_out(|_| {
                         unreachable!("we handled all generated events in the arm above")
-                    }))
+                    }));
                 }
             }
         }

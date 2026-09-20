@@ -3,17 +3,24 @@ use crate::monero;
 use crate::protocol::Database;
 use anyhow::{Context, Result};
 use bitcoin_wallet::BitcoinWallet;
-use jsonrpsee::server::{ServerBuilder, ServerHandle};
-use jsonrpsee::types::error::ErrorCode;
+use jsonrpsee::server::{HttpBody, HttpRequest, HttpResponse, ServerBuilder, ServerHandle};
 use jsonrpsee::types::ErrorObjectOwned;
+use jsonrpsee::types::error::ErrorCode;
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{Decimal, RoundingStrategy};
 use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
-    MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
-    PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
-    RendezvousRegistrationStatus, Swap,
+    ExternalBitcoinRedeemAddressResponse, MoneroAddressResponse, MoneroBalanceResponse,
+    MoneroSeedResponse, MultiaddressesResponse, OnionServiceStatusResponse, PeerIdResponse,
+    QuoteResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
+    RendezvousRegistrationStatus, Swap, WithdrawBtcResponse, WormholeServiceItem,
+    WormholeServicesResponse,
 };
+use swap_core::monero::PICONERO_OFFSET;
 use tokio_util::task::AbortOnDropHandle;
+use tower_http::validate_request::{ValidateRequest, ValidateRequestHeaderLayer};
+use uuid::Uuid;
 
 pub struct RpcServer {
     handle: ServerHandle,
@@ -23,12 +30,21 @@ impl RpcServer {
     pub async fn start(
         host: String,
         port: u16,
+        auth_verifier: Option<String>,
         bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
         event_loop_service: EventLoopService,
         db: Arc<dyn Database + Send + Sync>,
     ) -> Result<Self> {
+        let http_middleware =
+            tower::ServiceBuilder::new().option_layer(auth_verifier.map(|verifier| {
+                ValidateRequestHeaderLayer::custom(BearerPasswordAuth {
+                    verifier: Arc::from(verifier),
+                })
+            }));
+
         let server = ServerBuilder::default()
+            .set_http_middleware(http_middleware)
             .build((host, port))
             .await
             .context("Failed to build RPC server")?;
@@ -53,6 +69,31 @@ impl RpcServer {
         AbortOnDropHandle::new(tokio::spawn(async move {
             self.handle.stopped().await;
         }))
+    }
+}
+
+#[derive(Clone)]
+struct BearerPasswordAuth {
+    verifier: Arc<str>,
+}
+
+impl<B> ValidateRequest<B> for BearerPasswordAuth {
+    type ResponseBody = HttpBody;
+
+    fn validate(&mut self, request: &mut HttpRequest<B>) -> Result<(), HttpResponse> {
+        let presented = request
+            .headers()
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "));
+
+        match presented {
+            Some(password) if swap_env::rpc_auth::verify(password, &self.verifier) => Ok(()),
+            _ => Err(HttpResponse::builder()
+                .status(401)
+                .body(HttpBody::empty())
+                .expect("static 401 response is valid")),
+        }
     }
 }
 
@@ -153,25 +194,74 @@ impl AsbApiServer for RpcImpl {
         Ok(ActiveConnectionsResponse { connections })
     }
 
-    async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned> {
-        let swaps = self.db.all().await.into_json_rpc_result()?;
+    async fn get_swaps(
+        &self,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Vec<Swap>, ErrorObjectOwned> {
+        use crate::protocol::State;
+        use crate::protocol::alice::{AliceState, is_complete};
 
-        let swaps = swaps
-            .into_iter()
-            .map(|(swap_id, state)| {
-                let state_str = match state {
-                    crate::protocol::State::Alice(state) => format!("{state}"),
-                    crate::protocol::State::Bob(state) => format!("{state}"),
-                };
+        const DEFAULT_OFFSET: u32 = 0;
+        // Must fit into i32
+        const DEFAULT_LIMIT: u32 = i32::MAX as u32;
 
-                Swap {
-                    id: swap_id.to_string(),
-                    state: state_str,
+        let limit = limit.unwrap_or(DEFAULT_LIMIT);
+        let offset = offset.unwrap_or(DEFAULT_OFFSET);
+
+        let swaps = self
+            .db
+            .all_paginated(limit, offset)
+            .await
+            .context("Error fetching all swap's from database")
+            .into_json_rpc_result()?;
+        let mut results = Vec::with_capacity(swaps.len());
+
+        for (peer_id, swap_id, first_state, last_state) in swaps {
+            let (current_alice, state3) = match (last_state, first_state) {
+                (
+                    State::Alice(current_alice),
+                    State::Alice(AliceState::BtcLockTransactionSeen { state3 }),
+                ) => (current_alice, state3),
+                (State::Alice(current_alice), State::Alice(starting_alice)) => {
+                    tracing::error!(
+                        %swap_id,
+                        current_state = %current_alice,
+                        starting_state = %starting_alice,
+                        "Skipping swap with unexpected state history in get_swaps"
+                    );
+                    continue;
                 }
-            })
-            .collect();
+                _ => continue, // Skip non-Alice swaps
+            };
 
-        Ok(swaps)
+            let start_date = self
+                .db
+                .get_swap_start_date(swap_id)
+                .await
+                .into_json_rpc_result()?;
+
+            let exchange_rate =
+                calculate_exchange_rate(state3.btc, state3.xmr).into_json_rpc_result()?;
+
+            results.push(Swap {
+                swap_id: swap_id.to_string(),
+                start_date,
+                state: current_alice.to_string(),
+                btc_lock_txid: state3.tx_lock.txid().to_string(),
+                btc_amount: state3.btc,
+                xmr_amount: state3.xmr.as_pico(),
+                exchange_rate,
+                btc_redeem_fee: state3.tx_redeem_fee,
+                btc_redeem_address: state3.redeem_address().to_string(),
+                btc_redeem_txid: state3.tx_redeem().txid().to_string(),
+                btc_punish_txid: state3.tx_punish().txid().to_string(),
+                peer_id: peer_id.to_string(),
+                completed: is_complete(&current_alice),
+            });
+        }
+
+        Ok(results)
     }
 
     async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned> {
@@ -209,6 +299,158 @@ impl AsbApiServer for RpcImpl {
 
         Ok(RegistrationStatusResponse { registrations })
     }
+
+    async fn set_withhold_deposit(
+        &self,
+        swap_id: Uuid,
+        burn: bool,
+    ) -> Result<(), ErrorObjectOwned> {
+        self.event_loop_service
+            .set_withhold_deposit(swap_id, burn)
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(())
+    }
+
+    async fn grant_mercy(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned> {
+        self.event_loop_service
+            .grant_mercy(swap_id)
+            .await
+            .into_json_rpc_result()?;
+        Ok(())
+    }
+
+    async fn wormhole_services(&self) -> Result<WormholeServicesResponse, ErrorObjectOwned> {
+        let services = self
+            .event_loop_service
+            .get_wormhole_services()
+            .await
+            .into_json_rpc_result()?;
+
+        let services = services
+            .into_iter()
+            .map(|info| WormholeServiceItem {
+                peer_id: info.peer_id.to_string(),
+                address: info.address.to_string(),
+                state: info.state,
+                reachable: info.reachable,
+                problem: info.problem,
+            })
+            .collect();
+
+        Ok(WormholeServicesResponse { services })
+    }
+
+    async fn onion_service_status(&self) -> Result<OnionServiceStatusResponse, ErrorObjectOwned> {
+        let info = self
+            .event_loop_service
+            .get_onion_service_status()
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(OnionServiceStatusResponse {
+            state: info.as_ref().map(|i| i.state.clone()),
+            reachable: info.as_ref().is_some_and(|i| i.reachable),
+            problem: info.and_then(|i| i.problem),
+        })
+    }
+
+    async fn withdraw_btc(
+        &self,
+        address: String,
+        amount: Option<u64>,
+    ) -> Result<WithdrawBtcResponse, ErrorObjectOwned> {
+        let network = self.bitcoin_wallet.network();
+        let address =
+            bitcoin_wallet::bitcoin_address::parse_and_validate_network(&address, network)
+                .into_json_rpc_result()?;
+        let amount = amount.map(bitcoin::Amount::from_sat);
+
+        let (txid, amount) =
+            bitcoin_wallet::withdraw(self.bitcoin_wallet.as_ref(), address, amount)
+                .await
+                .into_json_rpc_result()?;
+
+        Ok(WithdrawBtcResponse {
+            amount,
+            txid: txid.to_string(),
+        })
+    }
+
+    async fn refresh_bitcoin_wallet(&self) -> Result<(), ErrorObjectOwned> {
+        self.bitcoin_wallet.sync().await.into_json_rpc_result()?;
+        Ok(())
+    }
+
+    async fn set_external_bitcoin_redeem_address(
+        &self,
+        address: String,
+    ) -> Result<(), ErrorObjectOwned> {
+        let network = self.bitcoin_wallet.network();
+        let address =
+            bitcoin_wallet::bitcoin_address::parse_and_validate_network(&address, network)
+                .into_json_rpc_result()?;
+
+        self.event_loop_service
+            .set_external_bitcoin_redeem_address(address)
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(())
+    }
+
+    async fn clear_external_bitcoin_redeem_address(&self) -> Result<(), ErrorObjectOwned> {
+        self.event_loop_service
+            .clear_external_bitcoin_redeem_address()
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(())
+    }
+
+    async fn get_external_bitcoin_redeem_address(
+        &self,
+    ) -> Result<ExternalBitcoinRedeemAddressResponse, ErrorObjectOwned> {
+        let address = self
+            .event_loop_service
+            .get_external_bitcoin_redeem_address()
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(ExternalBitcoinRedeemAddressResponse {
+            address: address.map(|a| a.to_string()),
+        })
+    }
+
+    async fn get_current_quote(&self) -> Result<QuoteResponse, ErrorObjectOwned> {
+        let quote = self
+            .event_loop_service
+            .get_current_quote()
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(QuoteResponse {
+            price: quote.price,
+            min_quantity: quote.min_quantity,
+            max_quantity: quote.max_quantity,
+        })
+    }
+}
+
+fn calculate_exchange_rate(btc: bitcoin::Amount, xmr: monero::Amount) -> Result<bitcoin::Amount> {
+    let sats_per_xmr = Decimal::from(btc.to_sat())
+        .checked_mul(Decimal::from(PICONERO_OFFSET))
+        .context("exchange rate overflow")?
+        .checked_div(Decimal::from(xmr.as_pico()))
+        .context("xmr amount must be greater than zero")?;
+
+    let sats_per_xmr = sats_per_xmr
+        .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
+        .to_u64()
+        .context("exchange rate should fit into satoshis")?;
+
+    Ok(bitcoin::Amount::from_sat(sats_per_xmr))
 }
 
 trait IntoJsonRpcResult<T> {

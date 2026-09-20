@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use uuid::Uuid;
 
 #[derive(Parser)]
 #[command(name = "asb-controller")]
@@ -37,4 +38,41 @@ pub enum Cmd {
     GetSwaps,
     /// Show rendezvous registration status
     RegistrationStatus,
+    /// Set whether to burn Bitcoin on refund for a swap
+    SetWithholdDeposit {
+        /// The swap ID
+        swap_id: Uuid,
+        /// Whether to burn the Bitcoin (true or false)
+        #[arg(action = clap::ArgAction::Set)]
+        withhold: bool,
+    },
+    /// Update the external bitcoin redeem address at runtime. Also updates config.toml.
+    SetExternalBitcoinRedeemAddress {
+        address: String,
+    },
+    /// Clear the external bitcoin redeem address. Future swaps will be redeemed into
+    /// the internal Bitcoin wallet. Also updates config.toml.
+    ClearExternalBitcoinRedeemAddress,
+    /// Show the external bitcoin redeem address currently used (if any).
+    GetExternalBitcoinRedeemAddress,
+    /// Grant mercy (release the anti-spam deposit) for a swap in BtcWithheld state
+    GrantMercy {
+        /// The swap ID
+        swap_id: Uuid,
+    },
+    /// Withdraw BTC from the internal Bitcoin wallet
+    WithdrawBtc {
+        /// The destination Bitcoin address
+        address: String,
+        /// Amount to withdraw, e.g. "0.1 BTC" or "10000 sat" (omit to sweep entire balance)
+        amount: Option<bitcoin::Amount>,
+    },
+    /// Refresh the internal Bitcoin wallet by syncing with the blockchain
+    RefreshBitcoinWallet,
+    /// List active wormhole onion services
+    WormholeServices,
+    /// Show status of the primary onion service
+    OnionServiceStatus,
+    /// Show the quote currently served to peers
+    GetCurrentQuote,
 }

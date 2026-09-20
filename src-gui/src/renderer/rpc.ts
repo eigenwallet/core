@@ -24,6 +24,7 @@ import {
   CheckElectrumNodeResponse,
   GetMoneroAddressesResponse,
   GetDataDirArgs,
+  DeleteAllLogsArgs,
   ResolveApprovalArgs,
   ResolveApprovalResponse,
   RedactArgs,
@@ -44,7 +45,6 @@ import {
   SendMoneroResponse,
   GetMoneroSyncProgressResponse,
   GetPendingApprovalsResponse,
-  DfxAuthenticateResponse,
   RejectApprovalArgs,
   RejectApprovalResponse,
   SetRestoreHeightArgs,
@@ -230,7 +230,7 @@ export async function initializeContext() {
   // Get all Bitcoin nodes without checking availability
   // The backend ElectrumBalancer will handle load balancing and failover
   const bitcoinNodes =
-    store.getState().settings.nodes[network][Blockchain.Bitcoin];
+    store.getState().settings.nodesV2[network][Blockchain.Bitcoin];
 
   // For Monero nodes, determine whether to use pool or custom node
   const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
@@ -244,7 +244,7 @@ export async function initializeContext() {
   );
 
   const moneroNodeUrl =
-    store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
+    store.getState().settings.nodesV2[network][Blockchain.Monero][0] ?? null;
 
   // Check the state of the Monero node
   const moneroNodeConfig =
@@ -294,7 +294,7 @@ export async function updateAllNodeStatuses() {
       : [Blockchain.Bitcoin, Blockchain.Monero]
     )
       .map((blockchain) =>
-        settings.nodes[network][blockchain].map((node) =>
+        settings.nodesV2[network][blockchain].map((node) =>
           updateNodeStatus(node, blockchain, network),
         ),
       )
@@ -670,6 +670,13 @@ export async function getDataDir(): Promise<string> {
   });
 }
 
+export async function deleteAllLogs(): Promise<void> {
+  const testnet = isTestnet();
+  await invoke<DeleteAllLogsArgs, void>("delete_all_logs", {
+    is_testnet: testnet,
+  });
+}
+
 export async function resolveApproval<T>(
   requestId: string,
   accept: T,
@@ -702,6 +709,11 @@ export async function rejectApproval<T>(
 }
 
 export async function refreshApprovals(): Promise<void> {
+  // Skip when mocking is enabled (DEV only)
+  if (store.getState().swap._mockOnlyDisableTauriCallsOnSwapProgress) {
+    return;
+  }
+
   const response = await invokeNoArgs<GetPendingApprovalsResponse>(
     "get_pending_approvals",
   );
@@ -725,10 +737,6 @@ export async function saveLogFiles(
   await invokeUnsafe<void>("save_txt_files", { zipFileName, content });
 }
 
-export async function dfxAuthenticate(): Promise<DfxAuthenticateResponse> {
-  return await invokeNoArgs<DfxAuthenticateResponse>("dfx_authenticate");
-}
-
 export async function changeMoneroNode(
   nodeConfig: MoneroNodeConfig,
 ): Promise<void> {
@@ -746,7 +754,7 @@ export async function getCurrentMoneroNodeConfig(): Promise<MoneroNodeConfig> {
   const network = getNetwork();
   const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
   const moneroNodeUrl =
-    store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
+    store.getState().settings.nodesV2[network][Blockchain.Monero][0] ?? null;
 
   const moneroNodeConfig =
     useMoneroRpcPool ||
