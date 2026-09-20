@@ -1,0 +1,70 @@
+import { Callout, Steps, Tabs } from 'nextra/components'
+
+# Tails and Whonix
+
+The GUI supports running on [Tails](https://tails.net) and [Whonix](https://www.whonix.org).
+When the app detects that it is running on one of these systems, it automatically routes all of its network traffic through the system's Tor daemon instead of the built-in Tor client.
+The "Use Tor" setting is enabled permanently and cannot be turned off.
+
+<Callout type="warning">
+  Hosting a maker service (`asb`) is not supported on Tails and Whonix.
+  Creating a Tor hidden service through the system Tor daemon is not possible, so the option to offer liquidity is unavailable.
+  Swapping (as a taker) works normally.
+</Callout>
+
+<Tabs items={['Tails', 'Whonix']}>
+  <Tabs.Tab>
+    <Steps>
+    {/* Use {<h3>} instead of ### to keep step titles out of the page's table of contents */}
+    {<h3>Enable Persistent Storage</h3>}
+    Tails is amnesic: everything outside the Persistent folder is deleted on shutdown.
+    Enable [Persistent Storage](https://tails.net/doc/persistent_storage/index.en.html) if you want to keep your wallet and swap history between sessions.
+
+    {<h3>Download the AppImage</h3>}
+    Download the latest `eigenwallet_<version>_amd64.AppImage` from our [download page](https://eigenwallet.org/download/) or the latest [Github release](https://github.com/eigenwallet/core/releases/latest).
+    Place it inside `~/Persistent` so it survives reboots, and make it executable:
+
+    ```bash filename="install.sh" copy
+    mv ~/Tor\ Browser/eigenwallet_*_amd64.AppImage ~/Persistent/
+    chmod +x ~/Persistent/eigenwallet_*_amd64.AppImage
+    ```
+
+    {<h3>Persist the wallet data</h3>}
+    The app stores its data (wallets, swap database) in `~/.local/share/eigenwallet`, which is not persisted by default.
+    Link it into the Persistent folder once:
+
+    ```bash filename="persist-data.sh" copy
+    mkdir -p ~/Persistent/eigenwallet-data
+    mkdir -p ~/.local/share
+    ln -s ~/Persistent/eigenwallet-data ~/.local/share/eigenwallet
+    ```
+
+    {<h3>Launch</h3>}
+    Start the AppImage.
+    The app detects Tails, forces the use of Tor via the system daemon at `127.0.0.1:9050`, and proxies all Monero and Bitcoin wallet traffic through it.
+
+    ```bash filename="run.sh" copy
+    ~/Persistent/eigenwallet_*_amd64.AppImage
+    ```
+    </Steps>
+  </Tabs.Tab>
+  <Tabs.Tab>
+    <Steps>
+    {<h3>Download the AppImage</h3>}
+    Inside your **Whonix Workstation** AppVM, download the latest `eigenwallet_<version>_amd64.AppImage` from our [download page](https://eigenwallet.org/download/) or the latest [Github release](https://github.com/eigenwallet/core/releases/latest) and make it executable:
+
+    ```bash filename="install.sh" copy
+    chmod +x eigenwallet_*_amd64.AppImage
+    ```
+
+    {<h3>Launch</h3>}
+    Start the AppImage.
+    The app detects Whonix and routes its P2P traffic through the system Tor SOCKS5 proxy at `127.0.0.1:9050`.
+    The Workstation VM persists your home directory, so wallet data is kept automatically.
+
+    ```bash filename="run.sh" copy
+    ./eigenwallet_*_amd64.AppImage
+    ```
+    </Steps>
+  </Tabs.Tab>
+</Tabs>
