@@ -1248,6 +1248,7 @@ mod tests {
         let config = ElectrumBalancerConfig {
             request_timeout: 5,
             min_retries: 0,
+            socks5: None,
             min_parallel_responses: 2,
         };
 
@@ -1287,6 +1288,7 @@ mod tests {
         let config = ElectrumBalancerConfig {
             request_timeout: 5,
             min_retries: 0,
+            socks5: None,
             min_parallel_responses: 2,
         };
 
