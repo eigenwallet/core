@@ -1,5 +1,5 @@
 [package]
-name = "monero-wallet"
+name = "monero_wallet"
 version = "0.1.0"
 edition = "2024"
 
@@ -33,3 +33,9 @@ monero-wallet-ng = { path = "../monero-wallet-ng" }
 curve25519-dalek = { workspace = true }
 hex = { workspace = true }
 zeroize = { workspace = true }
+
+[dev-dependencies]
+monero-harness = { path = "../monero-harness" }
+rand = { workspace = true }
+tempfile = "3"
+testcontainers = { workspace = true }
