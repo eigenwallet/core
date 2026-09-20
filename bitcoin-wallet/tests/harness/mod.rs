@@ -26,13 +26,15 @@ pub async fn setup<'a>(cli: &'a Cli) -> Result<TestEnv<'a>> {
     let network = format!("{}-btc", prefix);
     let bitcoind_name = format!("{}-bitcoind", prefix);
 
-    let (bitcoind_container, bitcoind_url) = init_bitcoind_container(cli, prefix.clone(), bitcoind_name.clone(), network.clone())
-        .await
-        .context("init bitcoind container")?;
+    let (bitcoind_container, bitcoind_url) =
+        init_bitcoind_container(cli, prefix.clone(), bitcoind_name.clone(), network.clone())
+            .await
+            .context("init bitcoind container")?;
 
-    let electrs_container = init_electrs_container(cli, prefix, bitcoind_name, network, bitcoind::RPC_PORT)
-        .await
-        .context("init electrs container")?;
+    let electrs_container =
+        init_electrs_container(cli, prefix, bitcoind_name, network, bitcoind::RPC_PORT)
+            .await
+            .context("init electrs container")?;
 
     let electrs_port = electrs_container.get_host_port_ipv4(electrs::RPC_PORT);
     // Use a plain TCP electrum URL; we explicitly wait for electrs readiness below.
@@ -121,11 +123,7 @@ fn parse_tcp_electrum_host_port(url: &str) -> Result<(String, u16)> {
         .strip_prefix("tcp://")
         .ok_or_else(|| anyhow::anyhow!("unsupported electrum url scheme: {url}"))?;
 
-    let host_port = rest
-        .rsplit('@')
-        .next()
-        .unwrap_or(rest)
-        .trim();
+    let host_port = rest.rsplit('@').next().unwrap_or(rest).trim();
 
     let mut parts = host_port.split(':');
     let host = parts
@@ -244,7 +242,10 @@ async fn init_electrs_container<'a>(
     network: String,
     bitcoind_rpc_port_in_network: u16,
 ) -> Result<Container<'a, electrs::Electrs>> {
-    let bitcoind_rpc_addr = format!("{}:{}", bitcoind_container_name, bitcoind_rpc_port_in_network);
+    let bitcoind_rpc_addr = format!(
+        "{}:{}",
+        bitcoind_container_name, bitcoind_rpc_port_in_network
+    );
     let image = electrs::Electrs::default()
         .with_volume(volume)
         .with_daemon_rpc_addr(bitcoind_rpc_addr)
@@ -259,7 +260,7 @@ async fn init_electrs_container<'a>(
 
 fn random_prefix() -> String {
     use rand::distributions::Alphanumeric;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use std::iter;
 
     const LEN: usize = 8;
