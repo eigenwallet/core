@@ -26,6 +26,7 @@ async fn main() -> anyhow::Result<()> {
         STAGENET_WALLET_RESTORE_HEIGHT,
         true,
         daemon,
+        None::<&str>,
     )
     .await
     .expect("Failed to recover wallet");

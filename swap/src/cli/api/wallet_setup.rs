@@ -52,9 +52,15 @@ pub(super) async fn open_monero_wallet(
 ) -> Result<(monero_sys::WalletHandle, Seed), Error> {
     // Without a seed choice there is no UI driving the flow: the CLI uses
     // the legacy wallet to monitor the blockchain.
+    let proxy_address = TOR_ENVIRONMENT.and_then(|ste| ste.wallet2_proxy());
     let Some(seed_choice) = seed_choice else {
-        let wallet =
-            request_and_open_monero_wallet_legacy(legacy_data_dir, env_config, daemon).await?;
+        let wallet = request_and_open_monero_wallet_legacy(
+            legacy_data_dir,
+            env_config,
+            daemon,
+            proxy_address,
+        )
+        .await?;
         let seed = Seed::from_file_or_generate(legacy_data_dir)
             .await
             .context("Failed to read legacy seed from file")?;
@@ -100,6 +106,7 @@ pub(super) async fn open_monero_wallet(
                                     Some(password)
                                 },
                                 daemon.clone(),
+                                proxy_address,
                                 env_config.monero_network,
                                 true,
                             )
@@ -133,6 +140,7 @@ pub(super) async fn open_monero_wallet(
                                 restore_height.into(),
                                 true,
                                 daemon.clone(),
+                                proxy_address,
                             )
                             .await
                             .context("Failed to create wallet from provided seed")?;
@@ -147,6 +155,7 @@ pub(super) async fn open_monero_wallet(
                                 legacy_data_dir,
                                 env_config,
                                 daemon,
+                                proxy_address,
                             )
                             .await?;
                             let seed = Seed::from_file_or_generate(legacy_data_dir)
@@ -220,6 +229,7 @@ pub(super) async fn open_monero_wallet(
                                 wallet_path.clone(),
                                 password,
                                 daemon.clone(),
+                                proxy_address,
                                 env_config.monero_network,
                                 true,
                             )
@@ -233,6 +243,7 @@ pub(super) async fn open_monero_wallet(
                             legacy_data_dir,
                             env_config,
                             daemon,
+                            proxy_address,
                         )
                         .await?;
                         let seed = Seed::from_file_or_generate(legacy_data_dir)
@@ -368,12 +379,14 @@ pub(super) async fn request_and_open_monero_wallet_legacy(
     data_dir: &PathBuf,
     env_config: EnvConfig,
     daemon: &monero_sys::Daemon,
+    proxy_address: Option<&str>,
 ) -> Result<monero_sys::WalletHandle, Error> {
     let wallet_path = legacy_wallet_path(data_dir);
 
     let wallet = monero::Wallet::open_or_create(
         wallet_path.display().to_string(),
         daemon.clone(),
+        proxy_address,
         env_config.monero_network,
         true,
     )

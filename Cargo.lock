@@ -1127,6 +1127,7 @@ dependencies = [
  "swap-env",
  "swap-proptest",
  "swap-serde",
+ "swap-tor",
  "testcontainers",
  "thiserror 1.0.69",
  "tokio",
@@ -6509,8 +6510,10 @@ dependencies = [
  "serde_json",
  "sqlx",
  "swap-serde",
+ "swap-tor",
  "tokio",
  "tokio-rustls 0.26.4",
+ "tokio-socks",
  "tor-rtcompat",
  "tower-http",
  "tracing",
@@ -6615,6 +6618,7 @@ dependencies = [
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
  "monero-wallet-ng",
  "swap-core",
+ "swap-tor",
  "throttle",
  "tokio",
  "tracing",
@@ -10679,6 +10683,7 @@ dependencies = [
  "swap-p2p",
  "swap-proptest",
  "swap-serde",
+ "swap-tor",
  "tauri",
  "tempfile",
  "testcontainers",
@@ -10831,6 +10836,7 @@ dependencies = [
  "sha2",
  "swap-fs",
  "swap-serde",
+ "swap-tor",
  "thiserror 1.0.69",
  "time",
  "toml 0.9.12+spec-1.1.0",
@@ -10984,6 +10990,23 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "url",
+]
+
+[[package]]
+name = "swap-tor"
+version = "3.2.0-rc.4"
+dependencies = [
+ "anyhow",
+ "arti-client",
+ "data-encoding",
+ "futures",
+ "libp2p",
+ "once_cell",
+ "tokio",
+ "tokio-socks",
+ "tokio-util",
+ "tor-rtcompat",
+ "tracing",
 ]
 
 [[package]]
@@ -11856,6 +11879,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
  "rustls 0.23.37",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-socks"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7e2948f60dbe26b35f2c7fb74ac2854c1fddded0fe9d7548fcc674a246f7615"
+dependencies = [
+ "either",
+ "futures-util",
+ "thiserror 1.0.69",
  "tokio",
 ]
 
@@ -13551,6 +13586,7 @@ dependencies = [
  "serde_json",
  "swap",
  "swap-p2p",
+ "swap-tor",
  "tauri",
  "tauri-build",
  "tauri-plugin-cli",

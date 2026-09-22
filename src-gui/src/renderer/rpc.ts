@@ -61,6 +61,7 @@ import {
 import {
   rpcSetSwapInfo,
   rpcSetSwapInfosLoaded,
+  rpcSetTorNetworkConfig,
   approvalRequestsReplaced,
   timelockChangeEventReceived,
 } from "store/features/rpcSlice";
@@ -216,6 +217,12 @@ export async function buyXmr() {
 }
 
 export async function initializeContext() {
+  store.dispatch(
+    rpcSetTorNetworkConfig(
+      await invokeNoArgs<[string, string | null]>("get_tor_network_config"),
+    ),
+  );
+
   const network = getNetwork();
   const testnet = isTestnet();
   const useTor = store.getState().settings.enableTor;

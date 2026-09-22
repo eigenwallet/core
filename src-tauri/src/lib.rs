@@ -116,6 +116,13 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
+    let mut context = tauri::generate_context!();
+    if let Some(proxy) = swap_tor::TOR_ENVIRONMENT.and_then(|ste| ste.reqwest_proxy()) {
+        for window in &mut context.config_mut().app.windows {
+            window.proxy_url = Some(proxy.parse().expect("URL is valid"));
+        }
+    }
+
     builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -124,7 +131,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(generate_command_handlers!())
         .setup(setup)
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app, event| match event {
             RunEvent::Exit | RunEvent::ExitRequested { .. } => {

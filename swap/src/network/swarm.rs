@@ -3,7 +3,6 @@ use crate::network::rendezvous::XmrBtcNamespace;
 use crate::seed::Seed;
 use crate::{asb, cli};
 use anyhow::Result;
-use arti_client::TorClient;
 use libp2p::Transport as _;
 use libp2p::connection_limits::ConnectionLimits;
 use libp2p::core::muxing::StreamMuxerBox;
@@ -20,7 +19,6 @@ use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
 use swap_p2p::protocols::metered::RequestResponseMetrics;
 use tor_hsservice::RunningOnionService;
-use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 // We keep connections open for 2 minutes
 const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 2);
@@ -35,7 +33,7 @@ pub fn asb<LR>(
     env_config: env::Config,
     namespace: XmrBtcNamespace,
     rendezvous_addrs: &[Multiaddr],
-    maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+    maybe_tor_client: swap_tor::TorBackend,
     register_hidden_service: bool,
     num_intro_points: u8,
     max_concurrent_rend_requests: usize,
@@ -134,7 +132,7 @@ where
 
 pub async fn cli<T, B>(
     identity: identity::Keypair,
-    maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+    maybe_tor_client: swap_tor::TorBackend,
     build_behaviour: B,
 ) -> Result<(Swarm<T>, Option<TorDialPriorityTracker>)>
 where

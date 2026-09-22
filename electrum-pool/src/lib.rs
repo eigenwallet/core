@@ -1,8 +1,9 @@
 use bdk_electrum::BdkElectrumClient;
-use bdk_electrum::electrum_client::{Client, ConfigBuilder, ElectrumApi, Error};
+use bdk_electrum::electrum_client::{Client, ConfigBuilder, ElectrumApi, Error, Socks5Config};
 use bitcoin::Transaction;
 use futures::stream::{FuturesUnordered, StreamExt};
 use once_cell::sync::OnceCell;
+use std::borrow::Cow;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use std::time::Instant;
@@ -492,6 +493,8 @@ pub struct ElectrumBalancerConfig {
     pub request_timeout: u8,
     /// Minimum number of retry attempts across all nodes
     pub min_retries: usize,
+    /// Address of SOCKS5 proxy in `127.0.0.1:9050` format
+    pub socks5: Option<Cow<'static, str>>,
     /// Number of successful responses parallel multi-node operations
     /// ([`ElectrumBalancer::join_quorum`], [`ElectrumBalancer::broadcast_all`])
     /// wait for before returning early. Clamped to the number of nodes.
@@ -503,6 +506,7 @@ impl Default for ElectrumBalancerConfig {
         Self {
             request_timeout: 15,
             min_retries: 5,
+            socks5: None,
             min_parallel_responses: 2,
         }
     }
@@ -530,6 +534,7 @@ impl ElectrumClientFactory<BdkElectrumClient<Client>> for BdkElectrumClientFacto
             //
             // Setting it to 0 causes some bugs, see: https://github.com/bitcoindevkit/rust-electrum-client/issues/186
             .retry(1)
+            .socks5(config.socks5.as_ref().map(Socks5Config::new))
             .build();
 
         let client = Client::from_config(url, client_config).map_err(|e| {
@@ -914,6 +919,7 @@ mod tests {
         let config = ElectrumBalancerConfig {
             request_timeout: 5,
             min_retries: 0,
+            socks5: None,
             min_parallel_responses: 2,
         };
 
@@ -986,6 +992,7 @@ mod tests {
         let config = ElectrumBalancerConfig {
             request_timeout: 5,
             min_retries: 1,
+            socks5: None,
             min_parallel_responses: 2,
         };
 
@@ -1089,6 +1096,7 @@ mod tests {
         let config = ElectrumBalancerConfig {
             request_timeout: 15,
             min_retries: 7,
+            socks5: None,
             min_parallel_responses: 3,
         };
 
@@ -1240,6 +1248,7 @@ mod tests {
         let config = ElectrumBalancerConfig {
             request_timeout: 5,
             min_retries: 0,
+            socks5: None,
             min_parallel_responses: 2,
         };
 
@@ -1279,6 +1288,7 @@ mod tests {
         let config = ElectrumBalancerConfig {
             request_timeout: 5,
             min_retries: 0,
+            socks5: None,
             min_parallel_responses: 2,
         };
 

@@ -15,6 +15,7 @@ tauri-build = { version = "2.*", features = ["config-json5"] }
 [dependencies]
 swap = { path = "../swap", features = [ "tauri" ] }
 swap-p2p = { path = "../swap-p2p" }
+swap-tor = { path = "../swap-tor" }
 
 rustls = { version = "0.23.26", default-features = false, features = ["ring"] }
 serde = { version = "1", features = [ "derive" ] }

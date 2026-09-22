@@ -14,7 +14,6 @@
 
 use anyhow::{Context, Result, bail};
 use comfy_table::Table;
-use libp2p::Swarm;
 use monero_sys::Daemon;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
@@ -30,7 +29,7 @@ use swap::asb::rpc::RpcServer;
 use swap::asb::{
     EventLoop, ExchangeRate, Finality, cancel, grant_mercy, punish, redeem, refund, safely_abort,
 };
-use swap::common::tor::{bootstrap_tor_client, create_tor_client};
+use swap::common::tor::{TorBackendSwap, create_tor_client};
 use swap::common::tracing_util::Format;
 use swap::common::{self, get_logs, warn_if_outdated};
 use swap::database::{AccessMode, open_db};
@@ -284,9 +283,8 @@ pub async fn main() -> Result<()> {
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 
             // Initialize and bootstrap Tor client
-            let tor_client = create_tor_client(&config.data.dir).await?;
-            bootstrap_tor_client(tor_client.clone(), None).await?;
-            let tor_client = tor_client.into();
+            let tor_client = create_tor_client(&config.data.dir, true).await?;
+            tor_client.bootstrap(None).await?;
 
             let mut metrics_registry = config
                 .network
@@ -314,8 +312,8 @@ pub async fn main() -> Result<()> {
                 metrics_registry.as_mut(),
             )?;
 
-            for listen in config.network.listen.clone() {
-                if let Err(e) = Swarm::listen_on(&mut swarm, listen.clone()) {
+            for listen in &config.network.listen {
+                if let Err(e) = swarm.listen_on(listen.clone()) {
                     tracing::warn!(
                         "Failed to listen on network interface {}: {}. Consider removing it from the config.",
                         listen,

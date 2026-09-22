@@ -299,7 +299,7 @@ impl NetworkBehaviour for Behaviour {
             }
         }
 
-        while let Some(event) = self.to_swarm.pop_front() {
+        if let Some(event) = self.to_swarm.pop_front() {
             return Poll::Ready(ToSwarm::GenerateEvent(event));
         }
 

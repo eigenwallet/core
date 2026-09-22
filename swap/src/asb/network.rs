@@ -17,10 +17,10 @@ use swap_feed::LatestRate;
 pub mod transport {
     use std::sync::Arc;
 
-    use arti_client::{TorClient, config::onion_service::OnionServiceConfigBuilder};
+    use arti_client::config::onion_service::OnionServiceConfigBuilder;
     use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp, websocket};
     use libp2p_tor::AddressConversion;
-    use tor_rtcompat::tokio::TokioRustlsRuntime;
+    use swap_tor::TorBackend;
 
     use crate::network::wormhole::alice::transport::{WormholeChannels, WormholeTransport};
     use tor_hsservice::RunningOnionService;
@@ -42,12 +42,16 @@ pub mod transport {
     ///
     /// If you pass in a `None` for `maybe_tor_client`, the ASB will not use Tor at all.
     ///
-    /// If you pass in a `Some(tor_client)`, the ASB will listen on an onion service and return
+    /// If you pass in a `Arti(tor_client)`, the ASB will listen on an onion service and return
     /// the onion address. If it fails to listen on the onion address, it will only use tor for
     /// dialing and not listening.
+    ///
+    /// If you pass in a `Socks(..)`, the ASB dials through a local Tor daemon's SOCKS5 port
+    /// (e.g. the system Tor on Tails or Whonix). Onion services cannot be hosted through a
+    /// SOCKS5 proxy, so `register_hidden_service` has no effect in that case.
     pub fn new(
         identity: &identity::Keypair,
-        maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+        maybe_tor_client: TorBackend,
         register_hidden_service: bool,
         num_intro_points: u8,
         max_concurrent_rend_requests: usize,
@@ -62,10 +66,21 @@ pub mod transport {
         // `MAX_CONCURRENT_REND_REQUESTS` is much more important in terms of DOS protection.
         const POW_QUEUE_DEPTH: usize = 2048;
 
+        // The SOCKS5 transport must see the original multiaddr (it handles
+        // /dns*, /ip* and /onion3 itself), so it cannot live inside the DNS
+        // transport. Besides, hosts where `Socks` is selected have no working
+        // direct DNS resolution anyway.
+        let socks_transport = || match &maybe_tor_client {
+            TorBackend::Socks(socks_server) => OptionalTransport::some(socks_server.transport()),
+            _ => OptionalTransport::none(),
+        };
+
         let (maybe_tor_transport, onion_addresses, wormhole_channels, onion_service_handle) =
-            if let Some(tor_client) = maybe_tor_client {
-                let mut tor_transport =
-                    libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
+            if let TorBackend::Arti(tor_client) = &maybe_tor_client {
+                let mut tor_transport = libp2p_tor::TorTransport::from_client(
+                    tor_client.clone(),
+                    AddressConversion::DnsOnly,
+                );
 
                 let (addresses, onion_handle) = if register_hidden_service {
                     let onion_service_config = OnionServiceConfigBuilder::default()
@@ -119,10 +134,10 @@ pub mod transport {
             };
 
         // Build the websocket transport. WsConfig strips the /ws suffix and
-        // delegates to its inner TCP+DNS transport for the actual connection.
+        // delegates to its inner transport for the actual connection.
         let ws_tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
         let ws_tcp_dns = dns::tokio::Transport::system(ws_tcp)?;
-        let ws_transport = websocket::WsConfig::new(ws_tcp_dns);
+        let ws_transport = websocket::WsConfig::new(socks_transport().or_transport(ws_tcp_dns));
 
         // Build the plain Tor-or-TCP+DNS transport for non-websocket addresses.
         let tcp = maybe_tor_transport
@@ -131,7 +146,9 @@ pub mod transport {
 
         // WsConfig only matches addresses ending in /ws or /wss, so it must
         // come first — otherwise Tor or TCP would eagerly claim the address.
-        let transport = ws_transport.or_transport(tcp_with_dns).boxed();
+        let transport = ws_transport
+            .or_transport(socks_transport().or_transport(tcp_with_dns))
+            .boxed();
 
         Ok((
             authenticate_and_multiplex(transport, identity)?,

@@ -15,6 +15,7 @@ import {
 import SystemUpdateIcon from "@mui/icons-material/SystemUpdate";
 import { check, Update, DownloadEvent } from "@tauri-apps/plugin-updater";
 import { useSnackbar } from "notistack";
+import { useAppSelector } from "store/hooks";
 import { relaunch } from "@tauri-apps/plugin-process";
 
 const GITHUB_RELEASES_URL = "https://github.com/eigenwallet/core/releases";
@@ -61,11 +62,13 @@ export default function UpdaterDialog() {
   const [downloadProgress, setDownloadProgress] =
     useState<DownloadProgress | null>(null);
   const { enqueueSnackbar } = useSnackbar();
+  const proxy = useAppSelector((s) => s.rpc.state.updaterProxy);
 
   useEffect(() => {
+    // Check for updates when component mounts
     if (/android|iphone|ipad/i.test(navigator.userAgent)) return;
 
-    check()
+    check({ proxy: proxy ?? undefined })
       .then((updateResponse) => {
         console.log("updateResponse", updateResponse);
         setAvailableUpdate(updateResponse);
@@ -75,7 +78,7 @@ export default function UpdaterDialog() {
           variant: "error",
         });
       });
-  }, [enqueueSnackbar]);
+  }, [enqueueSnackbar, proxy]);
 
   // If no update is available, don't render the dialog
   if (availableUpdate === null) return null;

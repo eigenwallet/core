@@ -14,7 +14,11 @@ const LATEST_RELEASE_URL: &str = "https://github.com/eigenwallet/core/releases/l
 /// Check the latest release from GitHub and warn if we are not on the latest version.
 pub async fn warn_if_outdated(current_version: &str) -> anyhow::Result<()> {
     // Visit the Github releases page and check which url we are redirected to
-    let response = reqwest::get(LATEST_RELEASE_URL).await?;
+    let mut client = reqwest::Client::builder();
+    if let Some(proxy) = swap_tor::TOR_ENVIRONMENT.and_then(|ste| ste.reqwest_proxy()) {
+        client = client.proxy(reqwest::Proxy::all(proxy)?);
+    }
+    let response = client.build()?.get(LATEST_RELEASE_URL).send().await?;
     let download_url = response.url();
 
     let segments = download_url

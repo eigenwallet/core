@@ -30,10 +30,15 @@ async fn construction_failure_surfaces_real_error() -> anyhow::Result<()> {
 
     // A freshly generated wallet starts empty with its restore height at the
     // current chain tip, so there is nothing to scan and it syncs near-instantly.
-    let wallet =
-        WalletHandle::open_or_create(wallet_path, daemon, monero_address::Network::Stagenet, false)
-            .await
-            .expect("Failed to create wallet");
+    let wallet = WalletHandle::open_or_create(
+        wallet_path,
+        daemon,
+        None::<&str>,
+        monero_address::Network::Stagenet,
+        false,
+    )
+    .await
+    .expect("Failed to create wallet");
 
     wallet
         .wait_until_synced(None::<fn(SyncProgress)>)

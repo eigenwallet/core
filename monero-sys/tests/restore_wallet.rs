@@ -20,6 +20,7 @@ async fn recover_wallet_creates_missing_parent_directory() {
         0,
         false,
         daemon,
+        None::<&str>,
     )
     .await
     .expect("wallet recovery should create the parent directory");

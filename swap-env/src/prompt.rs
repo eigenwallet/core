@@ -38,6 +38,13 @@ pub fn bitcoin_confirmation_target(default_target: u16) -> Result<u16> {
 
 /// Prompt user for listen addresses
 pub fn listen_addresses(default_listen_address: &Multiaddr) -> Result<Vec<Multiaddr>> {
+    if !swap_tor::TOR_ENVIRONMENT
+        .map(|ste| ste.can_listen_tcp())
+        .unwrap_or(true)
+    {
+        return Ok(vec![]);
+    }
+
     let listen_addresses = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Enter multiaddresses (comma separated) on which asb should list for peer-to-peer communications or hit return to use default")
         .default(default_listen_address.to_string())
@@ -131,6 +138,13 @@ pub fn monero_daemon_url() -> Result<Option<Url>> {
 
 /// Prompt user for Tor hidden service registration
 pub fn tor_hidden_service() -> Result<bool> {
+    if !swap_tor::TOR_ENVIRONMENT
+        .map(|ste| ste.can_listen_onion())
+        .unwrap_or(true)
+    {
+        return Ok(false);
+    }
+
     print_info_box([
         "Your ASB needs to be reachable from the outside world to provide quotes to takers.",
         "Your ASB can run a hidden service for itself. It'll be reachable at an .onion address.",

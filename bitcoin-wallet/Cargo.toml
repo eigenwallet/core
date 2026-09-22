@@ -25,6 +25,7 @@ serde_json = { workspace = true }
 swap-env = { path = "../swap-env" }
 swap-proptest = { path = "../swap-proptest" }
 swap-serde = { path = "../swap-serde" }
+swap-tor = { path = "../swap-tor" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
