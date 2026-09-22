@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [4.13.3] - 2026-08-05
 
 - GUI: Fix a number of small ui issues / inconsistencies
+- ASB: Fix an issue where multiple swaps which started at the same time tried to spend the same Monero outputs (double spend), causing only one to succeeded:
+ - Construction of Monero lock transctions is spaced out by `5min` by default now. Customize this cooldown via `monero.lock_construction_cooldown_secs`.
+ - In cases where we have confirmed that the Monero we wanted to send is already spent in another swap the ASB can now rebuild a new Monero transaction.
+   This requires your own trusted Monero node on your own hardware. To enable this feature, set `monero.trusted_daemon = true` (`false by default`).
+   This can make swaps succeed even if they initially conflict with another swap.
 
 ## [4.13.2] - 2026-07-23
 

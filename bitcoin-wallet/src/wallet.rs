@@ -826,6 +826,9 @@ impl Wallet {
             .entry((txid, script.clone()))
             .or_insert_with(|| {
                 let (sender, _) = watch::channel(ScriptStatus::Unseen);
+                if let Some(status) = initial_status {
+                    sender.send_replace(status);
+                }
                 let client = self.electrum_client.clone();
                 let task_sender = sender.clone();
 

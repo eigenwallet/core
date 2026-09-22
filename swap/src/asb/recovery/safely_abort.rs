@@ -11,7 +11,8 @@ pub async fn safely_abort(swap_id: Uuid, db: Arc<dyn Database>) -> Result<AliceS
     match state {
         AliceState::Started { .. }
         | AliceState::BtcLockTransactionSeen { .. }
-        | AliceState::BtcLocked { .. } => {
+        | AliceState::BtcLocked { .. }
+        | AliceState::XmrReadyToLock { .. } => {
             let state = AliceState::SafelyAborted;
 
             db.insert_latest_state(swap_id, state.clone().into())

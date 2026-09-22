@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+backoff = { workspace = true }
 bitcoin = { workspace = true }
 bitcoin-wallet = { path = "../bitcoin-wallet" }
 curve25519-dalek-ng = { workspace = true }
@@ -14,6 +15,8 @@ libp2p = { workspace = true }
 monero-address = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 monero-oxide-wallet = { workspace = true }
+monero-oxide = { workspace = true }
+monero-wallet = { path = "../monero-wallet"}
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 rust_decimal = { workspace = true }

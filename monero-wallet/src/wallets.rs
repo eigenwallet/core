@@ -19,6 +19,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::compat::tx_hash_to_bytes;
+use crate::construction_throttle::ConstructionThrottle;
 use crate::listener::{MoneroTauriHandle, TauriWalletListener};
 
 /// Default poll interval for blockchain queries.
@@ -37,6 +38,7 @@ pub struct Wallets {
     daemon: Arc<RwLock<(Daemon, Option<MoneroDaemon<SimpleRequestTransport>>)>>,
     /// Keep the main wallet open and synced.
     main_wallet: Arc<Wallet>,
+    construction_throttle: ConstructionThrottle,
     /// Since Network::Regtest isn't a thing we have to use an extra flag.
     /// When we're in regtest mode, we need to unplug some safety nets to make the wallet work.
     regtest: bool,
@@ -63,7 +65,9 @@ impl Wallets {
         regtest: bool,
         tauri_handle: Option<TauriHandle>,
         wallet_database: Option<Arc<monero_sys::Database>>,
+        construction_interval: Duration,
     ) -> Result<Self> {
+        let construction_throttle = ConstructionThrottle::new(construction_interval)?;
         let main_wallet = Wallet::open_or_create(
             wallet_dir.join(&main_wallet_name).display().to_string(),
             daemon.clone(),
@@ -108,6 +112,7 @@ impl Wallets {
             network,
             daemon,
             main_wallet,
+            construction_throttle,
             regtest,
             tauri_handle,
             wallet_database,
@@ -130,7 +135,9 @@ impl Wallets {
         tauri_handle: Option<TauriHandle>,
         existing_wallet: Wallet,
         wallet_database: Option<Arc<monero_sys::Database>>,
+        construction_interval: Duration,
     ) -> Result<Self> {
+        let construction_throttle = ConstructionThrottle::new(construction_interval)?;
         // TODO: This code is duplicated in [`Wallets::new`]. Unify it.
         if regtest {
             existing_wallet.unsafe_prepare_for_regtest().await;
@@ -167,6 +174,7 @@ impl Wallets {
             network,
             daemon,
             main_wallet,
+            construction_throttle,
             regtest,
             tauri_handle,
             wallet_database,
@@ -195,6 +203,10 @@ impl Wallets {
     /// Get the main wallet (specified when initializing the `Wallets` instance).
     pub async fn main_wallet(&self) -> Arc<Wallet> {
         self.main_wallet.clone()
+    }
+
+    pub async fn wait_for_construction_turn(&self) -> Duration {
+        self.construction_throttle.wait_for_my_turn().await
     }
 
     /// Open the lock wallet of a specific swap from a given Monero TxLock ID.
@@ -322,6 +334,62 @@ impl Wallets {
         Ok(!matches!(status, TransactionStatus::Unknown))
     }
 
+    /// Publish a transaction only if it is not already in the daemon's pool or blockchain.
+    pub async fn ensure_transaction_published(&self, tx: &Transaction<NotPruned>) -> Result<()> {
+        use monero_interface::PublishTransaction;
+
+        if self.is_transaction_present(&TxHash::from_tx(tx)).await? {
+            return Ok(());
+        }
+
+        self.rpc_client()
+            .await?
+            .publish_transaction(tx)
+            .await
+            .context("Failed to publish Monero transaction")
+    }
+
+    /// Returns true if any of `tx`'s inputs has already been spent by a transaction confirmed
+    /// in the blockchain. Combined with `tx` itself not being present on-chain, this indicates
+    /// a different transaction spent our inputs (a confirmed double spend).
+    pub async fn has_input_confirmed_spent(&self, tx: &Transaction<NotPruned>) -> Result<bool> {
+        use monero_wallet_ng::rpc::IsKeyImageSpent;
+
+        let key_images = tx_key_images(tx);
+
+        let statuses = self
+            .rpc_client()
+            .await?
+            .is_key_image_spent(&key_images)
+            .await
+            .context("Failed to query key image spend status")?;
+
+        Ok(any_confirmed_spent(&statuses))
+    }
+
+    /// May scan from `restore_height` to the latest sufficiently confirmed block for a conflict; this can take a long time.
+    pub async fn has_confirmed_double_spent(
+        &self,
+        tx: &Transaction<NotPruned>,
+        restore_height: BlockHeight,
+        required_confirmations: u64,
+    ) -> Result<bool> {
+        anyhow::ensure!(required_confirmations > 0, "Rebuild confirmations must be positive");
+        if !self.has_input_confirmed_spent(tx).await? {
+            return Ok(false);
+        }
+
+        monero_wallet_ng::double_spend::has_confirmed_conflict(
+            &self.rpc_client().await?,
+            tx.hash(),
+            &tx_key_images(tx),
+            usize::try_from(restore_height.height).context("Restore height exceeds usize")?,
+            usize::try_from(required_confirmations).context("Rebuild confirmations exceed usize")?,
+        )
+        .await
+        .context("Failed to establish confirmed Monero input conflict depth")
+    }
+
     pub async fn direct_rpc_block_height(&self) -> Result<u64> {
         use monero_daemon_rpc::prelude::ProvidesBlockchainMeta;
         let rpc_client = self.rpc_client().await?;
@@ -332,6 +400,38 @@ impl Wallets {
             .context("Failed to get block height from daemon")?;
 
         Ok(height as u64)
+    }
+
+    /// Scans from `start_height` to `target_tip` or the current tip, then the mempool; this can take a long time.
+    pub async fn has_received_outputs(
+        &self,
+        public_spend_key: monero_oxide_ext::PublicKey,
+        private_view_key: PrivateViewKey,
+        start_height: BlockHeight,
+        target_tip: Option<BlockHeight>,
+        inner_retry: Option<backoff::ExponentialBackoff>,
+    ) -> Result<bool> {
+        let rpc_client = self.rpc_client().await?;
+        let public_spend_key = public_spend_key.decompress();
+        let private_view_key = Zeroizing::new(private_view_key.0.scalar);
+
+        let start_height = usize::try_from(start_height.height)
+            .context("Monero scan start height does not fit in usize")?;
+        let target_tip = target_tip
+            .map(|height| usize::try_from(height.height))
+            .transpose()
+            .context("Monero scan target tip does not fit in usize")?;
+
+        monero_wallet_ng::empty::has_received_outputs(
+            &rpc_client,
+            public_spend_key,
+            private_view_key,
+            start_height,
+            target_tip,
+            inner_retry,
+        )
+        .await
+        .context("Failed to check for received outputs")
     }
 
     /// Construct and sign a sweep transaction for the largest output of
@@ -559,7 +659,7 @@ impl Wallets {
         Ok(())
     }
 
-    /// Wait for an incoming transfer using the new monero-wallet-ng scanner.
+    /// Scans from `restore_height` to the current tip and follows new blocks until a matching transfer arrives; this can take a long time.
     ///
     /// This scans the blockchain from `restore_height` looking for an output
     /// with the expected amount sent to the given view pair. Returns the
@@ -606,9 +706,7 @@ impl Wallets {
         Ok(TxHash(tx_hash))
     }
 
-    /// Scan the wallet of the given view pair from `restore_height` until an
-    /// output carries a Hermes message that `extract` accepts, returning the
-    /// extracted value.
+    /// Scans from `restore_height` to the current tip and follows new blocks until `extract` accepts a message; this can take a long time.
     ///
     /// Outputs that do not contain a Hermes message at all are skipped
     /// silently. Outputs that do contain a Hermes message but are rejected by
@@ -707,4 +805,68 @@ fn swap_wallet_path(swap_id: Uuid, wallet_dir: &PathBuf, spendable: bool) -> Pat
     let name = format!("swap_{}_{}", &swap_id.to_string(), suffix);
 
     wallet_dir.join(name)
+}
+
+/// Extracts the key images of all `ToKey` inputs of `tx`.
+fn tx_key_images(tx: &Transaction<NotPruned>) -> Vec<[u8; 32]> {
+    use monero_oxide_wallet::transaction::Input;
+
+    tx.prefix()
+        .inputs
+        .iter()
+        .filter_map(|input| match input {
+            Input::ToKey { key_image, .. } => Some(key_image.to_bytes()),
+            Input::Gen(_) => None,
+        })
+        .collect()
+}
+
+/// Returns true if any key image was spent by a transaction confirmed in the
+/// blockchain. A spend that only exists in the mempool does not count: the
+/// conflicting transaction may still be displaced by our own transaction.
+fn any_confirmed_spent(statuses: &[monero_wallet_ng::rpc::KeyImageSpentStatus]) -> bool {
+    use monero_wallet_ng::rpc::KeyImageSpentStatus;
+
+    statuses
+        .iter()
+        .any(|status| matches!(status, KeyImageSpentStatus::SpentInBlockchain))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::any_confirmed_spent;
+    use monero_wallet_ng::rpc::KeyImageSpentStatus;
+
+    #[test]
+    fn no_statuses_is_not_a_confirmed_spend() {
+        assert!(!any_confirmed_spent(&[]));
+    }
+
+    #[test]
+    fn unspent_is_not_a_confirmed_spend() {
+        assert!(!any_confirmed_spent(&[KeyImageSpentStatus::Unspent]));
+    }
+
+    /// Crucial anti-manipulation property: a key image spent only by a mempool
+    /// transaction must never be treated as a confirmed double spend.
+    #[test]
+    fn pool_spend_is_not_a_confirmed_spend() {
+        assert!(!any_confirmed_spent(&[KeyImageSpentStatus::SpentInPool]));
+        assert!(!any_confirmed_spent(&[
+            KeyImageSpentStatus::Unspent,
+            KeyImageSpentStatus::SpentInPool,
+        ]));
+    }
+
+    #[test]
+    fn blockchain_spend_is_a_confirmed_spend() {
+        assert!(any_confirmed_spent(&[
+            KeyImageSpentStatus::SpentInBlockchain
+        ]));
+        assert!(any_confirmed_spent(&[
+            KeyImageSpentStatus::Unspent,
+            KeyImageSpentStatus::SpentInPool,
+            KeyImageSpentStatus::SpentInBlockchain,
+        ]));
+    }
 }

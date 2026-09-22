@@ -13,6 +13,7 @@ use anyhow::{Context, Result, bail};
 use bitcoin_wallet::BitcoinWallet;
 use monero_interface::PublishTransaction;
 use monero_oxide_wallet::transaction::{NotPruned, Transaction};
+use monero_wallet_ng::retry::with_retry;
 use rust_decimal::Decimal;
 use swap_core::bitcoin::ExpiredTimelocks;
 use swap_core::monero::BlockHeight;
@@ -148,95 +149,120 @@ where
             }
         }
         AliceState::BtcLocked { state3 } => {
-            // Sometimes locking the Monero can fail e.g due to the daemon not being fully synced
-            // We will retry indefinitely to lock the Monero funds, until either:
-            // - the cancel timelock expires
-            // - we do not manage to lock the Monero funds within the timeout
-            let backoff = backoff::ExponentialBackoffBuilder::new()
-                .with_max_elapsed_time(Some(env_config.monero_lock_retry_timeout))
-                .with_max_interval(Duration::from_secs(30))
-                .build();
-
-            let constructed = backoff::future::retry_notify(
-                backoff,
+            let restore_height = with_retry(
+                Some(
+                    backoff::ExponentialBackoffBuilder::new()
+                        .with_max_elapsed_time(Some(env_config.monero_lock_retry_timeout))
+                        .with_max_interval(Duration::from_secs(30))
+                        .build(),
+                ),
+                "fetch monero block height",
                 || async {
-                    // We check the status of the Bitcoin lock transaction
-                    // If the swap is cancelled, there is no need to lock the Monero funds anymore
-                    // because there is no way for the swap to succeed.
-                    if !cancel_timelock_not_expired(&state3, &*bitcoin_wallet)
-                        .await
-                        .context("Failed to check for expired timelocks before locking Monero")
-                        .map_err(backoff::Error::transient)?
-                    {
+                    if !cancel_timelock_not_expired(&state3, &*bitcoin_wallet).await? {
                         return Ok(None);
                     }
 
-                    // Record the current monero wallet block height so we don't have to scan from
-                    // block 0 for scenarios where we create a refund wallet.
-                    let monero_wallet_restore_blockheight = monero_wallet
-                        .direct_rpc_block_height()
-                        .await
-                        .context("Failed to get Monero wallet block height")
-                        .map_err(backoff::Error::transient)?;
-
-                    let (lock_address, amount) = state3
-                        .lock_xmr_transfer_request()
-                        .address_and_amount(env_config.monero_network);
-
-                    let hermes_funding_amount = hermes_funding_policy.funding_amount(state3.btc);
-
-                    let hermes_funding = state3
-                        .hermes_funding_transfer_request(hermes_funding_amount)
-                        .address_and_amount(env_config.monero_network);
-
-                    let destinations = build_transfer_destinations(
-                        lock_address,
-                        amount,
-                        hermes_funding,
-                        developer_tip.clone(),
-                    )?;
-
-                    let constructed = monero_wallet
-                        .construct_multi_destination_tx(&destinations)
-                        .await
-                        .map_err(|e| tracing::error!(err=%e, "Failed to construct Monero lock transaction"))
-                        .ok();
-
-                    let Some((xmr_lock_tx, receipt)) = constructed else {
-                        return Err(backoff::Error::transient(anyhow::anyhow!(
-                            "Failed to construct Monero lock transaction"
-                        )));
-                    };
-
-                    let tx_key = receipt.tx_keys.get(&lock_address.to_string()).expect("monero-sys guarantees that the address has a valid tx key or the tx isn't published");
-
-                    Ok(Some((
-                        monero_wallet_restore_blockheight,
-                        TransferProof::new(
-                            monero::TxHash(receipt.txid),
-                            *tx_key,
-                        ),
-                        xmr_lock_tx,
-                    )))
-                },
-                |e, wait_time: Duration| {
-                    tracing::warn!(
-                        swap_id = %swap_id,
-                        error = ?e,
-                        "Failed to construct Monero lock transaction. We will retry in {} seconds",
-                        wait_time.as_secs()
-                    )
+                    monero_wallet.direct_rpc_block_height().await.map(Some)
                 },
             )
             .await;
 
+            match restore_height {
+                Ok(Some(height)) => AliceState::XmrReadyToLock {
+                    state3,
+                    monero_wallet_restore_blockheight: BlockHeight { height },
+                },
+                Ok(None) => AliceState::SafelyAborted,
+                Err(error) => {
+                    // Rebuilds return to XmrReadyToLock, never BtcLocked. No Monero lock
+                    // transaction has been constructed or published from this state yet.
+                    tracing::warn!(%swap_id, %error, "Failed to fetch Monero restore height before locking funds; proceeding to Bitcoin early refund");
+                    AliceState::BtcEarlyRefundable { state3 }
+                }
+            }
+        }
+        AliceState::XmrReadyToLock {
+            state3,
+            monero_wallet_restore_blockheight,
+        } => {
+            let tx_lock_status_subscription = bitcoin_wallet
+                .subscribe_to(Box::new(state3.tx_lock.clone()))
+                .await;
+
+            let constructed = tokio::select! {
+                biased;
+                result = tx_lock_status_subscription.wait_until_confirmed_with(state3.cancel_timelock) => {
+                    result.context("Failed to watch Bitcoin cancel timelock during Monero construction")?;
+                    Ok(None)
+                }
+                result = retry(
+                    "Constructing Monero lock transaction",
+                    || async {
+                        let has_received_outputs = state3
+                            .shared_wallet_has_received_outputs(
+                                &monero_wallet,
+                                monero_wallet_restore_blockheight,
+                                Some(
+                                    backoff::ExponentialBackoffBuilder::new()
+                                        .with_max_elapsed_time(Some(Duration::from_secs(60)))
+                                        .build(),
+                                ),
+                            )
+                            .await
+                            .map_err(backoff::Error::transient)?;
+
+                        if has_received_outputs {
+                            return Err(backoff::Error::permanent(anyhow::anyhow!(
+                                "Shared Monero wallet is not empty"
+                            )));
+                        }
+
+                        let turn_duration = monero_wallet.wait_for_construction_turn().await;
+                        timeout(turn_duration, async {
+                            let (lock_address, amount) = state3
+                                .lock_xmr_transfer_request()
+                                .address_and_amount(env_config.monero_network);
+
+                            let hermes_funding_amount = hermes_funding_policy.funding_amount(state3.btc);
+
+                            let hermes_funding = state3
+                                .hermes_funding_transfer_request(hermes_funding_amount)
+                                .address_and_amount(env_config.monero_network);
+
+                            let destinations = build_transfer_destinations(
+                                lock_address,
+                                amount,
+                                hermes_funding,
+                                developer_tip.clone(),
+                            )?;
+
+                            let (xmr_lock_tx, receipt) = monero_wallet
+                                .construct_multi_destination_tx(&destinations)
+                                .await
+                                .context("Failed to construct Monero lock transaction")
+                                .map_err(backoff::Error::transient)?;
+
+                            let tx_key = receipt.tx_keys.get(&lock_address.to_string()).expect("monero-sys guarantees that the address has a valid tx key or the tx isn't published");
+
+                            Ok((
+                                TransferProof::new(monero::TxHash(receipt.txid), *tx_key),
+                                xmr_lock_tx,
+                            ))
+                        })
+                        .await
+                        .context("Monero construction turn expired")
+                        .map_err(backoff::Error::transient)?
+                    },
+                    env_config.monero_lock_retry_timeout,
+                    Duration::from_secs(30),
+                ) => result.map(Some),
+            };
+
             match constructed {
                 // If the construction was successful, we transition to the next state
-                Ok(Some((monero_wallet_restore_blockheight, transfer_proof, xmr_lock_tx))) => {
+                Ok(Some((transfer_proof, xmr_lock_tx))) => {
                     AliceState::XmrLockTransactionConstructed {
-                        monero_wallet_restore_blockheight: BlockHeight {
-                            height: monero_wallet_restore_blockheight,
-                        },
+                        monero_wallet_restore_blockheight,
                         xmr_lock_tx,
                         transfer_proof,
                         state3,
@@ -257,11 +283,43 @@ where
                     tracing::error!(
                         swap_id = %swap_id,
                         error = ?e,
-                        "Failed to lock Monero within {} seconds. We will do an early refund of the Bitcoin. We didn't lock any Monero funds so this is safe.",
+                        "Failed to lock Monero within {} seconds. Checking shared wallet before deciding recovery.",
                         env_config.monero_lock_retry_timeout.as_secs()
                     );
 
-                    AliceState::BtcEarlyRefundable { state3 }
+                    let has_received_outputs = tokio::select! {
+                        biased;
+                        result = tx_lock_status_subscription.wait_until_confirmed_with(state3.cancel_timelock) => {
+                            result.context("Failed to watch Bitcoin cancel timelock while scanning before early refund")?;
+                            return Ok(AliceState::SafelyAborted);
+                        }
+                        result = state3.shared_wallet_has_received_outputs(
+                            &monero_wallet,
+                            monero_wallet_restore_blockheight,
+                            Some(
+                                backoff::ExponentialBackoffBuilder::new()
+                                    .with_max_elapsed_time(Some(env_config.monero_lock_retry_timeout))
+                                    .with_max_interval(Duration::from_secs(30))
+                                    .build(),
+                            ),
+                        ) => result,
+                    };
+
+                    match has_received_outputs {
+                        Ok(false) => return Ok(AliceState::BtcEarlyRefundable { state3 }),
+                        Ok(true) => {
+                            tracing::warn!(%swap_id, "Shared Monero wallet received outputs; waiting for cancellation");
+                        }
+                        Err(error) => {
+                            tracing::warn!(%swap_id, %error, "Could not establish shared wallet emptiness; waiting for cancellation");
+                        }
+                    }
+
+                    AliceState::WaitingForCancelTimelockExpiration {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof: None,
+                        state3,
+                    }
                 }
             }
         }
@@ -342,64 +400,165 @@ where
             state3,
         } => {
             let xmr_lock_tx_hash = monero::TxHash::from_tx(&xmr_lock_tx);
+            let tx_lock_status_subscription = bitcoin_wallet
+                .subscribe_to(Box::new(state3.tx_lock.clone()))
+                .await;
 
-            retry::<AliceState, _, _>(
+            let publish_or_rebuild = retry::<AliceState, _, _>(
                 "Publishing Monero lock transaction",
                 || async {
-                    let is_present = monero_wallet
-                        .is_transaction_present(&xmr_lock_tx_hash)
-                        .await
-                        .context("Failed to check whether Monero lock transaction is already present on chain")
-                        .map_err(backoff::Error::transient)?;
-
-                    if !is_present {
-                        if !cancel_timelock_not_expired(&state3, &*bitcoin_wallet)
+                    // Check if cancel timelock expired
+                    if !matches!(
+                        state3.expired_timelocks(&*bitcoin_wallet)
                             .await
-                            .context("Failed to check for expired timelocks before publishing Monero lock transaction")
-                            .map_err(backoff::Error::transient)?
-                        {
-                            tracing::warn!(
-                                %swap_id,
-                                "Cancel timelock expired before we confirmed the Monero lock transaction was published. Publishing is not atomic, so the Monero may already be locked; waiting for the cancel timelock to recover safely instead of risking an early Bitcoin refund while the Monero is locked."
-                            );
-                            return Ok(AliceState::WaitingForCancelTimelockExpiration {
-                                monero_wallet_restore_blockheight,
-                                transfer_proof: transfer_proof.clone(),
-                                state3: state3.clone(),
-                            });
-                        }
-
-                        monero_wallet
-                            .rpc_client()
-                            .await
-                            .map_err(backoff::Error::transient)?
-                            .publish_transaction(&xmr_lock_tx)
-                            .await
-                            .context("Failed to publish Monero lock transaction")
-                            .map_err(backoff::Error::transient)?;
-
-                        tracing::info!(%swap_id, %xmr_lock_tx_hash, "Published Monero lock transaction");
+                            .context("Failed to check Bitcoin timelocks before publishing Monero lock transaction")
+                            .map_err(backoff::Error::transient)?,
+                        ExpiredTimelocks::None { .. }
+                    ) {
+                        return Ok(AliceState::WaitingForCancelTimelockExpiration {
+                            monero_wallet_restore_blockheight,
+                            transfer_proof: Some(transfer_proof.clone()),
+                            state3: state3.clone(),
+                        });
                     }
 
-                    monero_wallet
-                        .main_wallet()
-                        .await
-                        .scan_transaction(xmr_lock_tx_hash.0.clone())
-                        .await
-                        .context("Failed to scan Monero lock transaction into the wallet")
-                        .map_err(backoff::Error::transient)?;
+                    // Attempt to publish tx
+                    let publish_result = monero_wallet
+                        .ensure_transaction_published(&xmr_lock_tx)
+                        .await;
 
-                    Ok(AliceState::XmrLockTransactionSent {
-                        monero_wallet_restore_blockheight,
-                        transfer_proof: transfer_proof.clone(),
-                        state3: state3.clone(),
-                    })
+                    // If it worked, proceed to XmrLockedTransactionSent
+                    let Err(publish_error) = publish_result else {
+                        monero_wallet
+                            .main_wallet()
+                            .await
+                            .scan_transaction(xmr_lock_tx_hash.0.clone())
+                            .await
+                            .context("Failed to scan Monero lock transaction into the wallet")
+                            .map_err(backoff::Error::transient)?;
+
+                        return Ok(AliceState::XmrLockTransactionSent {
+                            monero_wallet_restore_blockheight,
+                            transfer_proof: transfer_proof.clone(),
+                            state3: state3.clone(),
+                        });
+                    };
+
+                    tracing::info!(%swap_id, %xmr_lock_tx_hash, error = %publish_error, "Could not ensure Monero lock transaction is published");
+
+                    // At this point we tried to publish the tx but failed.
+                    // It could be that this is because one or more inputs were already spent in a
+                    // lock transaction of another swap.
+                    //
+                    // In this case we need to rebuild the tx with different inputs.
+                    // However, because this has the potential to lock the XMR multiple times,
+                    // we have strict security requirements:
+                    //  - operator has to explicitly trust the monero node
+                    //  - another tx sharing an input has reached the configured rebuild confirmation depth
+                    //  - the Monero lock wallet has not received any funds since the start of the swap
+                    //  - not even in mempool
+                    // We only proceed with the rebuild when all of these requirements are met.
+
+                    if env_config.monero_trusted_daemon {
+                        tracing::info!(
+                            "Checking whether the failed Monero lock transaction can be rebuilt"
+                        );
+                        // Keep the cheap input check before scanning. Recheck both absence and
+                        // spending afterwards because the daemon's view may change during the scan.
+                        let reason = if monero_wallet
+                            .is_transaction_present(&xmr_lock_tx_hash)
+                            .await
+                            .context("Failed to check Monero lock transaction absence after publication error")
+                            .map_err(backoff::Error::transient)?
+                        {
+                            Some("Lock transaction is present after publication error")
+                        } else if !monero_wallet
+                            .has_confirmed_double_spent(
+                                &xmr_lock_tx,
+                                monero_wallet_restore_blockheight,
+                                env_config.monero_lock_rebuild_confirmations,
+                            )
+                            .await
+                            .context("Failed to check Monero lock input conflict depth")
+                            .map_err(backoff::Error::transient)?
+                        {
+                            Some("Lock transaction has no sufficiently confirmed double spend")
+                        } else if state3
+                            .shared_wallet_has_received_outputs(
+                                &monero_wallet,
+                                monero_wallet_restore_blockheight,
+                                Some(
+                                    backoff::ExponentialBackoffBuilder::new()
+                                        .with_max_elapsed_time(Some(Duration::from_secs(60)))
+                                        .build(),
+                                ),
+                            )
+                            .await
+                            .context("Failed to scan shared wallet before rebuilding Monero lock transaction")
+                            .map_err(backoff::Error::transient)?
+                        {
+                            Some("Shared Monero wallet has received outputs")
+                        } else if monero_wallet
+                            .is_transaction_present(&xmr_lock_tx_hash)
+                            .await
+                            .context("Failed to recheck Monero lock transaction absence after scanning shared wallet")
+                            .map_err(backoff::Error::transient)?
+                        {
+                            Some("Lock transaction is present after scanning shared wallet")
+                        } else if !monero_wallet
+                            .has_confirmed_double_spent(
+                                &xmr_lock_tx,
+                                monero_wallet_restore_blockheight,
+                                env_config.monero_lock_rebuild_confirmations,
+                            )
+                            .await
+                            .context("Failed to recheck Monero lock input conflict depth after scanning shared wallet")
+                            .map_err(backoff::Error::transient)?
+                        {
+                            Some("Lock transaction has no sufficiently confirmed double spend after scanning shared wallet")
+                        } else {
+                            None
+                        };
+
+                        if let Some(reason) = reason {
+                            tracing::info!(
+                                "Not rebuilding XMR lock transaction, because it's not safe: {reason}"
+                            );
+                        } else {
+                            tracing::warn!(
+                                %swap_id,
+                                %xmr_lock_tx_hash,
+                                "Trusted Monero daemon reports a conflicting input spend at the required confirmation depth. Rebuilding the lock transaction."
+                            );
+
+                            return Ok(AliceState::XmrReadyToLock {
+                                state3: state3.clone(),
+                                monero_wallet_restore_blockheight,
+                            });
+                        }
+                    }
+
+                    Err(backoff::Error::transient(publish_error))
                 },
                 None,
                 None,
-            )
-            .await
-            .context("Failed to publish Monero lock transaction")?
+            );
+
+            tokio::select! {
+                biased;
+                result = tx_lock_status_subscription.wait_until_confirmed_with(state3.cancel_timelock) => {
+                    result.context("Failed to watch Bitcoin cancel timelock while publishing Monero")?;
+                    // Publication may have succeeded even if its future is interrupted.
+                    AliceState::WaitingForCancelTimelockExpiration {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof: Some(transfer_proof.clone()),
+                        state3: state3.clone(),
+                    }
+                }
+                result = publish_or_rebuild => {
+                    result.context("Failed to publish Monero lock transaction")?
+                }
+            }
         }
         AliceState::XmrLockTransactionSent {
             monero_wallet_restore_blockheight,
@@ -438,7 +597,7 @@ where
             }
             _ => AliceState::CancelTimelockExpired {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proof: Some(transfer_proof),
                 state3,
             },
         },
@@ -490,7 +649,7 @@ where
                     result?;
                     AliceState::CancelTimelockExpired {
                         monero_wallet_restore_blockheight,
-                        transfer_proof,
+                        transfer_proof: Some(transfer_proof),
                         state3,
                     }
                 }
@@ -511,7 +670,7 @@ where
                     result?;
                     AliceState::CancelTimelockExpired {
                         monero_wallet_restore_blockheight,
-                        transfer_proof,
+                        transfer_proof: Some(transfer_proof),
                         state3,
                     }
                 }
@@ -567,7 +726,7 @@ where
 
                     return Ok(AliceState::WaitingForCancelTimelockExpiration {
                         monero_wallet_restore_blockheight,
-                        transfer_proof,
+                        transfer_proof: Some(transfer_proof),
                         state3,
                     });
                 }
@@ -640,7 +799,7 @@ where
 
                     AliceState::WaitingForCancelTimelockExpiration {
                         monero_wallet_restore_blockheight,
-                        transfer_proof,
+                        transfer_proof: Some(transfer_proof),
                         state3,
                     }
                 }
@@ -828,6 +987,9 @@ where
             spend_key,
             state3,
         } => {
+            let transfer_proof = transfer_proof.context(
+                "We have the refund key, but recovery of unknown funds is not yet implemented. Funds are safe.",
+            )?;
             let xmr_refund_tx = retry(
                 "Refund Monero",
                 || async {
