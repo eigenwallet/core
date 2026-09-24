@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Update the Flatpak GNOME runtime from 48 (end-of-life) to 50.
+
 ## [4.15.0] - 2026-09-22
 
 - GUI: Support outbound connections to makers through libp2p circuit relays.
+
 - ASB: Fix an issue where multiple swaps which started at the same time tried to spend the same Monero outputs (double spend), causing only one to succeeded:
 - Construction of Monero lock transctions is spaced out by `5min` by default now. Customize this cooldown via `monero.lock_construction_cooldown_secs`.
 - In cases where we have confirmed that the Monero we wanted to send is already spent in another swap the ASB can now rebuild a new Monero transaction.
