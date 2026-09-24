@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- GUI: Support outbound connections to makers through libp2p circuit relays.
 - GUI: Update the Flatpak GNOME runtime from 48 (end-of-life) to 50.
+
+## [4.15.0] - 2026-09-22
+
+- GUI: Support outbound connections to makers through libp2p circuit relays.
+
+- ASB: Fix an issue where multiple swaps which started at the same time tried to spend the same Monero outputs (double spend), causing only one to succeeded:
+- Construction of Monero lock transctions is spaced out by `5min` by default now. Customize this cooldown via `monero.lock_construction_cooldown_secs`.
+- In cases where we have confirmed that the Monero we wanted to send is already spent in another swap the ASB can now rebuild a new Monero transaction.
+  This requires your own trusted Monero node on your own hardware. To enable this feature, set `monero.trusted_daemon = true` (`false by default`).
+  This can make swaps succeed even if they initially conflict with another swap.
 
 ## [4.14.0] - 2026-08-22
 
@@ -1071,7 +1080,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.14.0...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.15.0...HEAD
+[4.15.0]: https://github.com/eigenwallet/core/compare/4.14.0...4.15.0
 [4.14.0]: https://github.com/eigenwallet/core/compare/4.13.3...4.14.0
 [4.13.3]: https://github.com/eigenwallet/core/compare/4.13.2...4.13.3
 [4.13.2]: https://github.com/eigenwallet/core/compare/4.13.1...4.13.2

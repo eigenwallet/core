@@ -21,8 +21,15 @@ pub struct Config {
     pub monero_finality_confirmations: u64,
     // If Alice does manage to lock her Monero within this timeout, she will initiate an early refund of the Bitcoin.
     pub monero_lock_retry_timeout: Duration,
+    pub monero_lock_construction_cooldown: Duration,
     // After this many confirmations we assume that the Monero transaction is safe from double spending
     pub monero_double_spend_safe_confirmations: u64,
+    // Whether the configured Monero daemon is trusted. You should generally only consider
+    // self-hosted Monero nodes on your own hardware as trusted. If an attacker controls your
+    // node and you set this to true, they might be able to steal your funds.
+    pub monero_trusted_daemon: bool,
+    /// Required depth of a conflicting input spend before rebuilding a lock transaction.
+    pub monero_lock_rebuild_confirmations: u64,
     #[serde(with = "swap_serde::monero::network")]
     pub monero_network: monero_address::Network,
 }
@@ -67,9 +74,12 @@ impl GetConfig for Mainnet {
             monero_avg_block_time: 2.std_minutes(),
             // If Alice cannot lock her Monero within this timeout,
             // she will initiate an early refund of Bobs Bitcoin
-            monero_lock_retry_timeout: 10.std_minutes(),
+            monero_lock_retry_timeout: 30.std_minutes(),
+            monero_lock_construction_cooldown: 5.std_minutes(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
+            monero_trusted_daemon: false,
+            monero_lock_rebuild_confirmations: 15,
             monero_network: monero_address::Network::Mainnet,
         }
     }
@@ -88,9 +98,12 @@ impl GetConfig for Testnet {
             bitcoin_remaining_refund_timelock: 2,
             bitcoin_network: bitcoin::Network::Testnet,
             monero_avg_block_time: 2.std_minutes(),
-            monero_lock_retry_timeout: 10.std_minutes(),
+            monero_lock_retry_timeout: 30.std_minutes(),
+            monero_lock_construction_cooldown: 5.std_minutes(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
+            monero_trusted_daemon: false,
+            monero_lock_rebuild_confirmations: 15,
             monero_network: monero_address::Network::Stagenet,
         }
     }
@@ -110,8 +123,11 @@ impl GetConfig for Regtest {
             bitcoin_network: bitcoin::Network::Regtest,
             monero_avg_block_time: 1.std_seconds(),
             monero_lock_retry_timeout: 1.std_minutes(),
+            monero_lock_construction_cooldown: 5.std_seconds(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
+            monero_trusted_daemon: false,
+            monero_lock_rebuild_confirmations: 15,
             monero_network: monero_address::Network::Mainnet, // yes this is strange
         }
     }
@@ -138,13 +154,23 @@ pub fn new(is_testnet: bool, asb_config: &AsbConfig) -> Config {
             env_config
         };
 
-    if let Some(monero_finality_confirmations) = asb_config.monero.finality_confirmations {
-        Config {
-            monero_finality_confirmations,
-            ..env_config
-        }
-    } else {
-        env_config
+    let env_config =
+        if let Some(monero_finality_confirmations) = asb_config.monero.finality_confirmations {
+            Config {
+                monero_finality_confirmations,
+                ..env_config
+            }
+        } else {
+            env_config
+        };
+
+    Config {
+        monero_trusted_daemon: asb_config.monero.trusted_daemon,
+        monero_lock_rebuild_confirmations: asb_config.monero.lock_rebuild_confirmations,
+        monero_lock_construction_cooldown: Duration::from_secs(
+            asb_config.monero.lock_construction_cooldown_secs,
+        ),
+        ..env_config
     }
 }
 

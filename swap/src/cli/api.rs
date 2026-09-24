@@ -740,6 +740,7 @@ mod builder {
                         self.tauri_handle.clone().map(|th| th.into()),
                         wallet,
                         wallet_database,
+                        env_config.monero_lock_construction_cooldown,
                     )
                     .await
                     .context("Failed to initialize Monero wallets with existing wallet")?,
