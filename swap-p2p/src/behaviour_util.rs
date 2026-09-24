@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -114,15 +115,15 @@ impl ConnectionTracker {
     }
 }
 
-/// Used inside of a Behaviour to track exponential backoff states for each peer.
-pub struct BackoffTracker {
-    backoffs: HashMap<PeerId, ExponentialBackoff>,
+/// Used inside of a Behaviour to track exponential backoff states for each peer (or any other key).
+pub struct BackoffTracker<K = PeerId> {
+    backoffs: HashMap<K, ExponentialBackoff>,
     initial_interval: Duration,
     max_interval: Duration,
     multiplier: f64,
 }
 
-impl BackoffTracker {
+impl<K: Hash + Eq + Clone> BackoffTracker<K> {
     pub fn new(initial: Duration, max: Duration, multiplier: f64) -> Self {
         Self {
             backoffs: HashMap::new(),
@@ -132,10 +133,10 @@ impl BackoffTracker {
         }
     }
 
-    /// Get the backoff for a given peer.
-    pub fn get(&mut self, peer: &PeerId) -> &mut ExponentialBackoff {
+    /// Get the backoff for a given key.
+    pub fn get(&mut self, key: &K) -> &mut ExponentialBackoff {
         self.backoffs
-            .entry(*peer)
+            .entry(key.clone())
             .or_insert_with(|| ExponentialBackoff {
                 initial_interval: self.initial_interval,
                 current_interval: self.initial_interval,
@@ -147,23 +148,28 @@ impl BackoffTracker {
             })
     }
 
-    /// Reset the backoff state the given peer.
-    pub fn reset(&mut self, peer: &PeerId) {
-        if let Some(b) = self.backoffs.get_mut(peer) {
+    /// Reset the backoff state the given key.
+    pub fn reset(&mut self, key: &K) {
+        if let Some(b) = self.backoffs.get_mut(key) {
             b.reset();
         }
     }
 
-    /// Reset the backoff state for all peers.
+    /// Forget the backoff state of the given key.
+    pub fn remove(&mut self, key: &K) {
+        self.backoffs.remove(key);
+    }
+
+    /// Reset the backoff state for all keys.
     pub fn reset_all(&mut self) {
         for backoff in self.backoffs.values_mut() {
             backoff.reset();
         }
     }
 
-    /// Increments the backoff for the given peer and returns the new backoff
-    pub fn increment(&mut self, peer: &PeerId) -> Duration {
-        self.get(peer)
+    /// Increments the backoff for the given key and returns the new backoff
+    pub fn increment(&mut self, key: &K) -> Duration {
+        self.get(key)
             .next_backoff()
             .expect("backoff should never run out")
     }

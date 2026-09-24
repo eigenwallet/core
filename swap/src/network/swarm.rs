@@ -19,6 +19,7 @@ use swap_core::bitcoin;
 use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
 use swap_p2p::protocols::metered::RequestResponseMetrics;
+use swap_p2p::protocols::swap_attestation::alice::SwapAttestationSource;
 use tor_hsservice::RunningOnionService;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -44,6 +45,7 @@ pub fn asb<LR>(
     wormhole_num_intro_points: u8,
     wormhole_swap_freshness_hours: u64,
     trust_provider: Arc<dyn super::wormhole::PeerTrust + Send + Sync>,
+    swap_attestation_source: Arc<dyn SwapAttestationSource + Send + Sync>,
     metrics_registry: Option<&mut Registry>,
 ) -> Result<(
     Swarm<asb::Behaviour<LR>>,
@@ -105,6 +107,7 @@ where
         rendezvous_nodes,
         connection_limits,
         trust_provider,
+        swap_attestation_source,
         // Passing None disables the wormhole behaviour entirely.
         if wormhole_enabled {
             wormhole_channels

@@ -31,6 +31,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_core::bitcoin::{CancelTimelock, ExpiredTimelocks, PunishTimelock};
+use swap_machine::swap_attestation::SwapAttestation;
 use thiserror::Error;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::Instrument;
@@ -227,6 +228,30 @@ impl Request for GetSwapTimelockArgs {
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         get_swap_timelock(self, ctx).await
+    }
+}
+
+// GetSwapAttestation
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GetSwapAttestationArgs {
+    #[typeshare(serialized_as = "string")]
+    pub swap_id: Uuid,
+}
+
+#[typeshare]
+#[derive(Serialize)]
+pub struct GetSwapAttestationResponse {
+    /// `None` until Alice has attested the swap.
+    #[typeshare(serialized_as = "Option<object>")]
+    pub attestation: Option<SwapAttestation>,
+}
+
+impl Request for GetSwapAttestationArgs {
+    type Response = GetSwapAttestationResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        get_swap_attestation(self, ctx).await
     }
 }
 
@@ -1030,6 +1055,28 @@ pub async fn get_swap_timelock(
         swap_id: args.swap_id,
         timelock,
     })
+}
+
+#[tracing::instrument(fields(method = "get_swap_attestation"), skip(context))]
+pub async fn get_swap_attestation(
+    args: GetSwapAttestationArgs,
+    context: Arc<Context>,
+) -> Result<GetSwapAttestationResponse> {
+    let db = context.try_get_db().await?;
+    let attestation = db.get_swap_attestation(args.swap_id).await?;
+
+    match &attestation {
+        Some(attestation) => tracing::info!(
+            swap_id = %args.swap_id,
+            maker = %attestation.swap.maker,
+            message = %attestation.swap.message(),
+            signature = %hex::encode(&attestation.signature),
+            "Swap attestation"
+        ),
+        None => tracing::info!(swap_id = %args.swap_id, "Alice has not attested this swap yet"),
+    }
+
+    Ok(GetSwapAttestationResponse { attestation })
 }
 
 #[tracing::instrument(fields(method = "buy_xmr"), skip(context))]

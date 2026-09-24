@@ -11,7 +11,8 @@ bitcoin = { workspace = true }
 bitcoin-wallet = { path = "../bitcoin-wallet" }
 curve25519-dalek-ng = { workspace = true }
 ecdsa_fun = { workspace = true }
-libp2p = { workspace = true }
+hex = { workspace = true, features = ["serde"] }
+libp2p = { workspace = true, features = ["ed25519"] }
 monero-address = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 monero-oxide-wallet = { workspace = true }
@@ -31,6 +32,7 @@ tracing = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
+serde_json = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

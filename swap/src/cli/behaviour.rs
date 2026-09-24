@@ -3,7 +3,7 @@ use crate::network::swap_setup::bob;
 use crate::network::wormhole;
 use crate::network::{
     cooperative_xmr_redeem_after_punish, encrypted_signature, quote, quotes_cached, redial,
-    rendezvous, transfer_proof,
+    rendezvous, swap_attestation, transfer_proof,
 };
 use anyhow::Result;
 use bitcoin_wallet::BitcoinWallet;
@@ -14,6 +14,7 @@ use std::time::Duration;
 use swap_env::env;
 use swap_p2p::observe;
 pub use swap_p2p::out_event::bob::OutEvent;
+use swap_p2p::protocols::swap_attestation::bob::SwapAttestationStore;
 
 const PROTOCOL_VERSION: &str = "/comit/xmr/btc/1.0.0";
 
@@ -43,6 +44,9 @@ pub struct Behaviour {
     pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
     pub encrypted_signature: encrypted_signature::Behaviour,
 
+    /// Collects signed proofs from Alice that we have done swaps with her
+    swap_attestation: swap_attestation::bob::Behaviour,
+
     /// Alice can give out wormhole addresses to Bob
     wormhole: wormhole::bob::Behaviour,
 
@@ -64,7 +68,9 @@ impl Behaviour {
         namespace: XmrBtcNamespace,
         rendezvous_nodes: Vec<PeerId>,
         wormhole_store: Arc<dyn wormhole::WormholeStore + Send + Sync>,
+        swap_attestation_store: Arc<dyn SwapAttestationStore + Send + Sync>,
     ) -> Self {
+        let local_peer_id = identity.public().to_peer_id();
         let identifyConfig = identify::Config::new(PROTOCOL_VERSION.to_string(), identity.public())
             .with_agent_version(agent_version(namespace));
 
@@ -86,6 +92,11 @@ impl Behaviour {
             transfer_proof: transfer_proof::bob(),
             encrypted_signature: encrypted_signature::bob(),
             cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::bob(),
+            swap_attestation: swap_attestation::bob::Behaviour::new(
+                local_peer_id,
+                swap_attestation_store,
+                swap_attestation::bob::Config::default(),
+            ),
 
             wormhole: wormhole::bob::Behaviour::new(wormhole_store),
             redial: redial::Behaviour::new("makers", INITIAL_REDIAL_INTERVAL, MAX_REDIAL_INTERVAL),

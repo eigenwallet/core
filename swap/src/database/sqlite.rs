@@ -4,6 +4,8 @@ use crate::database::Swap;
 use crate::monero::LabeledMoneroAddress;
 use crate::monero::MoneroAddressPool;
 use crate::monero::TransferProof;
+use crate::protocol::alice::AliceState;
+use crate::protocol::bob::BobState;
 use crate::protocol::{Database, State};
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
@@ -14,6 +16,9 @@ use sqlx::sqlite::{Sqlite, SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{ConnectOptions, Pool};
 use std::path::Path;
 use std::str::FromStr;
+use swap_machine::swap_attestation::{SwapAttestation, SwapTerms};
+use swap_p2p::protocols::swap_attestation::alice::{SwapAttestationSource, SwapRecord};
+use swap_p2p::protocols::swap_attestation::bob::{SwapAttestationStore, SwapAwaitingAttestation};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -591,6 +596,48 @@ impl Database for SqliteDatabase {
 
         Ok(row.is_some())
     }
+
+    async fn insert_swap_attestation(&self, attestation: SwapAttestation) -> Result<()> {
+        let swap_id = attestation.swap.swap_id.to_string();
+        let attestation = serde_json::to_string(&attestation)?;
+        let entered_at = OffsetDateTime::now_utc().to_string();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO swap_attestations (swap_id, attestation, entered_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT (swap_id) DO NOTHING
+            "#,
+            swap_id,
+            attestation,
+            entered_at,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_swap_attestation(&self, swap_id: Uuid) -> Result<Option<SwapAttestation>> {
+        let swap_id = swap_id.to_string();
+
+        let row = sqlx::query!(
+            r#"
+            SELECT attestation
+            FROM swap_attestations
+            WHERE swap_id = ?
+            "#,
+            swap_id,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        Ok(Some(serde_json::from_str(&row.attestation)?))
+    }
 }
 
 impl SqliteDatabase {
@@ -743,6 +790,92 @@ impl crate::network::wormhole::WormholeStore for SqliteDatabase {
                 Ok((peer_id, address))
             })
             .collect()
+    }
+}
+
+#[async_trait]
+impl SwapAttestationSource for SqliteDatabase {
+    async fn swap_attestation_record(&self, swap_id: Uuid) -> Result<Option<SwapRecord>> {
+        if !self.has_swap(swap_id).await? {
+            return Ok(None);
+        }
+
+        let taker = self.get_peer_id(swap_id).await?;
+        let states = self
+            .get_states(swap_id)
+            .await?
+            .into_iter()
+            .map(TryInto::<AliceState>::try_into)
+            .collect::<Result<Vec<_>, _>>()?;
+        if !states.iter().any(AliceState::is_at_or_past_btc_locked) {
+            return Ok(Some(SwapRecord {
+                taker,
+                btc_locked_terms: None,
+            }));
+        }
+
+        let state3 = states
+            .iter()
+            .find_map(|state| match state {
+                AliceState::Started { state3 }
+                | AliceState::BtcLockTransactionSeen { state3 }
+                | AliceState::BtcLocked { state3 }
+                | AliceState::BtcEarlyRefundable { state3 } => Some(state3),
+                _ => None,
+            })
+            .with_context(|| format!("Swap {swap_id} has no state recording the Bitcoin lock"))?;
+
+        Ok(Some(SwapRecord {
+            taker,
+            btc_locked_terms: Some(SwapTerms {
+                btc_amount: state3.tx_lock.lock_amount(),
+                xmr_amount: state3.xmr,
+                btc_lock_txid: state3.tx_lock.txid(),
+            }),
+        }))
+    }
+}
+
+#[async_trait]
+impl SwapAttestationStore for SqliteDatabase {
+    async fn swaps_awaiting_attestation(&self) -> Result<Vec<SwapAwaitingAttestation>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT DISTINCT swap_id
+            FROM swap_states
+            WHERE swap_id NOT IN (SELECT swap_id FROM swap_attestations)
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut swaps = Vec::new();
+        for row in rows {
+            let swap_id = Uuid::from_str(&row.swap_id)?;
+            let states = self.get_states(swap_id).await?;
+            let Some(state3) = states.into_iter().find_map(|state| match state {
+                State::Bob(BobState::BtcLocked { state3, .. }) => Some(state3),
+                _ => None,
+            }) else {
+                continue;
+            };
+
+            swaps.push(SwapAwaitingAttestation {
+                swap_id,
+                maker: self.get_peer_id(swap_id).await?,
+                terms: SwapTerms {
+                    btc_amount: state3.tx_lock.lock_amount(),
+                    xmr_amount: state3.xmr_amount(),
+                    btc_lock_txid: state3.tx_lock.txid(),
+                },
+            });
+        }
+
+        Ok(swaps)
+    }
+
+    async fn store_swap_attestation(&self, attestation: SwapAttestation) -> Result<()> {
+        self.insert_swap_attestation(attestation).await
     }
 }
 
@@ -913,6 +1046,39 @@ mod tests {
         assert!(loaded_multiaddr.contains(&multiaddr1));
         assert!(loaded_multiaddr.contains(&multiaddr2));
         assert_eq!(loaded_multiaddr.len(), 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_load_swap_attestation() -> Result<()> {
+        use ::bitcoin::hashes::Hash;
+        use swap_machine::swap_attestation::AttestedSwap;
+
+        let db = setup_test_db().await?;
+
+        let maker = libp2p::identity::Keypair::generate_ed25519();
+        let swap_id = Uuid::new_v4();
+        let attestation = SwapAttestation::sign(
+            AttestedSwap {
+                maker: maker.public().to_peer_id(),
+                taker: PeerId::random(),
+                swap_id,
+                terms: SwapTerms {
+                    btc_amount: ::bitcoin::Amount::from_sat(100_000),
+                    xmr_amount: crate::monero::Amount::from_pico(1_000_000_000_000),
+                    btc_lock_txid: ::bitcoin::Txid::all_zeros(),
+                },
+            },
+            &maker,
+        )?;
+
+        assert_eq!(db.get_swap_attestation(swap_id).await?, None);
+
+        db.insert_swap_attestation(attestation.clone()).await?;
+        db.insert_swap_attestation(attestation.clone()).await?;
+
+        assert_eq!(db.get_swap_attestation(swap_id).await?, Some(attestation));
 
         Ok(())
     }

@@ -1,7 +1,7 @@
 use crate::cli::api::Context;
 use crate::cli::api::request::{
     BalanceArgs, CancelAndRefundArgs, ExportBitcoinWalletArgs, GetConfigArgs, GetHistoryArgs,
-    MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
+    GetSwapAttestationArgs, MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
 };
 use anyhow::Result;
 use bitcoin::address::NetworkUnchecked;
@@ -200,6 +200,17 @@ async fn apply_defaults(
 
             MoneroRecoveryArgs { swap_id }.request(context).await?;
         }
+        CliCommand::SwapAttestation {
+            swap_id: SwapId { swap_id },
+        } => {
+            ContextBuilder::new(is_testnet)
+                .with_data_dir(data)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
+
+            GetSwapAttestationArgs { swap_id }.request(context).await?;
+        }
     }
     Ok(())
 }
@@ -317,6 +328,11 @@ enum CliCommand {
     /// wallet fails to detect the funds. This can only be used for swaps
     /// that are in a `btc is redeemed` state.
     MoneroRecovery {
+        #[structopt(flatten)]
+        swap_id: SwapId,
+    },
+    /// Prints the attestation Alice signed for the swap, proving that we did the swap with her.
+    SwapAttestation {
         #[structopt(flatten)]
         swap_id: SwapId,
     },

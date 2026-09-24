@@ -147,6 +147,8 @@ pub mod behaviour {
 
     use libp2p::{connection_limits, identify, identity, ping, swarm::behaviour::toggle::Toggle};
     use swap_p2p::protocols::metered::RequestResponseMetrics;
+    use swap_p2p::protocols::swap_attestation;
+    use swap_p2p::protocols::swap_attestation::alice::SwapAttestationSource;
     use swap_p2p::{out_event::alice::OutEvent, patches};
 
     use crate::network::wormhole;
@@ -170,6 +172,7 @@ pub mod behaviour {
         pub transfer_proof: transfer_proof::Behaviour,
         pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
         pub encrypted_signature: encrypted_signature::Behaviour,
+        swap_attestation: swap_attestation::alice::Behaviour,
         pub identify: patches::identify::Behaviour,
         pub(crate) wormhole: Toggle<wormhole::alice::Behaviour>,
 
@@ -193,6 +196,7 @@ pub mod behaviour {
             rendezvous_nodes: Vec<PeerId>,
             connection_limits: connection_limits::ConnectionLimits,
             trust_provider: Arc<dyn PeerTrust + Send + Sync>,
+            swap_attestation_source: Arc<dyn SwapAttestationSource + Send + Sync>,
             wormhole_channels: Option<WormholeChannels>,
             wormhole_swap_freshness_hours: u64,
             request_response_metrics: Option<RequestResponseMetrics>,
@@ -218,6 +222,12 @@ pub mod behaviour {
                     },
                 )
             });
+
+            let swap_attestation = swap_attestation::alice::Behaviour::new(
+                identity.clone(),
+                swap_attestation_source,
+                request_response_metrics.clone(),
+            );
 
             let behaviour = if rendezvous_nodes.is_empty() {
                 None
@@ -245,6 +255,7 @@ pub mod behaviour {
                 cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::alice(
                     request_response_metrics,
                 ),
+                swap_attestation,
                 ping: ping::Behaviour::new(pingConfig),
                 identify: patches::identify::Behaviour::new(identifyConfig),
                 wormhole: Toggle::from(wormhole),

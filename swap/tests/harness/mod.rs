@@ -433,6 +433,7 @@ async fn start_alice(
         3,
         168,
         db.clone(),
+        db.clone(),
         None,
     )
     .unwrap();
@@ -782,6 +783,7 @@ impl BobParams {
                 relay,
                 XmrBtcNamespace::Testnet,
                 Vec::new(),
+                db.clone(),
                 db.clone(),
             )
         })
@@ -1144,6 +1146,37 @@ impl TestContext {
         )
         .await
         .unwrap();
+    }
+
+    pub async fn assert_bob_obtains_swap_attestation(&self, swap_id: Uuid) {
+        let db = SqliteDatabase::open(&self.bob_params.db_path, AccessMode::ReadOnly)
+            .await
+            .unwrap();
+
+        let attestation = timeout(Duration::from_secs(120), async {
+            loop {
+                if let Some(attestation) = db.get_swap_attestation(swap_id).await.unwrap() {
+                    return attestation;
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        })
+        .await
+        .expect("Bob did not obtain a swap attestation within 120 seconds");
+
+        attestation.verify().unwrap();
+        assert_eq!(attestation.swap.swap_id, swap_id);
+        assert_eq!(attestation.swap.maker, self.bob_params.alice_peer_id);
+        assert_eq!(
+            attestation.swap.taker,
+            self.bob_params
+                .seed
+                .derive_libp2p_identity()
+                .public()
+                .to_peer_id()
+        );
+        assert_eq!(attestation.swap.terms.btc_amount, self.btc_amount);
+        assert_eq!(attestation.swap.terms.xmr_amount, self.xmr_amount);
     }
 
     pub async fn assert_bob_redeemed(&self, state: BobState) {
