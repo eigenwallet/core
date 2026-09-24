@@ -12,10 +12,10 @@ use swap::cli::{
             GetDataDirArgs, GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs,
             GetMoneroBalanceArgs, GetMoneroHistoryArgs, GetMoneroMainAddressArgs,
             GetMoneroSeedArgs, GetMoneroSubaddressesArgs, GetMoneroSyncProgressArgs,
-            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
-            GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs, RedactArgs,
-            RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs,
-            ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
+            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapAttestationArgs,
+            GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs,
+            RedactArgs, RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse,
+            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
             SetMoneroWalletPasswordArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs,
             WithdrawBtcArgs,
         },
@@ -43,6 +43,7 @@ macro_rules! generate_command_handlers {
             get_swap_info,
             get_swap_infos_all,
             get_swap_timelock,
+            get_swap_attestation,
             withdraw_btc,
             buy_xmr,
             resume_swap,
@@ -409,6 +410,7 @@ tauri_command!(suspend_current_swap, SuspendCurrentSwapArgs, no_args);
 tauri_command!(get_swap_info, GetSwapInfoArgs);
 tauri_command!(get_swap_infos_all, GetSwapInfosAllArgs, no_args);
 tauri_command!(get_swap_timelock, GetSwapTimelockArgs);
+tauri_command!(get_swap_attestation, GetSwapAttestationArgs);
 tauri_command!(get_history, GetHistoryArgs, no_args);
 tauri_command!(get_monero_addresses, GetMoneroAddressesArgs, no_args);
 tauri_command!(get_monero_history, GetMoneroHistoryArgs, no_args);

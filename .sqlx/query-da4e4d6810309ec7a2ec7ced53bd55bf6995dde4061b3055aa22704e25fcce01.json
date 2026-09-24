@@ -1,0 +1,18 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT attestation\n            FROM swap_attestations\n            WHERE swap_id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "attestation",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [false]
+  },
+  "hash": "da4e4d6810309ec7a2ec7ced53bd55bf6995dde4061b3055aa22704e25fcce01"
+}

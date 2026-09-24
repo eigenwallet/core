@@ -1,0 +1,18 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT DISTINCT swap_id\n            FROM swap_states\n            WHERE swap_id NOT IN (SELECT swap_id FROM swap_attestations)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "swap_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [false]
+  },
+  "hash": "bca149c1f17a8953095310dbc384cd155eb49e51b723ad4f1502da2833022fa4"
+}

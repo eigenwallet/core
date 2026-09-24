@@ -1,6 +1,7 @@
 pub mod alice;
 pub mod bob;
 pub mod common;
+pub mod swap_attestation;
 
 #[cfg(test)]
 mod tests {

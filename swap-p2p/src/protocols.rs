@@ -7,6 +7,7 @@ pub mod quotes;
 pub mod quotes_cached;
 pub mod redial;
 pub mod rendezvous;
+pub mod swap_attestation;
 pub mod swap_setup;
 pub mod transfer_proof;
 pub mod wormhole;
