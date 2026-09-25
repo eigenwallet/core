@@ -110,6 +110,29 @@ fn find_workspace_target_dir() -> std::path::PathBuf {
     panic!("Could not find target directory from OUT_DIR: {out_dir}");
 }
 
+/// Number of parallel jobs (`-j`) for the Monero C++ build.
+///
+/// Monero's C++ compilation is very RAM-hungry, so we default to serial (`-j1`)
+/// in CI/Docker where memory is constrained, and to all logical cores locally.
+/// An explicit `MONERO_BUILD_JOBS` overrides both, allowing the Docker/CI build
+/// to be tuned without editing this file (mind the peak memory: each Monero
+/// translation unit can take hundreds of MB, so `-j2`/`-j4` is the safe range).
+fn monero_build_jobs(is_github_actions: bool, is_docker_build: bool) -> usize {
+    if let Some(jobs) = std::env::var("MONERO_BUILD_JOBS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&jobs| jobs > 0)
+    {
+        return jobs;
+    }
+
+    if is_github_actions || is_docker_build {
+        1
+    } else {
+        num_cpus::get()
+    }
+}
+
 fn main() {
     let is_github_actions: bool = std::env::var("GITHUB_ACTIONS").is_ok();
     let is_docker_build: bool = std::env::var("DOCKER_BUILD").is_ok();
@@ -123,6 +146,9 @@ fn main() {
 
     // Rerun if the patches directory or any patch files change
     println!("cargo:rerun-if-changed=patches");
+
+    // Rerun if the Monero build parallelism override changes
+    println!("cargo:rerun-if-env-changed=MONERO_BUILD_JOBS");
 
     // Apply embedded patches before building
     apply_patches().expect("Failed to apply our patches");
@@ -196,14 +222,7 @@ fn main() {
                 .to_string(),
         ) // This is needed for libsodium.a to be found on mingw-w64
         .build_arg("-Wno-dev") // Disable warnings we can't fix anyway
-        .build_arg(format!(
-            "-j{}",
-            if is_github_actions || is_docker_build {
-                1
-            } else {
-                num_cpus::get()
-            }
-        ))
+        .build_arg(format!("-j{}", monero_build_jobs(is_github_actions, is_docker_build)))
         .build_arg("-I.")
         .build();
 
