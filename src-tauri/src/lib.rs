@@ -116,6 +116,11 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
+    #[cfg(feature = "automation")]
+    {
+        builder = builder.plugin(tauri_plugin_webdriver::init());
+    }
+
     builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())

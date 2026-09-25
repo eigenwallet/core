@@ -9,6 +9,9 @@ description = "GUI for XMR<>BTC Atomic Swaps written in Rust"
 name = "unstoppableswap_gui_rs_lib"
 crate-type = ["rlib", "cdylib"]
 
+[features]
+automation = ["dep:tauri-plugin-webdriver"]
+
 [build-dependencies]
 tauri-build = { version = "2.*", features = ["config-json5"] }
 
@@ -31,6 +34,7 @@ tauri-plugin-opener = "2.*"
 tauri-plugin-process = "2.*"
 tauri-plugin-store = "2.*"
 tauri-plugin-updater = "2.*"
+tauri-plugin-webdriver = { path = "vendor/tauri-plugin-webdriver", optional = true }
 
 # Tokio
 tokio = { workspace = true }
