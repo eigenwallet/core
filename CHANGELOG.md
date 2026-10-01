@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Report the actual Monero wallet error instead of "unknown error, error not set".
+
 - GUI: Update the Flatpak GNOME runtime from 48 (end-of-life) to 50.
 
 ## [4.15.0] - 2026-09-22
