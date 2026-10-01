@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use swap_core::monero;
 use uuid::Uuid;
 
-const DOMAIN: &str = "xmr-btc-swap swap attestation v1";
+const DOMAIN: &str = "eigenwallet swap attestation v1";
 
 /// A statement by the maker, signed with its libp2p identity, that it has
 /// done a swap with the taker which progressed at least to the Bitcoin being locked.

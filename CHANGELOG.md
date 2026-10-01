@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - ASB: Sign swap attestations on request: a statement, signed with the ASB's peer id, that a swap with the requesting peer progressed at least to the Bitcoin being locked.
 - CLI + GUI: Periodically request a swap attestation from the maker for every swap that progressed at least to the Bitcoin being locked, and store it.
-  Print a stored attestation with the `swap-attestation` command.
 
 ## [4.15.0] - 2026-09-22
 
