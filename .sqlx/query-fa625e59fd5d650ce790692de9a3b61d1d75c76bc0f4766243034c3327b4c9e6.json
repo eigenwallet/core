@@ -1,0 +1,28 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT swap_states.swap_id, peers.peer_id, swap_states.state\n            FROM swap_states\n            JOIN peers ON peers.swap_id = swap_states.swap_id\n            WHERE swap_states.id IN (\n                SELECT MIN(id)\n                FROM swap_states\n                WHERE json_extract(state, '$.Bob.BtcLockReadyToPublish') IS NOT NULL\n                   OR json_extract(state, '$.Bob.BtcLocked') IS NOT NULL\n                GROUP BY swap_id\n            )\n            AND swap_states.swap_id NOT IN (SELECT swap_id FROM swap_attestations)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "swap_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "peer_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "state",
+        "ordinal": 2,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [false, false, false]
+  },
+  "hash": "fa625e59fd5d650ce790692de9a3b61d1d75c76bc0f4766243034c3327b4c9e6"
+}

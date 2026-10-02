@@ -59,6 +59,7 @@ type InnerBehaviour = request_response::cbor::Behaviour<Request, Response>;
 /// Requests swap attestations from Alice for every swap that needs one, until each is stored.
 pub struct Behaviour {
     inner: InnerBehaviour,
+    network: bitcoin::Network,
     local_peer_id: PeerId,
     store: Arc<dyn SwapAttestationStore + Send + Sync>,
 
@@ -76,6 +77,7 @@ pub struct Behaviour {
 
 impl Behaviour {
     pub fn new(
+        network: bitcoin::Network,
         local_peer_id: PeerId,
         store: Arc<dyn SwapAttestationStore + Send + Sync>,
         config: Config,
@@ -89,6 +91,7 @@ impl Behaviour {
                 request_response::Config::default()
                     .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
             ),
+            network,
             local_peer_id,
             store,
             poll_interval,
@@ -113,6 +116,7 @@ impl Behaviour {
             }
 
             let expected = AttestedSwap {
+                network: self.network,
                 maker: swap.maker,
                 taker: self.local_peer_id,
                 swap_id: swap.swap_id,

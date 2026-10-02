@@ -584,7 +584,7 @@ impl Database for SqliteDatabase {
 
         let row = sqlx::query!(
             r#"
-            SELECT 1 as found
+            SELECT 1 as "found: i64"
             FROM swap_states
             WHERE swap_id = ?
             LIMIT 1
@@ -596,29 +596,10 @@ impl Database for SqliteDatabase {
 
         Ok(row.is_some())
     }
+}
 
-    async fn insert_swap_attestation(&self, attestation: SwapAttestation) -> Result<()> {
-        let swap_id = attestation.swap.swap_id.to_string();
-        let attestation = serde_json::to_string(&attestation)?;
-        let entered_at = OffsetDateTime::now_utc().to_string();
-
-        sqlx::query!(
-            r#"
-            INSERT INTO swap_attestations (swap_id, attestation, entered_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT (swap_id) DO NOTHING
-            "#,
-            swap_id,
-            attestation,
-            entered_at,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
-    async fn get_swap_attestation(&self, swap_id: Uuid) -> Result<Option<SwapAttestation>> {
+impl SqliteDatabase {
+    pub async fn get_swap_attestation(&self, swap_id: Uuid) -> Result<Option<SwapAttestation>> {
         let swap_id = swap_id.to_string();
 
         let row = sqlx::query!(
@@ -638,9 +619,7 @@ impl Database for SqliteDatabase {
 
         Ok(Some(serde_json::from_str(&row.attestation)?))
     }
-}
 
-impl SqliteDatabase {
     /// Like [`Database::all`] but only returns swaps whose latest state
     /// update happened within the last `freshness_hours`.
     ///
@@ -801,33 +780,18 @@ impl SwapAttestationSource for SqliteDatabase {
         }
 
         let taker = self.get_peer_id(swap_id).await?;
-        let states = self
+        let state3 = self
             .get_states(swap_id)
             .await?
             .into_iter()
-            .map(TryInto::<AliceState>::try_into)
-            .collect::<Result<Vec<_>, _>>()?;
-        if !states.iter().any(AliceState::is_at_or_past_btc_locked) {
-            return Ok(Some(SwapRecord {
-                taker,
-                btc_locked_terms: None,
-            }));
-        }
-
-        let state3 = states
-            .iter()
             .find_map(|state| match state {
-                AliceState::Started { state3 }
-                | AliceState::BtcLockTransactionSeen { state3 }
-                | AliceState::BtcLocked { state3 }
-                | AliceState::BtcEarlyRefundable { state3 } => Some(state3),
+                State::Alice(AliceState::BtcLocked { state3 }) => Some(state3),
                 _ => None,
-            })
-            .with_context(|| format!("Swap {swap_id} has no state recording the Bitcoin lock"))?;
+            });
 
         Ok(Some(SwapRecord {
             taker,
-            btc_locked_terms: Some(SwapTerms {
+            btc_locked_terms: state3.map(|state3| SwapTerms {
                 btc_amount: state3.tx_lock.lock_amount(),
                 xmr_amount: state3.xmr,
                 btc_lock_txid: state3.tx_lock.txid(),
@@ -841,41 +805,65 @@ impl SwapAttestationStore for SqliteDatabase {
     async fn swaps_awaiting_attestation(&self) -> Result<Vec<SwapAwaitingAttestation>> {
         let rows = sqlx::query!(
             r#"
-            SELECT DISTINCT swap_id
+            SELECT swap_states.swap_id, peers.peer_id, swap_states.state
             FROM swap_states
-            WHERE swap_id NOT IN (SELECT swap_id FROM swap_attestations)
+            JOIN peers ON peers.swap_id = swap_states.swap_id
+            WHERE swap_states.id IN (
+                SELECT MIN(id)
+                FROM swap_states
+                WHERE json_extract(state, '$.Bob.BtcLockReadyToPublish') IS NOT NULL
+                   OR json_extract(state, '$.Bob.BtcLocked') IS NOT NULL
+                GROUP BY swap_id
+            )
+            AND swap_states.swap_id NOT IN (SELECT swap_id FROM swap_attestations)
             "#,
         )
         .fetch_all(&self.pool)
         .await?;
 
-        let mut swaps = Vec::new();
-        for row in rows {
-            let swap_id = Uuid::from_str(&row.swap_id)?;
-            let states = self.get_states(swap_id).await?;
-            let Some(state3) = states.into_iter().find_map(|state| match state {
-                State::Bob(BobState::BtcLocked { state3, .. }) => Some(state3),
-                _ => None,
-            }) else {
-                continue;
-            };
+        rows.into_iter()
+            .map(|row| {
+                let swap_id = Uuid::from_str(&row.swap_id)?;
+                let state = serde_json::from_str::<Swap>(&row.state)
+                    .with_context(|| format!("Failed to deserialize state of swap {swap_id}"))?;
+                let (State::Bob(BobState::BtcLockReadyToPublish { state3, .. })
+                | State::Bob(BobState::BtcLocked { state3, .. })) = State::from(state)
+                else {
+                    anyhow::bail!("Swap {swap_id} has no state carrying the Bitcoin lock");
+                };
 
-            swaps.push(SwapAwaitingAttestation {
-                swap_id,
-                maker: self.get_peer_id(swap_id).await?,
-                terms: SwapTerms {
-                    btc_amount: state3.tx_lock.lock_amount(),
-                    xmr_amount: state3.xmr_amount(),
-                    btc_lock_txid: state3.tx_lock.txid(),
-                },
-            });
-        }
-
-        Ok(swaps)
+                Ok(SwapAwaitingAttestation {
+                    swap_id,
+                    maker: PeerId::from_str(&row.peer_id)?,
+                    terms: SwapTerms {
+                        btc_amount: state3.tx_lock.lock_amount(),
+                        xmr_amount: state3.xmr_amount(),
+                        btc_lock_txid: state3.tx_lock.txid(),
+                    },
+                })
+            })
+            .collect()
     }
 
     async fn store_swap_attestation(&self, attestation: SwapAttestation) -> Result<()> {
-        self.insert_swap_attestation(attestation).await
+        let swap_id = attestation.swap.swap_id.to_string();
+        let attestation = serde_json::to_string(&attestation)?;
+        let entered_at = OffsetDateTime::now_utc().to_string();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO swap_attestations (swap_id, attestation, entered_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT (swap_id) DO NOTHING
+            "#,
+            swap_id,
+            attestation,
+            entered_at,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 }
 
@@ -1061,6 +1049,7 @@ mod tests {
         let swap_id = Uuid::new_v4();
         let attestation = SwapAttestation::sign(
             AttestedSwap {
+                network: ::bitcoin::Network::Regtest,
                 maker: maker.public().to_peer_id(),
                 taker: PeerId::random(),
                 swap_id,
@@ -1075,8 +1064,8 @@ mod tests {
 
         assert_eq!(db.get_swap_attestation(swap_id).await?, None);
 
-        db.insert_swap_attestation(attestation.clone()).await?;
-        db.insert_swap_attestation(attestation.clone()).await?;
+        db.store_swap_attestation(attestation.clone()).await?;
+        db.store_swap_attestation(attestation.clone()).await?;
 
         assert_eq!(db.get_swap_attestation(swap_id).await?, Some(attestation));
 

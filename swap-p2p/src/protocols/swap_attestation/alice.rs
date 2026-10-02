@@ -37,6 +37,7 @@ type InnerBehaviour = Metered<request_response::cbor::Behaviour<Request, Respons
 /// Answers swap attestation requests from Bob.
 pub struct Behaviour {
     inner: InnerBehaviour,
+    network: bitcoin::Network,
     identity: identity::Keypair,
     source: Arc<dyn SwapAttestationSource + Send + Sync>,
     lookups: FuturesUnordered<BoxFuture<'static, Lookup>>,
@@ -51,6 +52,7 @@ struct Lookup {
 
 impl Behaviour {
     pub fn new(
+        network: bitcoin::Network,
         identity: identity::Keypair,
         source: Arc<dyn SwapAttestationSource + Send + Sync>,
         metrics: Option<RequestResponseMetrics>,
@@ -65,6 +67,7 @@ impl Behaviour {
                 PROTOCOL,
                 metrics,
             ),
+            network,
             identity,
             source,
             lookups: FuturesUnordered::new(),
@@ -134,6 +137,7 @@ impl Behaviour {
         };
 
         let swap = AttestedSwap {
+            network: self.network,
             maker: self.identity.public().to_peer_id(),
             taker: peer,
             swap_id,

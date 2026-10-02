@@ -17,6 +17,7 @@ pub struct SwapAttestation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttestedSwap {
+    pub network: bitcoin::Network,
     pub maker: PeerId,
     pub taker: PeerId,
     pub swap_id: Uuid,
@@ -68,6 +69,7 @@ impl AttestedSwap {
     pub fn message(&self) -> String {
         [
             DOMAIN.to_string(),
+            format!("network: {}", self.network),
             format!("maker: {}", self.maker),
             format!("taker: {}", self.taker),
             format!("swap_id: {}", self.swap_id),
@@ -86,6 +88,7 @@ mod tests {
 
     fn attested_swap(maker: &identity::Keypair) -> AttestedSwap {
         AttestedSwap {
+            network: bitcoin::Network::Bitcoin,
             maker: maker.public().to_peer_id(),
             taker: PeerId::random(),
             swap_id: Uuid::new_v4(),
@@ -131,6 +134,15 @@ mod tests {
         let maker = identity::Keypair::generate_ed25519();
         let mut attestation = SwapAttestation::sign(attested_swap(&maker), &maker).unwrap();
         attestation.swap.taker = PeerId::random();
+
+        assert!(attestation.verify().is_err());
+    }
+
+    #[test]
+    fn tampered_network_fails_verification() {
+        let maker = identity::Keypair::generate_ed25519();
+        let mut attestation = SwapAttestation::sign(attested_swap(&maker), &maker).unwrap();
+        attestation.swap.network = bitcoin::Network::Testnet;
 
         assert!(attestation.verify().is_err());
     }

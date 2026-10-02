@@ -111,7 +111,12 @@ mod tests {
     {
         let store = Arc::new(FakeStore::default());
         let mut bob = new_swarm(|identity| {
-            bob::Behaviour::new(identity.public().to_peer_id(), store.clone(), fast_config())
+            bob::Behaviour::new(
+                ::bitcoin::Network::Regtest,
+                identity.public().to_peer_id(),
+                store.clone(),
+                fast_config(),
+            )
         });
         let bob_peer_id = *bob.local_peer_id();
 
@@ -119,7 +124,9 @@ mod tests {
             lookup: move |attempt| lookup(bob_peer_id, attempt),
             lookups: AtomicUsize::new(0),
         });
-        let mut alice = new_swarm(|identity| alice::Behaviour::new(identity, source.clone(), None));
+        let mut alice = new_swarm(|identity| {
+            alice::Behaviour::new(::bitcoin::Network::Regtest, identity, source.clone(), None)
+        });
         let alice_peer_id = *alice.local_peer_id();
         let alice_addr = alice.listen_on_random_memory_address().await;
         bob.add_peer_address(alice_peer_id, alice_addr);

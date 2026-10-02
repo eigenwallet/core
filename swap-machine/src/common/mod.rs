@@ -2,7 +2,6 @@ use crate::alice::AliceState;
 use crate::alice::is_complete as alice_is_complete;
 use crate::bob::BobState;
 use crate::bob::is_complete as bob_is_complete;
-use crate::swap_attestation::SwapAttestation;
 use anyhow::Result;
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
@@ -359,8 +358,6 @@ pub trait Database {
         swap_id: Uuid,
     ) -> Result<Option<monero::TransferProof>>;
     async fn has_swap(&self, swap_id: Uuid) -> Result<bool>;
-    async fn insert_swap_attestation(&self, attestation: SwapAttestation) -> Result<()>;
-    async fn get_swap_attestation(&self, swap_id: Uuid) -> Result<Option<SwapAttestation>>;
 }
 
 #[cfg(test)]

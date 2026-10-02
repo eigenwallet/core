@@ -224,6 +224,7 @@ pub mod behaviour {
             });
 
             let swap_attestation = swap_attestation::alice::Behaviour::new(
+                env_config.bitcoin_network,
                 identity.clone(),
                 swap_attestation_source,
                 request_response_metrics.clone(),

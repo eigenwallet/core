@@ -93,6 +93,7 @@ impl Behaviour {
             encrypted_signature: encrypted_signature::bob(),
             cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::bob(),
             swap_attestation: swap_attestation::bob::Behaviour::new(
+                env_config.bitcoin_network,
                 local_peer_id,
                 swap_attestation_store,
                 swap_attestation::bob::Config::default(),
