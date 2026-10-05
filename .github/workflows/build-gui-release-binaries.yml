@@ -14,7 +14,8 @@ jobs:
   draft-cb-release:
     # don't do it for PR's, preview releases, or developer testing releases
     if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && !startsWith(github.ref_name, 'test-') }}
-    runs-on: ubuntu-24.04
+    # Downgraded to ubuntu-22.04 to ensure GLIBC/GLIBCXX forward-compatibility for older Linux distros (e.g. Debian 12)
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -38,9 +39,11 @@ jobs:
             target: "aarch64-apple-darwin"
           - host: "macos-15-intel" # for Intel based macs.
             target: "x86_64-apple-darwin"
-          - host: "ubuntu-24.04"
+          # Downgraded from ubuntu-24.04 to ubuntu-22.04 for broader Linux AppImage/.deb compatibility
+          - host: "ubuntu-22.04"
             target: "x86_64-unknown-linux-gnu"
-          - host: "ubuntu-24.04" # cross build windows from ubuntu
+          # Downgraded for consistency across CI runners
+          - host: "ubuntu-22.04" # cross build windows from ubuntu
             target: "x86_64-pc-windows-gnu"
 
     runs-on: ${{ matrix.host }}
@@ -216,7 +219,8 @@ jobs:
     # don't do it for developer testing releases
     if: ${{ !startsWith(github.ref_name, 'test-') }}
     needs: [build_gui]
-    runs-on: ubuntu-24.04
+    # Downgraded to ubuntu-22.04 for consistency across jobs
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -269,7 +273,8 @@ jobs:
     # don't publish previews or developer testing releases to crabnebula
     if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && !startsWith(github.ref_name, 'test-') }}
     needs: [draft-cb-release, build_gui]
-    runs-on: ubuntu-24.04
+    # Downgraded to ubuntu-22.04 for consistency across jobs
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
