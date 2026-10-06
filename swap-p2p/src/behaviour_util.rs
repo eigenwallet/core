@@ -313,6 +313,7 @@ mod tests {
         let endpoint = ConnectedPoint::Dialer {
             address: "/ip4/127.0.0.1/tcp/1234".parse().unwrap(),
             role_override: Endpoint::Dialer,
+            port_use: libp2p::core::transport::PortUse::Reuse,
         };
 
         // Verify initially not connected
@@ -335,6 +336,7 @@ mod tests {
             peer_id,
             connection_id: conn_id,
             endpoint: &endpoint,
+            cause: None,
             remaining_established: 0,
         });
 
@@ -394,6 +396,7 @@ mod tests {
         let endpoint = ConnectedPoint::Dialer {
             address: addr.clone(),
             role_override: Endpoint::Dialer,
+            port_use: libp2p::core::transport::PortUse::Reuse,
         };
         let conn_id = ConnectionId::new_unchecked(1);
 
