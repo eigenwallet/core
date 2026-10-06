@@ -46,9 +46,9 @@ impl TorBackendRpc for TorBackend {
 // Parse order matches tokio::net::ToSocketAddrs
 fn pair_to_socks((host, port): (&'_ str, u16)) -> TargetAddr<'_> {
     if let Ok(addr) = host.parse::<Ipv4Addr>() {
-        TargetAddr::Ip(SocketAddr::new(addr.into(), 10))
+        TargetAddr::Ip(SocketAddr::new(addr.into(), port))
     } else if let Ok(addr) = host.parse::<Ipv6Addr>() {
-        TargetAddr::Ip(SocketAddr::new(addr.into(), 10))
+        TargetAddr::Ip(SocketAddr::new(addr.into(), port))
     } else {
         TargetAddr::Domain(host.into(), port)
     }
@@ -69,8 +69,8 @@ mod tests {
                     "cebulka7uxchnbpvmqapg5pfos4ngaxglsktzvha7a5rigndghvadeyd.onion",
                     13
                 ),
-                ("127.0.0.1", 10),
-                ("::1", 10),
+                ("127.0.0.1", 14),
+                ("::1", 15),
             ]
             .map(super::pair_to_socks),
             [
@@ -81,8 +81,8 @@ mod tests {
                     "cebulka7uxchnbpvmqapg5pfos4ngaxglsktzvha7a5rigndghvadeyd.onion".into(),
                     13,
                 ),
-                TargetAddr::Ip(SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 10)),
-                TargetAddr::Ip(SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 10)),
+                TargetAddr::Ip(SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 14)),
+                TargetAddr::Ip(SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 15)),
             ],
         );
     }

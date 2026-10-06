@@ -48,8 +48,8 @@ mod tests {
         "/dns4/dns.ip4.tld/tcp/11",
         "/dns6/dns.ip6.tld/tcp/12",
         "/onion3/cebulka7uxchnbpvmqapg5pfos4ngaxglsktzvha7a5rigndghvadeyd:13",
-        "/ip4/127.0.0.1/tcp/10",
-        "/ip6/::1/tcp/10",
+        "/ip4/127.0.0.1/tcp/14",
+        "/ip6/::1/tcp/15",
     ];
 
     #[test]
@@ -64,8 +64,8 @@ mod tests {
                     "cebulka7uxchnbpvmqapg5pfos4ngaxglsktzvha7a5rigndghvadeyd.onion".into(),
                     13,
                 ),
-                TargetAddr::Ip(SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 10)),
-                TargetAddr::Ip(SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 10)),
+                TargetAddr::Ip(SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 14)),
+                TargetAddr::Ip(SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 15)),
             ],
         );
     }
