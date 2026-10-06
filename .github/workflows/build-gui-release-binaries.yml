@@ -56,6 +56,13 @@ jobs:
           host: ${{ matrix.host }}
           target: ${{ matrix.target }}
 
+      - name: Disable updater for PR builds (avoids signing errors)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          jq '.plugins.updater.active = false' src-tauri/tauri.conf.json > src-tauri/tauri.conf.tmp.json
+          mv src-tauri/tauri.conf.tmp.json src-tauri/tauri.conf.json
+
       - name: build tauri app and upload to github releases page
         uses: tauri-apps/tauri-action@v0
         env:
@@ -76,6 +83,14 @@ jobs:
           projectPath: src-tauri
           tauriScript: yarn tauri
           args: --target ${{ matrix.target }}
+
+      - name: Upload Linux AppImage for testing
+        if: github.event_name == 'pull_request' && matrix.target == 'x86_64-unknown-linux-gnu'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eigenwallet-linux-appimage
+          path: target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+          if-no-files-found: warn
 
       # TODO: Remove this duplication of the steps in build-release-binaries.yml
       - name: Install GnuPG (macOS)
@@ -201,88 +216,4 @@ jobs:
 
           git -C "$outdir" init
           git -C "$outdir" add .
-          git -C "$outdir" config user.name "${{ secrets.BOTTY_NAME }}"
-          git -C "$outdir" config user.email "${{ secrets.BOTTY_EMAIL }}"
-          git -C "$outdir" commit -m "Build Flatpak repository from $GITHUB_REF_NAME ($GITHUB_SHA)"
-          git fetch -f "$outdir" HEAD:gh-pages
-          git push -f origin gh-pages
-
-      - name: Upload to crabnebula release (not for previews or test releases)
-        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && !startsWith(github.ref_name, 'test-') }}
-        uses: crabnebula-dev/cloud-release@v0
-        with:
-          command: release upload ${{ env.CN_APPLICATION }} --framework tauri
-          api-key: ${{ secrets.CN_API_KEY }}
-          args: --target ${{ matrix.target }}
-
-  generate-homebrew-formula:
-    # don't do it for developer testing releases
-    if: ${{ !startsWith(github.ref_name, 'test-') }}
-    needs: [build_gui]
-    # Downgraded to ubuntu-22.04 for consistency across jobs
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download DMG files and generate formula
-        env:
-          GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          VERSION="${{ github.event.release.tag_name }}"
-
-          echo "Creating download directory /tmp/dmgs ..."
-          mkdir -p /tmp/dmgs
-
-          echo "Downloading all *.dmg assets from release $VERSION ..."
-          gh release download "$VERSION" --pattern "*.dmg" --dir /tmp/dmgs
-
-          echo "Download complete. Contents of /tmp/dmgs:"
-          ls -la /tmp/dmgs
-          
-          # Calculate SHA256 checksums
-          AARCH64_DMG=$(ls /tmp/dmgs/eigenwallet_*_aarch64.dmg)
-          X64_DMG=$(ls /tmp/dmgs/eigenwallet_*_x64.dmg)
-
-          echo "Found DMGs:"
-          echo "  aarch64 -> $(basename "$AARCH64_DMG")"
-          echo "  x64     -> $(basename "$X64_DMG")"
-
-          AARCH64_SHA256=$(sha256sum "$AARCH64_DMG" | awk '{print $1}')
-          X64_SHA256=$(sha256sum "$X64_DMG" | awk '{print $1}')
-
-          echo "aarch64 SHA256: $AARCH64_SHA256"
-          echo "x64 SHA256: $X64_SHA256"
-
-          # Generate the Homebrew formula from template
-          sed -e "s/VERSION_PLACEHOLDER/$VERSION/g"               \
-              -e "s/AARCH64_SHA256_PLACEHOLDER/$AARCH64_SHA256/g" \
-              -e "s/X64_SHA256_PLACEHOLDER/$X64_SHA256/g"         \
-              dev-scripts/homebrew/eigenwallet.rb.template | tee eigenwallet.rb
-
-      - name: Upload Homebrew formula to release
-        env:
-          GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
-            eigenwallet.rb \
-            --clobber
-
-  publish:
-    # don't publish previews or developer testing releases to crabnebula
-    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && !startsWith(github.ref_name, 'test-') }}
-    needs: [draft-cb-release, build_gui]
-    # Downgraded to ubuntu-22.04 for consistency across jobs
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set env variables
-        uses: ./.github/actions/set-monero-env
-
-      - name: Publish Release
-        uses: crabnebula-dev/cloud-release@v0
-        with:
-          command: release publish ${{ env.CN_APPLICATION }} --framework tauri
-          api-key: ${{ secrets.CN_API_KEY }}
+          git -C "$outdir" config user.name "${{ secrets.BOTTY_NAME }}"           git -C "$
