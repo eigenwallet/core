@@ -130,8 +130,102 @@ mod tests {
         rendezvous_handle.abort();
     }
 
+    /// A taker whose first discovery request returns no registrations must
+    /// still ask again after `DISCOVERY_INTERVAL` and find makers that
+    /// registered in the meantime.
+    ///
+    /// Takes about `DISCOVERY_INTERVAL` (60s) of real time.
+    #[tokio::test]
+    async fn discover_again_after_empty_discovery() {
+        let (rendezvous_peer_id, rendezvous_addr, mut rendezvous_events, rendezvous_handle) =
+            spawn_rendezvous_node_with_events().await;
+
+        let mut discoverer = new_swarm(|identity| {
+            discovery::Behaviour::new(
+                identity,
+                vec![rendezvous_peer_id],
+                XmrBtcNamespace::Testnet.into(),
+            )
+        });
+        discoverer.add_peer_address(rendezvous_peer_id, rendezvous_addr.clone());
+
+        let (discovered_sender, mut discovered) = tokio::sync::mpsc::unbounded_channel();
+        let discoverer_task = tokio::spawn(async move {
+            loop {
+                if let SwarmEvent::Behaviour(discovery::Event::DiscoveredPeer { peer_id }) =
+                    discoverer.select_next_some().await
+                {
+                    let _ = discovered_sender.send(peer_id);
+                }
+            }
+        });
+
+        // Wait until the rendezvous node answered the first discovery request
+        // with an empty list
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Some(rendezvous::server::Event::DiscoverServed { registrations, .. }) =
+                    rendezvous_events.recv().await
+                {
+                    assert!(registrations.is_empty());
+                    return;
+                }
+            }
+        })
+        .await
+        .expect("rendezvous node did not serve the first discovery request");
+
+        // Only now does a maker register at the rendezvous node
+        let mut registrar = new_swarm(|identity| {
+            register::Behaviour::new(
+                identity,
+                vec![rendezvous_peer_id],
+                XmrBtcNamespace::Testnet.into(),
+            )
+        });
+        registrar.add_peer_address(rendezvous_peer_id, rendezvous_addr);
+        registrar.listen_on_random_memory_address().await;
+        let registrar_id = *registrar.local_peer_id();
+
+        let registrar_task = tokio::spawn(async move {
+            loop {
+                registrar.next().await;
+            }
+        });
+
+        // The taker must discover the maker with its next scheduled request
+        tokio::time::timeout(
+            crate::defaults::DISCOVERY_INTERVAL + Duration::from_secs(10),
+            async {
+                while let Some(peer_id) = discovered.recv().await {
+                    if peer_id == registrar_id {
+                        return;
+                    }
+                }
+            },
+        )
+        .await
+        .expect("taker did not discover the maker after an empty discovery");
+
+        discoverer_task.abort();
+        registrar_task.abort();
+        rendezvous_handle.abort();
+    }
+
     /// Spawns a rendezvous server that continuously processes events
     async fn spawn_rendezvous_node() -> (PeerId, Multiaddr, tokio::task::JoinHandle<()>) {
+        let (peer_id, address, _events, handle) = spawn_rendezvous_node_with_events().await;
+
+        (peer_id, address, handle)
+    }
+
+    /// Like [`spawn_rendezvous_node`], but also forwards the server's events
+    async fn spawn_rendezvous_node_with_events() -> (
+        PeerId,
+        Multiaddr,
+        tokio::sync::mpsc::UnboundedReceiver<rendezvous::server::Event>,
+        tokio::task::JoinHandle<()>,
+    ) {
         let mut rendezvous_node = new_swarm(|_| {
             rendezvous::server::Behaviour::new(
                 rendezvous::server::Config::default().with_min_ttl(2),
@@ -139,13 +233,16 @@ mod tests {
         });
         let address = rendezvous_node.listen_on_random_memory_address().await;
         let peer_id = *rendezvous_node.local_peer_id();
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
 
         let handle = tokio::spawn(async move {
             loop {
-                rendezvous_node.next().await;
+                if let SwarmEvent::Behaviour(event) = rendezvous_node.select_next_some().await {
+                    let _ = sender.send(event);
+                }
             }
         });
 
-        (peer_id, address, handle)
+        (peer_id, address, receiver, handle)
     }
 }
