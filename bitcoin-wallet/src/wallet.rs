@@ -1705,7 +1705,13 @@ impl Client {
         let results = self
             .inner
             .join_quorum("block_headers_subscribe", |client| {
-                client.inner.block_headers_subscribe()
+                let latest_block = client.inner.block_headers_subscribe()?;
+
+                BlockHeight::try_from(latest_block).map_err(|e| {
+                    bdk_electrum::electrum_client::Error::Protocol(
+                        format!("Invalid block height: {:#}", e).into(),
+                    )
+                })
             })
             .await
             .context("Failed to subscribe to header notifications")?;
@@ -1715,8 +1721,7 @@ impl Client {
 
         for result in results {
             match result {
-                Ok(latest_block) => {
-                    let block_height = BlockHeight::try_from(latest_block)?;
+                Ok(block_height) => {
                     highest_block_height = highest_block_height.max(Some(block_height));
                 }
                 Err(error) => errors.push(error),
