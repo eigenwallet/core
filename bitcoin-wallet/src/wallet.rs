@@ -1698,15 +1698,38 @@ impl Client {
     }
 
     /// Update the block height.
+    ///
+    /// Asks the Electrum servers in parallel and takes the highest tip,
+    /// so that a server which is stuck on an old tip cannot freeze our confirmation counts.
     pub async fn update_block_height(&self) -> Result<()> {
-        let latest_block = self
+        let results = self
             .inner
-            .call("block_headers_subscribe", |client| {
+            .join_quorum("block_headers_subscribe", |client| {
                 client.inner.block_headers_subscribe()
             })
             .await
             .context("Failed to subscribe to header notifications")?;
-        let latest_block_height = BlockHeight::try_from(latest_block)?;
+
+        let mut highest_block_height = None;
+        let mut errors = Vec::new();
+
+        for result in results {
+            match result {
+                Ok(latest_block) => {
+                    let block_height = BlockHeight::try_from(latest_block)?;
+                    highest_block_height = highest_block_height.max(Some(block_height));
+                }
+                Err(error) => errors.push(error),
+            }
+        }
+
+        // Only if no server answered we return the errors.
+        let Some(latest_block_height) = highest_block_height else {
+            return Err(anyhow::Error::from(electrum_pool::MultiError::new(
+                errors,
+                "Failed to subscribe to header notifications",
+            )));
+        };
 
         let mut current = self
             .latest_block_height
