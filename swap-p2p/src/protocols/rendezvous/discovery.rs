@@ -199,13 +199,15 @@ impl NetworkBehaviour for Behaviour {
                                     "Discovered peer at rendezvous node"
                                 );
                             }
-
-                            self.pending_to_discover.insert(
-                                rendezvous_node,
-                                tokio::time::sleep(crate::defaults::DISCOVERY_INTERVAL).boxed(),
-                            );
                         }
                     }
+
+                    // Schedule the next discovery request, also if the rendezvous
+                    // node returned no registrations
+                    self.pending_to_discover.insert(
+                        rendezvous_node,
+                        tokio::time::sleep(crate::defaults::DISCOVERY_INTERVAL).boxed(),
+                    );
                     continue;
                 }
                 ToSwarm::GenerateEvent(InnerBehaviourEvent::Rendezvous(

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Fix an issue where the GUI stopped asking a rendezvous point for makers after it once answered that no makers were registered. Makers that registered later were only found after a manual refresh or a restart.
+
 ## [4.16.0] - 2026-10-06
 
 - GUI: Update the Flatpak GNOME runtime from 48 (end-of-life) to 50.
