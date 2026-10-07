@@ -36,6 +36,16 @@ use tokio::sync::RwLock as TokioRwLock;
 use tokio::sync::watch;
 use tracing::{Instrument, debug_span};
 
+/// Deadline for a single mempool.space fee fetch within the combined fee
+/// estimators.
+///
+/// The mempool.space client already applies its own per-request HTTP timeout;
+/// this deadline additionally bounds the *cached* estimator as a whole (whose
+/// cache lookup is instant) so a slow or hanging fetch can never stall fee
+/// estimation — and with it swap setup — while a healthy Electrum answer is
+/// available. Falls back to the Electrum rate on expiry.
+const MEMPOOL_SPACE_FEE_DEADLINE: Duration = Duration::from_secs(5);
+
 pub type TauriHandle = Option<Arc<dyn BitcoinTauriHandle>>;
 pub trait BitcoinTauriHandle: Send + Sync {
     /// let progress_handle = tauri_handle.new_background_process_with_initial_progress(
@@ -363,6 +373,7 @@ impl Wallet {
     /// On old wallets we used to generate a ton of unused addresses
     /// which results in us having a bunch of large gaps in the SPKs
     const SCAN_STOP_GAP: u32 = 500;
+
     /// The batch size for syncing
     const SCAN_BATCH_SIZE: u32 = 32;
     /// The number of maximum chunks to use when syncing
@@ -1188,12 +1199,20 @@ where
         let electrum_future = self
             .cached_electrum_fee_estimator
             .estimate_feerate(self.target_block);
+        // The mempool.space fetch shares a short deadline so a slow or hanging request
+        // cannot stall fee estimation (and with it e.g. a swap setup wallet snapshot)
+        // while a healthy Electrum answer is already available.
         let mempool_future = async {
             match self.cached_mempool_fee_estimator.as_ref() {
-                Some(mempool_client) => mempool_client
-                    .estimate_feerate(self.target_block)
-                    .await
-                    .map(Some),
+                Some(mempool_client) => tokio::time::timeout(
+                    MEMPOOL_SPACE_FEE_DEADLINE,
+                    mempool_client.estimate_feerate(self.target_block),
+                )
+                .await
+                .map_err(|elapsed| {
+                    anyhow!("timed out after {elapsed:?} waiting for the mempool.space fee rate")
+                })
+                .and_then(|res| res.map(Some)),
                 None => Ok(None),
             }
         };
@@ -1265,9 +1284,21 @@ where
     /// Only fails if both sources fail. Always chooses the higher value.
     async fn combined_min_relay_fee(&self) -> Result<FeeRate> {
         let electrum_future = self.cached_electrum_fee_estimator.min_relay_fee();
+        // Same deadline as `combined_fee_rate`: a hanging mempool.space request must not
+        // stall fee estimation when Electrum is healthy.
         let mempool_future = async {
             match self.cached_mempool_fee_estimator.as_ref() {
-                Some(mempool_client) => mempool_client.min_relay_fee().await.map(Some),
+                Some(mempool_client) => tokio::time::timeout(
+                    MEMPOOL_SPACE_FEE_DEADLINE,
+                    mempool_client.min_relay_fee(),
+                )
+                .await
+                .map_err(|elapsed| {
+                    anyhow!(
+                        "timed out after {elapsed:?} waiting for the mempool.space min relay fee"
+                    )
+                })
+                .and_then(|res| res.map(Some)),
                 None => Ok(None),
             }
         };

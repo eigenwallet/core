@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [4.16.0] - 2026-10-06
 
 - GUI: Update the Flatpak GNOME runtime from 48 (end-of-life) to 50.
+- ASB: Bound each mempool.space fee fetch with a short deadline (5s) and fall back to the Electrum estimate on expiry, so a slow or hanging mempool.space request can no longer stall swap setup wallet snapshots.
 
 ## [4.15.0] - 2026-09-22
 
