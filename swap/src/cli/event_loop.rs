@@ -252,7 +252,7 @@ impl EventLoop {
                             let swap_id = msg.swap_id;
 
                             // Check if we have a registered handler for this swap
-                            if let Some((expected_peer_id, sender, _)) = self.registered_swap_handlers.get(&swap_id) {
+                            let transfer_proof = if let Some((expected_peer_id, sender, _)) = self.registered_swap_handlers.get(&swap_id) {
                                 // Ensure the transfer proof is coming from the expected peer
                                 if peer != *expected_peer_id {
                                     tracing::warn!(
@@ -271,19 +271,24 @@ impl EventLoop {
                                             let _ = responder.recv().await;
                                             (swap_id, channel)
                                         }.boxed());
+
+                                        continue;
                                     }
-                                    Err(e) => {
-                                        tracing::warn!(
+                                    // The handle was dropped (swap suspended, finished or failed).
+                                    // Remove the stale handler and handle the transfer proof as if no swap was running.
+                                    Err(bmrng::error::SendError(transfer_proof)) => {
+                                        tracing::debug!(
                                             %swap_id,
                                             %peer,
-                                            error = ?e,
-                                            "Failed to pass transfer proof to registered handler"
+                                            "Registered handler for transfer proof is gone, removing it"
                                         );
+                                        self.registered_swap_handlers.remove(&swap_id);
+                                        transfer_proof
                                     }
                                 }
-
-                                continue;
-                            }
+                            } else {
+                                msg.tx_lock_proof
+                            };
 
                             // Immediately acknowledge if we've already processed this transfer proof
                             // This handles the case where Alice didn't receive our previous acknowledgment
@@ -313,7 +318,7 @@ impl EventLoop {
                             }
 
                             // Check if we should buffer the transfer proof
-                            if let Err(error) = buffer_transfer_proof_if_needed(self.db.clone(), swap_id, peer, msg.tx_lock_proof).await {
+                            if let Err(error) = buffer_transfer_proof_if_needed(self.db.clone(), swap_id, peer, transfer_proof).await {
                                 tracing::warn!(
                                     %swap_id,
                                     %peer,
