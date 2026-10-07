@@ -5,6 +5,7 @@ pub use swap_p2p::protocols::quotes;
 pub use swap_p2p::protocols::quotes_cached;
 pub use swap_p2p::protocols::redial;
 pub use swap_p2p::protocols::rendezvous;
+pub use swap_p2p::protocols::swap_attestation;
 pub use swap_p2p::protocols::swap_setup;
 pub use swap_p2p::protocols::transfer_proof;
 

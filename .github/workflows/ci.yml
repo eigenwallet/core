@@ -167,6 +167,8 @@ jobs:
           - package: swap
             test_name: happy_path_no_p2p_after_btc_lock
           - package: swap
+            test_name: bob_obtains_swap_attestation
+          - package: swap
             test_name: alice_and_bob_refund_using_cancel_and_refund_command
           - package: swap
             test_name: alice_and_bob_refund_using_cancel_then_refund_command

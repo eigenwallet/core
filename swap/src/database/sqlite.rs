@@ -4,6 +4,8 @@ use crate::database::Swap;
 use crate::monero::LabeledMoneroAddress;
 use crate::monero::MoneroAddressPool;
 use crate::monero::TransferProof;
+use crate::protocol::alice::AliceState;
+use crate::protocol::bob::BobState;
 use crate::protocol::{Database, State};
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
@@ -14,6 +16,9 @@ use sqlx::sqlite::{Sqlite, SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{ConnectOptions, Pool};
 use std::path::Path;
 use std::str::FromStr;
+use swap_machine::swap_attestation::{SwapAttestation, SwapTerms};
+use swap_p2p::protocols::swap_attestation::alice::{SwapAttestationSource, SwapRecord};
+use swap_p2p::protocols::swap_attestation::bob::{SwapAttestationStore, SwapAwaitingAttestation};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -579,7 +584,7 @@ impl Database for SqliteDatabase {
 
         let row = sqlx::query!(
             r#"
-            SELECT 1 as found
+            SELECT 1 as "found: i64"
             FROM swap_states
             WHERE swap_id = ?
             LIMIT 1
@@ -594,6 +599,27 @@ impl Database for SqliteDatabase {
 }
 
 impl SqliteDatabase {
+    pub async fn get_swap_attestation(&self, swap_id: Uuid) -> Result<Option<SwapAttestation>> {
+        let swap_id = swap_id.to_string();
+
+        let row = sqlx::query!(
+            r#"
+            SELECT attestation
+            FROM swap_attestations
+            WHERE swap_id = ?
+            "#,
+            swap_id,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        Ok(Some(serde_json::from_str(&row.attestation)?))
+    }
+
     /// Like [`Database::all`] but only returns swaps whose latest state
     /// update happened within the last `freshness_hours`.
     ///
@@ -743,6 +769,127 @@ impl crate::network::wormhole::WormholeStore for SqliteDatabase {
                 Ok((peer_id, address))
             })
             .collect()
+    }
+}
+
+#[async_trait]
+impl SwapAttestationSource for SqliteDatabase {
+    async fn swap_attestation_record(&self, swap_id: Uuid) -> Result<Option<SwapRecord>> {
+        let swap_id_str = swap_id.to_string();
+
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                peers.peer_id,
+                (
+                    SELECT swap_states.state
+                    FROM swap_states
+                    WHERE swap_states.swap_id = peers.swap_id
+                      AND json_extract(swap_states.state, '$.Alice.BtcLocked') IS NOT NULL
+                    ORDER BY swap_states.id ASC
+                    LIMIT 1
+                ) AS "btc_locked_state?: String"
+            FROM peers
+            WHERE peers.swap_id = ?
+            "#,
+            swap_id_str,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        let taker = PeerId::from_str(&row.peer_id)?;
+        let Some(state) = row.btc_locked_state else {
+            return Ok(Some(SwapRecord {
+                taker,
+                btc_locked_terms: None,
+            }));
+        };
+
+        let state = serde_json::from_str::<Swap>(&state)
+            .with_context(|| format!("Failed to deserialize state of swap {swap_id}"))?;
+        let State::Alice(AliceState::BtcLocked { state3 }) = State::from(state) else {
+            anyhow::bail!("Swap {swap_id} has no BtcLocked state");
+        };
+
+        Ok(Some(SwapRecord {
+            taker,
+            btc_locked_terms: Some(SwapTerms {
+                btc_amount: state3.tx_lock.lock_amount(),
+                xmr_amount: state3.xmr,
+                btc_lock_txid: state3.tx_lock.txid(),
+            }),
+        }))
+    }
+}
+
+#[async_trait]
+impl SwapAttestationStore for SqliteDatabase {
+    async fn swaps_awaiting_attestation(&self) -> Result<Vec<SwapAwaitingAttestation>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT swap_states.swap_id, peers.peer_id, swap_states.state
+            FROM swap_states
+            JOIN peers ON peers.swap_id = swap_states.swap_id
+            WHERE swap_states.id IN (
+                SELECT MIN(id)
+                FROM swap_states
+                WHERE json_extract(state, '$.Bob.BtcLockReadyToPublish') IS NOT NULL
+                   OR json_extract(state, '$.Bob.BtcLocked') IS NOT NULL
+                GROUP BY swap_id
+            )
+            AND swap_states.swap_id NOT IN (SELECT swap_id FROM swap_attestations)
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|row| {
+                let swap_id = Uuid::from_str(&row.swap_id)?;
+                let state = serde_json::from_str::<Swap>(&row.state)
+                    .with_context(|| format!("Failed to deserialize state of swap {swap_id}"))?;
+                let (State::Bob(BobState::BtcLockReadyToPublish { state3, .. })
+                | State::Bob(BobState::BtcLocked { state3, .. })) = State::from(state)
+                else {
+                    anyhow::bail!("Swap {swap_id} has no state carrying the Bitcoin lock");
+                };
+
+                Ok(SwapAwaitingAttestation {
+                    swap_id,
+                    maker: PeerId::from_str(&row.peer_id)?,
+                    terms: SwapTerms {
+                        btc_amount: state3.tx_lock.lock_amount(),
+                        xmr_amount: state3.xmr_amount(),
+                        btc_lock_txid: state3.tx_lock.txid(),
+                    },
+                })
+            })
+            .collect()
+    }
+
+    async fn store_swap_attestation(&self, attestation: SwapAttestation) -> Result<()> {
+        let swap_id = attestation.swap.swap_id.to_string();
+        let attestation = serde_json::to_string(&attestation)?;
+        let entered_at = OffsetDateTime::now_utc().to_string();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO swap_attestations (swap_id, attestation, entered_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT (swap_id) DO NOTHING
+            "#,
+            swap_id,
+            attestation,
+            entered_at,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 }
 
@@ -915,6 +1062,338 @@ mod tests {
         assert_eq!(loaded_multiaddr.len(), 2);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_load_swap_attestation() -> Result<()> {
+        use ::bitcoin::hashes::Hash;
+        use swap_machine::swap_attestation::AttestedSwap;
+
+        let db = setup_test_db().await?;
+
+        let maker = libp2p::identity::Keypair::generate_ed25519();
+        let swap_id = Uuid::new_v4();
+        let attestation = SwapAttestation::sign(
+            AttestedSwap {
+                network: ::bitcoin::Network::Regtest,
+                maker: maker.public().to_peer_id(),
+                taker: PeerId::random(),
+                swap_id,
+                terms: SwapTerms {
+                    btc_amount: ::bitcoin::Amount::from_sat(100_000),
+                    xmr_amount: crate::monero::Amount::from_pico(1_000_000_000_000),
+                    btc_lock_txid: ::bitcoin::Txid::all_zeros(),
+                },
+            },
+            &maker,
+        )?;
+
+        assert_eq!(db.get_swap_attestation(swap_id).await?, None);
+
+        db.store_swap_attestation(attestation.clone()).await?;
+        db.store_swap_attestation(attestation.clone()).await?;
+
+        assert_eq!(db.get_swap_attestation(swap_id).await?, Some(attestation));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn swap_attestation_record_of_unknown_swap_is_none() -> Result<()> {
+        let db = setup_test_db().await?;
+
+        assert!(db.swap_attestation_record(Uuid::new_v4()).await?.is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn swap_attestation_record_without_final_btc_lock_has_no_terms() -> Result<()> {
+        let db = setup_test_db().await?;
+        let (alice_state3, _) = negotiated_state3s().await;
+        let swap_id = Uuid::new_v4();
+        let taker = PeerId::random();
+
+        db.insert_peer_id(swap_id, taker).await?;
+        db.insert_latest_state(
+            swap_id,
+            State::Alice(AliceState::BtcLockTransactionSeen {
+                state3: Box::new(alice_state3.clone()),
+            }),
+        )
+        .await?;
+        db.insert_latest_state(
+            swap_id,
+            State::Alice(AliceState::BtcEarlyRefundable {
+                state3: Box::new(alice_state3),
+            }),
+        )
+        .await?;
+
+        let record = db
+            .swap_attestation_record(swap_id)
+            .await?
+            .expect("swap to be known");
+        assert_eq!(record.taker, taker);
+        assert_eq!(record.btc_locked_terms, None);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn swap_attestation_record_of_locked_swap_has_terms() -> Result<()> {
+        let db = setup_test_db().await?;
+        let (alice_state3, _) = negotiated_state3s().await;
+        let swap_id = Uuid::new_v4();
+        let taker = PeerId::random();
+
+        db.insert_peer_id(swap_id, taker).await?;
+        db.insert_latest_state(
+            swap_id,
+            State::Alice(AliceState::BtcLockTransactionSeen {
+                state3: Box::new(alice_state3.clone()),
+            }),
+        )
+        .await?;
+        db.insert_latest_state(
+            swap_id,
+            State::Alice(AliceState::BtcLocked {
+                state3: Box::new(alice_state3.clone()),
+            }),
+        )
+        .await?;
+        db.insert_latest_state(swap_id, State::Alice(AliceState::BtcRedeemed))
+            .await?;
+
+        let record = db
+            .swap_attestation_record(swap_id)
+            .await?
+            .expect("swap to be known");
+        assert_eq!(record.taker, taker);
+        assert_eq!(
+            record.btc_locked_terms,
+            Some(SwapTerms {
+                btc_amount: alice_state3.tx_lock.lock_amount(),
+                xmr_amount: alice_state3.xmr,
+                btc_lock_txid: alice_state3.tx_lock.txid(),
+            })
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn swaps_awaiting_attestation_selects_locked_swaps_without_attestation() -> Result<()> {
+        let db = setup_test_db().await?;
+        let (_, bob_state3) = negotiated_state3s().await;
+        let maker = PeerId::random();
+
+        let ready_to_publish = State::Bob(BobState::BtcLockReadyToPublish {
+            btc_lock_tx_signed: dummy_transaction(),
+            state3: bob_state3.clone(),
+            monero_wallet_restore_blockheight: swap_core::monero::BlockHeight { height: 0 },
+        });
+        let locked = State::Bob(BobState::BtcLocked {
+            state3: bob_state3.clone(),
+            monero_wallet_restore_blockheight: swap_core::monero::BlockHeight { height: 0 },
+        });
+
+        let never_locked = Uuid::new_v4();
+        db.insert_peer_id(never_locked, maker).await?;
+        db.insert_latest_state(never_locked, State::Bob(BobState::SafelyAborted))
+            .await?;
+
+        let only_ready_to_publish = Uuid::new_v4();
+        db.insert_peer_id(only_ready_to_publish, maker).await?;
+        db.insert_latest_state(only_ready_to_publish, ready_to_publish.clone())
+            .await?;
+        db.insert_latest_state(only_ready_to_publish, State::Bob(BobState::SafelyAborted))
+            .await?;
+
+        let ready_then_locked = Uuid::new_v4();
+        db.insert_peer_id(ready_then_locked, maker).await?;
+        db.insert_latest_state(ready_then_locked, ready_to_publish.clone())
+            .await?;
+        db.insert_latest_state(ready_then_locked, locked.clone())
+            .await?;
+
+        let attested = Uuid::new_v4();
+        db.insert_peer_id(attested, maker).await?;
+        db.insert_latest_state(attested, locked.clone()).await?;
+        let maker_identity = libp2p::identity::Keypair::generate_ed25519();
+        db.store_swap_attestation(SwapAttestation::sign(
+            swap_machine::swap_attestation::AttestedSwap {
+                network: ::bitcoin::Network::Regtest,
+                maker: maker_identity.public().to_peer_id(),
+                taker: PeerId::random(),
+                swap_id: attested,
+                terms: terms_of(&bob_state3),
+            },
+            &maker_identity,
+        )?)
+        .await?;
+
+        let without_peer = Uuid::new_v4();
+        db.insert_latest_state(without_peer, locked).await?;
+
+        let mut swaps = db.swaps_awaiting_attestation().await?;
+        swaps.sort_by_key(|swap| swap.swap_id);
+        let mut expected = vec![only_ready_to_publish, ready_then_locked];
+        expected.sort();
+
+        assert_eq!(
+            swaps.iter().map(|swap| swap.swap_id).collect::<Vec<_>>(),
+            expected
+        );
+        for swap in swaps {
+            assert_eq!(swap.maker, maker);
+            assert_eq!(swap.terms, terms_of(&bob_state3));
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn alice_and_bob_derive_the_same_swap_terms() -> Result<()> {
+        let alice_db = setup_test_db().await?;
+        let bob_db = setup_test_db().await?;
+        let (alice_state3, bob_state3) = negotiated_state3s().await;
+        let swap_id = Uuid::new_v4();
+
+        alice_db.insert_peer_id(swap_id, PeerId::random()).await?;
+        alice_db
+            .insert_latest_state(
+                swap_id,
+                State::Alice(AliceState::BtcLocked {
+                    state3: Box::new(alice_state3),
+                }),
+            )
+            .await?;
+        bob_db.insert_peer_id(swap_id, PeerId::random()).await?;
+        bob_db
+            .insert_latest_state(
+                swap_id,
+                State::Bob(BobState::BtcLocked {
+                    state3: bob_state3,
+                    monero_wallet_restore_blockheight: swap_core::monero::BlockHeight { height: 0 },
+                }),
+            )
+            .await?;
+
+        let alice_terms = alice_db
+            .swap_attestation_record(swap_id)
+            .await?
+            .and_then(|record| record.btc_locked_terms)
+            .expect("Alice to have terms");
+        let bob_swaps = bob_db.swaps_awaiting_attestation().await?;
+
+        assert_eq!(bob_swaps.len(), 1);
+        assert_eq!(bob_swaps[0].terms, alice_terms);
+
+        Ok(())
+    }
+
+    fn terms_of(state3: &swap_machine::bob::State3) -> SwapTerms {
+        SwapTerms {
+            btc_amount: state3.tx_lock.lock_amount(),
+            xmr_amount: state3.xmr_amount(),
+            btc_lock_txid: state3.tx_lock.txid(),
+        }
+    }
+
+    fn dummy_transaction() -> ::bitcoin::Transaction {
+        ::bitcoin::Transaction {
+            version: ::bitcoin::transaction::Version::TWO,
+            lock_time: ::bitcoin::absolute::LockTime::ZERO,
+            input: vec![::bitcoin::TxIn::default()],
+            output: vec![::bitcoin::TxOut {
+                value: ::bitcoin::Amount::ZERO,
+                script_pubkey: ::bitcoin::ScriptBuf::new(),
+            }],
+        }
+    }
+
+    /// Runs the swap setup between Alice and Bob up to the point where both have a `State3`.
+    async fn negotiated_state3s() -> (swap_machine::alice::State3, swap_machine::bob::State3) {
+        use bitcoin_wallet::*;
+        use rand::rngs::OsRng;
+        use swap_core::bitcoin::{
+            CancelTimelock, PunishTimelock, RemainingRefundTimelock, TxLock, TxPunish, TxRedeem,
+        };
+        use swap_env::env::{GetConfig, Regtest};
+
+        let alice_wallet = TestWalletBuilder::new(Amount::ONE_BTC.to_sat())
+            .build()
+            .await;
+        let bob_wallet = TestWalletBuilder::new(Amount::ONE_BTC.to_sat())
+            .build()
+            .await;
+        let spending_fee = Amount::from_sat(1_000);
+        let btc_amount = Amount::from_sat(500_000);
+        let xmr_amount = swap_core::monero::Amount::from_pico(10_000);
+
+        let tx_redeem_fee = alice_wallet
+            .estimate_fee(TxRedeem::weight(), Some(btc_amount))
+            .await
+            .unwrap();
+        let tx_punish_fee = alice_wallet
+            .estimate_fee(TxPunish::weight(), Some(btc_amount))
+            .await
+            .unwrap();
+        let tx_lock_fee = alice_wallet
+            .estimate_fee(TxLock::weight(), Some(btc_amount))
+            .await
+            .unwrap();
+
+        let config = Regtest::get_config();
+        let alice_state0 = swap_machine::alice::State0::new(
+            btc_amount,
+            xmr_amount,
+            Amount::from_sat(100_000),
+            config,
+            alice_wallet.new_address().await.unwrap(),
+            alice_wallet.new_address().await.unwrap(),
+            tx_redeem_fee,
+            tx_punish_fee,
+            spending_fee,
+            false,
+            &mut OsRng,
+        );
+        let bob_state0 = swap_machine::bob::State0::new(
+            Uuid::new_v4(),
+            &mut OsRng,
+            btc_amount,
+            xmr_amount,
+            CancelTimelock::new(config.bitcoin_cancel_timelock),
+            PunishTimelock::new(config.bitcoin_punish_timelock),
+            RemainingRefundTimelock::new(config.bitcoin_remaining_refund_timelock),
+            bob_wallet.new_address().await.unwrap(),
+            config.monero_finality_confirmations,
+            spending_fee,
+            spending_fee,
+            spending_fee,
+            spending_fee,
+            spending_fee,
+            tx_lock_fee,
+        );
+
+        let (_, alice_state1) = alice_state0
+            .receive(bob_state0.next_message().unwrap())
+            .unwrap();
+        let bob_state1 = bob_state0
+            .receive(&bob_wallet, alice_state1.next_message().unwrap())
+            .await
+            .unwrap();
+        let alice_state2 = alice_state1.receive(bob_state1.next_message()).unwrap();
+        let bob_state2 = bob_state1
+            .receive(alice_state2.next_message().unwrap())
+            .unwrap();
+        let alice_state3 = alice_state2
+            .receive(bob_state2.next_message().unwrap())
+            .unwrap();
+        let (bob_state3, _) = bob_state2.lock_btc().await.unwrap();
+
+        (alice_state3, bob_state3)
     }
 
     async fn setup_test_db() -> Result<SqliteDatabase> {

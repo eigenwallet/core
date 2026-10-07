@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO swap_attestations (swap_id, attestation, entered_at)\n            VALUES (?, ?, ?)\n            ON CONFLICT (swap_id) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "30d734233589f8a7fdf99e7d7577128d7d90ed659043d4f0ea2c86f03393da4a"
+}

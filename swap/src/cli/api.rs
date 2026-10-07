@@ -847,6 +847,7 @@ mod builder {
                             namespace,
                             rendezvous_peer_ids.clone(),
                             db.clone(),
+                            db.clone(),
                         )
                     })
                     .await?;

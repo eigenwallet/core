@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB + CLI + GUI: Add swap attestations protocol: takers will request and store signed messages from makers attesting that they made a certain swap.
 - GUI: Fix an issue where the GUI stopped asking a rendezvous point for makers after it once answered that no makers were registered. Makers that registered later were only found after a manual refresh or a restart.
 
 ## [4.16.0] - 2026-10-06
