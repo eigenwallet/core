@@ -1,0 +1,23 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT\n                peers.peer_id,\n                (\n                    SELECT swap_states.state\n                    FROM swap_states\n                    WHERE swap_states.swap_id = peers.swap_id\n                      AND json_extract(swap_states.state, '$.Alice.BtcLocked') IS NOT NULL\n                    ORDER BY swap_states.id ASC\n                    LIMIT 1\n                ) AS \"btc_locked_state?: String\"\n            FROM peers\n            WHERE peers.swap_id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "peer_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "btc_locked_state?: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [false, false]
+  },
+  "hash": "2b30ce4555b26d0ca9d7ee34cad1747407bae75bb529704ec5e0d7f7fd5658b1"
+}

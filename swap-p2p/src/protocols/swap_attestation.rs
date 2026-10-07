@@ -29,6 +29,8 @@ pub enum SwapAttestationRejectReason {
     MaliciousRequest,
     #[error("Alice has not seen the Bitcoin being locked")]
     BtcNotLocked,
+    #[error("Alice is rate limiting requests from this peer")]
+    RateLimited,
 }
 
 #[cfg(test)]
@@ -109,6 +111,20 @@ mod tests {
     where
         F: Fn(PeerId, usize) -> Result<Option<SwapRecord>> + Send + Sync + 'static,
     {
+        let (stored, lookups) = run_swaps(lookup, bob_terms, 1).await;
+        (stored.into_iter().next(), lookups)
+    }
+
+    /// Runs Alice and Bob until Bob stored an attestation for each of `swaps` swaps with Alice
+    /// or the timeout elapsed.
+    async fn run_swaps<F>(
+        lookup: F,
+        bob_terms: SwapTerms,
+        swaps: usize,
+    ) -> (Vec<SwapAttestation>, usize)
+    where
+        F: Fn(PeerId, usize) -> Result<Option<SwapRecord>> + Send + Sync + 'static,
+    {
         let store = Arc::new(FakeStore::default());
         let mut bob = new_swarm(|identity| {
             bob::Behaviour::new(
@@ -135,11 +151,11 @@ mod tests {
             .awaiting
             .lock()
             .unwrap()
-            .push(SwapAwaitingAttestation {
+            .extend((0..swaps).map(|_| SwapAwaitingAttestation {
                 swap_id: Uuid::new_v4(),
                 maker: alice_peer_id,
                 terms: bob_terms,
-            });
+            }));
 
         let alice_task = tokio::spawn(async move {
             loop {
@@ -153,14 +169,14 @@ mod tests {
         });
 
         let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-        while tokio::time::Instant::now() < deadline && store.stored.lock().unwrap().is_empty() {
+        while tokio::time::Instant::now() < deadline && store.stored.lock().unwrap().len() < swaps {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
 
         alice_task.abort();
         bob_task.abort();
 
-        let stored = store.stored.lock().unwrap().first().cloned();
+        let stored = store.stored.lock().unwrap().clone();
         (stored, source.lookups.load(Ordering::SeqCst))
     }
 
@@ -180,6 +196,27 @@ mod tests {
         let attestation = stored.expect("attestation to be stored");
         attestation.verify().unwrap();
         assert_eq!(attestation.swap.terms, terms(100_000));
+    }
+
+    #[tokio::test]
+    async fn bob_obtains_all_attestations_despite_rate_limit() {
+        let (stored, lookups) = run_swaps(
+            |taker, _| {
+                Ok(Some(SwapRecord {
+                    taker,
+                    btc_locked_terms: Some(terms(100_000)),
+                }))
+            },
+            terms(100_000),
+            2,
+        )
+        .await;
+
+        assert_eq!(stored.len(), 2);
+        assert_eq!(
+            lookups, 2,
+            "Alice looks up a rate limited request only once admitted"
+        );
     }
 
     #[tokio::test]

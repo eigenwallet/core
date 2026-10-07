@@ -775,23 +775,49 @@ impl crate::network::wormhole::WormholeStore for SqliteDatabase {
 #[async_trait]
 impl SwapAttestationSource for SqliteDatabase {
     async fn swap_attestation_record(&self, swap_id: Uuid) -> Result<Option<SwapRecord>> {
-        if !self.has_swap(swap_id).await? {
-            return Ok(None);
-        }
+        let swap_id_str = swap_id.to_string();
 
-        let taker = self.get_peer_id(swap_id).await?;
-        let state3 = self
-            .get_states(swap_id)
-            .await?
-            .into_iter()
-            .find_map(|state| match state {
-                State::Alice(AliceState::BtcLocked { state3 }) => Some(state3),
-                _ => None,
-            });
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                peers.peer_id,
+                (
+                    SELECT swap_states.state
+                    FROM swap_states
+                    WHERE swap_states.swap_id = peers.swap_id
+                      AND json_extract(swap_states.state, '$.Alice.BtcLocked') IS NOT NULL
+                    ORDER BY swap_states.id ASC
+                    LIMIT 1
+                ) AS "btc_locked_state?: String"
+            FROM peers
+            WHERE peers.swap_id = ?
+            "#,
+            swap_id_str,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        let taker = PeerId::from_str(&row.peer_id)?;
+        let Some(state) = row.btc_locked_state else {
+            return Ok(Some(SwapRecord {
+                taker,
+                btc_locked_terms: None,
+            }));
+        };
+
+        let state = serde_json::from_str::<Swap>(&state)
+            .with_context(|| format!("Failed to deserialize state of swap {swap_id}"))?;
+        let State::Alice(AliceState::BtcLocked { state3 }) = State::from(state) else {
+            anyhow::bail!("Swap {swap_id} has no BtcLocked state");
+        };
 
         Ok(Some(SwapRecord {
             taker,
-            btc_locked_terms: state3.map(|state3| SwapTerms {
+            btc_locked_terms: Some(SwapTerms {
                 btc_amount: state3.tx_lock.lock_amount(),
                 xmr_amount: state3.xmr,
                 btc_lock_txid: state3.tx_lock.txid(),

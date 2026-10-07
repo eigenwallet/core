@@ -1,5 +1,7 @@
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -34,6 +36,9 @@ pub struct SwapRecord {
 
 type InnerBehaviour = Metered<request_response::cbor::Behaviour<Request, Response>>;
 
+/// A peer may send at most one request per interval, and only while it has no lookup in flight.
+const PER_PEER_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
+
 /// Answers swap attestation requests from Bob.
 pub struct Behaviour {
     inner: InnerBehaviour,
@@ -41,6 +46,8 @@ pub struct Behaviour {
     identity: identity::Keypair,
     source: Arc<dyn SwapAttestationSource + Send + Sync>,
     lookups: FuturesUnordered<BoxFuture<'static, Lookup>>,
+    peers_with_lookup: HashSet<PeerId>,
+    last_request: HashMap<PeerId, Instant>,
 }
 
 struct Lookup {
@@ -71,10 +78,39 @@ impl Behaviour {
             identity,
             source,
             lookups: FuturesUnordered::new(),
+            peers_with_lookup: HashSet::new(),
+            last_request: HashMap::new(),
+        }
+    }
+
+    fn admit(&mut self, peer: PeerId) -> bool {
+        let now = Instant::now();
+        self.last_request
+            .retain(|_, at| now.duration_since(*at) < PER_PEER_REQUEST_INTERVAL);
+
+        if self.peers_with_lookup.contains(&peer) || self.last_request.contains_key(&peer) {
+            return false;
+        }
+
+        self.last_request.insert(peer, now);
+        true
+    }
+
+    fn handle_request(&mut self, peer: PeerId, swap_id: Uuid, channel: ResponseChannel<Response>) {
+        if self.admit(peer) {
+            self.start_lookup(peer, swap_id, channel);
+            return;
+        }
+
+        tracing::debug!(%peer, %swap_id, "Rate limiting swap attestation request");
+        let response = Response::Rejected(SwapAttestationRejectReason::RateLimited);
+        if self.inner.send_response(channel, response).is_err() {
+            tracing::debug!(%peer, %swap_id, "Failed to send swap attestation response");
         }
     }
 
     fn start_lookup(&mut self, peer: PeerId, swap_id: Uuid, channel: ResponseChannel<Response>) {
+        self.peers_with_lookup.insert(peer);
         let source = Arc::clone(&self.source);
         self.lookups.push(
             async move {
@@ -97,6 +133,7 @@ impl Behaviour {
             swap_id,
             record,
         } = lookup;
+        self.peers_with_lookup.remove(&peer);
 
         let response = record.and_then(|record| self.response(peer, swap_id, record));
         let response = match response {
@@ -218,29 +255,32 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-        while let Poll::Ready(Some(lookup)) = self.lookups.poll_next_unpin(cx) {
-            self.respond(lookup);
-        }
+        loop {
+            if let Poll::Ready(event) = self.inner.poll(cx) {
+                let ToSwarm::GenerateEvent(event) = event else {
+                    return Poll::Ready(event.map_out(|_| unreachable!()));
+                };
 
-        while let Poll::Ready(event) = self.inner.poll(cx) {
-            let ToSwarm::GenerateEvent(event) = event else {
-                return Poll::Ready(event.map_out(|_| unreachable!()));
-            };
-
-            if let request_response::Event::Message {
-                peer,
-                message:
-                    request_response::Message::Request {
-                        request, channel, ..
-                    },
-                ..
-            } = event
-            {
-                self.start_lookup(peer, request.swap_id, channel);
-                cx.waker().wake_by_ref();
+                if let request_response::Event::Message {
+                    peer,
+                    message:
+                        request_response::Message::Request {
+                            request, channel, ..
+                        },
+                    ..
+                } = event
+                {
+                    self.handle_request(peer, request.swap_id, channel);
+                }
+                continue;
             }
-        }
 
-        Poll::Pending
+            if let Poll::Ready(Some(lookup)) = self.lookups.poll_next_unpin(cx) {
+                self.respond(lookup);
+                continue;
+            }
+
+            return Poll::Pending;
+        }
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -6,7 +6,7 @@ use std::time::Duration;
 use anyhow::{Result, ensure};
 use async_trait::async_trait;
 use futures::FutureExt;
-use futures::future::{BoxFuture, Fuse, FusedFuture, OptionFuture};
+use futures::future::BoxFuture;
 use libp2p::request_response::{self, OutboundFailure, OutboundRequestId, ProtocolSupport};
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
@@ -16,7 +16,7 @@ use libp2p::{Multiaddr, PeerId, StreamProtocol};
 use swap_machine::swap_attestation::{AttestedSwap, SwapAttestation, SwapTerms};
 use uuid::Uuid;
 
-use super::{PROTOCOL, Request, Response};
+use super::{PROTOCOL, Request, Response, SwapAttestationRejectReason};
 use crate::behaviour_util::BackoffTracker;
 use crate::futures_util::FuturesHashSet;
 
@@ -64,11 +64,10 @@ pub struct Behaviour {
     store: Arc<dyn SwapAttestationStore + Send + Sync>,
 
     poll_interval: tokio::time::Interval,
-    pending_query: OptionFuture<Fuse<BoxFuture<'static, Result<Vec<SwapAwaitingAttestation>>>>>,
+    pending_query: Option<BoxFuture<'static, Result<Vec<SwapAwaitingAttestation>>>>,
 
     /// The swaps we are currently trying to get an attestation for, with the attestation we expect.
     tracked: HashMap<Uuid, AttestedSwap>,
-    to_dispatch: VecDeque<Uuid>,
     inflight: HashMap<OutboundRequestId, Uuid>,
     retries: FuturesHashSet<Uuid, ()>,
     backoff: BackoffTracker<Uuid>,
@@ -95,9 +94,8 @@ impl Behaviour {
             local_peer_id,
             store,
             poll_interval,
-            pending_query: OptionFuture::from(None),
+            pending_query: None,
             tracked: HashMap::new(),
-            to_dispatch: VecDeque::new(),
             inflight: HashMap::new(),
             retries: FuturesHashSet::new(),
             backoff: BackoffTracker::new(
@@ -123,7 +121,7 @@ impl Behaviour {
                 terms: swap.terms,
             };
             self.tracked.insert(swap.swap_id, expected);
-            self.to_dispatch.push_back(swap.swap_id);
+            self.dispatch(swap.swap_id);
         }
     }
 
@@ -143,6 +141,10 @@ impl Behaviour {
         let Some(swap_id) = self.inflight.remove(&request_id) else {
             return;
         };
+        if let Response::Rejected(SwapAttestationRejectReason::RateLimited) = response {
+            self.retry_later(swap_id, "Alice is rate limiting our requests");
+            return;
+        }
         self.backoff.remove(&swap_id);
 
         let attestation = match response {
@@ -175,8 +177,12 @@ impl Behaviour {
             return;
         };
 
+        self.retry_later(swap_id, error);
+    }
+
+    fn retry_later(&mut self, swap_id: Uuid, reason: impl std::fmt::Display) {
         let delay = self.backoff.increment(&swap_id);
-        tracing::debug!(%swap_id, %error, retry_in_secs = delay.as_secs(), "Failed to request swap attestation");
+        tracing::debug!(%swap_id, %reason, retry_in_secs = delay.as_secs(), "Failed to request swap attestation");
         self.retries
             .insert(swap_id, tokio::time::sleep(delay).boxed());
     }
@@ -257,66 +263,64 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-        while let Poll::Ready(event) = self.inner.poll(cx) {
-            let ToSwarm::GenerateEvent(event) = event else {
-                return Poll::Ready(event.map_out(|_| unreachable!()));
-            };
+        loop {
+            if let Poll::Ready(event) = self.inner.poll(cx) {
+                let ToSwarm::GenerateEvent(event) = event else {
+                    return Poll::Ready(event.map_out(|_| unreachable!()));
+                };
 
-            match event {
-                request_response::Event::Message {
-                    message:
-                        request_response::Message::Response {
-                            request_id,
-                            response,
-                        },
-                    ..
-                } => self.handle_response(request_id, response),
-                request_response::Event::OutboundFailure {
-                    request_id, error, ..
-                } => self.handle_failure(request_id, error),
-                _ => {}
-            }
-        }
-
-        if let Poll::Ready(Some(result)) = self.pending_query.poll_unpin(cx) {
-            match result {
-                Ok(swaps) => self.track(swaps),
-                Err(error) => {
-                    tracing::error!(?error, "Failed to load swaps awaiting an attestation")
+                match event {
+                    request_response::Event::Message {
+                        message:
+                            request_response::Message::Response {
+                                request_id,
+                                response,
+                            },
+                        ..
+                    } => self.handle_response(request_id, response),
+                    request_response::Event::OutboundFailure {
+                        request_id, error, ..
+                    } => self.handle_failure(request_id, error),
+                    _ => {}
                 }
+                continue;
             }
-        }
 
-        if self.pending_query.is_terminated() && self.poll_interval.poll_tick(cx).is_ready() {
-            let store = Arc::clone(&self.store);
-            let query = async move { store.swaps_awaiting_attestation().await }
-                .boxed()
-                .fuse();
-            self.pending_query = OptionFuture::from(Some(query));
-            cx.waker().wake_by_ref();
-        }
-
-        while let Poll::Ready(Some((swap_id, ()))) = self.retries.poll_next_unpin(cx) {
-            self.to_dispatch.push_back(swap_id);
-        }
-
-        while let Poll::Ready(Some((swap_id, result))) = self.storing.poll_next_unpin(cx) {
-            self.tracked.remove(&swap_id);
-            match result {
-                Ok(()) => tracing::info!(%swap_id, "Stored swap attestation"),
-                Err(error) => {
-                    tracing::error!(%swap_id, ?error, "Failed to store swap attestation, will request again later")
+            if let Some(query) = &mut self.pending_query {
+                if let Poll::Ready(result) = query.poll_unpin(cx) {
+                    self.pending_query = None;
+                    match result {
+                        Ok(swaps) => self.track(swaps),
+                        Err(error) => {
+                            tracing::error!(?error, "Failed to load swaps awaiting an attestation")
+                        }
+                    }
+                    continue;
                 }
+            } else if self.poll_interval.poll_tick(cx).is_ready() {
+                let store = Arc::clone(&self.store);
+                self.pending_query =
+                    Some(async move { store.swaps_awaiting_attestation().await }.boxed());
+                continue;
             }
-        }
 
-        if !self.to_dispatch.is_empty() {
-            while let Some(swap_id) = self.to_dispatch.pop_front() {
+            if let Poll::Ready(Some((swap_id, ()))) = self.retries.poll_next_unpin(cx) {
                 self.dispatch(swap_id);
+                continue;
             }
-            cx.waker().wake_by_ref();
-        }
 
-        Poll::Pending
+            if let Poll::Ready(Some((swap_id, result))) = self.storing.poll_next_unpin(cx) {
+                self.tracked.remove(&swap_id);
+                match result {
+                    Ok(()) => tracing::info!(%swap_id, "Stored swap attestation"),
+                    Err(error) => {
+                        tracing::error!(%swap_id, ?error, "Failed to store swap attestation, will request again later")
+                    }
+                }
+                continue;
+            }
+
+            return Poll::Pending;
+        }
     }
 }
