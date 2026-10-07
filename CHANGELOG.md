@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GUI + ASB: Report the actual Monero wallet error instead of "unknown error, error not set".
 - GUI: Fix an issue where the GUI stopped asking a rendezvous point for makers after it once answered that no makers were registered. Makers that registered later were only found after a manual refresh or a restart.
 - GUI + CLI: Fix an issue where a transfer proof for a swap that was suspended, finished or failed was neither buffered nor acknowledged until the app was restarted.
+- GUI + CLI + ASB: Fix an issue where the Bitcoin block height stopped advancing when the first Electrum server kept answering with an old chain tip. Confirmations and timelocks are now based on the highest tip reported by the Electrum servers.
 
 ## [4.16.0] - 2026-10-06
 
