@@ -3032,7 +3032,7 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         spending_fee: Amount,
         change_override: Option<Address>,
     ) -> Result<Psbt> {
-        unimplemented!("stub method called erroneously")
+        Wallet::send_to_address(self, address, amount, spending_fee, change_override).await
     }
 
     async fn send_to_address_dynamic_fee(
@@ -3088,7 +3088,7 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     fn network(&self) -> Network {
-        unimplemented!("stub method called erroneously")
+        Wallet::network(self)
     }
 
     fn finality_confirmations(&self) -> u32 {
