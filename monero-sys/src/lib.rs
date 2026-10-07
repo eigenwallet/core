@@ -2742,11 +2742,10 @@ impl FfiWallet {
     /// release the mutex in between an operation and the check.
     fn check_error(&self) -> anyhow::Result<()> {
         let mut status = 0;
-        let mut error_string = String::new();
-        let_cxx_string!(error_string_ref = &mut error_string);
+        let_cxx_string!(error_string = "");
 
         self.inner
-            .statusWithErrorString(&mut status, error_string_ref)
+            .statusWithErrorString(&mut status, error_string.as_mut())
             .context("Failed to get wallet status: FFI call failed with exception")?;
 
         // If the status is ok, we return None
@@ -2757,7 +2756,7 @@ impl FfiWallet {
         let error_string = if error_string.is_empty() {
             "unknown error, error not set".to_string()
         } else {
-            error_string
+            error_string.to_string_lossy().into_owned()
         };
 
         let error_type = if status == 2 { "critical" } else { "error" };
