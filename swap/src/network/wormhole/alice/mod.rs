@@ -327,7 +327,10 @@ impl NetworkBehaviour for Behaviour {
             self.to_dispatch.push_back(peer_id);
         }
 
-        // Dispatch to connected peers, keep non-connected ones in queue
+        // Dispatch to connected peers. Of the non-connected ones, only keep peers we run a
+        // wormhole service for: everyone else gets a fresh push from `on_swarm_event` when they
+        // reconnect, and keeping them made this queue (scanned on every poll) grow by one entry
+        // per peer ID that ever connected and left before its push fired.
         let to_dispatch = std::mem::take(&mut self.to_dispatch);
         self.to_dispatch = to_dispatch
             .into_iter()
@@ -336,7 +339,7 @@ impl NetworkBehaviour for Behaviour {
                     self.dispatch_push(peer_id);
                     false
                 } else {
-                    true
+                    self.service_handles.contains_key(peer_id)
                 }
             })
             .collect();
@@ -364,6 +367,18 @@ impl NetworkBehaviour for Behaviour {
                         error,
                     } => {
                         self.inflight.remove(&request_id);
+
+                        // A peer that does not speak the wormhole protocol will not start to on
+                        // this connection. Retrying it with backoff (and a key derivation per
+                        // attempt) for as long as it stays connected lets a stream of fresh peer
+                        // IDs keep the event loop busy. Record the current state as sent, so only
+                        // a real state change (or a reconnect after it changes) triggers a push.
+                        if matches!(error, request_response::OutboundFailure::UnsupportedProtocols) {
+                            let state = self.current_state_for(&peer);
+                            self.last_sent.insert(peer, state);
+                            self.backoff.reset(&peer);
+                            continue;
+                        }
 
                         tracing::debug!(%peer, %error, "Failed to push wormhole address, will retry");
 
