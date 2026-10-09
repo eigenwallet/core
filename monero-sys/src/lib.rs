@@ -17,7 +17,7 @@ pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::{
     any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
     pin::Pin, time::Duration,
@@ -104,6 +104,31 @@ impl Drop for WalletThread {
                 "Wallet thread panicked. The wallet is possibly not closed and not stored."
             );
         }
+    }
+}
+
+/// A reference to a wallet that does not keep the wallet open.
+///
+/// A listener on a wallet must hold this type, and not a [`WalletHandle`]. The
+/// wallet thread owns its listeners. If a listener held a [`WalletHandle`], the
+/// wallet thread would keep its own channel open, and the wallet would never close.
+#[derive(Clone)]
+pub struct WeakWalletHandle {
+    inner: Weak<WalletThread>,
+}
+
+impl WeakWalletHandle {
+    /// Get a [`WalletHandle`]. Returns `None` after the last [`WalletHandle`] dropped.
+    ///
+    /// Do not call this in a listener callback. The listener callbacks run on the
+    /// wallet thread or on the C++ refresh thread. If the [`WalletHandle`] from this
+    /// function is the last one and drops there, `WalletThread::drop` cannot join
+    /// the wallet thread:
+    /// - On the wallet thread, `WalletThread::drop` skips the join.
+    /// - On the C++ refresh thread, the join deadlocks, because `closeWallet`
+    ///   waits until the C++ refresh thread stops.
+    pub fn upgrade(&self) -> Option<WalletHandle> {
+        self.inner.upgrade().map(|inner| WalletHandle { inner })
     }
 }
 
@@ -338,6 +363,13 @@ impl WalletHandle {
                 call_sender: Some(call_sender),
                 join_handle: Some(wallet_thread),
             }),
+        }
+    }
+
+    /// Get a [`WeakWalletHandle`] to the same wallet.
+    pub fn downgrade(&self) -> WeakWalletHandle {
+        WeakWalletHandle {
+            inner: Arc::downgrade(&self.inner),
         }
     }
 
@@ -3424,7 +3456,8 @@ impl Deref for TransactionInfoHandle {
 /// This listener does things on certain events like storing the wallet to disk.
 /// This is supposed to improve upon the behaviour of wallet2
 pub struct WalletHandleListener {
-    wallet: Arc<WalletHandle>,
+    /// A [`WeakWalletHandle`], because the wallet thread owns this listener.
+    wallet: WeakWalletHandle,
     /// We need a handle to the runtime to be able to spawn tasks
     rt_handle: tokio::runtime::Handle,
     /// We throttle the saving of the wallet to disk to avoid storing the wallet too often
@@ -3436,7 +3469,9 @@ impl WalletHandleListener {
     /// Store the wallet at most every 2 minutes
     const STORE_WALLET_THROTTLE: Duration = Duration::from_millis(2 * 60 * 1000);
 
-    pub fn new(wallet: Arc<WalletHandle>) -> Self {
+    pub fn new(wallet: &WalletHandle) -> Self {
+        let wallet = wallet.downgrade();
+
         // Get the current runtime handle
         let rt_handle = tokio::runtime::Handle::current();
 
@@ -3450,6 +3485,12 @@ impl WalletHandleListener {
                 let rt = rt.clone();
 
                 rt.spawn(async move {
+                    // Upgrade on a tokio thread, and not in the listener callback.
+                    // See `WeakWalletHandle::upgrade`.
+                    let Some(wallet) = wallet.upgrade() else {
+                        return;
+                    };
+
                     if let Err(error) = wallet.store_in_current_file().await {
                         tracing::warn!(?error, "Storing the wallet upon an event failed");
                     } else {
@@ -3498,6 +3539,12 @@ impl WalletEventListener for WalletHandleListener {
         // We start the refresh thread again after the rescan is complete.
         let handle = self.wallet.clone();
         self.rt_handle.spawn(async move {
+            // Upgrade on a tokio thread, and not in the listener callback.
+            // See `WeakWalletHandle::upgrade`.
+            let Some(handle) = handle.upgrade() else {
+                return;
+            };
+
             if let Err(e) = handle.start_refresh_thread().await {
                 tracing::error!(error=%e, "Failed to start refresh thread");
             }

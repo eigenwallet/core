@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use monero_sys::WalletEventListener;
 
@@ -27,8 +27,13 @@ impl TauriWalletListener {
     const HISTORY_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
     const SYNC_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
 
-    pub async fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
+    pub async fn new(tauri_handle: TauriHandle, wallet: &Wallet) -> Self {
         let rt_handle = tokio::runtime::Handle::current();
+
+        // The wallet thread owns this listener, thus hold a `WeakWalletHandle`.
+        // The jobs upgrade it on a tokio thread, and not in the listener callback.
+        // See `WeakWalletHandle::upgrade`.
+        let wallet = wallet.downgrade();
 
         let balance_job = {
             let wallet = wallet.clone();
@@ -39,6 +44,10 @@ impl TauriWalletListener {
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
+                    let Some(wallet) = wallet.upgrade() else {
+                        return;
+                    };
+
                     let total_balance = match wallet.total_balance().await {
                         Ok(total_balance) => total_balance,
                         Err(e) => {
@@ -68,6 +77,10 @@ impl TauriWalletListener {
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
+                    let Some(wallet) = wallet.upgrade() else {
+                        return;
+                    };
+
                     let transactions = match wallet.history().await {
                         Ok(transactions) => transactions,
                         Err(e) => {
@@ -90,6 +103,10 @@ impl TauriWalletListener {
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
+                    let Some(wallet) = wallet.upgrade() else {
+                        return;
+                    };
+
                     let sync_progress = match wallet.sync_progress().await {
                         Ok(sync_progress) => sync_progress,
                         Err(e) => {
