@@ -551,28 +551,35 @@ pub mod wallet_listener {
     }
 }
 
-// Callback functions called from C++ - these bridge the C++ callbacks to Rust trait methods
+// Callback functions called from C++ - these bridge the C++ callbacks to Rust trait methods.
+// Each one first calls `enter_cpp_callback`, see `CANNOT_JOIN_WALLET_THREAD`.
 pub fn money_spent(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
+    crate::enter_cpp_callback();
     listener.on_money_spent(&txid.to_string(), amount);
 }
 
 pub fn money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
+    crate::enter_cpp_callback();
     listener.on_money_received(&txid.to_string(), amount);
 }
 
 pub fn unconfirmed_money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
+    crate::enter_cpp_callback();
     listener.on_unconfirmed_money_received(&txid.to_string(), amount);
 }
 
 pub fn new_block(listener: &mut WalletListenerBox, height: u64) {
+    crate::enter_cpp_callback();
     listener.on_new_block(height);
 }
 
 pub fn updated(listener: &mut WalletListenerBox) {
+    crate::enter_cpp_callback();
     listener.on_updated();
 }
 
 pub fn refreshed(listener: &mut WalletListenerBox) {
+    crate::enter_cpp_callback();
     listener.on_refreshed();
 }
 
@@ -582,10 +589,12 @@ pub fn on_reorg(
     blocks_detached: u64,
     transfers_detached: usize,
 ) {
+    crate::enter_cpp_callback();
     listener.on_reorg(height, blocks_detached, transfers_detached);
 }
 
 pub fn pool_tx_removed(listener: &mut WalletListenerBox, txid: &CxxString) {
+    crate::enter_cpp_callback();
     listener.on_pool_tx_removed(&txid.to_string());
 }
 
@@ -725,6 +734,9 @@ fn forward_cpp_log(
     func: &CxxString,
     msg: &CxxString,
 ) {
+    // See `CANNOT_JOIN_WALLET_THREAD`.
+    crate::enter_cpp_callback();
+
     if std::thread::panicking() {
         return;
     }

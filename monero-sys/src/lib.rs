@@ -16,8 +16,9 @@ pub mod database;
 pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
+use std::cell::Cell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::{
     any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
     pin::Pin, time::Duration,
@@ -53,7 +54,130 @@ pub type ApprovalCallback = Arc<
 /// A handle which can communicate with the wallet thread via channels.
 #[derive(Clone)]
 pub struct WalletHandle {
-    call_sender: UnboundedSender<Call>,
+    inner: Arc<WalletThread>,
+}
+
+/// The wallet thread of one wallet, and the channel to it.
+///
+/// `WalletHandle::open_with` starts one wallet thread for each wallet that it
+/// opens. The name of the wallet thread is `wallet-<file name>`. The wallet
+/// thread owns the C++ wallet and runs `Wallet::run`. All calls from Rust to
+/// the C++ wallet run on the wallet thread.
+///
+/// All clones of a [`WalletHandle`] share this value. When the last
+/// [`WalletHandle`] drops, `drop` runs on the thread that dropped it (usually a
+/// tokio worker thread). `drop` closes the channel. Then `Wallet::run` closes the
+/// C++ wallet, and the wallet thread stops. `drop` waits until the wallet thread
+/// stops. On some threads, a new thread waits in place of `drop`. See
+/// `CANNOT_JOIN_WALLET_THREAD`.
+///
+/// Without this wait, the process can exit while the wallet thread is in
+/// `closeWallet`. Then the static destructors run during `closeWallet`, and the
+/// process crashes.
+struct WalletThread {
+    /// The channel to the wallet thread. This field is `None` only during `drop`.
+    call_sender: Option<UnboundedSender<Call>>,
+    /// The join handle of the wallet thread.
+    join_handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Drop for WalletThread {
+    fn drop(&mut self) {
+        // Close the channel. Then `Wallet::run` closes the C++ wallet, and the
+        // wallet thread stops.
+        self.call_sender.take();
+
+        let Some(join_handle) = self.join_handle.take() else {
+            return;
+        };
+
+        // On some threads, a wait for the wallet thread never ends. See
+        // `CANNOT_JOIN_WALLET_THREAD`. On these threads, a new thread waits for
+        // the wallet thread, and this thread continues.
+        if CANNOT_JOIN_WALLET_THREAD.get() {
+            let result = std::thread::Builder::new()
+                .name("wallet-join".to_owned())
+                .spawn(move || join_wallet_thread(join_handle));
+
+            if let Err(error) = result {
+                tracing::error!(%error, "Failed to start a thread that waits for the wallet thread");
+            }
+
+            return;
+        }
+
+        join_wallet_thread(join_handle);
+    }
+}
+
+thread_local! {
+    /// `true` on the threads where `WalletThread::drop` must not wait for a
+    /// wallet thread:
+    /// - On a wallet thread. The wallet thread cannot wait for itself.
+    /// - On a thread that ran a call from C++ into Rust: a listener callback or a
+    ///   C++ log message. The C++ refresh thread makes these calls, and
+    ///   `closeWallet` waits until the C++ refresh thread stops. Thus the wallet
+    ///   thread cannot stop while a call from the C++ refresh thread waits for it.
+    ///
+    /// On these threads, a `wallet-join` thread waits for the wallet thread, and
+    /// nothing waits for the `wallet-join` thread. Thus the process can exit while
+    /// the wallet closes. To make sure that the wallet closes before the process
+    /// exits, drop the last [`WalletHandle`] on a different thread, for example in
+    /// a tokio task.
+    ///
+    /// The value never goes back to `false`. This is safe: Rust calls C++ only on
+    /// the wallet threads and on threads that hold no [`WalletHandle`]. Thus the
+    /// other threads that get the value are C++ threads, and they run Rust code
+    /// only in calls from C++. Also, a `true` value can only stop `drop` from
+    /// waiting. It cannot cause a deadlock.
+    static CANNOT_JOIN_WALLET_THREAD: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Call this at the start of each call from C++ into Rust. See
+/// `CANNOT_JOIN_WALLET_THREAD`.
+pub(crate) fn enter_cpp_callback() {
+    CANNOT_JOIN_WALLET_THREAD.set(true);
+}
+
+/// Wait until the wallet thread stops. Log an error if it panicked.
+fn join_wallet_thread(join_handle: std::thread::JoinHandle<()>) {
+    let thread_name = join_handle.thread().name().unwrap_or("unnamed").to_owned();
+
+    if let Err(panic_payload) = join_handle.join() {
+        tracing::error!(
+            thread = %thread_name,
+            error = %panic_message(&*panic_payload),
+            "Wallet thread panicked. The wallet is possibly not closed and not stored."
+        );
+    }
+}
+
+/// A reference to a wallet that does not keep the wallet open.
+///
+/// A listener on a wallet must hold this type, and not a [`WalletHandle`]. The
+/// wallet thread owns its listeners. If a listener held a [`WalletHandle`], the
+/// wallet thread would keep its own channel open, and the wallet would never close.
+#[derive(Clone)]
+pub struct WeakWalletHandle {
+    inner: Weak<WalletThread>,
+}
+
+impl WeakWalletHandle {
+    /// Get a [`WalletHandle`]. Returns `None` after the last [`WalletHandle`] dropped.
+    pub fn upgrade(&self) -> Option<WalletHandle> {
+        self.inner.upgrade().map(|inner| WalletHandle { inner })
+    }
+}
+
+/// Get the message of a panic from its payload.
+fn panic_message(panic_payload: &(dyn Any + Send)) -> &str {
+    if let Some(error) = panic_payload.downcast_ref::<&str>() {
+        error
+    } else if let Some(error) = panic_payload.downcast_ref::<String>() {
+        error.as_str()
+    } else {
+        "error message unavailable: couldn't parse panic payload"
+    }
 }
 
 /// A wrapper around a wallet that can be used to call methods on it.
@@ -270,8 +394,31 @@ struct TransactionInfoHandle(*mut ffi::TransactionInfo);
 pub struct ChannelClosed;
 
 impl WalletHandle {
-    fn new(call_sender: UnboundedSender<Call>) -> Self {
-        Self { call_sender }
+    fn new(call_sender: UnboundedSender<Call>, wallet_thread: std::thread::JoinHandle<()>) -> Self {
+        Self {
+            inner: Arc::new(WalletThread {
+                call_sender: Some(call_sender),
+                join_handle: Some(wallet_thread),
+            }),
+        }
+    }
+
+    /// Get a [`WeakWalletHandle`] to the same wallet.
+    pub fn downgrade(&self) -> WeakWalletHandle {
+        WeakWalletHandle {
+            inner: Arc::downgrade(&self.inner),
+        }
+    }
+
+    fn call_sender(&self) -> &UnboundedSender<Call> {
+        // This `expect` never panics:
+        // - Only `WalletThread::drop` sets `call_sender` to `None`.
+        // - `WalletThread::drop` runs only when no `WalletHandle` exists.
+        // - This function borrows a `WalletHandle`, thus a `WalletHandle` exists while it runs.
+        self.inner
+            .call_sender
+            .as_ref()
+            .expect("call sender to only be taken when the last handle is dropped")
     }
 
     /// Open an existing wallet or create a new one, with a random seed.
@@ -291,6 +438,12 @@ impl WalletHandle {
     where
         F: FnOnce(&mut WalletManager) -> anyhow::Result<FfiWallet> + Send + 'static,
     {
+        // The name of the wallet thread comes from the wallet path, and
+        // `std::thread::Builder::name` panics on a NUL byte. Return an error before that.
+        if path.contains('\0') {
+            bail!("Wallet path contains a NUL byte");
+        }
+
         let (call_sender, call_receiver) = unbounded_channel();
 
         let wallet_name = path.rsplit('/').next().unwrap_or(&path).to_owned();
@@ -298,10 +451,13 @@ impl WalletHandle {
         let current_dispatcher = tracing::dispatcher::get_default(|d| d.clone());
         let (tx, rx) = oneshot::channel::<Result<()>>();
 
-        std::thread::Builder::new()
+        let wallet_thread = std::thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
                 let _guard = tracing::dispatcher::set_default(&current_dispatcher);
+
+                // See `CANNOT_JOIN_WALLET_THREAD`.
+                CANNOT_JOIN_WALLET_THREAD.set(true);
 
                 // Get the WalletManager
                 // If we fail, send the error through the oneshot channel
@@ -333,12 +489,15 @@ impl WalletHandle {
             })
             .context("Couldn't start wallet thread")?;
 
+        // Make the `WalletHandle` before the first `await`. If the caller cancels
+        // this future, the `WalletHandle` drops, and `WalletThread::drop` waits
+        // until the wallet thread stops.
+        let handle = WalletHandle::new(call_sender, wallet_thread);
+
         // Wait for the thread to report success or failure
         rx.await
             .context("Failed to get result from wallet creation thread through oneshot channel")?
             .context("Failed to open or create wallet")?;
-
-        let handle = WalletHandle::new(call_sender);
 
         handle
             .check_wallet()
@@ -487,7 +646,7 @@ impl WalletHandle {
         let (sender, receiver) = oneshot::channel();
 
         // Send the function call to the wallet thread (wrapped in a Box)
-        self.call_sender
+        self.call_sender()
             .send(Call {
                 function: Box::new(move |wallet, pending_txs| {
                     Box::new(function(wallet, pending_txs)) as Box<dyn Any + Send>
@@ -836,7 +995,7 @@ impl WalletHandle {
     async fn check_wallet(&self) -> anyhow::Result<()> {
         let (sender, receiver) = oneshot::channel();
 
-        self.call_sender
+        self.call_sender()
             .send(Call {
                 function: Box::new(move |wallet, _pending_txs| Box::new(wallet.check_error())),
                 sender,
@@ -1228,13 +1387,7 @@ impl Wallet {
             let result = match result {
                 Ok(result) => result,
                 Err(panic_payload) => {
-                    let error = if let Some(error) = panic_payload.downcast_ref::<&str>() {
-                        *error
-                    } else if let Some(error) = panic_payload.downcast_ref::<String>() {
-                        error.as_str()
-                    } else {
-                        "error message unavailable: couldn't parse panic payload"
-                    };
+                    let error = panic_message(&*panic_payload);
                     tracing::error!(
                         error=%error,
                         "Panic in wallet thread while executing call. Panicking now after issuing this error message.",
@@ -2073,10 +2226,19 @@ impl FfiWallet {
         month: u8,
         day: u8,
     ) -> anyhow::Result<u64> {
-        self.inner
+        let height = self
+            .inner
             .pinned()
             .getBlockchainHeightByDate(year, month, day)
-            .context("Failed to get blockchain height by date: FFI call failed with exception")
+            .context("Failed to get blockchain height by date: FFI call failed with exception")?;
+
+        // The C++ side catches all exceptions and returns 0 on failure.
+        if height == 0 {
+            self.check_error()
+                .context("Failed to get blockchain height by date")?;
+        }
+
+        Ok(height)
     }
 
     pub fn set_password(&mut self, password: &str) -> anyhow::Result<()> {
@@ -3334,7 +3496,8 @@ impl Deref for TransactionInfoHandle {
 /// This listener does things on certain events like storing the wallet to disk.
 /// This is supposed to improve upon the behaviour of wallet2
 pub struct WalletHandleListener {
-    wallet: Arc<WalletHandle>,
+    /// A [`WeakWalletHandle`], because the wallet thread owns this listener.
+    wallet: WeakWalletHandle,
     /// We need a handle to the runtime to be able to spawn tasks
     rt_handle: tokio::runtime::Handle,
     /// We throttle the saving of the wallet to disk to avoid storing the wallet too often
@@ -3346,7 +3509,9 @@ impl WalletHandleListener {
     /// Store the wallet at most every 2 minutes
     const STORE_WALLET_THROTTLE: Duration = Duration::from_millis(2 * 60 * 1000);
 
-    pub fn new(wallet: Arc<WalletHandle>) -> Self {
+    pub fn new(wallet: &WalletHandle) -> Self {
+        let wallet = wallet.downgrade();
+
         // Get the current runtime handle
         let rt_handle = tokio::runtime::Handle::current();
 
@@ -3360,6 +3525,10 @@ impl WalletHandleListener {
                 let rt = rt.clone();
 
                 rt.spawn(async move {
+                    let Some(wallet) = wallet.upgrade() else {
+                        return;
+                    };
+
                     if let Err(error) = wallet.store_in_current_file().await {
                         tracing::warn!(?error, "Storing the wallet upon an event failed");
                     } else {
@@ -3408,6 +3577,10 @@ impl WalletEventListener for WalletHandleListener {
         // We start the refresh thread again after the rescan is complete.
         let handle = self.wallet.clone();
         self.rt_handle.spawn(async move {
+            let Some(handle) = handle.upgrade() else {
+                return;
+            };
+
             if let Err(e) = handle.start_refresh_thread().await {
                 tracing::error!(error=%e, "Failed to start refresh thread");
             }
