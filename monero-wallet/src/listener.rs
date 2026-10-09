@@ -31,8 +31,6 @@ impl TauriWalletListener {
         let rt_handle = tokio::runtime::Handle::current();
 
         // The wallet thread owns this listener, thus hold a `WeakWalletHandle`.
-        // The jobs upgrade it on a tokio thread, and not in the listener callback.
-        // See `WeakWalletHandle::upgrade`.
         let wallet = wallet.downgrade();
 
         let balance_job = {

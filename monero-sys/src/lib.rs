@@ -16,6 +16,7 @@ pub mod database;
 pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
+use std::cell::Cell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex, Weak};
 use std::{
@@ -67,7 +68,8 @@ pub struct WalletHandle {
 /// [`WalletHandle`] drops, `drop` runs on the thread that dropped it (usually a
 /// tokio worker thread). `drop` closes the channel. Then `Wallet::run` closes the
 /// C++ wallet, and the wallet thread stops. `drop` waits until the wallet thread
-/// stops.
+/// stops. On some threads, a new thread waits in place of `drop`. See
+/// `CANNOT_JOIN_WALLET_THREAD`.
 ///
 /// Without this wait, the process can exit while the wallet thread is in
 /// `closeWallet`. Then the static destructors run during `closeWallet`, and the
@@ -89,21 +91,61 @@ impl Drop for WalletThread {
             return;
         };
 
-        // A call closure can drop the last `WalletHandle` on the wallet thread.
-        // The wallet thread cannot wait for itself, thus do not join in this case.
-        if join_handle.thread().id() == std::thread::current().id() {
+        // On some threads, a wait for the wallet thread never ends. See
+        // `CANNOT_JOIN_WALLET_THREAD`. On these threads, a new thread waits for
+        // the wallet thread, and this thread continues.
+        if CANNOT_JOIN_WALLET_THREAD.get() {
+            let result = std::thread::Builder::new()
+                .name("wallet-join".to_owned())
+                .spawn(move || join_wallet_thread(join_handle));
+
+            if let Err(error) = result {
+                tracing::error!(%error, "Failed to start a thread that waits for the wallet thread");
+            }
+
             return;
         }
 
-        let thread_name = join_handle.thread().name().unwrap_or("unnamed").to_owned();
+        join_wallet_thread(join_handle);
+    }
+}
 
-        if let Err(panic_payload) = join_handle.join() {
-            tracing::error!(
-                thread = %thread_name,
-                error = %panic_message(&*panic_payload),
-                "Wallet thread panicked. The wallet is possibly not closed and not stored."
-            );
+thread_local! {
+    /// `true` on the threads where `WalletThread::drop` must not wait for a
+    /// wallet thread:
+    /// - On a wallet thread. The wallet thread cannot wait for itself.
+    /// - During a listener callback. The C++ refresh thread runs listener
+    ///   callbacks, and `closeWallet` waits until the C++ refresh thread stops.
+    ///   Thus the wallet thread cannot stop while the callback waits for it.
+    static CANNOT_JOIN_WALLET_THREAD: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Run `f` as a listener callback. See `CANNOT_JOIN_WALLET_THREAD`.
+pub(crate) fn run_listener_callback<R>(f: impl FnOnce() -> R) -> R {
+    /// Puts back the old value, also when `f` panics.
+    struct Reset(bool);
+
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            CANNOT_JOIN_WALLET_THREAD.set(self.0);
         }
+    }
+
+    let _reset = Reset(CANNOT_JOIN_WALLET_THREAD.replace(true));
+
+    f()
+}
+
+/// Wait until the wallet thread stops. Log an error if it panicked.
+fn join_wallet_thread(join_handle: std::thread::JoinHandle<()>) {
+    let thread_name = join_handle.thread().name().unwrap_or("unnamed").to_owned();
+
+    if let Err(panic_payload) = join_handle.join() {
+        tracing::error!(
+            thread = %thread_name,
+            error = %panic_message(&*panic_payload),
+            "Wallet thread panicked. The wallet is possibly not closed and not stored."
+        );
     }
 }
 
@@ -119,14 +161,6 @@ pub struct WeakWalletHandle {
 
 impl WeakWalletHandle {
     /// Get a [`WalletHandle`]. Returns `None` after the last [`WalletHandle`] dropped.
-    ///
-    /// Do not call this in a listener callback. The listener callbacks run on the
-    /// wallet thread or on the C++ refresh thread. If the [`WalletHandle`] from this
-    /// function is the last one and drops there, `WalletThread::drop` cannot join
-    /// the wallet thread:
-    /// - On the wallet thread, `WalletThread::drop` skips the join.
-    /// - On the C++ refresh thread, the join deadlocks, because `closeWallet`
-    ///   waits until the C++ refresh thread stops.
     pub fn upgrade(&self) -> Option<WalletHandle> {
         self.inner.upgrade().map(|inner| WalletHandle { inner })
     }
@@ -418,6 +452,9 @@ impl WalletHandle {
             .name(thread_name)
             .spawn(move || {
                 let _guard = tracing::dispatcher::set_default(&current_dispatcher);
+
+                // See `CANNOT_JOIN_WALLET_THREAD`.
+                CANNOT_JOIN_WALLET_THREAD.set(true);
 
                 // Get the WalletManager
                 // If we fail, send the error through the oneshot channel
@@ -3485,8 +3522,6 @@ impl WalletHandleListener {
                 let rt = rt.clone();
 
                 rt.spawn(async move {
-                    // Upgrade on a tokio thread, and not in the listener callback.
-                    // See `WeakWalletHandle::upgrade`.
                     let Some(wallet) = wallet.upgrade() else {
                         return;
                     };
@@ -3539,8 +3574,6 @@ impl WalletEventListener for WalletHandleListener {
         // We start the refresh thread again after the rescan is complete.
         let handle = self.wallet.clone();
         self.rt_handle.spawn(async move {
-            // Upgrade on a tokio thread, and not in the listener callback.
-            // See `WeakWalletHandle::upgrade`.
             let Some(handle) = handle.upgrade() else {
                 return;
             };

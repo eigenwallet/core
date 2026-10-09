@@ -551,29 +551,32 @@ pub mod wallet_listener {
     }
 }
 
-// Callback functions called from C++ - these bridge the C++ callbacks to Rust trait methods
+// Callback functions called from C++ - these bridge the C++ callbacks to Rust trait methods.
+// Each one runs through `run_listener_callback`, see `CANNOT_JOIN_WALLET_THREAD`.
 pub fn money_spent(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
-    listener.on_money_spent(&txid.to_string(), amount);
+    crate::run_listener_callback(|| listener.on_money_spent(&txid.to_string(), amount));
 }
 
 pub fn money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
-    listener.on_money_received(&txid.to_string(), amount);
+    crate::run_listener_callback(|| listener.on_money_received(&txid.to_string(), amount));
 }
 
 pub fn unconfirmed_money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
-    listener.on_unconfirmed_money_received(&txid.to_string(), amount);
+    crate::run_listener_callback(|| {
+        listener.on_unconfirmed_money_received(&txid.to_string(), amount)
+    });
 }
 
 pub fn new_block(listener: &mut WalletListenerBox, height: u64) {
-    listener.on_new_block(height);
+    crate::run_listener_callback(|| listener.on_new_block(height));
 }
 
 pub fn updated(listener: &mut WalletListenerBox) {
-    listener.on_updated();
+    crate::run_listener_callback(|| listener.on_updated());
 }
 
 pub fn refreshed(listener: &mut WalletListenerBox) {
-    listener.on_refreshed();
+    crate::run_listener_callback(|| listener.on_refreshed());
 }
 
 pub fn on_reorg(
@@ -582,11 +585,11 @@ pub fn on_reorg(
     blocks_detached: u64,
     transfers_detached: usize,
 ) {
-    listener.on_reorg(height, blocks_detached, transfers_detached);
+    crate::run_listener_callback(|| listener.on_reorg(height, blocks_detached, transfers_detached));
 }
 
 pub fn pool_tx_removed(listener: &mut WalletListenerBox, txid: &CxxString) {
-    listener.on_pool_tx_removed(&txid.to_string());
+    crate::run_listener_callback(|| listener.on_pool_tx_removed(&txid.to_string()));
 }
 
 /// Trait for wallet event listeners - allows custom callback implementations
