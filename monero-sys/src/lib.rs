@@ -56,37 +56,48 @@ pub struct WalletHandle {
     inner: Arc<WalletThread>,
 }
 
-/// All clones of a [`WalletHandle`] share this value. It holds the channel to
-/// the wallet thread and the handle of the wallet thread.
+/// The wallet thread of one wallet, and the channel to it.
 ///
-/// When the last handle drops, this value closes the channel and then joins the
-/// wallet thread. Without the join, the process can exit while the wallet thread
-/// closes the wallet. Then the static destructors run during `closeWallet`, and
-/// the process crashes.
+/// `WalletHandle::open_with` starts one wallet thread for each wallet that it
+/// opens. The name of the wallet thread is `wallet-<file name>`. The wallet
+/// thread owns the C++ wallet and runs `Wallet::run`. All calls to the C++
+/// wallet run on the wallet thread.
+///
+/// All clones of a [`WalletHandle`] share this value. When the last
+/// [`WalletHandle`] drops, `drop` runs on the thread that dropped it (usually a
+/// tokio worker thread). `drop` closes the channel. Then `Wallet::run` closes the
+/// C++ wallet, and the wallet thread stops. `drop` waits until the wallet thread
+/// stops.
+///
+/// Without this wait, the process can exit while the wallet thread is in
+/// `closeWallet`. Then the static destructors run during `closeWallet`, and the
+/// process crashes.
 struct WalletThread {
-    /// This field is `None` only during `drop`.
+    /// The channel to the wallet thread. This field is `None` only during `drop`.
     call_sender: Option<UnboundedSender<Call>>,
-    thread: Option<std::thread::JoinHandle<()>>,
+    /// The join handle of the wallet thread.
+    join_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Drop for WalletThread {
     fn drop(&mut self) {
-        // When the channel closes, the wallet thread closes the wallet and stops.
+        // Close the channel. Then `Wallet::run` closes the C++ wallet, and the
+        // wallet thread stops.
         self.call_sender.take();
 
-        let Some(handle) = self.thread.take() else {
+        let Some(join_handle) = self.join_handle.take() else {
             return;
         };
 
-        // A call closure can drop the last handle on the wallet thread.
-        // A thread cannot join itself, thus do not join in this case.
-        if handle.thread().id() == std::thread::current().id() {
+        // A call closure can drop the last `WalletHandle` on the wallet thread.
+        // The wallet thread cannot wait for itself, thus do not join in this case.
+        if join_handle.thread().id() == std::thread::current().id() {
             return;
         }
 
-        let thread_name = handle.thread().name().unwrap_or("unnamed").to_owned();
+        let thread_name = join_handle.thread().name().unwrap_or("unnamed").to_owned();
 
-        if let Err(panic_payload) = handle.join() {
+        if let Err(panic_payload) = join_handle.join() {
             tracing::error!(
                 thread = %thread_name,
                 error = %panic_message(&*panic_payload),
@@ -325,7 +336,7 @@ impl WalletHandle {
         Self {
             inner: Arc::new(WalletThread {
                 call_sender: Some(call_sender),
-                thread: Some(wallet_thread),
+                join_handle: Some(wallet_thread),
             }),
         }
     }
@@ -334,7 +345,7 @@ impl WalletHandle {
         // This `expect` never panics:
         // - Only `WalletThread::drop` sets `call_sender` to `None`.
         // - `WalletThread::drop` runs only when no `WalletHandle` exists.
-        // - This function borrows a `WalletHandle`, thus a handle exists while it runs.
+        // - This function borrows a `WalletHandle`, thus a `WalletHandle` exists while it runs.
         self.inner
             .call_sender
             .as_ref()
@@ -358,8 +369,8 @@ impl WalletHandle {
     where
         F: FnOnce(&mut WalletManager) -> anyhow::Result<FfiWallet> + Send + 'static,
     {
-        // The thread name comes from the path, and `std::thread::Builder::name`
-        // panics on a NUL byte. Return an error before that.
+        // The name of the wallet thread comes from the wallet path, and
+        // `std::thread::Builder::name` panics on a NUL byte. Return an error before that.
         if path.contains('\0') {
             bail!("Wallet path contains a NUL byte");
         }
