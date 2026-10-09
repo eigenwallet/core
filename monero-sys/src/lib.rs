@@ -341,6 +341,12 @@ impl WalletHandle {
     where
         F: FnOnce(&mut WalletManager) -> anyhow::Result<FfiWallet> + Send + 'static,
     {
+        // The thread name comes from the path, and `std::thread::Builder::name`
+        // panics on a NUL byte. Return an error before that.
+        if path.contains('\0') {
+            bail!("Wallet path contains a NUL byte");
+        }
+
         let (call_sender, call_receiver) = unbounded_channel();
 
         let wallet_name = path.rsplit('/').next().unwrap_or(&path).to_owned();
