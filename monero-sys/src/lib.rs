@@ -114,24 +114,20 @@ thread_local! {
     /// `true` on the threads where `WalletThread::drop` must not wait for a
     /// wallet thread:
     /// - On a wallet thread. The wallet thread cannot wait for itself.
-    /// - During a listener callback. The C++ refresh thread runs listener
-    ///   callbacks, and `closeWallet` waits until the C++ refresh thread stops.
-    ///   Thus the wallet thread cannot stop while the callback waits for it.
+    /// - On a thread that ran a listener callback. The C++ refresh thread runs
+    ///   listener callbacks, and `closeWallet` waits until the C++ refresh thread
+    ///   stops. Thus the wallet thread cannot stop while a callback waits for it.
+    ///
+    /// The value never goes back to `false`. This is safe: only the wallet threads
+    /// and C++ threads run listener callbacks, and a C++ thread runs Rust code only
+    /// in a callback. Also, a `true` value can only stop `drop` from waiting. It
+    /// cannot cause a deadlock.
     static CANNOT_JOIN_WALLET_THREAD: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Run `f` as a listener callback. See `CANNOT_JOIN_WALLET_THREAD`.
 pub(crate) fn run_listener_callback<R>(f: impl FnOnce() -> R) -> R {
-    /// Puts back the old value, also when `f` panics.
-    struct Reset(bool);
-
-    impl Drop for Reset {
-        fn drop(&mut self) {
-            CANNOT_JOIN_WALLET_THREAD.set(self.0);
-        }
-    }
-
-    let _reset = Reset(CANNOT_JOIN_WALLET_THREAD.replace(true));
+    CANNOT_JOIN_WALLET_THREAD.set(true);
 
     f()
 }
