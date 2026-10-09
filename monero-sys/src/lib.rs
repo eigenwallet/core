@@ -60,8 +60,8 @@ pub struct WalletHandle {
 ///
 /// `WalletHandle::open_with` starts one wallet thread for each wallet that it
 /// opens. The name of the wallet thread is `wallet-<file name>`. The wallet
-/// thread owns the C++ wallet and runs `Wallet::run`. All calls to the C++
-/// wallet run on the wallet thread.
+/// thread owns the C++ wallet and runs `Wallet::run`. All calls from Rust to
+/// the C++ wallet run on the wallet thread.
 ///
 /// All clones of a [`WalletHandle`] share this value. When the last
 /// [`WalletHandle`] drops, `drop` runs on the thread that dropped it (usually a

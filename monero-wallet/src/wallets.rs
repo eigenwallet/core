@@ -372,10 +372,7 @@ impl Wallets {
         restore_height: BlockHeight,
         required_confirmations: u64,
     ) -> Result<bool> {
-        anyhow::ensure!(
-            required_confirmations > 0,
-            "Rebuild confirmations must be positive"
-        );
+        anyhow::ensure!(required_confirmations > 0, "Rebuild confirmations must be positive");
         if !self.has_input_confirmed_spent(tx).await? {
             return Ok(false);
         }
@@ -385,8 +382,7 @@ impl Wallets {
             tx.hash(),
             &tx_key_images(tx),
             usize::try_from(restore_height.height).context("Restore height exceeds usize")?,
-            usize::try_from(required_confirmations)
-                .context("Rebuild confirmations exceed usize")?,
+            usize::try_from(required_confirmations).context("Rebuild confirmations exceed usize")?,
         )
         .await
         .context("Failed to establish confirmed Monero input conflict depth")
