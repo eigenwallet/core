@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GUI + CLI: Fix an issue where a transfer proof for a swap that was suspended, finished or failed was neither buffered nor acknowledged until the app was restarted.
 - GUI + CLI: Fix two issues with the acknowledgement of the Monero transfer proof. We did not acknowledge a repeated transfer proof while the swap was running, and we acknowledged a transfer proof that a suspended swap never read.
 
+- GUI + CLI + ASB: Fix an issue where the Monero RPC pool returned an error when a Monero node closed an idle connection.
+  The pool now opens a new connection to the same node instead.
+
 ## [4.16.0] - 2026-10-06
 
 - GUI: Update the Flatpak GNOME runtime from 48 (end-of-life) to 50.
@@ -458,6 +461,7 @@ Note: The releases 3.0.3 - 3.1.1 were squashed and merged into 3.1.2
 - CLI + GUI + ASB: Accept self-signed TLS certificates and TLS certificates with older protocol versions.
 
 ## [3.0.0-beta.10] - 2025-08-14
+
 
 - GUI + CLI + ASB: Fix an issue where the Monero RPC pool would fail to build TLS handshakes over Tor
 
