@@ -53,7 +53,36 @@ pub type ApprovalCallback = Arc<
 /// A handle which can communicate with the wallet thread via channels.
 #[derive(Clone)]
 pub struct WalletHandle {
+    // Must be declared before `_thread`: fields drop in declaration order, so the
+    // last handle closes the channel (which makes the wallet thread close the
+    // wallet and exit) before the thread is joined.
     call_sender: UnboundedSender<Call>,
+    _thread: Arc<WalletThread>,
+}
+
+/// Joins the wallet thread once the last [`WalletHandle`] is dropped.
+///
+/// Without this the thread is detached, and the process can exit while the
+/// thread is still closing the wallet. Static destructors then run during
+/// `closeWallet` and the process crashes.
+struct WalletThread(Option<std::thread::JoinHandle<()>>);
+
+impl Drop for WalletThread {
+    fn drop(&mut self) {
+        let Some(handle) = self.0.take() else {
+            return;
+        };
+
+        // The last handle can be dropped on the wallet thread itself
+        // (e.g. by a call closure). Joining ourselves would fail.
+        if handle.thread().id() == std::thread::current().id() {
+            return;
+        }
+
+        if handle.join().is_err() {
+            tracing::error!("Wallet thread panicked");
+        }
+    }
 }
 
 /// A wrapper around a wallet that can be used to call methods on it.
@@ -270,8 +299,11 @@ struct TransactionInfoHandle(*mut ffi::TransactionInfo);
 pub struct ChannelClosed;
 
 impl WalletHandle {
-    fn new(call_sender: UnboundedSender<Call>) -> Self {
-        Self { call_sender }
+    fn new(call_sender: UnboundedSender<Call>, thread: std::thread::JoinHandle<()>) -> Self {
+        Self {
+            call_sender,
+            _thread: Arc::new(WalletThread(Some(thread))),
+        }
     }
 
     /// Open an existing wallet or create a new one, with a random seed.
@@ -298,7 +330,7 @@ impl WalletHandle {
         let current_dispatcher = tracing::dispatcher::get_default(|d| d.clone());
         let (tx, rx) = oneshot::channel::<Result<()>>();
 
-        std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
                 let _guard = tracing::dispatcher::set_default(&current_dispatcher);
@@ -338,7 +370,7 @@ impl WalletHandle {
             .context("Failed to get result from wallet creation thread through oneshot channel")?
             .context("Failed to open or create wallet")?;
 
-        let handle = WalletHandle::new(call_sender);
+        let handle = WalletHandle::new(call_sender, thread);
 
         handle
             .check_wallet()
