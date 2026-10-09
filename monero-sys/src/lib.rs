@@ -114,22 +114,29 @@ thread_local! {
     /// `true` on the threads where `WalletThread::drop` must not wait for a
     /// wallet thread:
     /// - On a wallet thread. The wallet thread cannot wait for itself.
-    /// - On a thread that ran a listener callback. The C++ refresh thread runs
-    ///   listener callbacks, and `closeWallet` waits until the C++ refresh thread
-    ///   stops. Thus the wallet thread cannot stop while a callback waits for it.
+    /// - On a thread that ran a call from C++ into Rust: a listener callback or a
+    ///   C++ log message. The C++ refresh thread makes these calls, and
+    ///   `closeWallet` waits until the C++ refresh thread stops. Thus the wallet
+    ///   thread cannot stop while a call from the C++ refresh thread waits for it.
     ///
-    /// The value never goes back to `false`. This is safe: only the wallet threads
-    /// and C++ threads run listener callbacks, and a C++ thread runs Rust code only
-    /// in a callback. Also, a `true` value can only stop `drop` from waiting. It
-    /// cannot cause a deadlock.
+    /// On these threads, a `wallet-join` thread waits for the wallet thread, and
+    /// nothing waits for the `wallet-join` thread. Thus the process can exit while
+    /// the wallet closes. To make sure that the wallet closes before the process
+    /// exits, drop the last [`WalletHandle`] on a different thread, for example in
+    /// a tokio task.
+    ///
+    /// The value never goes back to `false`. This is safe: Rust calls C++ only on
+    /// the wallet threads and on threads that hold no [`WalletHandle`]. Thus the
+    /// other threads that get the value are C++ threads, and they run Rust code
+    /// only in calls from C++. Also, a `true` value can only stop `drop` from
+    /// waiting. It cannot cause a deadlock.
     static CANNOT_JOIN_WALLET_THREAD: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Run `f` as a listener callback. See `CANNOT_JOIN_WALLET_THREAD`.
-pub(crate) fn run_listener_callback<R>(f: impl FnOnce() -> R) -> R {
+/// Call this at the start of each call from C++ into Rust. See
+/// `CANNOT_JOIN_WALLET_THREAD`.
+pub(crate) fn enter_cpp_callback() {
     CANNOT_JOIN_WALLET_THREAD.set(true);
-
-    f()
 }
 
 /// Wait until the wallet thread stops. Log an error if it panicked.
