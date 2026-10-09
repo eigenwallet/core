@@ -53,23 +53,27 @@ pub type ApprovalCallback = Arc<
 /// A handle which can communicate with the wallet thread via channels.
 #[derive(Clone)]
 pub struct WalletHandle {
-    // Must be declared before `_thread`: fields drop in declaration order, so the
-    // last handle closes the channel (which makes the wallet thread close the
-    // wallet and exit) before the thread is joined.
-    call_sender: UnboundedSender<Call>,
-    _thread: Arc<WalletThread>,
+    inner: Arc<WalletThread>,
 }
 
-/// Joins the wallet thread once the last [`WalletHandle`] is dropped.
+/// The channel to the wallet thread and the thread itself, shared by all clones of a [`WalletHandle`].
 ///
-/// Without this the thread is detached, and the process can exit while the
+/// Once the last handle is dropped, this closes the channel and joins the thread.
+/// Without the join the thread is detached, and the process can exit while the
 /// thread is still closing the wallet. Static destructors then run during
 /// `closeWallet` and the process crashes.
-struct WalletThread(Option<std::thread::JoinHandle<()>>);
+struct WalletThread {
+    /// Only `None` while dropping.
+    call_sender: Option<UnboundedSender<Call>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
 
 impl Drop for WalletThread {
     fn drop(&mut self) {
-        let Some(handle) = self.0.take() else {
+        // Closing the channel makes the wallet thread close the wallet and exit.
+        self.call_sender.take();
+
+        let Some(handle) = self.thread.take() else {
             return;
         };
 
@@ -301,9 +305,18 @@ pub struct ChannelClosed;
 impl WalletHandle {
     fn new(call_sender: UnboundedSender<Call>, thread: std::thread::JoinHandle<()>) -> Self {
         Self {
-            call_sender,
-            _thread: Arc::new(WalletThread(Some(thread))),
+            inner: Arc::new(WalletThread {
+                call_sender: Some(call_sender),
+                thread: Some(thread),
+            }),
         }
+    }
+
+    fn call_sender(&self) -> &UnboundedSender<Call> {
+        self.inner
+            .call_sender
+            .as_ref()
+            .expect("call sender to only be taken when the last handle is dropped")
     }
 
     /// Open an existing wallet or create a new one, with a random seed.
@@ -519,7 +532,7 @@ impl WalletHandle {
         let (sender, receiver) = oneshot::channel();
 
         // Send the function call to the wallet thread (wrapped in a Box)
-        self.call_sender
+        self.call_sender()
             .send(Call {
                 function: Box::new(move |wallet, pending_txs| {
                     Box::new(function(wallet, pending_txs)) as Box<dyn Any + Send>
@@ -868,7 +881,7 @@ impl WalletHandle {
     async fn check_wallet(&self) -> anyhow::Result<()> {
         let (sender, receiver) = oneshot::channel();
 
-        self.call_sender
+        self.call_sender()
             .send(Call {
                 function: Box::new(move |wallet, _pending_txs| Box::new(wallet.check_error())),
                 sender,
