@@ -2129,10 +2129,19 @@ impl FfiWallet {
         month: u8,
         day: u8,
     ) -> anyhow::Result<u64> {
-        self.inner
+        let height = self
+            .inner
             .pinned()
             .getBlockchainHeightByDate(year, month, day)
-            .context("Failed to get blockchain height by date: FFI call failed with exception")
+            .context("Failed to get blockchain height by date: FFI call failed with exception")?;
+
+        // The C++ side catches all exceptions and returns 0 on failure.
+        if height == 0 {
+            self.check_error()
+                .context("Failed to get blockchain height by date")?;
+        }
+
+        Ok(height)
     }
 
     pub fn set_password(&mut self, password: &str) -> anyhow::Result<()> {
