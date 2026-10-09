@@ -417,12 +417,15 @@ impl WalletHandle {
             })
             .context("Couldn't start wallet thread")?;
 
+        // Make the `WalletHandle` before the first `await`. If the caller cancels
+        // this future, the `WalletHandle` drops, and `WalletThread::drop` waits
+        // until the wallet thread stops.
+        let handle = WalletHandle::new(call_sender, wallet_thread);
+
         // Wait for the thread to report success or failure
         rx.await
             .context("Failed to get result from wallet creation thread through oneshot channel")?
             .context("Failed to open or create wallet")?;
-
-        let handle = WalletHandle::new(call_sender, wallet_thread);
 
         handle
             .check_wallet()
