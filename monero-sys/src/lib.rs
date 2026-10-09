@@ -84,9 +84,26 @@ impl Drop for WalletThread {
             return;
         }
 
-        if handle.join().is_err() {
-            tracing::error!("Wallet thread panicked");
+        let thread_name = handle.thread().name().unwrap_or("unnamed").to_owned();
+
+        if let Err(panic_payload) = handle.join() {
+            tracing::error!(
+                thread = %thread_name,
+                error = %panic_message(&*panic_payload),
+                "Wallet thread panicked. The wallet is possibly not closed and not stored."
+            );
         }
+    }
+}
+
+/// Get the message of a panic from its payload.
+fn panic_message(panic_payload: &(dyn Any + Send)) -> &str {
+    if let Some(error) = panic_payload.downcast_ref::<&str>() {
+        error
+    } else if let Some(error) = panic_payload.downcast_ref::<String>() {
+        error.as_str()
+    } else {
+        "error message unavailable: couldn't parse panic payload"
     }
 }
 
@@ -1284,13 +1301,7 @@ impl Wallet {
             let result = match result {
                 Ok(result) => result,
                 Err(panic_payload) => {
-                    let error = if let Some(error) = panic_payload.downcast_ref::<&str>() {
-                        *error
-                    } else if let Some(error) = panic_payload.downcast_ref::<String>() {
-                        error.as_str()
-                    } else {
-                        "error message unavailable: couldn't parse panic payload"
-                    };
+                    let error = panic_message(&*panic_payload);
                     tracing::error!(
                         error=%error,
                         "Panic in wallet thread while executing call. Panicking now after issuing this error message.",
