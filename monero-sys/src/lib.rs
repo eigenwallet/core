@@ -56,29 +56,30 @@ pub struct WalletHandle {
     inner: Arc<WalletThread>,
 }
 
-/// The channel to the wallet thread and the thread itself, shared by all clones of a [`WalletHandle`].
+/// All clones of a [`WalletHandle`] share this value. It holds the channel to
+/// the wallet thread and the handle of the wallet thread.
 ///
-/// Once the last handle is dropped, this closes the channel and joins the thread.
-/// Without the join the thread is detached, and the process can exit while the
-/// thread is still closing the wallet. Static destructors then run during
-/// `closeWallet` and the process crashes.
+/// When the last handle drops, this value closes the channel and then joins the
+/// wallet thread. Without the join, the process can exit while the wallet thread
+/// closes the wallet. Then the static destructors run during `closeWallet`, and
+/// the process crashes.
 struct WalletThread {
-    /// Only `None` while dropping.
+    /// This field is `None` only during `drop`.
     call_sender: Option<UnboundedSender<Call>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Drop for WalletThread {
     fn drop(&mut self) {
-        // Closing the channel makes the wallet thread close the wallet and exit.
+        // When the channel closes, the wallet thread closes the wallet and stops.
         self.call_sender.take();
 
         let Some(handle) = self.thread.take() else {
             return;
         };
 
-        // The last handle can be dropped on the wallet thread itself
-        // (e.g. by a call closure). Joining ourselves would fail.
+        // A call closure can drop the last handle on the wallet thread.
+        // A thread cannot join itself, thus do not join in this case.
         if handle.thread().id() == std::thread::current().id() {
             return;
         }
@@ -303,16 +304,20 @@ struct TransactionInfoHandle(*mut ffi::TransactionInfo);
 pub struct ChannelClosed;
 
 impl WalletHandle {
-    fn new(call_sender: UnboundedSender<Call>, thread: std::thread::JoinHandle<()>) -> Self {
+    fn new(call_sender: UnboundedSender<Call>, wallet_thread: std::thread::JoinHandle<()>) -> Self {
         Self {
             inner: Arc::new(WalletThread {
                 call_sender: Some(call_sender),
-                thread: Some(thread),
+                thread: Some(wallet_thread),
             }),
         }
     }
 
     fn call_sender(&self) -> &UnboundedSender<Call> {
+        // This `expect` never panics:
+        // - Only `WalletThread::drop` sets `call_sender` to `None`.
+        // - `WalletThread::drop` runs only when no `WalletHandle` exists.
+        // - This function borrows a `WalletHandle`, thus a handle exists while it runs.
         self.inner
             .call_sender
             .as_ref()
@@ -343,7 +348,7 @@ impl WalletHandle {
         let current_dispatcher = tracing::dispatcher::get_default(|d| d.clone());
         let (tx, rx) = oneshot::channel::<Result<()>>();
 
-        let thread = std::thread::Builder::new()
+        let wallet_thread = std::thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
                 let _guard = tracing::dispatcher::set_default(&current_dispatcher);
@@ -383,7 +388,7 @@ impl WalletHandle {
             .context("Failed to get result from wallet creation thread through oneshot channel")?
             .context("Failed to open or create wallet")?;
 
-        let handle = WalletHandle::new(call_sender, thread);
+        let handle = WalletHandle::new(call_sender, wallet_thread);
 
         handle
             .check_wallet()
