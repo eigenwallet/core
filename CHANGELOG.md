@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- GUI + ASB: Report the actual Monero wallet error instead of "unknown error, error not set".
+- Report the actual Monero wallet error instead of "unknown error, error not set".
+- Fix an issue where a failed lookup of the Monero restore height by date silently set the restore height to 0, which caused a full rescan from the genesis block.
+- GUI + ASB: Fix an issue where the app would exit with `SIGSEV` in a rare edge case
 - GUI: Fix an issue where the GUI stopped asking a rendezvous point for makers after it once answered that no makers were registered. Makers that registered later were only found after a manual refresh or a restart.
 - GUI + CLI: Fix an issue where a transfer proof for a swap that was suspended, finished or failed was neither buffered nor acknowledged until the app was restarted.
 - GUI + CLI: Fix two issues with the acknowledgement of the Monero transfer proof. We did not acknowledge a repeated transfer proof while the swap was running, and we acknowledged a transfer proof that a suspended swap never read.
