@@ -11,10 +11,11 @@ use url::Url;
 /// price_ticker_ws_url_kraken must point to a websocket server that follows the kraken
 /// price ticker protocol
 /// See: https://docs.kraken.com/websockets/
-pub fn connect(price_ticker_ws_url_kraken: Url) -> Result<PriceUpdates> {
-    crate::ticker::connect("Kraken", price_ticker_ws_url_kraken, connection::new)
+pub fn connect(price_ticker_ws_url_kraken: Url, proxy: Option<String>) -> Result<PriceUpdates> {
+    crate::ticker::connect("Kraken", price_ticker_ws_url_kraken, move |url| {
+        connection::new(url, proxy.clone())
+    })
 }
-
 pub type PriceUpdates = crate::ticker::PriceUpdates<wire::PriceUpdate>;
 pub type PriceUpdate = crate::ticker::PriceUpdate<wire::PriceUpdate>;
 pub type Error = crate::ticker::Error;
@@ -34,10 +35,26 @@ mod connection {
 
     pub async fn new(
         ws_url: Arc<Url>,
+        proxy: Option<String>,
     ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Error>>> {
-        let (mut rate_stream, _) = tokio_tungstenite::connect_async(&*ws_url)
-            .await
-            .context("Failed to connect to Kraken websocket API")?;
+        let (mut rate_stream, _) = if let Some(proxy_addr) = proxy {
+            let host = ws_url.host_str().unwrap_or("");
+            let port = ws_url.port_or_known_default().unwrap_or(443);
+            
+            // SOCKS5 üzerinden TCP bağlantısı aç
+            let tcp_stream = tokio_socks::tcp::Socks5Stream::connect(proxy_addr.as_str(), (host, port))
+                .await
+                .context("Failed to connect to SOCKS5 proxy for Kraken WS")?;
+            
+            // Proxy TCP soketinin üzerinden TLS Handshake başlat ve WebSocket'e yükselt
+            tokio_tungstenite::client_async_tls(ws_url.as_str(), tcp_stream)
+                .await
+                .context("Failed to establish TLS over SOCKS5 for Kraken")?
+        } else {
+            tokio_tungstenite::connect_async(&*ws_url)
+                .await
+                .context("Failed to connect to Kraken websocket API directly")?
+        };
 
         rate_stream
             .send(SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD.into())

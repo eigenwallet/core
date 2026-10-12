@@ -106,6 +106,8 @@ fn default_lock_rebuild_confirmations() -> u64 {
 pub struct TorConf {
     pub register_hidden_service: bool,
     pub hidden_service_num_intro_points: u8,
+    #[serde(default)]
+    pub system_socks5: Option<String>,
     /// Maximum number of concurrent rendezvous circuit constructions.
     /// Limits how fast the PoW priority queue is drained, creating backpressure
     /// that allows the suggested PoW effort to ramp up under load.

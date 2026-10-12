@@ -589,9 +589,13 @@ mod builder {
 
             let future_unbootstrapped_tor_client_rpc_pool = {
                 let tauri_handle = self.tauri_handle.clone();
+                let tor_conf = env_config.tor.clone();
+                
                 async move {
+                    // DEĞİŞTİRİLDİ: P2P Onion Hidden Service (Wormhole) özellikleri için 
+                    // SOCKS5 modu açık olsa dahi Arti'yi başlatıyoruz.
                     let unbootstrapped_tor_client = if self.tor {
-                        match create_tor_client(&base_data_dir).await.inspect_err(|err| {
+                        match create_tor_client(&base_data_dir, tor_conf.system_socks5.clone()).await.inspect_err(|err| {
                             tracing::warn!(%err, "Failed to create Tor client. We will continue without Tor");
                         }) {
                             Ok(client) => Some(client),
@@ -602,7 +606,7 @@ mod builder {
                         None
                     };
 
-                    // Start Monero RPC pool server
+                    // Start Monero RPC pool server (Monero trafiği sistem SOCKS5 üzerinden çıkar)
                     let (server_info, status_receiver, pool_handle) =
                         monero_rpc_pool::start_server_with_random_port(
                             monero_rpc_pool::config::Config::new_random_port_with_tor_client(
@@ -612,6 +616,7 @@ mod builder {
                                 } else {
                                     None
                                 },
+                                tor_conf.system_socks5, // SOCKS5 bilgisi RPC pool'a gider
                                 match self.is_testnet {
                                     true => monero::Network::Stagenet,
                                     false => monero::Network::Mainnet,
@@ -620,7 +625,7 @@ mod builder {
                         )
                         .await?;
 
-                    // Bootstrap Tor client in background
+                    // Bootstrap Tor client in background for P2P
                     let bootstrap_tor_client_task = AbortOnDropHandle::new(tokio::spawn({
                         let unbootstrapped_tor_client = unbootstrapped_tor_client.clone();
                         let tauri_handle = tauri_handle.clone();

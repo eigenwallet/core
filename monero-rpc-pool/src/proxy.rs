@@ -1,3 +1,4 @@
+use tokio_socks::tcp::Socks5Stream;
 use axum::{
     body::Body,
     extract::{Request, State},
@@ -147,16 +148,13 @@ async fn proxy_to_multiple_nodes(
         return Err(HandlerError::NoNodes);
     }
 
-    // Sort nodes to prioritize those with available connections
-    // Check if we're using Tor for this request
-    let use_tor = match &state.tor_client {
-        Some(tc)
-            if tc.bootstrap_status().ready_for_traffic() && !request.clearnet_whitelisted() =>
-        {
-            true
-        }
+    // Sistem Tor veya Arti Tor kullanılıyor mu?
+    let use_system_tor = state.system_socks5.is_some() && !request.clearnet_whitelisted();
+    let use_arti_tor = match &state.tor_client {
+        Some(tc) if tc.bootstrap_status().ready_for_traffic() && !request.clearnet_whitelisted() => true,
         _ => false,
     };
+    let is_tor_routed = use_system_tor || use_arti_tor;
 
     // Create a vector of (node, has_connection) pairs
     let mut nodes_with_availability = Vec::new();
@@ -465,16 +463,14 @@ async fn proxy_to_single_node(
         tracing::trace!("Request is whitelisted, sending over clearnet");
     }
 
-    let use_tor = match &state.tor_client {
-        Some(tc)
-            if tc.bootstrap_status().ready_for_traffic() && !request.clearnet_whitelisted() =>
-        {
-            true
-        }
+    let use_system_tor = state.system_socks5.is_some() && !request.clearnet_whitelisted();
+    let use_arti_tor = match &state.tor_client {
+        Some(tc) if tc.bootstrap_status().ready_for_traffic() && !request.clearnet_whitelisted() => true,
         _ => false,
     };
+    let is_tor_routed = use_system_tor || use_arti_tor;
 
-    let key = (node.0.clone(), node.1.clone(), node.2, use_tor);
+    let key = (node.0.clone(), node.1.clone(), node.2, is_tor_routed);
 
     // Try to reuse an idle HTTP connection first.
     let mut guarded_sender: Option<GuardedSender> = state.connection_pool.try_get(&key).await;
@@ -484,7 +480,15 @@ async fn proxy_to_single_node(
         let address = (node.1.as_str(), node.2);
 
         let maybe_tls_stream = timeout(TIMEOUT, async {
-            let no_tls_stream: Box<dyn HyperStream> = if use_tor {
+            let no_tls_stream: Box<dyn HyperStream> = if use_system_tor {
+                // SİSTEM TOR SOCKS5 BAĞLANTISI
+                let proxy_addr = state.system_socks5.as_ref().unwrap();
+                let stream = Socks5Stream::connect(proxy_addr.as_str(), address)
+                    .await
+                    .map_err(|e| SingleRequestError::ConnectionError(format!("SOCKS5 proxy error: {e:?}")))?;
+                Box::new(stream.into_inner())
+            } else if use_arti_tor {
+                // ARTI TOR BAĞLANTISI
                 let tor_client = state.tor_client.as_ref().ok_or_else(|| {
                     SingleRequestError::ConnectionError("Tor requested but client missing".into())
                 })?;
@@ -496,6 +500,7 @@ async fn proxy_to_single_node(
 
                 Box::new(stream)
             } else {
+                // CLEARNET BAĞLANTISI
                 let stream = TcpStream::connect(address)
                     .await
                     .map_err(|e| SingleRequestError::ConnectionError(format!("{e:?}")))?;

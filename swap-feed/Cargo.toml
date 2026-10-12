@@ -9,6 +9,7 @@ description = "Price feed functionality for XMR/BTC atomic swaps"
 name = "swap_feed"
 
 [dependencies]
+tokio-socks = "0.5.2"
 anyhow = { workspace = true }
 backoff = { workspace = true }
 bitcoin = { workspace = true }

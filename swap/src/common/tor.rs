@@ -74,32 +74,22 @@ pub async fn spawn_socks5_bridge(tor_client: Arc<TorClient<TokioRustlsRuntime>>,
 }
 
 
-/// Creates an unbootstrapped Tor client
 pub async fn create_tor_client(
     data_dir: &Path,
+    system_socks5: Option<String>, // EKLENDİ
 ) -> Result<Arc<TorClient<TokioRustlsRuntime>>, Error> {
-    // We store the Tor state in the data directory
     let data_dir = data_dir.join("tor");
     let state_dir = data_dir.join("state");
     let cache_dir = data_dir.join("cache");
 
-    // Workaround for when the machine is running in a managed work-environment.
-    // Arti will otherwise fail if the home directory is writable by another group.
     #[allow(unsafe_code)]
     unsafe {
         std::env::set_var("ARTI_FS_DISABLE_PERMISSION_CHECKS", "1")
     };
 
-    // Workaround for https://gitlab.torproject.org/tpo/core/arti/-/issues/2224
-    // We delete guards.json (if it exists) on startup to prevent an issue where arti will not find any guards to connect to
-    // This forces new guards on every startup
-    //
-    // TODO: This is not good for privacy and should be removed as soon as this is fixed in arti itself.
     let guards_file = state_dir.join("state").join("guards.json");
     let _ = tokio::fs::remove_file(&guards_file).await;
 
-    // The client configuration describes how to connect to the Tor network,
-    // and what directories to use for storing persistent state.
     let mut config = TorClientConfigBuilder::from_directories(state_dir, cache_dir);
 
     config
@@ -109,13 +99,21 @@ pub async fn create_tor_client(
         .stream_timeouts()
         .resolve_timeout(TOR_RESOLVE_TIMEOUT);
 
+    // EKLENDİ: Sistem Tor modu aktifse bilgi ver. 
+    // Tails OS şeffaf proxy (transparent proxy) kullandığı için Arti'nin Guard TCP bağlantıları 
+    // otomatik olarak SOCKS5 ağına (Tor-over-Tor) yönlendirilecektir.
+    if let Some(proxy_addr) = system_socks5 {
+        tracing::info!(
+            "System Tor (SOCKS5) is enabled ({}). Arti P2P client is starting and will be routed transparently by the OS.",
+            proxy_addr
+        );
+    }
+
     let config = config
         .build()
         .expect("We initialized the Tor client all required attributes");
 
-    // Create the Arti client without bootstrapping
     let runtime = TokioRustlsRuntime::current().expect("We are always running with tokio");
-
     tracing::debug!("Creating unbootstrapped Tor client");
 
     let tor_client = TorClient::with_runtime(runtime)
