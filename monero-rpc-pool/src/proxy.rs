@@ -159,7 +159,7 @@ async fn proxy_to_multiple_nodes(
     // Create a vector of (node, has_connection) pairs
     let mut nodes_with_availability = Vec::new();
     for node in nodes.iter() {
-        let key = (node.0.clone(), node.1.clone(), node.2, use_tor);
+        let key = (node.0.clone(), node.1.clone(), node.2, is_tor_routed);
         let has_connection = state.connection_pool.has_available_connection(&key).await;
         nodes_with_availability.push((node.clone(), has_connection));
     }
@@ -535,7 +535,7 @@ async fn proxy_to_single_node(
 
         tracing::trace!(
             "Established new connection via {}{}",
-            if use_tor { "Tor" } else { "clearnet" },
+            if is_tor_routed { "Tor" } else { "clearnet" },
             if node.0 == "https" { " with TLS" } else { "" }
         );
     }
