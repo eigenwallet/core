@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use futures::{SinkExt, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use serde::Deserialize;
 use std::convert::TryFrom;
 use url::Url;
@@ -12,10 +12,9 @@ use url::Url;
 /// price ticker protocol
 /// See: https://docs.kraken.com/websockets/
 pub fn connect(price_ticker_ws_url_kraken: Url, proxy: Option<String>) -> Result<PriceUpdates> {
-    crate::ticker::connect("Kraken", price_ticker_ws_url_kraken, move |url| {
-        connection::new(url, proxy.clone())
-    })
+    crate::ticker::connect("Kraken", (price_ticker_ws_url_kraken, proxy), connection::new)
 }
+
 pub type PriceUpdates = crate::ticker::PriceUpdates<wire::PriceUpdate>;
 pub type PriceUpdate = crate::ticker::PriceUpdate<wire::PriceUpdate>;
 pub type Error = crate::ticker::Error;
@@ -32,35 +31,42 @@ mod connection {
     use futures::stream::BoxStream;
     use std::sync::Arc;
     use tokio_tungstenite::tungstenite;
+    use futures::SinkExt;
 
     pub async fn new(
-        ws_url: Arc<Url>,
-        proxy: Option<String>,
+        params: Arc<(Url, Option<String>)>,
     ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Error>>> {
-        let (mut rate_stream, _) = if let Some(proxy_addr) = proxy {
+        let ws_url = &params.0;
+        let proxy = &params.1;
+
+        let stream = if let Some(proxy_addr) = proxy {
             let host = ws_url.host_str().unwrap_or("");
             let port = ws_url.port_or_known_default().unwrap_or(443);
-            
-            // SOCKS5 üzerinden TCP bağlantısı aç
+
             let tcp_stream = tokio_socks::tcp::Socks5Stream::connect(proxy_addr.as_str(), (host, port))
                 .await
                 .context("Failed to connect to SOCKS5 proxy for Kraken WS")?;
-            
-            // Proxy TCP soketinin üzerinden TLS Handshake başlat ve WebSocket'e yükselt
-            tokio_tungstenite::client_async_tls(ws_url.as_str(), tcp_stream)
+
+            let (mut ws_stream, _) = tokio_tungstenite::client_async_tls(ws_url.as_str(), tcp_stream)
                 .await
-                .context("Failed to establish TLS over SOCKS5 for Kraken")?
+                .context("Failed to establish TLS over SOCKS5 for Kraken")?;
+
+            ws_stream
+                .send(SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD.into())
+                .await?;
+
+            ws_stream.err_into().try_filter_map(parse_message).boxed()
         } else {
-            tokio_tungstenite::connect_async(&*ws_url)
+            let (mut ws_stream, _) = tokio_tungstenite::connect_async(ws_url.as_str())
                 .await
-                .context("Failed to connect to Kraken websocket API directly")?
+                .context("Failed to connect to Kraken websocket API directly")?;
+
+            ws_stream
+                .send(SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD.into())
+                .await?;
+
+            ws_stream.err_into().try_filter_map(parse_message).boxed()
         };
-
-        rate_stream
-            .send(SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD.into())
-            .await?;
-
-        let stream = rate_stream.err_into().try_filter_map(parse_message).boxed();
 
         Ok(stream)
     }

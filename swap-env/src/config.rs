@@ -154,6 +154,7 @@ impl Default for TorConf {
         Self {
             register_hidden_service: true,
             hidden_service_num_intro_points: 5,
+            system_socks5: None,
             max_concurrent_rend_requests: default_max_concurrent_rend_requests(),
             wormhole_enabled: default_wormhole_enabled(),
             wormhole_max_concurrent_rend_requests: default_wormhole_max_concurrent_rend_requests(),

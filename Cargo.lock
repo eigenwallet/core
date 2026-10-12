@@ -10737,6 +10737,7 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-socks",
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
