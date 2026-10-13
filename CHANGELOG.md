@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Taker: Recognize confirmed cancellation despite stale Bitcoin lock status,
   and retry inconsistent wallet status instead of panicking before publishing a refund.
 
+## [4.16.1] - 2026-10-13
+
 - Report the actual Monero wallet error instead of "unknown error, error not set".
 - Fix an issue where a failed lookup of the Monero restore height by date silently set the restore height to 0, which caused a full rescan from the genesis block.
 - GUI + ASB: Fix an issue where the app would exit with `SIGSEV` in a rare edge case
@@ -1094,7 +1096,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.16.0...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.16.1...HEAD
+[4.16.1]: https://github.com/eigenwallet/core/compare/4.16.0...4.16.1
 [4.16.0]: https://github.com/eigenwallet/core/compare/4.15.0...4.16.0
 [4.15.0]: https://github.com/eigenwallet/core/compare/4.14.0...4.15.0
 [4.14.0]: https://github.com/eigenwallet/core/compare/4.13.3...4.14.0
