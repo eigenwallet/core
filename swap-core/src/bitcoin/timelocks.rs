@@ -216,8 +216,55 @@ mod tests {
     }
 
     #[test]
+    fn confirmed_cancel_proves_expiry_despite_stale_lock_status() {
+        for tx_lock_status in [
+            ScriptStatus::Unseen,
+            ScriptStatus::InMempool,
+            ScriptStatus::Retrying,
+            ScriptStatus::from_confirmations(4),
+        ] {
+            for confirmations in 1..5 {
+                assert_eq!(
+                    current_epoch(
+                        CancelTimelock::new(5),
+                        PunishTimelock::new(5),
+                        None,
+                        tx_lock_status,
+                        ScriptStatus::from_confirmations(confirmations),
+                        None,
+                    ),
+                    ExpiredTimelocks::Cancel {
+                        blocks_left: 5 - confirmations,
+                    },
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unconfirmed_cancel_does_not_prove_expiry() {
+        for tx_cancel_status in [
+            ScriptStatus::Unseen,
+            ScriptStatus::InMempool,
+            ScriptStatus::Retrying,
+        ] {
+            assert_eq!(
+                current_epoch(
+                    CancelTimelock::new(5),
+                    PunishTimelock::new(5),
+                    None,
+                    ScriptStatus::from_confirmations(4),
+                    tx_cancel_status,
+                    None,
+                ),
+                ExpiredTimelocks::None { blocks_left: 1 },
+            );
+        }
+    }
+
+    #[test]
     fn cancel_confirmations_ge_to_punish_timelock_punish_timelock_expired() {
-        let tx_lock_status = ScriptStatus::from_confirmations(10);
+        let tx_lock_status = ScriptStatus::Unseen;
         let tx_cancel_status = ScriptStatus::from_confirmations(5);
 
         let expired_timelock = current_epoch(
@@ -234,7 +281,7 @@ mod tests {
 
     #[test]
     fn partial_refund_confirmed_waiting_for_remaining_refund_timelock() {
-        let tx_lock_status = ScriptStatus::from_confirmations(10);
+        let tx_lock_status = ScriptStatus::Unseen;
         let tx_cancel_status = ScriptStatus::from_confirmations(5);
         let tx_partial_refund_status = ScriptStatus::from_confirmations(2);
 
@@ -255,7 +302,7 @@ mod tests {
 
     #[test]
     fn partial_refund_remaining_timelock_expired() {
-        let tx_lock_status = ScriptStatus::from_confirmations(10);
+        let tx_lock_status = ScriptStatus::Unseen;
         let tx_cancel_status = ScriptStatus::from_confirmations(5);
         let tx_partial_refund_status = ScriptStatus::from_confirmations(5);
 

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Taker: Recognize confirmed cancellation despite stale Bitcoin lock status,
+  and retry inconsistent wallet status instead of panicking before publishing a refund.
+
 - Report the actual Monero wallet error instead of "unknown error, error not set".
 - Fix an issue where a failed lookup of the Monero restore height by date silently set the restore height to 0, which caused a full rescan from the genesis block.
 - GUI + ASB: Fix an issue where the app would exit with `SIGSEV` in a rare edge case
