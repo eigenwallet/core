@@ -294,3 +294,16 @@ impl Database {
         Ok(addresses)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn network_string_roundtrip() {
+        for network in [Network::Mainnet, Network::Stagenet, Network::Testnet] {
+            assert_eq!(parse_network(network_to_string(&network)).unwrap(), network);
+        }
+        assert!(parse_network("regtest").is_err());
+    }
+}
