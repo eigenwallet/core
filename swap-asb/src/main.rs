@@ -221,12 +221,24 @@ pub async fn main() -> Result<()> {
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
-            // Connect to each enabled price feed. Each source is
-            // independently toggleable via config; Exolix additionally
-            // requires an API key.
+            // SOCKS5 (Tor) HTTP İstemcisini Oluştur (DNS sızıntısını önlemek için socks5h kullanıyoruz)
+            let http_client = match &config.tor.system_socks5 {
+                Some(proxy_addr) => {
+                    let proxy_url = format!("socks5h://{}", proxy_addr);
+                    let proxy = reqwest::Proxy::all(&proxy_url)
+                        .context("Failed to create SOCKS5 proxy for HTTP client")?;
+                    reqwest::Client::builder()
+                        .proxy(proxy)
+                        .build()
+                        .context("Failed to build HTTP client")?
+                }
+                None => reqwest::Client::new(),
+            };
+
             let kraken_price_updates = if config.maker.price_ticker_source_kraken_enabled {
                 Some(swap_feed::connect_kraken(
                     config.maker.price_ticker_ws_url_kraken.clone(),
+                    config.tor.system_socks5.clone(), // EKLENDİ
                 )?)
             } else {
                 None
@@ -234,6 +246,7 @@ pub async fn main() -> Result<()> {
             let bitfinex_price_updates = if config.maker.price_ticker_source_bitfinex_enabled {
                 Some(swap_feed::connect_bitfinex(
                     config.maker.price_ticker_ws_url_bitfinex.clone(),
+                    config.tor.system_socks5.clone(), // EKLENDİ
                 )?)
             } else {
                 None
@@ -241,7 +254,7 @@ pub async fn main() -> Result<()> {
             let kucoin_price_updates = if config.maker.price_ticker_source_kucoin_enabled {
                 Some(swap_feed::connect_kucoin(
                     config.maker.price_ticker_rest_url_kucoin.clone(),
-                    reqwest::Client::new(),
+                    http_client.clone(), // DEĞİŞTİRİLDİ (reqwest::Client::new() yerine)
                 )?)
             } else {
                 None
@@ -258,7 +271,7 @@ pub async fn main() -> Result<()> {
                         config.maker.price_ticker_rest_url_exolix.clone(),
                         api_key.clone(),
                         exolix_poll_interval,
-                        reqwest::Client::new(),
+                        http_client.clone(), // DEĞİŞTİRİLDİ
                     )
                 })
                 .transpose()?;
@@ -284,10 +297,11 @@ pub async fn main() -> Result<()> {
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 
             // Initialize and bootstrap Tor client
-            let tor_client = create_tor_client(&config.data.dir).await?;
+            // EKLENDİ: config.tor.system_socks5.clone() parametresi eklendi
+            let tor_client = create_tor_client(&config.data.dir, config.tor.system_socks5.clone()).await?;
             bootstrap_tor_client(tor_client.clone(), None).await?;
             let tor_client = tor_client.into();
-
+            
             let mut metrics_registry = config
                 .network
                 .prometheus_port
