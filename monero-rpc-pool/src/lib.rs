@@ -22,6 +22,9 @@ pub mod pool;
 pub mod proxy;
 pub mod types;
 
+#[cfg(test)]
+mod tests;
+
 use config::Config;
 use database::Database;
 use pool::{NodePool, PoolStatus};
