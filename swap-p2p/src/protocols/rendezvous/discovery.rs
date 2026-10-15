@@ -199,13 +199,15 @@ impl NetworkBehaviour for Behaviour {
                                     "Discovered peer at rendezvous node"
                                 );
                             }
-
-                            self.pending_to_discover.insert(
-                                rendezvous_node,
-                                tokio::time::sleep(crate::defaults::DISCOVERY_INTERVAL).boxed(),
-                            );
                         }
                     }
+
+                    // Schedule the next discovery request, also if the rendezvous
+                    // node returned no registrations
+                    self.pending_to_discover.insert(
+                        rendezvous_node,
+                        tokio::time::sleep(crate::defaults::DISCOVERY_INTERVAL).boxed(),
+                    );
                     continue;
                 }
                 ToSwarm::GenerateEvent(InnerBehaviourEvent::Rendezvous(
@@ -273,9 +275,15 @@ impl NetworkBehaviour for Behaviour {
         peer: PeerId,
         addr: &libp2p::Multiaddr,
         role_override: libp2p::core::Endpoint,
+        port_use: libp2p::core::transport::PortUse,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        self.inner
-            .handle_established_outbound_connection(connection_id, peer, addr, role_override)
+        self.inner.handle_established_outbound_connection(
+            connection_id,
+            peer,
+            addr,
+            role_override,
+            port_use,
+        )
     }
 
     fn on_connection_handler_event(

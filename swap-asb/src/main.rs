@@ -114,7 +114,7 @@ pub async fn main() -> Result<()> {
         json,
         trace,
         config_path,
-        env_config,
+        env_config: _,
         cmd,
     } = match parse_args(env::args_os()) {
         Ok(args) => args,
@@ -140,6 +140,10 @@ pub async fn main() -> Result<()> {
             read_config(config_path.clone())?.expect("after initial setup config can be read")
         }
     };
+
+    // Apply file settings to runtime configuration while keeping CLI network selection authoritative.
+    // Parse arguments first because --config and --testnet determine which file to load.
+    let env_config = swap_env::env::new(testnet, &config);
 
     // Initialize tracing
     initialize_tracing(json, &config, trace)?;
@@ -630,6 +634,7 @@ pub async fn main() -> Result<()> {
                 .filter_map(|state| match state {
                     State::Alice(AliceState::Started { state3 })
                     | State::Alice(AliceState::BtcLocked { state3 })
+                    | State::Alice(AliceState::XmrReadyToLock { state3, .. })
                     | State::Alice(AliceState::BtcLockTransactionSeen { state3 }) => {
                         Some(state3.clone())
                     }
@@ -757,6 +762,7 @@ async fn init_monero_wallet(
         false,
         None,
         None,
+        env_config.monero_lock_construction_cooldown,
     )
     .await
     .context("Failed to initialize Monero wallets")?;

@@ -2,6 +2,7 @@
 
 use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
 use anyhow::{Context, Result, bail};
+use monero_wallet::Wallets;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
@@ -29,6 +30,10 @@ pub enum AliceState {
     },
     BtcLocked {
         state3: Box<State3>,
+    },
+    XmrReadyToLock {
+        state3: Box<State3>,
+        monero_wallet_restore_blockheight: BlockHeight,
     },
     BtcEarlyRefundable {
         state3: Box<State3>,
@@ -67,7 +72,7 @@ pub enum AliceState {
     BtcRedeemed,
     BtcCancelled {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         state3: Box<State3>,
     },
     BtcEarlyRefunded(Box<State3>),
@@ -76,19 +81,19 @@ pub enum AliceState {
     // we need to refund ourself regardless.
     BtcRefunded {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         spend_key: monero_oxide_ext::PrivateKey,
         state3: Box<State3>,
     },
     BtcPartiallyRefunded {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         spend_key: monero::PrivateKey,
         state3: Box<State3>,
     },
     XmrRefundable {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         spend_key: monero::PrivateKey,
         state3: Box<State3>,
     },
@@ -130,22 +135,22 @@ pub enum AliceState {
     },
     WaitingForCancelTimelockExpiration {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         state3: Box<State3>,
     },
     CancelTimelockExpired {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         state3: Box<State3>,
     },
     BtcPunishable {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         state3: Box<State3>,
     },
     BtcPunished {
         state3: Box<State3>,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
     },
     SafelyAborted,
 }
@@ -190,6 +195,7 @@ impl fmt::Display for AliceState {
                 write!(f, "bitcoin lock transaction in mempool")
             }
             AliceState::BtcLocked { .. } => write!(f, "btc is locked"),
+            AliceState::XmrReadyToLock { .. } => write!(f, "xmr is ready to lock"),
             AliceState::XmrLockTransactionConstructed { .. } => {
                 write!(f, "xmr lock transaction constructed")
             }
@@ -729,7 +735,7 @@ pub struct State3 {
     B: swap_core::bitcoin::PublicKey,
     #[serde(with = "swap_serde::monero::scalar")]
     pub s_a: swap_core::monero::Scalar,
-    S_b_monero: monero_oxide_ext::PublicKey,
+    pub S_b_monero: monero_oxide_ext::PublicKey,
     S_b_bitcoin: swap_core::bitcoin::PublicKey,
     pub v: monero::PrivateViewKey,
     pub btc: bitcoin::Amount,
@@ -997,6 +1003,26 @@ impl State3 {
         )
     }
 
+    /// Scans from `restore_height` to the current tip, then the mempool, for received outputs; this can take a long time.
+    pub async fn shared_wallet_has_received_outputs(
+        &self,
+        monero_wallet: &Wallets,
+        restore_height: BlockHeight,
+        inner_retry: Option<backoff::ExponentialBackoff>,
+    ) -> Result<bool> {
+        let transfer_request = self.lock_xmr_transfer_request();
+
+        monero_wallet
+            .has_received_outputs(
+                transfer_request.public_spend_key,
+                self.v,
+                restore_height,
+                None,
+                inner_retry,
+            )
+            .await
+    }
+
     /// Check if we have Bob's signature for TxWithhold.
     pub fn has_tx_withhold_sig(&self) -> bool {
         self.tx_withhold_sig_bob.is_some()
@@ -1210,6 +1236,7 @@ impl ReservesMonero for AliceState {
             // our Monero, and we haven't done so yet.
             AliceState::BtcLockTransactionSeen { state3 }
             | AliceState::BtcLocked { state3 }
+            | AliceState::XmrReadyToLock { state3, .. }
             | AliceState::XmrLockTransactionConstructed { state3, .. } => {
                 // We reserve as much Monero as we need for the output of the lock transaction
                 // and as we need for the network fee

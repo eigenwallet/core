@@ -79,6 +79,26 @@ pub struct Monero {
     pub finality_confirmations: Option<u64>,
     #[serde(with = "swap_serde::monero::network")]
     pub network: monero_address::Network,
+    /// Whether the configured Monero daemon is trusted. You should generally only
+    /// consider self-hosted Monero nodes on your own hardware as trusted. If an
+    /// attacker controls your node and you set this to true, they might be able to
+    /// steal your funds.
+    #[serde(default)]
+    // Validated by validate_config: trust requires an explicitly configured daemon_url.
+    pub trusted_daemon: bool,
+    /// Required confirmations of a conflicting input spend before rebuilding a lock.
+    #[serde(default = "default_lock_rebuild_confirmations")]
+    pub lock_rebuild_confirmations: u64,
+    #[serde(default = "default_lock_construction_cooldown_secs")]
+    pub lock_construction_cooldown_secs: u64,
+}
+
+pub fn default_lock_construction_cooldown_secs() -> u64 {
+    300
+}
+
+fn default_lock_rebuild_confirmations() -> u64 {
+    15
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -350,6 +370,22 @@ pub const MIN_BTC_REDEEM_FEE_MULTIPLIER: Decimal = Decimal::from_parts(1, 0, 0, 
 pub const MAX_BTC_REDEEM_FEE_MULTIPLIER: Decimal = Decimal::from_parts(10, 0, 0, false, 0); // 10
 
 pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Result<()> {
+    if env_config.monero_lock_construction_cooldown.is_zero() {
+        bail!("monero.lock_construction_cooldown_secs must be positive");
+    }
+    if std::time::Instant::now()
+        .checked_add(env_config.monero_lock_construction_cooldown)
+        .is_none()
+    {
+        bail!("monero.lock_construction_cooldown_secs exceeds the system clock's supported range");
+    }
+    if config.monero.lock_rebuild_confirmations == 0 {
+        bail!("monero.lock_rebuild_confirmations must be positive");
+    }
+    if config.monero.trusted_daemon && config.monero.daemon_url.is_none() {
+        bail!("monero.trusted_daemon requires an explicit monero.daemon_url; automatically selected public nodes cannot be trusted");
+    }
+
     if config.monero.network != env_config.monero_network {
         bail!(
             "Expected monero network in config file to be {:?} but was {:?}",
@@ -452,6 +488,9 @@ pub fn query_user_for_initial_config_with_network(
             daemon_url: monero_daemon_url,
             finality_confirmations: None,
             network: monero_network,
+            trusted_daemon: false,
+            lock_rebuild_confirmations: default_lock_rebuild_confirmations(),
+            lock_construction_cooldown_secs: default_lock_construction_cooldown_secs(),
         },
         tor: TorConf {
             register_hidden_service,

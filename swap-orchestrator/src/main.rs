@@ -369,6 +369,10 @@ fn main() {
                 network: monero_network,
                 // This means that we will use the default set in swap-env/src/env.rs
                 finality_confirmations: None,
+                trusted_daemon: false,
+                lock_rebuild_confirmations: 15,
+                lock_construction_cooldown_secs:
+                    swap_env::config::default_lock_construction_cooldown_secs(),
             },
             tor: TorConf {
                 register_hidden_service: tor_hidden_service,

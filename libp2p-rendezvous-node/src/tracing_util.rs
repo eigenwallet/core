@@ -11,7 +11,7 @@ pub fn init_tracing(level: LevelFilter) {
 
     FmtSubscriber::builder()
         .with_env_filter(format!(
-            "rendezvous_server={},\
+            "rendezvous_node={},\
              swap_p2p={},\
              libp2p={},
              libp2p_rendezvous={},\

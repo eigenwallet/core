@@ -7,7 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.16.1] - 2026-10-13
+
+- Report the actual Monero wallet error instead of "unknown error, error not set".
+- Fix an issue where a failed lookup of the Monero restore height by date silently set the restore height to 0, which caused a full rescan from the genesis block.
+- GUI + ASB: Fix an issue where the app would exit with `SIGSEV` in a rare edge case
+- GUI: Fix an issue where the GUI stopped asking a rendezvous point for makers after it once answered that no makers were registered. Makers that registered later were only found after a manual refresh or a restart.
+- GUI + CLI: Fix an issue where a transfer proof for a swap that was suspended, finished or failed was neither buffered nor acknowledged until the app was restarted.
+- GUI + CLI: Fix two issues with the acknowledgement of the Monero transfer proof. We did not acknowledge a repeated transfer proof while the swap was running, and we acknowledged a transfer proof that a suspended swap never read.
+
+## [4.16.0] - 2026-10-06
+
+- GUI: Update the Flatpak GNOME runtime from 48 (end-of-life) to 50.
+
+## [4.15.0] - 2026-09-22
+
 - GUI: Support outbound connections to makers through libp2p circuit relays.
+
+- ASB: Fix an issue where multiple swaps which started at the same time tried to spend the same Monero outputs (double spend), causing only one to succeeded:
+
+- Construction of Monero lock transctions is spaced out by `5min` by default now. Customize this cooldown via `monero.lock_construction_cooldown_secs`.
+
+- In cases where we have confirmed that the Monero we wanted to send is already spent in another swap the ASB can now rebuild a new Monero transaction.
+  This requires your own trusted Monero node on your own hardware. To enable this feature, set `monero.trusted_daemon = true` (`false by default`).
+  This can make swaps succeed even if they initially conflict with another swap.
 
 ## [4.14.0] - 2026-08-22
 
@@ -1070,7 +1093,10 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.14.0...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.16.1...HEAD
+[4.16.1]: https://github.com/eigenwallet/core/compare/4.16.0...4.16.1
+[4.16.0]: https://github.com/eigenwallet/core/compare/4.15.0...4.16.0
+[4.15.0]: https://github.com/eigenwallet/core/compare/4.14.0...4.15.0
 [4.14.0]: https://github.com/eigenwallet/core/compare/4.13.3...4.14.0
 [4.13.3]: https://github.com/eigenwallet/core/compare/4.13.2...4.13.3
 [4.13.2]: https://github.com/eigenwallet/core/compare/4.13.1...4.13.2

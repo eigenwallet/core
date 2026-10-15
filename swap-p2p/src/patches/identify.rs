@@ -52,9 +52,15 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
         peer: PeerId,
         addr: &libp2p::Multiaddr,
         role_override: libp2p::core::Endpoint,
+        port_use: libp2p::core::transport::PortUse,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        self.inner
-            .handle_established_outbound_connection(connection_id, peer, addr, role_override)
+        self.inner.handle_established_outbound_connection(
+            connection_id,
+            peer,
+            addr,
+            role_override,
+            port_use,
+        )
     }
 
     fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm) {

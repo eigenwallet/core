@@ -16,7 +16,6 @@ use libp2p::swarm::{
 };
 use libp2p::{Multiaddr, PeerId};
 use std::collections::{HashMap, HashSet, VecDeque};
-use tracing::Instrument;
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
@@ -24,6 +23,7 @@ use swap_core::bitcoin;
 use swap_env::env;
 use swap_machine::bob::{State0, State2};
 use swap_machine::common::{Message1, Message3};
+use tracing::Instrument;
 use uuid::Uuid;
 
 use super::{SpotPriceRequest, read_cbor_message, write_cbor_error, write_cbor_message};
@@ -121,6 +121,7 @@ impl NetworkBehaviour for Behaviour {
         peer: PeerId,
         _addr: &Multiaddr,
         _role_override: libp2p::core::Endpoint,
+        _port_use: libp2p::core::transport::PortUse,
     ) -> Result<THandler<Self>, ConnectionDenied> {
         Ok(Handler::new(
             peer,

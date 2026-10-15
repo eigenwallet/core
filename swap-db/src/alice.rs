@@ -27,6 +27,10 @@ pub enum Alice {
         transfer_proof: TransferProof,
         state3: alice::State3,
     },
+    XmrReadyToLock {
+        state3: alice::State3,
+        monero_wallet_restore_blockheight: BlockHeight,
+    },
     XmrLockTransactionSent {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
@@ -54,22 +58,22 @@ pub enum Alice {
     },
     WaitingForCancelTimelockExpiration {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         state3: alice::State3,
     },
     CancelTimelockExpired {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         state3: alice::State3,
     },
     BtcCancelled {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         state3: alice::State3,
     },
     BtcPunishable {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         state3: alice::State3,
     },
     BtcEarlyRefundable {
@@ -77,21 +81,21 @@ pub enum Alice {
     },
     BtcRefunded {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         state3: alice::State3,
         #[serde(with = "swap_serde::monero::private_key")]
         spend_key: monero::PrivateKey,
     },
     BtcPartiallyRefunded {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         state3: alice::State3,
         #[serde(with = "swap_serde::monero::private_key")]
         spend_key: monero::PrivateKey,
     },
     XmrRefundable {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
         state3: alice::State3,
         #[serde(with = "swap_serde::monero::private_key")]
         spend_key: monero::PrivateKey,
@@ -131,7 +135,7 @@ pub enum AliceEndState {
     },
     BtcPunished {
         state3: alice::State3,
-        transfer_proof: TransferProof,
+        transfer_proof: Option<TransferProof>,
     },
     BtcWithheld {
         state3: alice::State3,
@@ -186,6 +190,13 @@ impl From<AliceState> for Alice {
                 xmr_lock_tx,
                 transfer_proof,
                 state3: *state3,
+            },
+            AliceState::XmrReadyToLock {
+                state3,
+                monero_wallet_restore_blockheight,
+            } => Alice::XmrReadyToLock {
+                state3: *state3,
+                monero_wallet_restore_blockheight,
             },
             AliceState::XmrLockTransactionSent {
                 monero_wallet_restore_blockheight,
@@ -373,6 +384,13 @@ impl From<Alice> for AliceState {
                 transfer_proof,
                 state3: Box::new(state3),
             },
+            Alice::XmrReadyToLock {
+                state3,
+                monero_wallet_restore_blockheight,
+            } => AliceState::XmrReadyToLock {
+                state3: Box::new(state3),
+                monero_wallet_restore_blockheight,
+            },
             Alice::XmrLockTransactionSent {
                 monero_wallet_restore_blockheight,
                 transfer_proof,
@@ -551,6 +569,7 @@ impl fmt::Display for Alice {
             Alice::XmrLockTransactionConstructed { .. } => {
                 f.write_str("Monero lock transaction constructed")
             }
+            Alice::XmrReadyToLock { .. } => f.write_str("Monero ready to lock"),
             Alice::XmrLockTransactionSent { .. } => f.write_str("Monero lock transaction sent"),
             Alice::XmrLocked { .. } => f.write_str("Monero locked"),
             Alice::XmrLockTransferProofSent { .. } => {

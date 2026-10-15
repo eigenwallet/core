@@ -143,6 +143,7 @@ async fn wallet_sends_broadcasts_and_confirms() -> Result<()> {
 
     let tx = wallet.sign_and_finalize(psbt).await?;
 
+    let other_output_script = tx.output[1].script_pubkey.clone();
     let (txid, sub) = wallet.broadcast(tx, "it-send").await?;
 
     // Confirm it
@@ -170,6 +171,11 @@ async fn wallet_sends_broadcasts_and_confirms() -> Result<()> {
     }
 
     sub.wait_until_final().await?;
+
+    let new_subscription = wallet
+        .subscribe_to(Box::new((txid, other_output_script)))
+        .await;
+    assert!(new_subscription.receiver.borrow().is_confirmed_with(1u32));
 
     Ok(())
 }
