@@ -47,10 +47,13 @@ Choose your platform and follow the instructions.
   </Tabs.Tab>
   <Tabs.Tab>
     <Callout type="info">
-      The AppImage might not work on older distributions (older than Ubuntu 24) due to an upstream bug. Try the Flatpak instead.
+      The AppImage works on Debian 12, Ubuntu 22.04 and newer.
+      It uses the system's wayland libraries, so a default graphics setup provides everything it needs.
+      Try the Flatpak if it doesn't work on your distribution.
     </Callout>
 
-    For newer Linux distributions, you can download the AppImage and run it directly. It includes all dependencies.
+    For newer Linux distributions, you can download the AppImage and run it directly.
+    It includes all application dependencies; the system provides the wayland libraries.
     Simply download the latest release from our [download page](https://eigenwallet.org/download/) and execute it.
 
     Alternatively you can download it from your terminal:
