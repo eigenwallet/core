@@ -38,9 +38,14 @@ jobs:
             target: "aarch64-apple-darwin"
           - host: "macos-15-intel" # for Intel based macs.
             target: "x86_64-apple-darwin"
-          - host: "ubuntu-24.04"
+          # Issue #204: bundling libs from 24.04 requires glibc_2.38/GLIBCXX_3.4.32, which
+          # crashes on Debian 12 at startup. Build on 22.04 instead: glibc 2.35 while its
+          # glib 2.72 still satisfies webkit2gtk-4.1's glib >= 2.70 requirement.
+          - host: "ubuntu-22.04"
             target: "x86_64-unknown-linux-gnu"
-          - host: "ubuntu-24.04" # cross build windows from ubuntu
+          # cross build uses the same ubuntu package list (see setup-build-environment);
+          # building it on 22.04 keeps that list exercised on one distro (also matches CI)
+          - host: "ubuntu-22.04" # cross build windows from ubuntu
             target: "x86_64-pc-windows-gnu"
 
     runs-on: ${{ matrix.host }}
@@ -52,6 +57,37 @@ jobs:
         with:
           host: ${{ matrix.host }}
           target: ${{ matrix.target }}
+
+      # PR runs don't have the updater signing secrets, so generating updater artifacts
+      # would fail the build on forks. Both flags only gate artifact generation.
+      - name: Disable updater artifacts for PR builds
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq '.bundle.createUpdaterArtifacts = false | .plugins.updater.active = false' \
+            src-tauri/tauri.conf.json > src-tauri/tauri.conf.json.tmp
+          mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
+
+      # Issue #204: the AppImage must not bundle libwayland-client.so.0,
+      # libwayland-cursor.so.0, libwayland-egl.so.1, libwayland-server.so.0; they shadow
+      # the host wayland libs and break EGL on Fedora ("Could not create default EGL
+      # display: EGL_BAD_PARAMETER"). Exclusion is passed to linuxdeploy via env.
+      # tauri-bundler pins the 2024-07 linuxdeploy snapshot (tauri-apps/binary-releases),
+      # but that env var only exists in linuxdeploy since 2025-08, so stage a pinned
+      # newer release at the bundler's tool path: prepare_tools() keeps a file that
+      # already exists in ${XDG_CACHE_HOME:-$HOME/.cache}/tauri and skips its download.
+      - name: Stage linuxdeploy with library exclusion support (Linux)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools_dir="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
+          mkdir -p "$tools_dir"
+          curl -fsSL --retry 3 -o linuxdeploy.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy.AppImage
+          mv linuxdeploy.AppImage "$tools_dir/linuxdeploy-x86_64.AppImage"
 
       - name: build tauri app and upload to github releases page
         uses: tauri-apps/tauri-action@v0
@@ -65,6 +101,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # linuxdeploy fnmatch patterns (';' separated); ignored by the windows cross build
+          LINUXDEPLOY_EXCLUDED_LIBRARIES: libwayland-client.so.0;libwayland-cursor.so.0;libwayland-egl.so.1;libwayland-server.so.0
         with:
           # Empty releaseId for PRs prevents uploading to GitHub releases
           # Empty strings are treated as an omitted argument: https://github.com/actions/runner/issues/924
@@ -73,6 +111,33 @@ jobs:
           projectPath: src-tauri
           tauriScript: yarn tauri
           args: --target ${{ matrix.target }}
+
+      # Issue #204 compliance guard (from the abandoned PR #1002 idea): extract the
+      # produced AppImage and fail the build if any bundled file requires glibc /
+      # libstdc++ symbol versions newer than the 22.04 build floor (Debian 12 must be
+      # able to load it), or if the libwayland-* exclusion above didn't take effect.
+      # Runs even when earlier steps already failed so a regression can't ship.
+      - name: Check AppImage runtime compatibility (Linux x64 release)
+        if: always() && runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_dir="target/${{ matrix.target }}/release/bundle/appimage"
+          appimage="$(find "$bundle_dir" -maxdepth 1 -type f -name '*.AppImage' -print -quit 2>/dev/null || true)"
+          if [[ -z "$appimage" ]]; then
+            echo "No .AppImage found in $bundle_dir (build failed?)" >&2
+            ls -la "$bundle_dir" 2>/dev/null || true
+            exit 1
+          fi
+          dev-scripts/ci/check-appimage-glibc-compat.sh "$appimage"
+
+      # lets reviewers and the #204 testers grab the exact AppImage of this PR run
+      - name: Upload AppImage artifact (PR builds)
+        if: github.event_name == 'pull_request' && matrix.target == 'x86_64-unknown-linux-gnu'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eigenwallet-appimage
+          path: target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
 
       # TODO: Remove this duplication of the steps in build-release-binaries.yml
       - name: Install GnuPG (macOS)
@@ -213,8 +278,8 @@ jobs:
           args: --target ${{ matrix.target }}
 
   generate-homebrew-formula:
-    # don't do it for developer testing releases
-    if: ${{ !startsWith(github.ref_name, 'test-') }}
+    # don't do it for PRs or developer testing releases
+    if: ${{ github.event_name != 'pull_request' && !startsWith(github.ref_name, 'test-') }}
     needs: [build_gui]
     runs-on: ubuntu-24.04
     steps:
