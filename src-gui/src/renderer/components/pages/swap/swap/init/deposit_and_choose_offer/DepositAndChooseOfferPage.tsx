@@ -112,8 +112,7 @@ export default function DepositAndChooseOfferPage({
         >
           <Typography variant="body1">Deposit</Typography>
           <Typography variant="body2" color="text.secondary">
-            Send Bitcoin to your internal wallet to swap your desired amount of
-            Monero
+            Send Bitcoin to your internal wallet to swap it for the amount of Monero you want
           </Typography>
           <ActionableMonospaceTextBox content={deposit_address} />
         </Box>
