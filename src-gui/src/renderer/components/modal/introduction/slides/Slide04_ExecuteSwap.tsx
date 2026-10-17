@@ -14,7 +14,7 @@ export default function Slide02_ChooseAMaker(props: IntroSlideProps) {
       <Typography variant="subtitle1">After confirming:</Typography>
       <Typography>
         <ol>
-          <li>Your Bitcoin are locked</li>
+          <li>Your Bitcoin is locked</li>
           <li>Maker locks the Monero</li>
           <li>Maker reedems the Bitcoin</li>
           <li>Monero is sent to your address</li>
