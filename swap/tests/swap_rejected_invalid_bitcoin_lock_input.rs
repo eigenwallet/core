@@ -24,7 +24,7 @@ async fn alice_rejects_bob_lock_psbt_with_nonexistent_input() {
             let error = format!("{error:#}");
 
             assert!(
-                error.contains("Input verification failed. Yeah."),
+                error.contains("Input verification failed."),
                 "unexpected swap rejection: {error}"
             );
 
