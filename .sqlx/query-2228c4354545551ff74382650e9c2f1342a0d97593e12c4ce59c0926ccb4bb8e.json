@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT s.swap_id, s.state\n            FROM (\n                SELECT max(id), swap_id, state\n                FROM swap_states\n                GROUP BY swap_id\n            ) s\n            WHERE json_extract(s.state, '$.Alice.Started') IS NOT NULL\n               OR json_extract(s.state, '$.Alice.BtcLockTransactionSeen') IS NOT NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "swap_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "state",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "2228c4354545551ff74382650e9c2f1342a0d97593e12c4ce59c0926ccb4bb8e"
+}

@@ -412,6 +412,34 @@ impl Database for SqliteDatabase {
         Ok(result)
     }
 
+    async fn get_alice_swaps_with_pending_tx_lock(&self) -> Result<Vec<(Uuid, State)>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT s.swap_id, s.state
+            FROM (
+                SELECT max(id), swap_id, state
+                FROM swap_states
+                GROUP BY swap_id
+            ) s
+            WHERE json_extract(s.state, '$.Alice.Started') IS NOT NULL
+               OR json_extract(s.state, '$.Alice.BtcLockTransactionSeen') IS NOT NULL
+        "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.iter()
+            .map(|row| {
+                let swap_id = Uuid::from_str(&row.swap_id)
+                    .with_context(|| format!("Failed to parse swap id {}", row.swap_id))?;
+                let state = serde_json::from_str::<Swap>(&row.state)
+                    .with_context(|| format!("Failed to deserialize state of swap {swap_id}"))?;
+
+                Ok((swap_id, State::from(state)))
+            })
+            .collect()
+    }
+
     /// Same as [`all`] except paginated, and returns both the first and last
     /// recorded state per swap. Swaps that never progressed past
     /// `SafelyAborted` are filtered out. `limit` and `offset` must each fit

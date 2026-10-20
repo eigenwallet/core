@@ -46,6 +46,30 @@ impl From<bitcoin_wallet::PsbtPrevoutVerificationError> for LockInputCheckError 
     }
 }
 
+/// Keeps the inputs of Bob's lock transaction reserved for one swap setup
+/// until dropped.
+#[derive(Debug)]
+pub struct LockInputReservation {
+    outpoints: Vec<::bitcoin::OutPoint>,
+    release: tokio::sync::mpsc::UnboundedSender<Vec<::bitcoin::OutPoint>>,
+}
+
+impl LockInputReservation {
+    pub fn new(
+        outpoints: Vec<::bitcoin::OutPoint>,
+        release: tokio::sync::mpsc::UnboundedSender<Vec<::bitcoin::OutPoint>>,
+    ) -> Self {
+        Self { outpoints, release }
+    }
+}
+
+impl Drop for LockInputReservation {
+    fn drop(&mut self) {
+        // The receiver is only gone once the event loop holding the reservations is gone
+        let _ = self.release.send(std::mem::take(&mut self.outpoints));
+    }
+}
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum OutEvent {
@@ -54,13 +78,14 @@ pub enum OutEvent {
             bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
         check_lock_inputs: bmrng::RequestReceiver<
             bitcoin::PartiallySignedTransaction,
-            Result<(), LockInputCheckError>,
+            Result<LockInputReservation, LockInputCheckError>,
         >,
     },
     Completed {
         peer_id: PeerId,
         swap_id: Uuid,
         state3: State3,
+        lock_input_reservation: LockInputReservation,
     },
     Error {
         peer_id: PeerId,
@@ -140,10 +165,12 @@ impl From<OutEvent> for out_event::alice::OutEvent {
                 peer_id: bob_peer_id,
                 swap_id,
                 state3,
+                lock_input_reservation,
             } => out_event::alice::OutEvent::SwapSetupCompleted {
                 peer_id: bob_peer_id,
                 swap_id,
                 state3,
+                lock_input_reservation,
             },
             OutEvent::Error { peer_id, error } => out_event::alice::OutEvent::Failure {
                 peer: peer_id,
@@ -253,11 +280,12 @@ where
                 send_wallet_snapshot,
                 check_lock_inputs,
             }),
-            HandlerOutEvent::Completed(Ok((swap_id, state3))) => {
+            HandlerOutEvent::Completed(Ok((swap_id, state3, lock_input_reservation))) => {
                 self.events.push_back(OutEvent::Completed {
                     peer_id,
                     swap_id,
                     state3,
+                    lock_input_reservation,
                 })
             }
             HandlerOutEvent::Completed(Err(error)) => {
@@ -281,7 +309,8 @@ where
 }
 
 pub struct Handler<LR> {
-    inbound_streams: FuturesUnordered<BoxFuture<'static, Result<(Uuid, State3)>>>,
+    inbound_streams:
+        FuturesUnordered<BoxFuture<'static, Result<(Uuid, State3, LockInputReservation)>>>,
     events: VecDeque<HandlerOutEvent>,
 
     peer_id: PeerId,
@@ -331,10 +360,10 @@ pub enum HandlerOutEvent {
             bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
         check_lock_inputs: bmrng::RequestReceiver<
             bitcoin::PartiallySignedTransaction,
-            Result<(), LockInputCheckError>,
+            Result<LockInputReservation, LockInputCheckError>,
         >,
     },
-    Completed(Result<(Uuid, State3)>),
+    Completed(Result<(Uuid, State3, LockInputReservation)>),
 }
 
 impl<LR> ConnectionHandler for Handler<LR>
@@ -375,7 +404,7 @@ where
                 let (check_lock_inputs_sender, check_lock_inputs_receiver) =
                     bmrng::channel_with_timeout::<
                         bitcoin::PartiallySignedTransaction,
-                        Result<(), LockInputCheckError>,
+                        Result<LockInputReservation, LockInputCheckError>,
                     >(1, crate::defaults::LOCK_INPUT_CHECK_CHANNEL_TIMEOUT);
 
                 let resume_only = self.resume_only;
@@ -429,7 +458,7 @@ where
                         };
 
                         match &result {
-                            Ok((swap_id, _)) => {
+                            Ok((swap_id, _, _)) => {
                                 tracing::info!(%swap_id, "Swap setup completed")
                             }
                             Err(error) => {
@@ -561,14 +590,14 @@ async fn run_swap_setup(
     sender: bmrng::RequestSender<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
     check_lock_inputs: bmrng::RequestSender<
         bitcoin::PartiallySignedTransaction,
-        Result<(), LockInputCheckError>,
+        Result<LockInputReservation, LockInputCheckError>,
     >,
     resume_only: bool,
     env_config: env::Config,
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
     latest_rate: Result<swap_feed::Rate, Box<dyn std::error::Error + Send + Sync + 'static>>,
-) -> Result<(Uuid, State3)> {
+) -> Result<(Uuid, State3, LockInputReservation)> {
     let request = swap_setup::read_cbor_message::<SpotPriceRequest>(&mut substream)
         .await
         .context("Failed to read spot price request")?
@@ -741,8 +770,8 @@ async fn run_swap_setup(
         .send_receive(tx_lock_psbt)
         .await
         .context("Failed to receive lock input verification result")?;
-    match lock_input_check {
-        Ok(()) => {}
+    let lock_input_reservation = match lock_input_check {
+        Ok(reservation) => reservation,
         Err(LockInputCheckError::Invalid(reason)) => {
             let error = swap_setup::SwapSetupError::LockInputVerificationFailed { reason };
             if let Err(err) = swap_setup::write_cbor_error(&mut substream, error.clone()).await {
@@ -753,7 +782,7 @@ async fn run_swap_setup(
         Err(LockInputCheckError::Unavailable(reason)) => {
             bail!("Lock transaction input verification unavailable: {reason}");
         }
-    }
+    };
 
     swap_setup::write_cbor_message(
         &mut substream,
@@ -781,5 +810,5 @@ async fn run_swap_setup(
         .await
         .context("Failed to close substream after all messages were sent")?;
 
-    Ok((swap_id, state3))
+    Ok((swap_id, state3, lock_input_reservation))
 }

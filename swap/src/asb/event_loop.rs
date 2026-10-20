@@ -7,7 +7,9 @@ use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
 use crate::network::quote::{BidQuote, RefundPolicyWire};
-use crate::network::swap_setup::alice::{LockInputCheckError, WalletSnapshot};
+use crate::network::swap_setup::alice::{
+    LockInputCheckError, LockInputReservation, WalletSnapshot,
+};
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, HermesFundingPolicy, State3, Swap, TipConfig};
@@ -24,7 +26,7 @@ use libp2p::{PeerId, Swarm};
 use moka::sync::Cache;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::io::Write;
@@ -127,10 +129,30 @@ where
         >,
     >,
 
+    /// Swap setup handlers waiting to send Bob's TxLock PSBT.
+    /// Each future resolves with the PSBT and the responder, or `None` if the
+    /// swap setup ended before Bob sent Message2.
+    #[allow(clippy::type_complexity)]
+    inflight_lock_input_requests: FuturesUnordered<
+        BoxFuture<
+            'static,
+            Option<(
+                bitcoin::PartiallySignedTransaction,
+                bmrng::Responder<Result<LockInputReservation, LockInputCheckError>>,
+            )>,
+        >,
+    >,
+
     /// In-flight TxLock input verifications for swap setup.
-    /// Each future waits for a single swap setup handler to send Bob's TxLock
-    /// PSBT, verifies its inputs against the chain and responds with the result.
+    /// Each future verifies the inputs of a reserved TxLock PSBT against the
+    /// chain and the database and responds with the result.
     inflight_lock_input_checks: FuturesUnordered<BoxFuture<'static, Result<()>>>,
+
+    /// Inputs of TxLock PSBTs whose swaps are not yet visible to
+    /// [`check_for_conflicting_swap_inputs`] through the database.
+    reserved_lock_inputs: HashSet<::bitcoin::OutPoint>,
+    lock_input_release_sender: mpsc::UnboundedSender<Vec<::bitcoin::OutPoint>>,
+    lock_input_releases: mpsc::UnboundedReceiver<Vec<::bitcoin::OutPoint>>,
 
     /// Channel for sending transfer proofs to Bobs. The sender is shared with every EventLoopHandle.
     /// The receiver is polled by the event loop to send transfer proofs over the network to Bob.
@@ -211,6 +233,7 @@ where
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
             tokio::sync::mpsc::unbounded_channel();
         let (service_sender, service_requests) = mpsc::unbounded_channel();
+        let (lock_input_release_sender, lock_input_releases) = mpsc::unbounded_channel();
 
         let quote_cache = Cache::builder().time_to_live(QUOTE_CACHE_TTL).build();
 
@@ -239,7 +262,11 @@ where
             pending_quote_channels: Default::default(),
             pending_quote_controller_responders: Default::default(),
             inflight_wallet_snapshots: Default::default(),
+            inflight_lock_input_requests: Default::default(),
             inflight_lock_input_checks: Default::default(),
+            reserved_lock_inputs: Default::default(),
+            lock_input_release_sender,
+            lock_input_releases,
             outgoing_transfer_proofs_requests,
             outgoing_transfer_proofs_sender,
             service_requests,
@@ -270,6 +297,8 @@ where
             .push(future::pending().boxed());
         self.inflight_wallet_snapshots
             .push(future::pending().boxed());
+        self.inflight_lock_input_requests
+            .push(future::pending().boxed());
         self.inflight_lock_input_checks
             .push(future::pending().boxed());
 
@@ -299,6 +328,7 @@ where
                 swap_id,
                 developer_tip: self.developer_tip.clone(),
                 hermes_funding_policy: self.hermes_funding_policy,
+                lock_input_reservation: None,
             };
 
             match self.swap_sender.send(swap).await {
@@ -334,36 +364,13 @@ where
                                 Ok((btc, responder, wallet_snapshot))
                             }.boxed());
 
-                            let bitcoin_wallet = self.bitcoin_wallet.clone();
-                            let db = self.db.clone();
-
-                            self.inflight_lock_input_checks.push(async move {
+                            self.inflight_lock_input_requests.push(async move {
                                 // Wait for the swap setup handler to send Bob's TxLock PSBT
-                                let (psbt, responder) = check_lock_inputs.recv().await?;
-
-                                let result = verify_psbt_prevouts_with_retry(
-                                    bitcoin_wallet.as_ref(),
-                                    &psbt,
-                                )
-                                .await
-                                .map_err(LockInputCheckError::from);
-
-                                let result = match result {
-                                    Ok(()) => {
-                                        check_for_conflicting_swap_inputs(db.as_ref(), &psbt).await
-                                    }
-                                    Err(error) => Err(error),
-                                };
-
-                                responder
-                                    .respond(result)
-                                    .map_err(|_| anyhow!("Failed to send lock input verification result back to swap setup handler, connection may have been dropped"))?;
-
-                                Ok(())
+                                check_lock_inputs.recv().await.ok()
                             }.boxed());
                         }
-                        SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3}) => {
-                            if let Err(error) = self.handle_execution_setup_done(peer_id, swap_id, state3).await {
+                        SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3, lock_input_reservation}) => {
+                            if let Err(error) = self.handle_execution_setup_done(peer_id, swap_id, state3, lock_input_reservation).await {
                                 tracing::error!(%swap_id, ?error, "Failed to handle execution setup done");
                             }
                         }
@@ -636,6 +643,48 @@ where
                     }
                 },
 
+                Some(request) = self.inflight_lock_input_requests.next() => {
+                    let Some((psbt, responder)) = request else {
+                        continue;
+                    };
+
+                    // Reserve before checking the database so that every conflicting swap is
+                    // either still reserved or already persisted
+                    let reservation = match self.reserve_lock_inputs(&psbt) {
+                        Ok(reservation) => reservation,
+                        Err(error) => {
+                            if responder.respond(Err(error)).is_err() {
+                                tracing::warn!("Failed to send lock input verification result back to swap setup handler, connection may have been dropped");
+                            }
+                            continue;
+                        }
+                    };
+
+                    let bitcoin_wallet = self.bitcoin_wallet.clone();
+                    let db = self.db.clone();
+
+                    self.inflight_lock_input_checks.push(async move {
+                        let result = async {
+                            verify_psbt_prevouts_with_retry(bitcoin_wallet.as_ref(), &psbt)
+                                .await
+                                .map_err(LockInputCheckError::from)?;
+                            check_for_conflicting_swap_inputs(db.as_ref(), &psbt).await
+                        }
+                        .await
+                        .map(|()| reservation);
+
+                        responder
+                            .respond(result)
+                            .map_err(|_| anyhow!("Failed to send lock input verification result back to swap setup handler, connection may have been dropped"))?;
+
+                        Ok(())
+                    }.boxed());
+                },
+                Some(outpoints) = self.lock_input_releases.recv() => {
+                    for outpoint in outpoints {
+                        self.reserved_lock_inputs.remove(&outpoint);
+                    }
+                },
                 Some(result) = self.inflight_lock_input_checks.next() => {
                     if let Err(error) = result {
                         tracing::warn!("Lock input verification coordination for swap setup did not complete: {:#}", error);
@@ -842,11 +891,42 @@ where
         .boxed()
     }
 
+    /// Reserve the inputs of Bob's TxLock PSBT for a swap setup, rejecting
+    /// inputs that another swap has reserved already.
+    fn reserve_lock_inputs(
+        &mut self,
+        psbt: &bitcoin::PartiallySignedTransaction,
+    ) -> Result<LockInputReservation, LockInputCheckError> {
+        let outpoints: Vec<_> = psbt
+            .unsigned_tx
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .collect();
+
+        if let Some(outpoint) = outpoints
+            .iter()
+            .find(|outpoint| self.reserved_lock_inputs.contains(outpoint))
+        {
+            return Err(LockInputCheckError::Invalid(format!(
+                "Input {outpoint} is reserved by another swap"
+            )));
+        }
+
+        self.reserved_lock_inputs.extend(outpoints.iter().copied());
+
+        Ok(LockInputReservation::new(
+            outpoints,
+            self.lock_input_release_sender.clone(),
+        ))
+    }
+
     async fn handle_execution_setup_done(
         &mut self,
         bob_peer_id: PeerId,
         swap_id: Uuid,
         state3: State3,
+        lock_input_reservation: LockInputReservation,
     ) -> Result<()> {
         if self
             .db
@@ -874,6 +954,7 @@ where
             swap_id,
             developer_tip: self.developer_tip.clone(),
             hermes_funding_policy: self.hermes_funding_policy,
+            lock_input_reservation: Some(lock_input_reservation),
         };
 
         self.db
@@ -1104,6 +1185,7 @@ where
             swap_id,
             developer_tip: self.developer_tip.clone(),
             hermes_funding_policy: self.hermes_funding_policy,
+            lock_input_reservation: None,
         };
 
         // Send swap to be resumed
@@ -1382,12 +1464,12 @@ async fn check_for_conflicting_swap_inputs(
     candidate: &bitcoin::PartiallySignedTransaction,
 ) -> Result<(), LockInputCheckError> {
     let swaps = db
-        .all()
+        .get_alice_swaps_with_pending_tx_lock()
         .await
         .context("Failed to load swaps while checking lock transaction inputs")
         .map_err(|error| LockInputCheckError::Unavailable(format!("{error:#}")))?;
 
-    for (_, swap_id, state) in swaps {
+    for (swap_id, state) in swaps {
         let State::Alice(state) = state else {
             continue;
         };

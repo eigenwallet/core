@@ -28,13 +28,15 @@ pub enum OutEvent {
         // We verify its inputs against the chain and respond with the result.
         check_lock_inputs: bmrng::RequestReceiver<
             bitcoin::psbt::Psbt,
-            Result<(), swap_setup::alice::LockInputCheckError>,
+            Result<swap_setup::alice::LockInputReservation, swap_setup::alice::LockInputCheckError>,
         >,
     },
     SwapSetupCompleted {
         peer_id: PeerId,
         swap_id: Uuid,
         state3: swap_machine::alice::State3,
+        // Held until the swap is persisted so concurrent setups cannot reuse its inputs
+        lock_input_reservation: swap_setup::alice::LockInputReservation,
     },
     SwapDeclined {
         peer: PeerId,

@@ -22,6 +22,8 @@ pub struct Swap {
     pub hermes_funding_policy: HermesFundingPolicy,
     pub swap_id: Uuid,
     pub db: Arc<dyn Database + Send + Sync>,
+    /// Reserves the TxLock inputs of a new swap until its first state is persisted
+    pub lock_input_reservation: Option<crate::network::swap_setup::alice::LockInputReservation>,
 }
 
 /// How the maker funds Bob's on-chain Hermes encrypted-signature channel: the
