@@ -1,6 +1,6 @@
 use crate::out_event;
 use crate::protocols::swap_setup;
-use crate::protocols::swap_setup::verification::{ProofVerifier, VerificationError};
+use crate::protocols::swap_setup::verification::ProofVerifier;
 use crate::protocols::swap_setup::{
     BlockchainNetwork, SpotPriceError, SpotPriceRequest, SpotPriceResponse, protocol,
 };
@@ -793,14 +793,14 @@ async fn run_swap_setup(
         .await
     {
         Ok(verified) => verified,
-        Err(VerificationError::LockInputs(LockInputCheckError::Invalid(reason))) => {
-            let error = swap_setup::SwapSetupError::LockInputVerificationFailed { reason };
+        Err(cause) => {
+            tracing::warn!(%swap_id, error = %cause, "Lock transaction input verification failed");
+            let error = swap_setup::SwapSetupError::LockInputVerificationFailed;
             if let Err(err) = swap_setup::write_cbor_error(&mut substream, error.clone()).await {
                 tracing::error!(error=%err, "Couldn't send lock input verification error to Bob");
             }
-            return Err(error).context("Lock transaction input verification failed");
+            return Err(cause).context("Lock transaction verification failed");
         }
-        Err(error) => return Err(error).context("Lock transaction verification failed"),
     };
 
     tracing::debug!(%swap_id, "Swap setup transition: State1 -> State2 (received Message2)");

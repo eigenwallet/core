@@ -24,10 +24,11 @@ async fn alice_rejects_bob_lock_psbt_with_nonexistent_input() {
             let error = format!("{error:#}");
 
             assert!(
-                error.contains("not found unspent on chain or in mempool"),
+                error.contains("Input verification failed. Yeah."),
                 "unexpected swap rejection: {error}"
             );
 
+            assert!(!error.contains("not found unspent on chain or in mempool"));
             bob_event_loop.abort();
 
             Ok(())

@@ -60,8 +60,8 @@ pub enum SwapSetupError {
     InvalidFeeProposal(String),
     #[error("Bitcoin lock transaction has too many inputs ({actual}, maximum: {maximum})")]
     TxLockTooManyInputs { actual: u32, maximum: u32 },
-    #[error("Lock transaction input verification failed: {reason}")]
-    LockInputVerificationFailed { reason: String },
+    #[error("Input verification failed. Yeah.")]
+    LockInputVerificationFailed,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
