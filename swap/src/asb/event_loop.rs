@@ -64,6 +64,7 @@ where
     max_buy: bitcoin::Amount,
     external_redeem_address: Option<bitcoin::Address>,
     btc_swap_fee_rate_multiplier: Decimal,
+    btc_redeem_base_fee_multiplier: bitcoin::RedeemFeeMultiplier,
     developer_tip: TipConfig,
     hermes_funding_policy: HermesFundingPolicy,
     refund_policy: RefundPolicy,
@@ -226,6 +227,7 @@ where
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
         btc_swap_fee_rate_multiplier: Decimal,
+        btc_redeem_base_fee_multiplier: bitcoin::RedeemFeeMultiplier,
         wallet_snapshot_cache_ttl: Duration,
         developer_tip: TipConfig,
         hermes_funding_policy: HermesFundingPolicy,
@@ -258,6 +260,7 @@ where
             max_buy,
             external_redeem_address,
             btc_swap_fee_rate_multiplier,
+            btc_redeem_base_fee_multiplier,
             developer_tip,
             hermes_funding_policy,
             refund_policy,
@@ -361,6 +364,7 @@ where
                             let monero_wallet = self.monero_wallet.clone();
                             let external_redeem_address = self.external_redeem_address.clone();
                             let btc_swap_fee_rate_multiplier = self.btc_swap_fee_rate_multiplier;
+                            let btc_redeem_base_fee_multiplier = self.btc_redeem_base_fee_multiplier;
                             let wallet_snapshot_cache = self.wallet_snapshot_cache.clone();
 
                             self.inflight_wallet_snapshots.push(async move {
@@ -383,6 +387,7 @@ where
                                     bitcoin_wallet,
                                     wallet_state,
                                     btc_swap_fee_rate_multiplier,
+                                    btc_redeem_base_fee_multiplier,
                                     btc,
                                 )
                                 .await?;
@@ -1686,6 +1691,7 @@ async fn create_wallet_snapshot(
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     state: WalletSnapshotState,
     btc_swap_fee_rate_multiplier: Decimal,
+    btc_redeem_base_fee_multiplier: bitcoin::RedeemFeeMultiplier,
     transfer_amount: bitcoin::Amount,
 ) -> Result<WalletSnapshot> {
     let estimated_rate = bitcoin::SwapFeeRate(
@@ -1745,6 +1751,7 @@ async fn create_wallet_snapshot(
         punish_fee,
         withhold_fee,
         fee_rate,
+        btc_redeem_base_fee_multiplier,
         fee_limits,
     ))
 }

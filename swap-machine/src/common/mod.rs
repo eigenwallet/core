@@ -68,6 +68,7 @@ pub struct Message1 {
     #[serde(with = "swap_serde::bitcoin::address_serde")]
     pub punish_address: bitcoin::Address,
     pub fee_rate: bitcoin::SwapFeeRate,
+    pub redeem_multiplier: bitcoin::RedeemFeeMultiplier,
     /// The amount of Bitcoin that Bob not get refunded unless Alice decides so.
     /// Introduced in [#675](https://github.com/eigenwallet/core/pull/675) to combat spam.
     pub amnesty_amount: bitcoin::Amount,

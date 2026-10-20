@@ -473,6 +473,7 @@ impl State0 {
                 refund_address: &self.refund_address,
                 punish_address: &msg.punish_address,
                 lock_amount: self.btc,
+                redeem_multiplier: msg.redeem_multiplier,
                 deposit: msg.amnesty_amount,
             },
             msg.fee_rate,

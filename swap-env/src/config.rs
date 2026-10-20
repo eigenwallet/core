@@ -210,6 +210,12 @@ pub struct Maker {
     /// margin against fee estimation undershooting actual mempool conditions.
     #[serde(default = "default_btc_swap_fee_rate_multiplier")]
     pub btc_swap_fee_rate_multiplier: Decimal,
+    /// Redeem fee relative to the shared base fee, written as an exact decimal string.
+    #[serde(
+        default = "default_btc_redeem_base_fee_multiplier",
+        with = "decimal_string"
+    )]
+    pub btc_redeem_base_fee_multiplier: Decimal,
     /// How long wallet state used during swap setup is cached, in seconds.
     #[serde(default = "default_wallet_snapshot_cache_ttl_secs")]
     pub wallet_snapshot_cache_ttl_secs: u64,
@@ -309,6 +315,25 @@ pub fn default_btc_swap_fee_rate_multiplier() -> Decimal {
 
 pub fn default_wallet_snapshot_cache_ttl_secs() -> u64 {
     20
+}
+
+/// Require quoted decimals so TOML never rounds through an f64 first.
+mod decimal_string {
+    use rust_decimal::Decimal;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &Decimal, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Decimal, D::Error> {
+        Decimal::from_str_exact(&String::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+pub fn default_btc_redeem_base_fee_multiplier() -> Decimal {
+    Decimal::from(3)
 }
 
 fn default_anti_spam_deposit_ratio() -> Decimal {
@@ -522,6 +547,7 @@ pub fn query_user_for_initial_config_with_network(
             price_ticker_source_kucoin_enabled: default_price_ticker_source_enabled(),
             external_bitcoin_redeem_address: None,
             btc_swap_fee_rate_multiplier: default_btc_swap_fee_rate_multiplier(),
+            btc_redeem_base_fee_multiplier: default_btc_redeem_base_fee_multiplier(),
             wallet_snapshot_cache_ttl_secs: default_wallet_snapshot_cache_ttl_secs(),
             developer_tip,
             hermes_funding_amount_piconero: default_hermes_funding_amount_piconero(),

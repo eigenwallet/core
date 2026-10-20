@@ -6,8 +6,8 @@ use bitcoin::consensus::encode::{deserialize_hex, serialize_hex};
 use bitcoin::{Address, Amount, Network, Psbt, Transaction};
 use serde_json::{Value, json};
 use swap_core::bitcoin::{
-    CancelRefundVersion, CancelTimelock, SecretKey, TxCancel, TxFullRefund, TxLock,
-    TxPartialRefund, TxRedeem, build_shared_output_descriptor,
+    CancelRefundVersion, CancelTimelock, RedeemFeeMultiplier, SecretKey, TxCancel, TxFullRefund,
+    TxLock, TxPartialRefund, TxRedeem, build_shared_output_descriptor,
 };
 
 struct Node {
@@ -61,12 +61,14 @@ async fn refund_requires_confirmed_cancel() -> Result<()> {
     let address = node.address().await?;
     node.rpc("generatetoaddress", json!([101, address])).await?;
 
-    for (version, partial, redeem_first) in [
-        (CancelRefundVersion::Legacy, false, false),
-        (CancelRefundVersion::Legacy, true, false),
-        (CancelRefundVersion::Truc, false, false),
-        (CancelRefundVersion::Truc, true, false),
-        (CancelRefundVersion::Truc, false, true),
+    for (version, partial, redeem_multiplier) in [
+        (CancelRefundVersion::Legacy, false, None),
+        (CancelRefundVersion::Legacy, true, None),
+        (CancelRefundVersion::Truc, false, None),
+        (CancelRefundVersion::Truc, true, None),
+        (CancelRefundVersion::Truc, false, Some(200)),
+        (CancelRefundVersion::Truc, false, Some(230)),
+        (CancelRefundVersion::Truc, false, Some(300)),
     ] {
         let a = SecretKey::new_random(&mut rand::thread_rng());
         let b = SecretKey::new_random(&mut rand::thread_rng());
@@ -125,9 +127,13 @@ async fn refund_requires_confirmed_cancel() -> Result<()> {
         assert_eq!(cancel.version.0, expected_version);
         assert_eq!(refund.version.0, expected_version);
 
-        if redeem_first {
+        if let Some(hundredths) = redeem_multiplier {
             let secret = SecretKey::new_random(&mut rand::thread_rng());
-            let redeem = TxRedeem::new(&lock, &address, fee * 3);
+            let redeem = TxRedeem::new(
+                &lock,
+                &address,
+                RedeemFeeMultiplier::try_from(hundredths)?.fee(fee)?,
+            );
             let encsig = b.encsign(secret.public(), redeem.digest());
             let redeem = redeem.complete(encsig, a, secret.into(), b.public())?;
             node.rpc("sendrawtransaction", json!([serialize_hex(&redeem)]))

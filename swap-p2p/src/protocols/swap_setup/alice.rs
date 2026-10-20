@@ -136,6 +136,7 @@ pub struct WalletSnapshot {
     punish_fee: bitcoin::Amount,
     withhold_fee: bitcoin::Amount,
     fee_rate: bitcoin::SwapFeeRate,
+    redeem_multiplier: bitcoin::RedeemFeeMultiplier,
     fee_limits: bitcoin::SwapFeeLimits,
 }
 
@@ -153,6 +154,7 @@ impl WalletSnapshot {
         punish_fee: bitcoin::Amount,
         withhold_fee: bitcoin::Amount,
         fee_rate: bitcoin::SwapFeeRate,
+        redeem_multiplier: bitcoin::RedeemFeeMultiplier,
         fee_limits: bitcoin::SwapFeeLimits,
     ) -> Self {
         Self {
@@ -169,6 +171,7 @@ impl WalletSnapshot {
             punish_fee,
             withhold_fee,
             fee_rate,
+            redeem_multiplier,
             fee_limits,
         }
     }
@@ -735,6 +738,7 @@ async fn run_swap_setup(
         wallet_snapshot.redeem_address,
         wallet_snapshot.punish_address,
         wallet_snapshot.fee_rate,
+        wallet_snapshot.redeem_multiplier,
         wallet_snapshot.fee_limits,
         should_burn_on_refund,
         &mut rand::thread_rng(),

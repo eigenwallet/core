@@ -400,6 +400,11 @@ pub async fn main() -> Result<()> {
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
                 config.maker.btc_swap_fee_rate_multiplier,
+                config
+                    .maker
+                    .btc_redeem_base_fee_multiplier
+                    .try_into()
+                    .context("Invalid maker.btc_redeem_base_fee_multiplier")?,
                 std::time::Duration::from_secs(config.maker.wallet_snapshot_cache_ttl_secs),
                 tip_config,
                 hermes_funding_policy,

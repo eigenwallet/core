@@ -271,6 +271,7 @@ pub struct State0 {
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
     fee_rate: swap_core::bitcoin::SwapFeeRate,
+    redeem_multiplier: swap_core::bitcoin::RedeemFeeMultiplier,
     fee_limits: swap_core::bitcoin::SwapFeeLimits,
     should_publish_tx_withhold: Option<bool>,
 }
@@ -285,6 +286,7 @@ impl State0 {
         redeem_address: bitcoin::Address,
         punish_address: bitcoin::Address,
         fee_rate: swap_core::bitcoin::SwapFeeRate,
+        redeem_multiplier: swap_core::bitcoin::RedeemFeeMultiplier,
         fee_limits: swap_core::bitcoin::SwapFeeLimits,
         should_publish_tx_withhold: bool,
         rng: &mut R,
@@ -315,6 +317,7 @@ impl State0 {
             punish_timelock: env_config.bitcoin_punish_timelock.into(),
             remaining_refund_timelock: Some(env_config.bitcoin_remaining_refund_timelock.into()),
             fee_rate,
+            redeem_multiplier,
             fee_limits,
             should_publish_tx_withhold: Some(should_publish_tx_withhold),
         }
@@ -338,6 +341,7 @@ impl State0 {
                 refund_address: &msg.refund_address,
                 punish_address: &self.punish_address,
                 lock_amount: self.btc,
+                redeem_multiplier: self.redeem_multiplier,
                 deposit: self
                     .btc_amnesty_amount
                     .context("Missing deposit during setup")?,
@@ -380,6 +384,7 @@ impl State0 {
                 tx_mercy_fee: Some(fees.base),
                 tx_cancel_fee: fees.base,
                 fee_rate: self.fee_rate,
+                redeem_multiplier: self.redeem_multiplier,
                 cancel_refund_version: swap_core::bitcoin::CancelRefundVersion::Truc,
                 should_publish_tx_withhold: self.should_publish_tx_withhold,
             },
@@ -419,6 +424,7 @@ pub struct State1 {
     tx_mercy_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
     fee_rate: swap_core::bitcoin::SwapFeeRate,
+    redeem_multiplier: swap_core::bitcoin::RedeemFeeMultiplier,
     cancel_refund_version: swap_core::bitcoin::CancelRefundVersion,
     should_publish_tx_withhold: Option<bool>,
 }
@@ -434,6 +440,7 @@ impl State1 {
             redeem_address: self.redeem_address.clone(),
             punish_address: self.punish_address.clone(),
             fee_rate: self.fee_rate,
+            redeem_multiplier: self.redeem_multiplier,
             amnesty_amount: self
                 .btc_amnesty_amount
                 .context("Missing btc_amesty_amount for new swap that should have it")?,

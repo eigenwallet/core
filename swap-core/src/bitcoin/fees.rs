@@ -4,6 +4,69 @@ use ::bitcoin::{OutPoint, Psbt, Script, TxIn, TxOut, Witness, absolute, transact
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
+/// Multiplier of the shared base fee, encoded in hundredths on the wire.
+///
+/// Keep at least a twofold fee margin over cancel. Refund's confirmation delay
+/// prevents it from contributing CPFP fees to unconfirmed cancel under standard
+/// relay policy. The upper bound is local policy; spending-path budgets still apply.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct RedeemFeeMultiplier(u32);
+
+impl Default for RedeemFeeMultiplier {
+    fn default() -> Self {
+        Self(300)
+    }
+}
+
+impl TryFrom<u32> for RedeemFeeMultiplier {
+    type Error = anyhow::Error;
+
+    fn try_from(hundredths: u32) -> Result<Self> {
+        ensure!(
+            (200..=1000).contains(&hundredths),
+            "Redeem fee multiplier must be between 2.00 and 10.00"
+        );
+        Ok(Self(hundredths))
+    }
+}
+
+impl From<RedeemFeeMultiplier> for u32 {
+    fn from(value: RedeemFeeMultiplier) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<rust_decimal::Decimal> for RedeemFeeMultiplier {
+    type Error = anyhow::Error;
+
+    fn try_from(value: rust_decimal::Decimal) -> Result<Self> {
+        let hundredths = value
+            .checked_mul(rust_decimal::Decimal::from(100))
+            .context("Redeem fee multiplier overflow")?;
+        ensure!(
+            hundredths.fract().is_zero(),
+            "Redeem fee multiplier must be exactly representable with two decimal places"
+        );
+        u32::try_from(hundredths)
+            .context("Redeem fee multiplier is outside the supported range")?
+            .try_into()
+    }
+}
+
+impl RedeemFeeMultiplier {
+    pub fn fee(self, base: Amount) -> Result<Amount> {
+        let product = base
+            .to_sat()
+            .checked_mul(u64::from(self.0))
+            .context("Redeem fee overflow")?;
+        let sats = (product / 100)
+            .checked_add(u64::from(product % 100 != 0))
+            .context("Redeem fee rounding overflow")?;
+        Ok(Amount::from_sat(sats))
+    }
+}
+
 /// Integer satoshis per 1,000 virtual bytes. The wire representation is exact.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SwapFeeRate(pub u64);
@@ -56,6 +119,7 @@ pub struct SwapFeeInputs<'a> {
     pub punish_address: &'a Address,
     pub lock_amount: Amount,
     pub deposit: Amount,
+    pub redeem_multiplier: RedeemFeeMultiplier,
 }
 
 impl SwapFeeInputs<'_> {
@@ -74,13 +138,14 @@ impl SwapFeeInputs<'_> {
         let witness_script = descriptor.explicit_script()?;
         let max_vsize = self.max_signed_vsize(&shared_script, &witness_script)?;
         let base = rate.fee(max_vsize)?;
-        let redeem = base.checked_mul(3).context("Redeem fee overflow")?;
+        let redeem = self.redeem_multiplier.fee(base)?;
 
-        // Without a deposit, redeem (three base fees) is the most expensive path.
-        // With a deposit, cancel -> partial refund -> withhold -> mercy costs four.
+        // Compare redeem with cancel -> full refund (two base fees), or with
+        // cancel -> partial refund -> withhold -> mercy (four when using a deposit).
         let longest_path = base
-            .checked_mul(if self.deposit == Amount::ZERO { 3 } else { 4 })
-            .context("Spending path fee overflow")?;
+            .checked_mul(if self.deposit == Amount::ZERO { 2 } else { 4 })
+            .context("Spending path fee overflow")?
+            .max(redeem);
         ensure!(
             longest_path <= limits.max_path_fee,
             "Swap spending path fees ({longest_path}) exceed local budget ({})",
@@ -251,6 +316,7 @@ mod tests {
             punish_address: address,
             lock_amount: Amount::from_sat(1_000_000),
             deposit: Amount::from_sat(100_000),
+            redeem_multiplier: RedeemFeeMultiplier::default(),
         }
     }
 
@@ -270,6 +336,55 @@ mod tests {
             serde_json::from_str(&serde_json::to_string(&rate).unwrap()).unwrap();
         assert_eq!(rate, recovered);
         assert_eq!(inputs.calculate(recovered, limits()).unwrap(), alice);
+    }
+
+    #[test]
+    fn redeem_multiplier_has_exact_decimal_and_wire_encodings() {
+        for (decimal, encoded) in [("2.00", 200), ("2.30", 230), ("3.000", 300), ("10", 1000)] {
+            let multiplier =
+                RedeemFeeMultiplier::try_from(decimal.parse::<rust_decimal::Decimal>().unwrap())
+                    .unwrap();
+            assert_eq!(u32::from(multiplier), encoded);
+            assert_eq!(
+                serde_json::to_string(&multiplier).unwrap(),
+                encoded.to_string()
+            );
+            assert_eq!(
+                serde_json::from_str::<RedeemFeeMultiplier>(&encoded.to_string()).unwrap(),
+                multiplier
+            );
+        }
+        for decimal in ["1.99", "10.01", "2.301", "-2.30"] {
+            assert!(
+                RedeemFeeMultiplier::try_from(decimal.parse::<rust_decimal::Decimal>().unwrap())
+                    .is_err()
+            );
+        }
+        for invalid in ["0", "199", "1001", "4294967296", "230.5"] {
+            assert!(serde_json::from_str::<RedeemFeeMultiplier>(invalid).is_err());
+        }
+        let multiplier = RedeemFeeMultiplier::try_from(230).unwrap();
+        assert_eq!(multiplier.fee(Amount::from_sat(101)).unwrap().to_sat(), 233);
+        assert!(multiplier.fee(Amount::from_sat(u64::MAX)).is_err());
+    }
+
+    #[test]
+    fn budgets_cover_the_larger_of_redeem_and_the_refund_path() {
+        let address = address(22);
+        let mut inputs = inputs(&address);
+        for deposit in [Amount::ZERO, Amount::from_sat(100_000)] {
+            inputs.deposit = deposit;
+            for hundredths in [200, 230, 300, 500, 1000] {
+                inputs.redeem_multiplier = RedeemFeeMultiplier::try_from(hundredths).unwrap();
+                let fees = inputs.calculate(SwapFeeRate(1000), limits()).unwrap();
+                let refund_path = fees.base * if deposit == Amount::ZERO { 2 } else { 4 };
+                let mut policy = limits();
+                policy.max_path_fee = fees.redeem.max(refund_path);
+                assert!(inputs.calculate(SwapFeeRate(1000), policy).is_ok());
+                policy.max_path_fee -= Amount::ONE_SAT;
+                assert!(inputs.calculate(SwapFeeRate(1000), policy).is_err());
+            }
+        }
     }
 
     #[test]

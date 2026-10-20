@@ -126,7 +126,14 @@ It defaults to `1.0`.
 Existing configurations must rename `btc_redeem_fee_multiplier` to `btc_swap_fee_rate_multiplier`; the old name is no longer accepted.
 Bob accepts or rejects this rate against his local limits before signing.
 Both peers derive one base fee from the largest conservative signed transaction size.
-Redeem pays exactly three times the base fee; every other presigned transaction pays the base fee.
+Redeem defaults to three times the base fee; every other presigned transaction pays the base fee.
+Set `maker.btc_redeem_base_fee_multiplier = "2.30"` to choose a different redeem multiplier.
+This is an exact quoted decimal with at most two meaningful decimal places, in the range `2.00` through `10.00`.
+Both peers validate the range and round the resulting redeem fee up to whole satoshis.
+The lower bound keeps at least a twofold fee margin over cancel, while the refund confirmation delay prevents refund from raising an unconfirmed cancel's fee through CPFP under standard relay policy.
+This does not guarantee inclusion under arbitrary miner policies.
+The upper bound limits negotiation; each peer still enforces its total spending-path fee budget.
+The multiplier is negotiated during setup only; persisted swaps retain their original fee amounts.
 Setup rejects fees above local budgets and deposits that cannot fund their spending paths.
 
 `wallet_snapshot_cache_ttl_secs` controls how long wallet state is reused during swap setup. It defaults to `20` seconds. This reduces repeated Bitcoin and Monero health checks, Monero balance calls, and Bitcoin address generation across setup requests. Amount-dependent fee projections are still computed per swap.

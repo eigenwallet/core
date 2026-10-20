@@ -27,3 +27,21 @@ fn old_redeem_fee_multiplier_is_rejected() {
     assert!(error.to_string().contains("unknown field"));
     assert!(error.to_string().contains("btc_redeem_fee_multiplier"));
 }
+
+#[test]
+fn redeem_base_fee_multiplier_is_an_exact_quoted_decimal() {
+    assert_eq!(
+        maker("").unwrap().btc_redeem_base_fee_multiplier,
+        Decimal::from(3)
+    );
+    assert_eq!(
+        maker(r#"btc_redeem_base_fee_multiplier = "2.30""#)
+            .unwrap()
+            .btc_redeem_base_fee_multiplier,
+        Decimal::new(230, 2)
+    );
+    assert!(maker("btc_redeem_base_fee_multiplier = 2.30").is_err());
+    assert!(
+        maker(r#"btc_redeem_base_fee_multiplier = "2.30000000000000000000000000001""#).is_err()
+    );
+}
