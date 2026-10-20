@@ -486,7 +486,7 @@ impl State0 {
         );
 
         if !valid {
-            bail!("Alice's dleq proof doesn't verify")
+            bail!(crate::common::SetupValidationError::InvalidDleqProof)
         }
 
         let tx_lock = swap_core::bitcoin::TxLock::new(

@@ -332,7 +332,7 @@ impl State0 {
         );
 
         if !valid {
-            bail!("Bob's dleq proof doesn't verify")
+            bail!(crate::common::SetupValidationError::InvalidDleqProof)
         }
 
         let fees = crate::common::calculate_swap_fees(

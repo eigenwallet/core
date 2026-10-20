@@ -90,14 +90,33 @@ pub struct SwapFeeLimits {
     pub max_path_fee: Amount,
 }
 
+/// Expected validation failures that can be reported to the swap peer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum SwapFeeError {
+    #[error(
+        "Proposed swap fee rate {rate} sat/kvB is outside local limits {min}..={max} sat/kvB",
+        rate = .rate.0, min = .min.0, max = .max.0
+    )]
+    RateOutsideLimits {
+        rate: SwapFeeRate,
+        min: SwapFeeRate,
+        max: SwapFeeRate,
+    },
+    #[error("Anti-spam deposit {deposit} is too small; minimum required is {minimum}")]
+    AntiSpamDepositTooSmall { deposit: Amount, minimum: Amount },
+    #[error("Swap spending path fees ({fees}) exceed local budget ({budget})")]
+    SwapFeesExceedBudget { fees: Amount, budget: Amount },
+}
+
 impl SwapFeeLimits {
     pub fn validate_rate(self, rate: SwapFeeRate) -> Result<()> {
         ensure!(
             rate.0 > 0 && rate.0 >= self.min_rate.0 && rate.0 <= self.max_rate.0,
-            "Proposed swap fee rate {} sat/kvB is outside local limits {}..={} sat/kvB",
-            rate.0,
-            self.min_rate.0,
-            self.max_rate.0
+            SwapFeeError::RateOutsideLimits {
+                rate,
+                min: self.min_rate,
+                max: self.max_rate,
+            }
         );
         Ok(())
     }
@@ -148,8 +167,10 @@ impl SwapFeeInputs<'_> {
             .max(redeem);
         ensure!(
             longest_path <= limits.max_path_fee,
-            "Swap spending path fees ({longest_path}) exceed local budget ({})",
-            limits.max_path_fee
+            SwapFeeError::SwapFeesExceedBudget {
+                fees: longest_path,
+                budget: limits.max_path_fee,
+            }
         );
         self.validate_funding(base, redeem, &shared_script)?;
 
@@ -262,6 +283,25 @@ impl SwapFeeInputs<'_> {
         checked_output_amount(cancelled, base, &self.punish_address.script_pubkey())?;
         checked_output_amount(cancelled, base, &self.refund_address.script_pubkey())?;
         if self.deposit != Amount::ZERO {
+            // Withhold leaves a shared output after one fee; mercy leaves a
+            // refund output after two. These also cover the deposit and reclaim.
+            let minimum = base
+                .checked_add(shared_script.minimal_non_dust())
+                .context("Withhold minimum deposit overflow")?
+                .max(
+                    base.checked_mul(2)
+                        .and_then(|fees| {
+                            fees.checked_add(self.refund_address.script_pubkey().minimal_non_dust())
+                        })
+                        .context("Mercy minimum deposit overflow")?,
+                );
+            ensure!(
+                self.deposit >= minimum,
+                SwapFeeError::AntiSpamDepositTooSmall {
+                    deposit: self.deposit,
+                    minimum,
+                }
+            );
             let partial_cost = self
                 .deposit
                 .checked_add(base)
@@ -271,14 +311,6 @@ impl SwapFeeInputs<'_> {
                 partial_cost,
                 &self.refund_address.script_pubkey(),
             )?;
-            checked_output_amount(self.deposit, Amount::ZERO, shared_script)
-                .context("Anti-spam deposit output is dust")?;
-            checked_output_amount(self.deposit, base, &self.refund_address.script_pubkey())
-                .context("Anti-spam deposit cannot fund reclaim")?;
-            let withheld = checked_output_amount(self.deposit, base, shared_script)
-                .context("Anti-spam deposit cannot fund withhold")?;
-            checked_output_amount(withheld, base, &self.refund_address.script_pubkey())
-                .context("Anti-spam deposit cannot fund mercy")?;
         }
         Ok(())
     }
@@ -382,7 +414,17 @@ mod tests {
                 policy.max_path_fee = fees.redeem.max(refund_path);
                 assert!(inputs.calculate(SwapFeeRate(1000), policy).is_ok());
                 policy.max_path_fee -= Amount::ONE_SAT;
-                assert!(inputs.calculate(SwapFeeRate(1000), policy).is_err());
+                assert_eq!(
+                    inputs
+                        .calculate(SwapFeeRate(1000), policy)
+                        .unwrap_err()
+                        .downcast::<SwapFeeError>()
+                        .unwrap(),
+                    SwapFeeError::SwapFeesExceedBudget {
+                        fees: fees.redeem.max(refund_path),
+                        budget: policy.max_path_fee,
+                    }
+                );
             }
         }
     }
@@ -454,5 +496,34 @@ mod tests {
         inputs.deposit = Amount::ZERO;
         inputs.lock_amount = Amount::from_sat(3 * 150 + 294 - 1);
         assert!(inputs.calculate(SwapFeeRate(1000), limits()).is_err());
+    }
+
+    #[test]
+    fn reports_minimum_deposit_for_withhold_and_mercy() {
+        for script_bytes in [22, 34] {
+            let address = address(script_bytes);
+            let mut inputs = inputs(&address);
+            // At low rates the shared withhold output is the limiting path;
+            // at higher rates it is the two fees needed to reach mercy.
+            for rate in [SwapFeeRate(1), SwapFeeRate(1000), SwapFeeRate(5000)] {
+                let fees = inputs.calculate(rate, limits()).unwrap();
+                let minimum = (fees.base + Amount::from_sat(330))
+                    .max(fees.base * 2 + address.script_pubkey().minimal_non_dust());
+                for deposit in [Amount::ONE_SAT, minimum - Amount::ONE_SAT] {
+                    inputs.deposit = deposit;
+                    assert_eq!(
+                        inputs
+                            .calculate(rate, limits())
+                            .unwrap_err()
+                            .downcast::<SwapFeeError>()
+                            .unwrap(),
+                        SwapFeeError::AntiSpamDepositTooSmall { deposit, minimum }
+                    );
+                }
+                inputs.deposit = minimum;
+                assert!(inputs.calculate(rate, limits()).is_ok());
+                inputs.deposit = Amount::from_sat(100_000);
+            }
+        }
     }
 }

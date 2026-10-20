@@ -54,7 +54,7 @@ pub enum SpotPriceResponse {
     Error(SpotPriceError),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
 pub enum SwapSetupError {
     #[error("Invalid swap fee proposal: {0}")]
     InvalidFeeProposal(String),
@@ -62,6 +62,65 @@ pub enum SwapSetupError {
     TxLockTooManyInputs { actual: u32, maximum: u32 },
     #[error("Input verification failed.")]
     LockInputVerificationFailed,
+    #[error("Invalid DLEQ proof")]
+    InvalidDleqProof,
+    #[error("Anti-spam deposit {deposit} is too small; minimum required is {minimum}")]
+    AntiSpamDepositTooSmall {
+        deposit: bitcoin::Amount,
+        minimum: bitcoin::Amount,
+    },
+    #[error("Anti-spam deposit ratio {ratio} exceeds maximum {max}")]
+    AntiSpamDepositRatioTooHigh {
+        ratio: rust_decimal::Decimal,
+        max: rust_decimal::Decimal,
+    },
+    #[error("Swap spending path fees ({fees}) exceed local budget ({budget})")]
+    SwapFeesExceedBudget {
+        fees: bitcoin::Amount,
+        budget: bitcoin::Amount,
+    },
+    #[error("Transaction fee is too low compared to our estimate ({fee} vs {estimate})")]
+    TransactionFeeTooLow {
+        fee: bitcoin::Amount,
+        estimate: bitcoin::Amount,
+    },
+}
+
+impl TryFrom<anyhow::Error> for SwapSetupError {
+    type Error = anyhow::Error;
+
+    fn try_from(error: anyhow::Error) -> Result<Self> {
+        use swap_core::bitcoin::SwapFeeError;
+        use swap_machine::common::SetupValidationError;
+
+        // Only send explicit validation failures. Wallet and other local errors
+        // retain their context locally and propagate through the retry path.
+        if let Some(validation) = error.downcast_ref::<SwapFeeError>() {
+            return Ok(match *validation {
+                SwapFeeError::RateOutsideLimits { .. } => {
+                    Self::InvalidFeeProposal(validation.to_string())
+                }
+                SwapFeeError::AntiSpamDepositTooSmall { deposit, minimum } => {
+                    Self::AntiSpamDepositTooSmall { deposit, minimum }
+                }
+                SwapFeeError::SwapFeesExceedBudget { fees, budget } => {
+                    Self::SwapFeesExceedBudget { fees, budget }
+                }
+            });
+        }
+        if let Some(validation) = error.downcast_ref::<SetupValidationError>() {
+            return Ok(match *validation {
+                SetupValidationError::InvalidDleqProof => Self::InvalidDleqProof,
+                SetupValidationError::AntiSpamDepositRatioTooHigh { ratio, max } => {
+                    Self::AntiSpamDepositRatioTooHigh { ratio, max }
+                }
+                SetupValidationError::TransactionFeeTooLow { fee, estimate } => {
+                    Self::TransactionFeeTooLow { fee, estimate }
+                }
+            });
+        }
+        Err(error)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -142,4 +201,84 @@ pub async fn write_cbor_error(stream: &mut Stream, error: SwapSetupError) -> Res
         .context("Failed to write bytes as length-prefixed message")?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::Amount;
+    use rust_decimal::Decimal;
+    use swap_core::bitcoin::{SwapFeeError, SwapFeeRate};
+    use swap_machine::common::SetupValidationError;
+
+    #[test]
+    fn validation_errors_keep_their_kind_and_values_on_the_wire() {
+        let deposit = Amount::ONE_SAT;
+        let minimum = Amount::from_sat(656);
+        let ratio = Decimal::new(3, 1);
+        let max = Decimal::new(2, 1);
+        let fees = Amount::from_sat(100_001);
+        let budget = Amount::from_sat(100_000);
+        let rate_error = SwapFeeError::RateOutsideLimits {
+            rate: SwapFeeRate(999),
+            min: SwapFeeRate(1000),
+            max: SwapFeeRate(3000),
+        };
+        let cases: Vec<(anyhow::Error, SwapSetupError)> = vec![
+            (
+                rate_error.into(),
+                SwapSetupError::InvalidFeeProposal(rate_error.to_string()),
+            ),
+            (
+                SetupValidationError::InvalidDleqProof.into(),
+                SwapSetupError::InvalidDleqProof,
+            ),
+            (
+                SwapFeeError::AntiSpamDepositTooSmall { deposit, minimum }.into(),
+                SwapSetupError::AntiSpamDepositTooSmall { deposit, minimum },
+            ),
+            (
+                SetupValidationError::AntiSpamDepositRatioTooHigh { ratio, max }.into(),
+                SwapSetupError::AntiSpamDepositRatioTooHigh { ratio, max },
+            ),
+            (
+                SwapFeeError::SwapFeesExceedBudget { fees, budget }.into(),
+                SwapSetupError::SwapFeesExceedBudget { fees, budget },
+            ),
+            (
+                SetupValidationError::TransactionFeeTooLow {
+                    fee: deposit,
+                    estimate: minimum,
+                }
+                .into(),
+                SwapSetupError::TransactionFeeTooLow {
+                    fee: deposit,
+                    estimate: minimum,
+                },
+            ),
+        ];
+        for (error, expected) in cases {
+            let rejection = SwapSetupError::try_from(error.context("local-only context")).unwrap();
+            assert_eq!(rejection, expected);
+            let bytes = serde_cbor::to_vec(&Err::<(), _>(rejection)).unwrap();
+            let decoded: Result<(), SwapSetupError> = serde_cbor::from_slice(&bytes).unwrap();
+            assert_eq!(decoded.unwrap_err(), expected);
+            assert!(!expected.to_string().contains("local-only context"));
+        }
+    }
+
+    #[test]
+    fn local_errors_are_not_protocol_rejections() {
+        let error = anyhow::Error::new(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "private Electrum server details",
+        ))
+        .context("Failed to build lock transaction");
+        let local_error = SwapSetupError::try_from(error).unwrap_err();
+        assert_eq!(
+            local_error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::TimedOut
+        );
+        assert!(format!("{local_error:#}").contains("private Electrum server details"));
+    }
 }

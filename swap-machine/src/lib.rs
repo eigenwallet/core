@@ -91,6 +91,18 @@ mod tests {
 
         let message0 = bob_state0.next_message().unwrap();
 
+        let mut invalid_proof = message0.clone();
+        invalid_proof.S_b_bitcoin = SecretKey::new_random(&mut OsRng).public();
+        assert_eq!(
+            alice_state0
+                .clone()
+                .receive(invalid_proof)
+                .unwrap_err()
+                .downcast::<common::SetupValidationError>()
+                .unwrap(),
+            common::SetupValidationError::InvalidDleqProof
+        );
+
         let bob_key = message0.B;
         let refund_address = message0.refund_address.clone();
         let (_, alice_state1) = alice_state0.receive(message0).unwrap();
@@ -113,12 +125,19 @@ mod tests {
         .unwrap();
         let mut underpriced = alice_message1.clone();
         underpriced.fee_rate = SwapFeeRate(2499);
-        assert!(
+        assert_eq!(
             bob_state0
                 .clone()
                 .receive(&bob_wallet, underpriced)
                 .await
-                .is_err()
+                .unwrap_err()
+                .downcast::<SwapFeeError>()
+                .unwrap(),
+            SwapFeeError::RateOutsideLimits {
+                rate: SwapFeeRate(2499),
+                min: SwapFeeRate(2500),
+                max: SwapFeeRate(15000),
+            }
         );
 
         for (rate, deposit) in [
@@ -145,6 +164,49 @@ mod tests {
         assert!(message_json.get("fees").is_none());
         assert!(message_json.get("protocol_version").is_none());
         assert!(message_json.get("max_vsize").is_none());
+
+        let mut invalid_proof = alice_message1.clone();
+        invalid_proof.S_a_bitcoin = SecretKey::new_random(&mut OsRng).public();
+        assert_eq!(
+            bob_state0
+                .clone()
+                .receive(&bob_wallet, invalid_proof)
+                .await
+                .unwrap_err()
+                .downcast::<common::SetupValidationError>()
+                .unwrap(),
+            common::SetupValidationError::InvalidDleqProof
+        );
+        let mut excessive_deposit = alice_message1.clone();
+        excessive_deposit.amnesty_amount = btc_amount / 2;
+        assert_eq!(
+            bob_state0
+                .clone()
+                .receive(&bob_wallet, excessive_deposit)
+                .await
+                .unwrap_err()
+                .downcast::<common::SetupValidationError>()
+                .unwrap(),
+            common::SetupValidationError::AntiSpamDepositRatioTooHigh {
+                ratio: rust_decimal::Decimal::new(5, 1),
+                max: swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO,
+            }
+        );
+
+        // Building the lock with an empty wallet must remain a local failure.
+        // Receiving the same proposal succeeds once the wallet is funded.
+        let empty_wallet = TestWalletBuilder::new(0).with_num_utxos(0).build().await;
+        let local_error = bob_state0
+            .clone()
+            .receive(&empty_wallet, alice_message1.clone())
+            .await
+            .unwrap_err();
+        assert!(local_error.downcast_ref::<SwapFeeError>().is_none());
+        assert!(
+            local_error
+                .downcast_ref::<common::SetupValidationError>()
+                .is_none()
+        );
 
         let bob_state1 = bob_state0
             .receive(&bob_wallet, alice_message1)

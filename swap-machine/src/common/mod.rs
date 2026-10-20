@@ -2,7 +2,7 @@ use crate::alice::AliceState;
 use crate::alice::is_complete as alice_is_complete;
 use crate::bob::BobState;
 use crate::bob::is_complete as bob_is_complete;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
@@ -121,6 +121,22 @@ pub struct Message4 {
     pub tx_mercy_sig: Option<bitcoin::Signature>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum SetupValidationError {
+    #[error("Invalid DLEQ proof")]
+    InvalidDleqProof,
+    #[error("Anti-spam deposit ratio {ratio} exceeds maximum {max}")]
+    AntiSpamDepositRatioTooHigh {
+        ratio: rust_decimal::Decimal,
+        max: rust_decimal::Decimal,
+    },
+    #[error("Transaction fee is too low compared to our estimate ({fee} vs {estimate})")]
+    TransactionFeeTooLow {
+        fee: bitcoin::Amount,
+        estimate: bitcoin::Amount,
+    },
+}
+
 /// Require at least half our local fee estimate, preserving the lock-fee
 /// floor used before shared fee negotiation. Higher lock fees are allowed.
 pub fn sanity_check_transaction_fee_floor(
@@ -130,7 +146,10 @@ pub fn sanity_check_transaction_fee_floor(
     let floor = bitcoin::Amount::from_sat(conservative_estimated_fee.to_sat() / 2);
     anyhow::ensure!(
         proposed_fee >= floor,
-        "Transaction fee is too low compared to our estimate ({proposed_fee} vs {conservative_estimated_fee})"
+        SetupValidationError::TransactionFeeTooLow {
+            fee: proposed_fee,
+            estimate: conservative_estimated_fee,
+        }
     );
     Ok(())
 }
@@ -155,12 +174,15 @@ pub fn calculate_swap_fees(
     rate: bitcoin::SwapFeeRate,
     limits: bitcoin::SwapFeeLimits,
 ) -> Result<bitcoin::SwapFees> {
-    // Compare amounts without dividing by a potentially zero lock amount.
+    let ratio = rust_decimal::Decimal::from(inputs.deposit.to_sat())
+        .checked_div(rust_decimal::Decimal::from(inputs.lock_amount.to_sat()))
+        .context("Cannot calculate anti-spam deposit ratio for a zero lock amount")?;
     anyhow::ensure!(
-        rust_decimal::Decimal::from(inputs.deposit.to_sat())
-            <= rust_decimal::Decimal::from(inputs.lock_amount.to_sat())
-                * swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO,
-        "Anti-spam deposit exceeds local ratio limit"
+        ratio <= swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO,
+        SetupValidationError::AntiSpamDepositRatioTooHigh {
+            ratio,
+            max: swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO,
+        }
     );
     inputs.calculate(rate, limits)
 }

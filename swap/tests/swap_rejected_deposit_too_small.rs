@@ -25,8 +25,8 @@ async fn swap_rejected_due_to_small_deposit_reported_to_bob() {
         let err_msg = format!("{:#}", err);
 
         assert!(
-            err_msg.contains("Anti-spam deposit output is dust"),
-            "Expected rejection error about deposit dust, got: {err_msg}"
+            err_msg.contains("Anti-spam deposit") && err_msg.contains("minimum required"),
+            "Expected rejection error about the minimum deposit, got: {err_msg}"
         );
 
         bob_event_loop.abort();

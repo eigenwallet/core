@@ -670,12 +670,9 @@ async fn run_swap_setup(
     let state1 = match state0.receive(bitcoin_wallet.as_ref(), message1).await {
         Ok(state) => state,
         Err(error) => {
-            write_cbor_error(
-                &mut substream,
-                super::SwapSetupError::InvalidFeeProposal(format!("{error:#}")),
-            )
-            .await?;
-            return Err(SetupError::Rejected(format!("{error:#}")));
+            let rejection = super::SwapSetupError::try_from(error)?;
+            write_cbor_error(&mut substream, rejection.clone()).await?;
+            return Err(SetupError::Rejected(rejection.to_string()));
         }
     };
 

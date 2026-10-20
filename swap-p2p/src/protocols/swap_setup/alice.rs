@@ -764,12 +764,9 @@ async fn run_swap_setup(
     let (swap_id, state1) = match state0.receive(message0) {
         Ok(state) => state,
         Err(error) => {
-            swap_setup::write_cbor_error(
-                &mut substream,
-                swap_setup::SwapSetupError::InvalidFeeProposal(format!("{error:#}")),
-            )
-            .await?;
-            return Err(error).context("Failed to accept swap setup");
+            let rejection = swap_setup::SwapSetupError::try_from(error)?;
+            swap_setup::write_cbor_error(&mut substream, rejection.clone()).await?;
+            return Err(rejection).context("Failed to accept swap setup");
         }
     };
 
@@ -858,15 +855,13 @@ async fn run_swap_setup(
         tx_lock_fee,
         wallet_snapshot.tx_lock_fee,
     ) {
-        if let Err(write_error) = swap_setup::write_cbor_error(
-            &mut substream,
-            swap_setup::SwapSetupError::InvalidFeeProposal(error.to_string()),
-        )
-        .await
+        let rejection = swap_setup::SwapSetupError::try_from(error)?;
+        if let Err(write_error) =
+            swap_setup::write_cbor_error(&mut substream, rejection.clone()).await
         {
             tracing::error!(error = %write_error, "Couldn't send lock fee rejection to Bob");
         }
-        return Err(error).context("Lock transaction fee sanity check failed");
+        return Err(rejection).context("Lock transaction fee sanity check failed");
     }
 
     swap_setup::write_cbor_message(

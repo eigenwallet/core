@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ASB: Limit Bitcoin lock-input conflict checks to swaps whose latest pending-lock state was recorded in the past 12 hours.
   Filter timestamps in SQL before parsing state JSON.
 
+- Report distinct swap setup errors for invalid DLEQ proofs, insufficient or excessive anti-spam deposits, and spending-path fees above the local budget.
+  Local wallet failures during setup remain retryable and are not sent to the maker.
+
 - ASB: Restore the Bitcoin lock fee floor during swap setup.
   Reject fees below half the maker's local estimate before sending signatures to the taker.
 
