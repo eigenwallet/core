@@ -53,7 +53,13 @@ impl TxLock {
             .expect("can derive address from descriptor");
 
         let psbt = wallet
-            .send_to_address(address, amount, spending_fee, Some(change))
+            .send_to_address(
+                address,
+                amount,
+                spending_fee,
+                Some(change),
+                Some(super::MAX_TX_LOCK_INPUTS),
+            )
             .await?;
 
         Ok(Self {

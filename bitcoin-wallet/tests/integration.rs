@@ -139,7 +139,7 @@ async fn wallet_sends_broadcasts_and_confirms() -> Result<()> {
     let fee = bitcoin::Amount::from_sat(2_000);
 
     let psbt = wallet
-        .send_to_address(recipient, send_amount, fee, None)
+        .send_to_address(recipient, send_amount, fee, None, None)
         .await?;
 
     let tx = wallet.sign_and_finalize(psbt).await?;
@@ -222,6 +222,7 @@ async fn wallet_rejects_invalid_psbt_prevouts() -> Result<()> {
             recipient,
             bitcoin::Amount::from_sat(75_000),
             bitcoin::Amount::from_sat(2_000),
+            None,
             None,
         )
         .await?;
@@ -310,6 +311,7 @@ async fn unused_subscription_is_dropped_after_idle_timeout() -> Result<()> {
             recipient,
             bitcoin::Amount::from_sat(25_000),
             bitcoin::Amount::from_sat(2_000),
+            None,
             None,
         )
         .await?;

@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The cancel timelock and Alice's redeem publication safety margin each increase by six blocks.
   Both peers must upgrade to start a new swap; stored swaps keep their original fees, signatures, and transaction format.
 
+- Swaps select at most 25 Bitcoin inputs and estimate the spendable swap amount using that same limit.
+  Ordinary sends and withdrawals can still spend all wallet inputs.
 - Breaking protocol change: Takers must now prove ownership of the Bitcoin lock transaction’s inputs, and makers must verify those proofs during swap setup.
   Both peers must support the updated protocol to start a swap.
 - ASB: Cache swap-setup wallet state. The cache TTL is configured with

@@ -1,3 +1,4 @@
+use crate::coin_selection::InputLimitCoinSelection;
 use crate::primitives::{Confirmed, EstimateFeeRate, ScriptStatus, Subscription, Watchable};
 use crate::{
     BitcoinWallet, BlockHeight, PsbtPrevoutVerificationError, RpcErrorCode, bitcoin_address,
@@ -38,6 +39,15 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::RwLock as TokioRwLock;
 use tokio::sync::watch;
 use tracing::{Instrument, debug_span};
+
+fn input_selection_context(max_inputs: Option<usize>) -> String {
+    if let Some(maximum) = max_inputs {
+        return format!(
+            "Could not fund transaction within the {maximum}-input limit; consolidate wallet inputs before starting this swap"
+        );
+    }
+    "Failed to select transaction inputs".into()
+}
 
 pub type TauriHandle = Option<Arc<dyn BitcoinTauriHandle>>;
 pub trait BitcoinTauriHandle: Send + Sync {
@@ -1533,6 +1543,7 @@ where
         address: Address,
         amount: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<PartiallySignedTransaction> {
         // Check address and change address for network equality.
         let address = bitcoin_address::revalidate_network(address, self.network)?;
@@ -1551,18 +1562,22 @@ where
             // Build the transaction with a dummy fee rate
             // just to figure out the final weight of the transaction
             // send_to_address(...) takes an absolute fee
-            let mut tx_builder = wallet.build_tx();
+            let mut tx_builder = wallet
+                .build_tx()
+                .coin_selection(InputLimitCoinSelection::new(max_inputs, false)?);
 
             tx_builder.add_recipient(script.clone(), amount);
             tx_builder.fee_absolute(Amount::ZERO);
 
-            tx_builder.finish()?
+            tx_builder
+                .finish()
+                .with_context(|| input_selection_context(max_inputs))?
         };
 
         let weight = psbt.unsigned_tx.weight();
         let fee = self.estimate_fee(weight, Some(amount)).await?;
 
-        self.send_to_address(address, amount, fee, change_override)
+        self.send_to_address(address, amount, fee, change_override, max_inputs)
             .await
     }
 
@@ -1575,9 +1590,12 @@ where
         &self,
         address: Address,
     ) -> Result<PartiallySignedTransaction> {
-        let (max_giveable, fee) = self.max_giveable(address.script_pubkey().len()).await?;
+        let (max_giveable, fee) = self
+            .max_giveable(address.script_pubkey().len(), None)
+            .await?;
 
-        self.send_to_address(address, max_giveable, fee, None).await
+        self.send_to_address(address, max_giveable, fee, None, None)
+            .await
     }
 
     /// Builds a partially signed transaction that sends
@@ -1592,6 +1610,7 @@ where
         amount: Amount,
         spending_fee: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<PartiallySignedTransaction> {
         // Check address and change address for network equality.
         let address = bitcoin_address::revalidate_network(address, self.network)?;
@@ -1606,11 +1625,15 @@ where
         let script = address.script_pubkey();
 
         // Build the transaction with a manual fee
-        let mut tx_builder = wallet.build_tx();
+        let mut tx_builder = wallet
+            .build_tx()
+            .coin_selection(InputLimitCoinSelection::new(max_inputs, false)?);
         tx_builder.add_recipient(script.clone(), amount);
         tx_builder.fee_absolute(spending_fee);
 
-        let mut psbt = tx_builder.finish()?;
+        let mut psbt = tx_builder
+            .finish()
+            .with_context(|| input_selection_context(max_inputs))?;
 
         match psbt.unsigned_tx.output.as_mut_slice() {
             // our primary output is the 2nd one? reverse the vectors
@@ -1648,14 +1671,22 @@ where
     /// already accounting for the fees we need to spend to get the
     /// transaction confirmed.
     ///
+    /// With a limit, estimates a drain of the largest spendable outputs within
+    /// that limit. Unselected wallet funds are excluded from the amount, not fees.
     /// Returns a tuple of (max_giveable_amount, spending_fee).
-    pub async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
+    pub async fn max_giveable(
+        &self,
+        locking_script_size: usize,
+        max_inputs: Option<usize>,
+    ) -> Result<(Amount, Amount)> {
         let mut wallet = self.wallet.lock().await;
 
         // Construct a dummy drain transaction
         let dummy_script = ScriptBuf::from(vec![0u8; locking_script_size]);
 
-        let mut tx_builder = wallet.build_tx();
+        let mut tx_builder = wallet
+            .build_tx()
+            .coin_selection(InputLimitCoinSelection::new(max_inputs, true)?);
 
         tx_builder.drain_to(dummy_script.clone());
         tx_builder.fee_absolute(Amount::ZERO);
@@ -1729,7 +1760,7 @@ where
                 // Worst-case witness weight for our script type.
                 const DUMMY_SATISFACTION_WEIGHT: Weight = Weight::from_wu(107 * 10);
 
-                let mut tx_builder = wallet.build_tx();
+                let mut tx_builder = wallet.build_tx().coin_selection(InputLimitCoinSelection::new(max_inputs, true)?);
 
                 tx_builder.drain_to(dummy_script.clone());
                 tx_builder.fee_absolute(Amount::ZERO);
@@ -2383,8 +2414,17 @@ impl BitcoinWallet for Wallet {
         amount: Amount,
         spending_fee: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<Psbt> {
-        Wallet::send_to_address(self, address, amount, spending_fee, change_override).await
+        Wallet::send_to_address(
+            self,
+            address,
+            amount,
+            spending_fee,
+            change_override,
+            max_inputs,
+        )
+        .await
     }
 
     async fn send_to_address_dynamic_fee(
@@ -2392,8 +2432,10 @@ impl BitcoinWallet for Wallet {
         address: Address,
         amount: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<Psbt> {
-        Wallet::send_to_address_dynamic_fee(self, address, amount, change_override).await
+        Wallet::send_to_address_dynamic_fee(self, address, amount, change_override, max_inputs)
+            .await
     }
 
     async fn sweep_balance_to_address_dynamic_fee(&self, address: Address) -> Result<Psbt> {
@@ -2448,8 +2490,12 @@ impl BitcoinWallet for Wallet {
         Wallet::get_raw_transaction(self, txid).await
     }
 
-    async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
-        Wallet::max_giveable(self, locking_script_size).await
+    async fn max_giveable(
+        &self,
+        locking_script_size: usize,
+        max_inputs: Option<usize>,
+    ) -> Result<(Amount, Amount)> {
+        Wallet::max_giveable(self, locking_script_size, max_inputs).await
     }
 
     async fn estimate_fee(
@@ -3226,8 +3272,17 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         amount: Amount,
         spending_fee: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<Psbt> {
-        Wallet::send_to_address(self, address, amount, spending_fee, change_override).await
+        Wallet::send_to_address(
+            self,
+            address,
+            amount,
+            spending_fee,
+            change_override,
+            max_inputs,
+        )
+        .await
     }
 
     async fn send_to_address_dynamic_fee(
@@ -3235,6 +3290,7 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         address: Address,
         amount: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<Psbt> {
         unimplemented!("stub method called erroneously")
     }
@@ -3286,7 +3342,11 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         unimplemented!("stub method called erroneously")
     }
 
-    async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
+    async fn max_giveable(
+        &self,
+        locking_script_size: usize,
+        max_inputs: Option<usize>,
+    ) -> Result<(Amount, Amount)> {
         unimplemented!("stub method called erroneously")
     }
 
@@ -3312,5 +3372,144 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
 
     async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
         unimplemented!("stub method called erroneously")
+    }
+}
+
+#[cfg(test)]
+mod input_limit_tests {
+    use super::*;
+    const INPUT_LIMIT: usize = 25;
+
+    #[tokio::test]
+    async fn fragmented_wallet_estimate_and_lock_construction_use_the_same_cap() -> Result<()> {
+        let wallet = TestWalletBuilder::new(100_000)
+            .with_num_utxos(26)
+            .build()
+            .await;
+        let recipient = wallet.new_address().await?;
+        let (amount, fee) = wallet
+            .max_giveable(recipient.script_pubkey().len(), Some(INPUT_LIMIT))
+            .await?;
+        assert_eq!(amount + fee, Amount::from_sat(2_500_000));
+        let psbt = wallet
+            .send_to_address(recipient.clone(), amount, fee, None, Some(INPUT_LIMIT))
+            .await?;
+        assert_eq!(psbt.inputs.len(), INPUT_LIMIT);
+        assert_eq!(psbt.fee()?, fee);
+        assert_eq!(psbt.unsigned_tx.output.len(), 1);
+        assert_eq!(psbt.unsigned_tx.output[0].value, amount);
+        wallet.sign_and_finalize(psbt).await?;
+        let error = wallet
+            .send_to_address(
+                recipient.clone(),
+                Amount::from_sat(2_500_000),
+                fee,
+                None,
+                Some(INPUT_LIMIT),
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("consolidate"));
+        assert!(
+            wallet
+                .send_to_address_dynamic_fee(
+                    recipient,
+                    Amount::from_sat(2_500_000),
+                    None,
+                    Some(INPUT_LIMIT)
+                )
+                .await
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unrestricted_withdrawal_can_spend_every_fragment() -> Result<()> {
+        let wallet = TestWalletBuilder::new(100_000)
+            .with_num_utxos(30)
+            .build()
+            .await;
+        let recipient = wallet.new_address().await?;
+        let (amount, fee) = wallet
+            .max_giveable(recipient.script_pubkey().len(), None)
+            .await?;
+        assert_eq!(amount + fee, Amount::from_sat(3_000_000));
+        let psbt = wallet
+            .sweep_balance_to_address_dynamic_fee(recipient.clone())
+            .await?;
+        assert_eq!(psbt.inputs.len(), 30);
+        assert_eq!(psbt.fee()?, fee);
+        assert_eq!(psbt.unsigned_tx.output[0].value, amount);
+        wallet.sign_and_finalize(psbt).await?;
+        let psbt = wallet
+            .send_to_address_dynamic_fee(recipient, Amount::from_sat(2_800_000), None, None)
+            .await?;
+        assert!(psbt.inputs.len() > INPUT_LIMIT);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn limited_selection_uses_largest_spendable_outputs() -> Result<()> {
+        let wallet = TestWalletBuilder::new(100_000)
+            .with_num_utxos(30)
+            .build()
+            .await;
+        let largest = wallet.insert_fake_utxo(Amount::from_sat(500_000)).await;
+        let second = wallet.insert_fake_utxo(Amount::from_sat(200_000)).await;
+        let immature = {
+            let mut inner = wallet.wallet.lock().await;
+            let tx = Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::absolute::LockTime::ZERO,
+                input: vec![bitcoin::TxIn::default()], // null prevout marks a coinbase
+                output: vec![bitcoin::TxOut {
+                    value: Amount::ONE_BTC,
+                    script_pubkey: inner
+                        .next_unused_address(KeychainKind::External)
+                        .script_pubkey(),
+                }],
+            };
+            let txid = tx.compute_txid();
+            let anchor = bdk_chain::ConfirmationBlockTime {
+                block_id: inner.latest_checkpoint().block_id(),
+                confirmation_time: 0,
+            };
+            let mut update = bdk_wallet::Update::default();
+            update.tx_update.txs.push(Arc::new(tx));
+            update.tx_update.anchors.insert((anchor, txid));
+            inner.apply_update(update)?;
+            assert_eq!(inner.balance().immature, Amount::ONE_BTC);
+            bitcoin::OutPoint { txid, vout: 0 }
+        };
+        let recipient = wallet.new_address().await?;
+        let (amount, fee) = wallet
+            .max_giveable(recipient.script_pubkey().len(), Some(3))
+            .await?;
+        assert_eq!(amount + fee, Amount::from_sat(800_000));
+        let psbt = wallet
+            .send_to_address(recipient.clone(), amount, fee, None, Some(3))
+            .await?;
+        let selected: Vec<_> = psbt
+            .unsigned_tx
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .collect();
+        assert!(selected.contains(&largest) && selected.contains(&second));
+        assert!(!selected.contains(&immature));
+        assert_eq!(selected.len(), 3);
+        let dynamic = wallet
+            .send_to_address_dynamic_fee(recipient, Amount::from_sat(750_000), None, Some(3))
+            .await?;
+        assert_eq!(dynamic.inputs.len(), 3);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn input_limit_must_allow_at_least_one_input() {
+        let wallet = TestWalletBuilder::new(100_000).build().await;
+        assert!(wallet.max_giveable(22, Some(0)).await.is_err());
+        assert!(wallet.max_giveable(22, Some(1)).await.is_ok());
     }
 }

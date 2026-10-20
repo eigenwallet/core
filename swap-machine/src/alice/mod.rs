@@ -449,10 +449,7 @@ impl State1 {
         })
     }
 
-    pub fn ownership_challenge(
-        &self,
-        psbt: &bitcoin::Psbt,
-    ) -> utxo_ownership_proof::Challenge {
+    pub fn ownership_challenge(&self, psbt: &bitcoin::Psbt) -> utxo_ownership_proof::Challenge {
         crate::common::tx_lock_ownership_challenge(
             self.swap_id,
             self.a.public(),

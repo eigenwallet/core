@@ -1,3 +1,4 @@
+mod coin_selection;
 mod core;
 mod wallet;
 
@@ -56,6 +57,7 @@ pub trait BitcoinWallet: Send + Sync {
         amount: Amount,
         spending_fee: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<Psbt>;
 
     async fn send_to_address_dynamic_fee(
@@ -63,6 +65,7 @@ pub trait BitcoinWallet: Send + Sync {
         address: Address,
         amount: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<bitcoin::psbt::Psbt>;
 
     async fn sweep_balance_to_address_dynamic_fee(
@@ -108,7 +111,11 @@ pub trait BitcoinWallet: Send + Sync {
         txid: Txid,
     ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>>;
 
-    async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)>;
+    async fn max_giveable(
+        &self,
+        locking_script_size: usize,
+        max_inputs: Option<usize>,
+    ) -> Result<(Amount, Amount)>;
 
     async fn estimate_fee(&self, weight: Weight, transfer_amount: Option<Amount>)
     -> Result<Amount>;
@@ -131,14 +138,15 @@ pub async fn withdraw(
 ) -> Result<(Txid, Amount)> {
     let (unsigned_tx, amount) = if let Some(amount) = amount {
         let tx = wallet
-            .send_to_address_dynamic_fee(address, amount, None)
+            .send_to_address_dynamic_fee(address, amount, None, None)
             .await?;
         (tx, amount)
     } else {
-        let (max_giveable, spending_fee) =
-            wallet.max_giveable(address.script_pubkey().len()).await?;
+        let (max_giveable, spending_fee) = wallet
+            .max_giveable(address.script_pubkey().len(), None)
+            .await?;
         let tx = wallet
-            .send_to_address(address, max_giveable, spending_fee, None)
+            .send_to_address(address, max_giveable, spending_fee, None, None)
             .await?;
         (tx, max_giveable)
     };

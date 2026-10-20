@@ -19,15 +19,13 @@ use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::task::Poll;
 use std::time::Duration;
-use swap_core::bitcoin;
+use swap_core::bitcoin::{self, MAX_TX_LOCK_INPUTS};
 use swap_env::env;
 use swap_feed::LatestRate;
 use swap_machine::alice::{State0, State3};
 use swap_machine::common::{Message0, Message2, Message4};
 use tracing::Instrument;
 use uuid::Uuid;
-
-const MAX_TX_LOCK_INPUTS: usize = 25;
 
 /// One deadline for backend verification, including retries and queueing.
 pub const LOCK_INPUT_CHECK_TIMEOUT: Duration = Duration::from_secs(45);

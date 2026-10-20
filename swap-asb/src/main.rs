@@ -523,7 +523,7 @@ pub async fn main() -> Result<()> {
             let withdraw_tx_unsigned = match amount {
                 Some(amount) => {
                     bitcoin_wallet
-                        .send_to_address_dynamic_fee(address, amount, None)
+                        .send_to_address_dynamic_fee(address, amount, None, None)
                         .await?
                 }
                 None => {
