@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- New swaps use v3 cancel and refund transactions and delay refunds until the block after cancel confirms.
+  Alice proposes one fee rate; both peers derive the base fee from the largest conservative signed transaction template.
+  Every presigned transaction pays the base fee except redeem, which pays exactly three times that fee.
+  Bob selects the lock fee and rejects proposals outside his local limits before signing.
+  Setup rejects fee overflow, unfunded paths, dust outputs, and fees above local budgets.
+  The spending-path fee budget is one third of the swap amount, up to 100,000 sats.
+  The cancel timelock and Alice's redeem publication safety margin each increase by six blocks.
+  Both peers must upgrade to start a new swap; stored swaps keep their original fees, signatures, and transaction format.
+
 ## [4.16.1] - 2026-10-13
 
 - Report the actual Monero wallet error instead of "unknown error, error not set".

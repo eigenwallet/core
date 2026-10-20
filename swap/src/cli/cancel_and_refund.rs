@@ -309,6 +309,16 @@ pub async fn refund(
         }
     }
 
+    // A v3 refund is only valid after cancel has confirmed (BIP68).
+    if state6.cancel_refund_version() == swap_core::bitcoin::CancelRefundVersion::Truc {
+        bitcoin_wallet
+            .subscribe_to(Box::new(state6.construct_tx_cancel()?))
+            .await
+            .wait_until_confirmed_with(1_u32)
+            .await
+            .context("Failed waiting for cancel confirmation before refund")?;
+    }
+
     let (refund_tx, refund_type) = state6.construct_best_bitcoin_refund_tx()?;
 
     tracing::info!("Best possible refund available: {refund_type}");

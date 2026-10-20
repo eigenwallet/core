@@ -22,7 +22,7 @@ pub mod protocol {
 
     pub fn new() -> SwapSetup {
         from_fn(
-            "/comit/xmr/btc/swap_setup/1.0.0",
+            "/comit/xmr/btc/swap_setup/3.0.0",
             Box::new(|socket, _| future::ready(Ok(socket))),
         )
     }
@@ -55,65 +55,8 @@ pub enum SpotPriceResponse {
 
 #[derive(Clone, Debug, Serialize, Deserialize, thiserror::Error)]
 pub enum SwapSetupError {
-    #[error("Anti-spam deposit ({amount}) doesn't cover fees (minimum: {minimum_to_cover_fees})")]
-    AntiSpamDepositTooSmall {
-        amount: bitcoin::Amount,
-        minimum_to_cover_fees: bitcoin::Amount,
-    },
-    #[error("Anti-spam deposit ratio ({ratio}) exceeds maximum accepted ({max_accepted_ratio})")]
-    AntiSpamDepositRatioTooHigh {
-        ratio: rust_decimal::Decimal,
-        max_accepted_ratio: rust_decimal::Decimal,
-    },
-    #[error(
-        "Other party suggested a network fee which is too low compared to our estimate ({proposed} vs {our_estimate})"
-    )]
-    TransactionFeeTooLow {
-        proposed: bitcoin::Amount,
-        our_estimate: bitcoin::Amount,
-    },
-    #[error(
-        "Other party suggested a network fee which is too high compared to our estimate ({proposed} vs {our_estimate})"
-    )]
-    TransactionFeeTooHigh {
-        proposed: bitcoin::Amount,
-        our_estimate: bitcoin::Amount,
-    },
-}
-
-impl From<swap_machine::common::SanityCheckError> for SwapSetupError {
-    fn from(err: swap_machine::common::SanityCheckError) -> Self {
-        match err {
-            swap_machine::common::SanityCheckError::AntiSpamDepositTooSmall {
-                amount,
-                minimum_to_cover_fees,
-            } => SwapSetupError::AntiSpamDepositTooSmall {
-                amount,
-                minimum_to_cover_fees,
-            },
-            swap_machine::common::SanityCheckError::AntiSpamDepositRatioTooHigh {
-                ratio,
-                max_accepted_ratio,
-            } => SwapSetupError::AntiSpamDepositRatioTooHigh {
-                ratio,
-                max_accepted_ratio,
-            },
-            swap_machine::common::SanityCheckError::TransactionFeeTooLow {
-                proposed,
-                our_estimate,
-            } => SwapSetupError::TransactionFeeTooLow {
-                proposed,
-                our_estimate,
-            },
-            swap_machine::common::SanityCheckError::TransactionFeeTooHigh {
-                proposed,
-                our_estimate,
-            } => SwapSetupError::TransactionFeeTooHigh {
-                proposed,
-                our_estimate,
-            },
-        }
-    }
+    #[error("Invalid swap fee proposal: {0}")]
+    InvalidFeeProposal(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

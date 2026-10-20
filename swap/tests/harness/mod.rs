@@ -449,7 +449,7 @@ async fn start_alice(
         min_buy,
         max_buy,
         None,
-        swap_env::config::default_btc_redeem_fee_multiplier(),
+        swap_env::config::default_btc_swap_fee_rate_multiplier(),
         developer_tip,
         hermes_funding_policy,
         refund_policy,
@@ -1802,7 +1802,7 @@ pub struct FastCancelConfig;
 impl GetConfig for FastCancelConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             ..env::Regtest::get_config()
         }
     }
@@ -1813,7 +1813,7 @@ pub struct FastPunishConfig;
 impl GetConfig for FastPunishConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             bitcoin_punish_timelock: PunishTimelock::new(10).into(),
             ..env::Regtest::get_config()
         }
@@ -1825,7 +1825,7 @@ pub struct FastAmnestyConfig;
 impl GetConfig for FastAmnestyConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             bitcoin_remaining_refund_timelock: 3,
             ..env::Regtest::get_config()
         }
@@ -1840,7 +1840,7 @@ pub struct SlowAmnestyConfig;
 impl GetConfig for SlowAmnestyConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             // Much longer timelock to give Alice time to:
             // 1. Wait for 10 Monero confirmations on the lock tx
             // 2. Sweep the XMR to her wallet

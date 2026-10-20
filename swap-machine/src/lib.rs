@@ -15,8 +15,30 @@ mod tests {
     use swap_env::env::{GetConfig, Regtest};
     use uuid::Uuid;
 
+    #[test]
+    fn spending_path_budget_is_one_third_with_an_absolute_ceiling() {
+        for (amount, budget) in [
+            (0, 0),
+            (2, 0),
+            (3, 1),
+            (299_999, 99_999),
+            (300_000, 100_000),
+            (300_001, 100_000),
+            (600_000, 100_000),
+        ] {
+            let limits =
+                common::swap_fee_limits(SwapFeeRate(5000), Amount::from_sat(amount)).unwrap();
+            assert_eq!(limits.max_path_fee, Amount::from_sat(budget));
+        }
+    }
+
     #[tokio::test]
     async fn calculate_transaction_weights() {
+        check_transaction_weights(Amount::ZERO).await;
+        check_transaction_weights(Amount::from_sat(100_000)).await;
+    }
+
+    async fn check_transaction_weights(btc_amnesty_amount: Amount) {
         let alice_wallet = TestWalletBuilder::new(Amount::ONE_BTC.to_sat())
             .build()
             .await;
@@ -25,23 +47,10 @@ mod tests {
             .await;
         let spending_fee = Amount::from_sat(1_000);
         let btc_amount = Amount::from_sat(500_000);
-        let btc_amnesty_amount = Amount::from_sat(100_000);
         let should_publish_tx_refund = false;
         let xmr_amount = swap_core::monero::primitives::Amount::from_pico(10000);
 
-        let tx_redeem_fee = alice_wallet
-            .estimate_fee(TxRedeem::weight(), Some(btc_amount))
-            .await
-            .unwrap();
-        let tx_punish_fee = alice_wallet
-            .estimate_fee(TxPunish::weight(), Some(btc_amount))
-            .await
-            .unwrap();
-        let tx_lock_fee = alice_wallet
-            .estimate_fee(TxLock::weight(), Some(btc_amount))
-            .await
-            .unwrap();
-
+        let tx_lock_fee = spending_fee;
         let redeem_address = alice_wallet.new_address().await.unwrap();
         let punish_address = alice_wallet.new_address().await.unwrap();
 
@@ -53,9 +62,8 @@ mod tests {
             config,
             redeem_address,
             punish_address,
-            tx_redeem_fee,
-            tx_punish_fee,
-            spending_fee,
+            SwapFeeRate(5000),
+            common::swap_fee_limits(SwapFeeRate(5000), btc_amount).unwrap(),
             should_publish_tx_refund,
             &mut OsRng,
         );
@@ -70,18 +78,64 @@ mod tests {
             RemainingRefundTimelock::new(config.bitcoin_remaining_refund_timelock),
             bob_wallet.new_address().await.unwrap(),
             config.monero_finality_confirmations,
-            spending_fee,
-            spending_fee,
-            spending_fee,
-            spending_fee,
-            spending_fee,
+            common::swap_fee_limits(SwapFeeRate(5000), btc_amount).unwrap(),
             tx_lock_fee,
         );
 
         let message0 = bob_state0.next_message().unwrap();
 
+        let bob_key = message0.B;
+        let refund_address = message0.refund_address.clone();
         let (_, alice_state1) = alice_state0.receive(message0).unwrap();
         let alice_message1 = alice_state1.next_message().unwrap();
+        assert_eq!(alice_message1.fee_rate, SwapFeeRate(5000));
+        let schedule = SwapFeeInputs {
+            a: alice_message1.A,
+            b: bob_key,
+            redeem_address: &alice_message1.redeem_address,
+            refund_address: &refund_address,
+            punish_address: &alice_message1.punish_address,
+            lock_amount: btc_amount,
+            deposit: btc_amnesty_amount,
+        }
+        .calculate(
+            alice_message1.fee_rate,
+            common::swap_fee_limits(SwapFeeRate(5000), btc_amount).unwrap(),
+        )
+        .unwrap();
+        let mut underpriced = alice_message1.clone();
+        underpriced.fee_rate = SwapFeeRate(2499);
+        assert!(
+            bob_state0
+                .clone()
+                .receive(&bob_wallet, underpriced)
+                .await
+                .is_err()
+        );
+
+        for (rate, deposit) in [
+            (15001, btc_amnesty_amount),
+            (u64::MAX, btc_amnesty_amount),
+            (5000, Amount::from_sat(1)),
+            (5000, Amount::from_sat(u64::MAX)),
+        ] {
+            let mut invalid = alice_message1.clone();
+            invalid.fee_rate = SwapFeeRate(rate);
+            invalid.amnesty_amount = deposit;
+            assert!(
+                bob_state0
+                    .clone()
+                    .receive(&bob_wallet, invalid)
+                    .await
+                    .is_err()
+            );
+        }
+        let message_json = serde_json::to_value(&alice_message1).unwrap();
+        assert!(message_json.get("tx_redeem_fee").is_none());
+        assert_eq!(message_json["fee_rate"], 5000);
+        assert!(message_json.get("fees").is_none());
+        assert!(message_json.get("protocol_version").is_none());
+        assert!(message_json.get("max_vsize").is_none());
 
         let bob_state1 = bob_state0
             .receive(&bob_wallet, alice_message1)
@@ -116,14 +170,129 @@ mod tests {
         let redeem_transaction = alice_state3
             .signed_redeem_transaction(encrypted_signature)
             .unwrap();
-        let refund_transaction = bob_state6.signed_full_refund_transaction().unwrap();
+        let refund_transaction = bob_state6.construct_best_bitcoin_refund_tx().unwrap().0;
+
+        assert_eq!(
+            cancel_transaction.version,
+            ::bitcoin::transaction::Version(3)
+        );
+        assert_eq!(
+            refund_transaction.version,
+            ::bitcoin::transaction::Version(3)
+        );
+        assert_eq!(
+            refund_transaction.input[0].sequence,
+            ::bitcoin::Sequence::from_height(1)
+        );
+        assert_eq!(
+            btc_amount - redeem_transaction.output[0].value,
+            (btc_amount - cancel_transaction.output[0].value) * 3
+        );
+
+        let base_fee = btc_amount - cancel_transaction.output[0].value;
+        assert_eq!(
+            cancel_transaction.output[0].value - punish_transaction.output[0].value,
+            base_fee
+        );
+        assert_eq!(
+            cancel_transaction.output[0].value
+                - refund_transaction
+                    .output
+                    .iter()
+                    .map(|o| o.value)
+                    .sum::<Amount>(),
+            base_fee
+        );
+
+        assert_eq!(base_fee, schedule.base);
+        for tx in [
+            &cancel_transaction,
+            &redeem_transaction,
+            &refund_transaction,
+            &punish_transaction,
+        ] {
+            assert!(tx.vsize() as u64 <= schedule.max_vsize);
+        }
+        if btc_amnesty_amount != Amount::ZERO {
+            let reclaim = bob_state6.signed_amnesty_transaction().unwrap();
+            let withhold = alice_state3.signed_withhold_transaction().unwrap();
+            let mercy = alice_state3.signed_mercy_transaction().unwrap();
+            assert_eq!(btc_amnesty_amount - reclaim.output[0].value, base_fee);
+            assert_eq!(btc_amnesty_amount - withhold.output[0].value, base_fee);
+            assert_eq!(withhold.output[0].value - mercy.output[0].value, base_fee);
+            for tx in [reclaim, withhold, mercy] {
+                assert!(tx.vsize() as u64 <= schedule.max_vsize);
+            }
+        }
+
+        // New stored swaps must rebuild the exact transactions and signatures.
+        let saved = serde_json::to_value(&alice_state3).unwrap();
+        assert!(saved.get("fee_rate").is_none());
+        let restored: alice::State3 = serde_json::from_value(saved.clone()).unwrap();
+        assert_eq!(
+            restored.signed_cancel_transaction().unwrap(),
+            cancel_transaction
+        );
+        let saved_bob = serde_json::to_value(&bob_state6).unwrap();
+        assert!(saved_bob.get("fee_rate").is_none());
+        let restored_bob: bob::State6 = serde_json::from_value(saved_bob.clone()).unwrap();
+        assert_eq!(
+            restored_bob.construct_best_bitcoin_refund_tx().unwrap().0,
+            refund_transaction
+        );
+
+        // Records written before this protocol had no format field.
+        let mut legacy = saved;
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("cancel_refund_version");
+        let legacy: alice::State3 = serde_json::from_value(legacy).unwrap();
+        assert_ne!(legacy.tx_cancel().txid(), alice_state3.tx_cancel().txid());
+        let mut legacy_bob = saved_bob;
+        legacy_bob
+            .as_object_mut()
+            .unwrap()
+            .remove("cancel_refund_version");
+        let legacy_bob: bob::State6 = serde_json::from_value(legacy_bob).unwrap();
+        assert_eq!(
+            legacy_bob.cancel_refund_version(),
+            CancelRefundVersion::Legacy
+        );
+        assert_eq!(
+            legacy_bob.construct_tx_cancel().unwrap().txid(),
+            legacy.tx_cancel().txid()
+        );
+
+        // A legacy record can have independent fees that violate the new ratio.
+        // Its original cancel signature must still verify after recovery.
+        let mut legacy_record = serde_json::to_value(&legacy).unwrap();
+        legacy_record["tx_cancel_fee"] = serde_json::to_value(Amount::from_sat(1234)).unwrap();
+        legacy_record["tx_redeem_fee"] = serde_json::to_value(Amount::from_sat(777)).unwrap();
+        let legacy_unsigned: alice::State3 = serde_json::from_value(legacy_record.clone()).unwrap();
+        let bob_secret: SecretKey =
+            serde_json::from_value(serde_json::to_value(&bob_state6).unwrap()["b"].clone())
+                .unwrap();
+        legacy_record["tx_cancel_sig_bob"] =
+            serde_json::to_value(bob_secret.sign(legacy_unsigned.tx_cancel().digest())).unwrap();
+        let legacy_signed: alice::State3 = serde_json::from_value(legacy_record.clone()).unwrap();
+        let original = legacy_signed.signed_cancel_transaction().unwrap();
+        let recovered: alice::State3 =
+            serde_json::from_str(&serde_json::to_string(&legacy_record).unwrap()).unwrap();
+        assert_eq!(recovered.tx_cancel_fee, Amount::from_sat(1234));
+        assert_eq!(recovered.tx_redeem_fee, Amount::from_sat(777));
+        assert_eq!(recovered.signed_cancel_transaction().unwrap(), original);
 
         assert_weight(redeem_transaction, TxRedeem::weight().to_wu(), "TxRedeem");
         assert_weight(cancel_transaction, TxCancel::weight().to_wu(), "TxCancel");
         assert_weight(punish_transaction, TxPunish::weight().to_wu(), "TxPunish");
         assert_weight(
             refund_transaction,
-            TxFullRefund::weight().to_wu(),
+            if btc_amnesty_amount == Amount::ZERO {
+                TxFullRefund::weight().to_wu()
+            } else {
+                TxPartialRefund::weight().to_wu()
+            },
             "TxRefund",
         );
 
@@ -132,6 +301,11 @@ mod tests {
             .signed_early_refund_transaction()
             .unwrap()
             .unwrap();
+        assert_eq!(
+            btc_amount - early_refund_transaction.output[0].value,
+            base_fee
+        );
+        assert!(early_refund_transaction.vsize() as u64 <= schedule.max_vsize);
         assert_weight(
             early_refund_transaction,
             TxEarlyRefund::weight() as u64,
@@ -153,15 +327,6 @@ mod tests {
         let should_publish_tx_refund = false;
         let xmr_amount = swap_core::monero::primitives::Amount::from_pico(10000);
 
-        let tx_redeem_fee = alice_wallet
-            .estimate_fee(TxRedeem::weight(), Some(btc_amount))
-            .await
-            .unwrap();
-        let tx_punish_fee = alice_wallet
-            .estimate_fee(TxPunish::weight(), Some(btc_amount))
-            .await
-            .unwrap();
-
         let refund_address = alice_wallet.new_address().await.unwrap();
         let punish_address = alice_wallet.new_address().await.unwrap();
 
@@ -173,9 +338,8 @@ mod tests {
             config,
             refund_address.clone(),
             punish_address,
-            tx_redeem_fee,
-            tx_punish_fee,
-            spending_fee,
+            SwapFeeRate(5000),
+            common::swap_fee_limits(SwapFeeRate(5000), btc_amount).unwrap(),
             should_publish_tx_refund,
             &mut OsRng,
         );
@@ -190,11 +354,7 @@ mod tests {
             RemainingRefundTimelock::new(config.bitcoin_remaining_refund_timelock),
             bob_wallet.new_address().await.unwrap(),
             config.monero_finality_confirmations,
-            spending_fee,
-            spending_fee,
-            spending_fee,
-            spending_fee,
-            spending_fee,
+            common::swap_fee_limits(SwapFeeRate(5000), btc_amount).unwrap(),
             spending_fee,
         );
 

@@ -350,14 +350,7 @@ pub struct NewSwap {
     pub swap_id: Uuid,
     pub btc: bitcoin::Amount,
     pub tx_lock_fee: bitcoin::Amount,
-    pub tx_refund_fee: bitcoin::Amount,
-    pub tx_partial_refund_fee: bitcoin::Amount,
-    pub tx_reclaim_fee: bitcoin::Amount,
-    pub tx_mercy_fee: bitcoin::Amount,
-    pub tx_cancel_fee: bitcoin::Amount,
-    pub tx_redeem_fee: bitcoin::Amount,
-    pub tx_punish_fee: bitcoin::Amount,
-    pub tx_withhold_fee: bitcoin::Amount,
+    pub fee_limits: bitcoin::SwapFeeLimits,
     pub bitcoin_refund_address: bitcoin::Address,
 }
 
@@ -649,11 +642,7 @@ async fn run_swap_setup(
         env_config.bitcoin_remaining_refund_timelock.into(),
         new_swap_request.bitcoin_refund_address.clone(),
         env_config.monero_finality_confirmations,
-        new_swap_request.tx_partial_refund_fee,
-        new_swap_request.tx_reclaim_fee,
-        new_swap_request.tx_mercy_fee,
-        new_swap_request.tx_refund_fee,
-        new_swap_request.tx_cancel_fee,
+        new_swap_request.fee_limits,
         new_swap_request.tx_lock_fee,
     );
 
@@ -678,54 +667,17 @@ async fn run_swap_setup(
         Err(setup_err) => return Err(SetupError::Rejected(setup_err.to_string())),
     };
 
-    if let Err(sanity_err) = swap_machine::common::sanity_check_transaction_fee_floor(
-        message1.tx_redeem_fee,
-        new_swap_request.tx_redeem_fee,
-    ) {
-        let _ = write_cbor_error(&mut substream, sanity_err.clone().into()).await;
-        return Err(SetupError::Rejected(format!(
-            "Transaction fee sanity check failed for TxRedeem: {sanity_err}"
-        )));
-    }
-
-    for (transaction_type, proposed_fee, our_estimate) in [
-        (
-            "TxPunish",
-            message1.tx_punish_fee,
-            new_swap_request.tx_punish_fee,
-        ),
-        (
-            "TxWithhold",
-            message1.tx_withhold_fee,
-            new_swap_request.tx_withhold_fee,
-        ),
-    ] {
-        if let Err(sanity_err) =
-            swap_machine::common::sanity_check_transaction_fee(proposed_fee, our_estimate)
-        {
-            let _ = write_cbor_error(&mut substream, sanity_err.clone().into()).await;
-            return Err(SetupError::Rejected(format!(
-                "Transaction fee sanity check failed for {transaction_type}: {sanity_err}"
-            )));
+    let state1 = match state0.receive(bitcoin_wallet.as_ref(), message1).await {
+        Ok(state) => state,
+        Err(error) => {
+            write_cbor_error(
+                &mut substream,
+                super::SwapSetupError::InvalidFeeProposal(format!("{error:#}")),
+            )
+            .await?;
+            return Err(SetupError::Rejected(format!("{error:#}")));
         }
-    }
-
-    if let Err(sanity_err) = swap_machine::common::sanity_check_amnesty_amount(
-        new_swap_request.btc,
-        message1.amnesty_amount,
-        new_swap_request.tx_partial_refund_fee,
-        new_swap_request.tx_reclaim_fee,
-        message1.tx_withhold_fee,
-        new_swap_request.tx_mercy_fee,
-    ) {
-        let _ = write_cbor_error(&mut substream, sanity_err.clone().into()).await;
-        return Err(SetupError::Rejected(sanity_err.to_string()));
-    }
-
-    let state1 = state0
-        .receive(bitcoin_wallet.as_ref(), message1)
-        .await
-        .context("Failed to receive state1")?;
+    };
 
     tracing::trace!(
         %new_swap_request.swap_id,

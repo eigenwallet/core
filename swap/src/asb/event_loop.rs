@@ -57,7 +57,7 @@ where
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
     external_redeem_address: Option<bitcoin::Address>,
-    btc_redeem_fee_multiplier: Decimal,
+    btc_swap_fee_rate_multiplier: Decimal,
     developer_tip: TipConfig,
     hermes_funding_policy: HermesFundingPolicy,
     refund_policy: RefundPolicy,
@@ -191,7 +191,7 @@ where
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
-        btc_redeem_fee_multiplier: Decimal,
+        btc_swap_fee_rate_multiplier: Decimal,
         developer_tip: TipConfig,
         hermes_funding_policy: HermesFundingPolicy,
         refund_policy: RefundPolicy,
@@ -217,7 +217,7 @@ where
             min_buy,
             max_buy,
             external_redeem_address,
-            btc_redeem_fee_multiplier,
+            btc_swap_fee_rate_multiplier,
             developer_tip,
             hermes_funding_policy,
             refund_policy,
@@ -309,14 +309,14 @@ where
                             let bitcoin_wallet = self.bitcoin_wallet.clone();
                             let monero_wallet = self.monero_wallet.clone();
                             let external_redeem_address = self.external_redeem_address.clone();
-                            let btc_redeem_fee_multiplier = self.btc_redeem_fee_multiplier;
+                            let btc_swap_fee_rate_multiplier = self.btc_swap_fee_rate_multiplier;
 
                             self.inflight_wallet_snapshots.push(async move {
                                 // Wait for the swap setup handler to request the wallet snapshot
                                 let (btc, responder) = send_wallet_snapshot.recv().await?;
 
                                 // Compute the wallet snapshot
-                                let wallet_snapshot = capture_wallet_snapshot(bitcoin_wallet, &monero_wallet, &external_redeem_address, btc_redeem_fee_multiplier, btc).await?;
+                                let wallet_snapshot = capture_wallet_snapshot(bitcoin_wallet, &monero_wallet, &external_redeem_address, btc_swap_fee_rate_multiplier, btc).await?;
 
                                 // This is used further down to then actually respond to the swap setup handler
                                 Ok((btc, responder, wallet_snapshot))
@@ -1345,34 +1345,20 @@ fn apply_anti_spam_policy(
         .try_into()
         .context("Couldn't convert Decimal to u64")?;
 
+    anyhow::ensure!(
+        btc_amnesty_sats > 0,
+        "Positive anti-spam deposit rounds down to zero"
+    );
     let btc_amnesty_amount = bitcoin::Amount::from_sat(btc_amnesty_sats);
 
-    let minimum_to_cover_fees = bitcoin::Amount::from_sat(
-        bitcoin_wallet::MIN_ABSOLUTE_TX_FEE_SATS * swap_machine::common::NUM_WITHHOLD_PATH_TXS + 1,
-    );
-
-    Ok((
-        btc_amnesty_amount.max(minimum_to_cover_fees),
-        should_always_withhold,
-    ))
-}
-
-/// Multiply a fee amount by `multiplier`, rounding to the nearest satoshi.
-fn scale_fee(fee: bitcoin::Amount, multiplier: Decimal) -> Result<bitcoin::Amount> {
-    let sats: u64 = Decimal::from(fee.to_sat())
-        .checked_mul(multiplier)
-        .context("Decimal overflow when scaling fee")?
-        .round()
-        .try_into()
-        .context("Scaled fee does not fit in u64")?;
-    Ok(bitcoin::Amount::from_sat(sats))
+    Ok((btc_amnesty_amount, should_always_withhold))
 }
 
 async fn capture_wallet_snapshot(
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: &monero::Wallets,
     external_redeem_address: &Option<bitcoin::Address>,
-    btc_redeem_fee_multiplier: Decimal,
+    btc_swap_fee_rate_multiplier: Decimal,
     transfer_amount: bitcoin::Amount,
 ) -> Result<WalletSnapshot> {
     let start_time = Instant::now();
@@ -1399,14 +1385,28 @@ async fn capture_wallet_snapshot(
         .clone()
         .unwrap_or(bitcoin_wallet.new_address().await?);
 
-    let tx_lock_fee = bitcoin_wallet
-        .estimate_fee(bitcoin::TxLock::weight(), Some(transfer_amount))
-        .await?;
+    let estimated_rate = bitcoin::SwapFeeRate(
+        bitcoin_wallet
+            .swap_fee_rate()
+            .await?
+            .to_sat_per_kwu()
+            .checked_mul(4)
+            .context("Swap fee rate conversion overflow")?,
+    );
+    let rate: u64 = Decimal::from(estimated_rate.0)
+        .checked_mul(btc_swap_fee_rate_multiplier)
+        .context("Swap fee rate multiplier overflow")?
+        .ceil()
+        .try_into()
+        .context("Swap fee rate does not fit in u64")?;
+    let fee_rate = bitcoin::SwapFeeRate(rate);
+    let fee_limits = swap_machine::common::swap_fee_limits(fee_rate, transfer_amount)?;
+
+    // Preserve the individual local estimates in the wallet snapshot.
+    // The presigned fees are derived separately during setup from the agreed scripts.
     let redeem_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxRedeem::weight(), Some(transfer_amount))
         .await?;
-    let redeem_fee = scale_fee(redeem_fee, btc_redeem_fee_multiplier)
-        .context("Failed to apply btc_redeem_fee_multiplier")?;
     let cancel_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxCancel::weight(), Some(transfer_amount))
         .await?;
@@ -1437,7 +1437,6 @@ async fn capture_wallet_snapshot(
         unlocked_balance.into(),
         redeem_address,
         punish_address,
-        tx_lock_fee,
         redeem_fee,
         cancel_fee,
         refund_fee,
@@ -1446,6 +1445,8 @@ async fn capture_wallet_snapshot(
         mercy_fee,
         punish_fee,
         withhold_fee,
+        fee_rate,
+        fee_limits,
     ))
 }
 
@@ -1960,6 +1961,27 @@ mod tests {
     use super::*;
 
     use crate::monero::{Amount, AmountExt};
+
+    #[test]
+    fn deposit_policy_does_not_disable_or_raise_a_small_deposit() {
+        let amount = bitcoin::Amount::from_sat(1000);
+        let mut policy = RefundPolicy {
+            anti_spam_deposit_ratio: Decimal::ZERO,
+            always_withhold_deposit: false,
+        };
+        assert_eq!(
+            apply_anti_spam_policy(amount, &policy).unwrap().0,
+            bitcoin::Amount::ZERO
+        );
+        policy.anti_spam_deposit_ratio = Decimal::new(1, 4);
+        assert!(apply_anti_spam_policy(amount, &policy).is_err());
+        policy.anti_spam_deposit_ratio = Decimal::new(1, 3);
+        // Setup validates dust and spending paths after the scripts and rate are known.
+        assert_eq!(
+            apply_anti_spam_policy(amount, &policy).unwrap().0,
+            bitcoin::Amount::from_sat(1)
+        );
+    }
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_with_no_reserved_amounts() {

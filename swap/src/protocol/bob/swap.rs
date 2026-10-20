@@ -18,10 +18,7 @@ use bitcoin_wallet::Watchable;
 use monero_interface::PublishTransaction;
 use std::sync::Arc;
 use std::time::Duration;
-use swap_core::bitcoin::{
-    ExpiredTimelocks, TxCancel, TxFullRefund, TxMercy, TxPartialRefund, TxPunish, TxReclaim,
-    TxRedeem, TxWithhold,
-};
+use swap_core::bitcoin::ExpiredTimelocks;
 use swap_core::monero::BlockHeight;
 use swap_env::env;
 use tokio::select;
@@ -168,35 +165,15 @@ async fn next_state(
             .await
             .context("Monero daemon RPC health check failed; cannot start swap")?;
 
-            let tx_cancel_fee = bitcoin_wallet
-                .estimate_fee(TxCancel::weight(), Some(btc_amount))
-                .await?;
-            let tx_refund_fee = bitcoin_wallet
-                .estimate_fee(TxFullRefund::weight(), Some(btc_amount))
-                .await?;
-
-            // At this point we don't know how high btc_amnesty_amount is.
-            // This means we don't know how large the amount of the partial refund and amnesty transactions will be.
-            // We therefore specify the same upper limit on tx fees as for the other transactions, even though
-            // the maximum fee percentage might be higher due to that.
-            let tx_partial_refund_fee = bitcoin_wallet
-                .estimate_fee(TxPartialRefund::weight(), Some(btc_amount))
-                .await?;
-            let tx_reclaim_fee = bitcoin_wallet
-                .estimate_fee(TxReclaim::weight(), Some(btc_amount))
-                .await?;
-            let tx_mercy_fee = bitcoin_wallet
-                .estimate_fee(TxMercy::weight(), Some(btc_amount))
-                .await?;
-            let tx_redeem_fee = bitcoin_wallet
-                .estimate_fee(TxRedeem::weight(), Some(btc_amount))
-                .await?;
-            let tx_punish_fee = bitcoin_wallet
-                .estimate_fee(TxPunish::weight(), Some(btc_amount))
-                .await?;
-            let tx_withhold_fee = bitcoin_wallet
-                .estimate_fee(TxWithhold::weight(), Some(btc_amount))
-                .await?;
+            let rate = bitcoin::SwapFeeRate(
+                bitcoin_wallet
+                    .swap_fee_rate()
+                    .await?
+                    .to_sat_per_kwu()
+                    .checked_mul(4)
+                    .context("Swap fee rate conversion overflow")?,
+            );
+            let fee_limits = swap_machine::common::swap_fee_limits(rate, btc_amount)?;
 
             // Emit an event to tauri that we are negotiating with the maker to lock the Bitcoin
             event_emitter.emit_swap_progress_event(
@@ -211,14 +188,7 @@ async fn next_state(
                     swap_id,
                     btc: btc_amount,
                     tx_lock_fee,
-                    tx_refund_fee,
-                    tx_partial_refund_fee,
-                    tx_reclaim_fee,
-                    tx_mercy_fee,
-                    tx_cancel_fee,
-                    tx_redeem_fee,
-                    tx_punish_fee,
-                    tx_withhold_fee,
+                    fee_limits,
                     bitcoin_refund_address: change_address,
                 })
                 .await?;

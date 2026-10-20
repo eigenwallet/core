@@ -14,7 +14,6 @@ use libp2p::swarm::handler::ConnectionEvent;
 use libp2p::swarm::{ConnectionHandler, ConnectionId};
 use libp2p::swarm::{ConnectionHandlerEvent, NetworkBehaviour, SubstreamProtocol, ToSwarm};
 use libp2p::{Multiaddr, PeerId};
-use tracing::Instrument;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::task::Poll;
@@ -24,6 +23,7 @@ use swap_env::env;
 use swap_feed::LatestRate;
 use swap_machine::alice::{State0, State3};
 use swap_machine::common::{Message0, Message2, Message4};
+use tracing::Instrument;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -54,7 +54,7 @@ pub struct WalletSnapshot {
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
 
-    tx_lock_fee: bitcoin::Amount,
+    // Local estimates; setup derives the agreed fees once both output scripts are known.
     redeem_fee: bitcoin::Amount,
     cancel_fee: bitcoin::Amount,
     refund_fee: bitcoin::Amount,
@@ -63,6 +63,8 @@ pub struct WalletSnapshot {
     mercy_fee: bitcoin::Amount,
     punish_fee: bitcoin::Amount,
     withhold_fee: bitcoin::Amount,
+    fee_rate: bitcoin::SwapFeeRate,
+    fee_limits: bitcoin::SwapFeeLimits,
 }
 
 impl WalletSnapshot {
@@ -70,7 +72,6 @@ impl WalletSnapshot {
         unlocked_balance: swap_core::monero::Amount,
         redeem_address: bitcoin::Address,
         punish_address: bitcoin::Address,
-        tx_lock_fee: bitcoin::Amount,
         redeem_fee: bitcoin::Amount,
         cancel_fee: bitcoin::Amount,
         refund_fee: bitcoin::Amount,
@@ -79,21 +80,24 @@ impl WalletSnapshot {
         mercy_fee: bitcoin::Amount,
         punish_fee: bitcoin::Amount,
         withhold_fee: bitcoin::Amount,
+        fee_rate: bitcoin::SwapFeeRate,
+        fee_limits: bitcoin::SwapFeeLimits,
     ) -> Self {
         Self {
             unlocked_balance,
             lock_fee: swap_core::monero::CONSERVATIVE_MONERO_FEE,
             redeem_address,
             punish_address,
-            tx_lock_fee,
             redeem_fee,
             cancel_fee,
-            punish_fee,
-            withhold_fee,
             refund_fee,
             partial_refund_fee,
             reclaim_fee,
             mercy_fee,
+            punish_fee,
+            withhold_fee,
+            fee_rate,
+            fee_limits,
         }
     }
 }
@@ -599,6 +603,18 @@ async fn run_swap_setup(
 
     let xmr = converted_result?;
 
+    tracing::debug!(
+        redeem_fee = %wallet_snapshot.redeem_fee,
+        cancel_fee = %wallet_snapshot.cancel_fee,
+        refund_fee = %wallet_snapshot.refund_fee,
+        partial_refund_fee = %wallet_snapshot.partial_refund_fee,
+        reclaim_fee = %wallet_snapshot.reclaim_fee,
+        mercy_fee = %wallet_snapshot.mercy_fee,
+        punish_fee = %wallet_snapshot.punish_fee,
+        withhold_fee = %wallet_snapshot.withhold_fee,
+        "Local Bitcoin transaction fee estimates before setup"
+    );
+
     let state0 = State0::new(
         request.btc,
         xmr,
@@ -606,9 +622,8 @@ async fn run_swap_setup(
         env_config,
         wallet_snapshot.redeem_address,
         wallet_snapshot.punish_address,
-        wallet_snapshot.redeem_fee,
-        wallet_snapshot.punish_fee,
-        wallet_snapshot.withhold_fee,
+        wallet_snapshot.fee_rate,
+        wallet_snapshot.fee_limits,
         should_burn_on_refund,
         &mut rand::thread_rng(),
     );
@@ -618,62 +633,17 @@ async fn run_swap_setup(
         .context("Failed to read message0")?
         .context("Peer sent an error instead of message0")?;
 
-    for (transaction_type, proposed_fee, our_estimate) in [
-        (
-            "TxCancel",
-            message0.tx_cancel_fee,
-            wallet_snapshot.cancel_fee,
-        ),
-        (
-            "TxRefund",
-            message0.tx_refund_fee,
-            wallet_snapshot.refund_fee,
-        ),
-        (
-            "TxPartialRefund",
-            message0.tx_partial_refund_fee,
-            wallet_snapshot.partial_refund_fee,
-        ),
-        (
-            "TxReclaim",
-            message0.tx_reclaim_fee,
-            wallet_snapshot.reclaim_fee,
-        ),
-        ("TxMercy", message0.tx_mercy_fee, wallet_snapshot.mercy_fee),
-    ] {
-        if let Err(sanity_err) =
-            swap_machine::common::sanity_check_transaction_fee(proposed_fee, our_estimate)
-        {
-            if let Err(err) =
-                swap_setup::write_cbor_error(&mut substream, sanity_err.clone().into()).await
-            {
-                tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
-            };
-            return Err(sanity_err).context(format!(
-                "Transaction fee sanity check failed for {transaction_type}"
-            ));
+    let (swap_id, state1) = match state0.receive(message0) {
+        Ok(state) => state,
+        Err(error) => {
+            swap_setup::write_cbor_error(
+                &mut substream,
+                swap_setup::SwapSetupError::InvalidFeeProposal(format!("{error:#}")),
+            )
+            .await?;
+            return Err(error).context("Failed to accept swap setup");
         }
-    }
-
-    if let Err(sanity_err) = swap_machine::common::sanity_check_amnesty_amount(
-        request.btc,
-        btc_amnesty_amount,
-        message0.tx_partial_refund_fee,
-        message0.tx_reclaim_fee,
-        wallet_snapshot.withhold_fee,
-        message0.tx_mercy_fee,
-    ) {
-        if let Err(err) =
-            swap_setup::write_cbor_error(&mut substream, sanity_err.clone().into()).await
-        {
-            tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
-        };
-        return Err(sanity_err).context("Amnesty sanity check failed");
-    }
-
-    let (swap_id, state1) = state0
-        .receive(message0)
-        .context("Failed to transition state0 -> state1 using message0")?;
+    };
 
     tracing::debug!(%swap_id, "Swap setup transition: State0 -> State1 (received Message0)");
 
@@ -695,21 +665,6 @@ async fn run_swap_setup(
         .context("Failed to transition state1 -> state2 using message2")?;
 
     tracing::debug!(%swap_id, "Swap setup transition: State1 -> State2 (received Message2)");
-
-    let tx_lock_fee = state2
-        .tx_lock_fee()
-        .context("Failed to read lock transaction fee from PSBT")?;
-    if let Err(sanity_err) = swap_machine::common::sanity_check_transaction_fee_floor(
-        tx_lock_fee,
-        wallet_snapshot.tx_lock_fee,
-    ) {
-        if let Err(err) =
-            swap_setup::write_cbor_error(&mut substream, sanity_err.clone().into()).await
-        {
-            tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
-        };
-        return Err(sanity_err).context("Lock transaction fee sanity check failed");
-    }
 
     swap_setup::write_cbor_message(
         &mut substream,

@@ -401,11 +401,7 @@ pub struct State0 {
     remaining_refund_timelock: Option<RemainingRefundTimelock>,
     refund_address: bitcoin::Address,
     min_monero_confirmations: u64,
-    tx_partial_refund_fee: Option<bitcoin::Amount>,
-    tx_reclaim_fee: Option<bitcoin::Amount>,
-    tx_mercy_fee: Option<bitcoin::Amount>,
-    tx_refund_fee: bitcoin::Amount,
-    tx_cancel_fee: bitcoin::Amount,
+    fee_limits: bitcoin::SwapFeeLimits,
     tx_lock_fee: bitcoin::Amount,
 }
 
@@ -421,11 +417,7 @@ impl State0 {
         remaining_refund_timelock: RemainingRefundTimelock,
         refund_address: bitcoin::Address,
         min_monero_confirmations: u64,
-        tx_partial_refund_fee: bitcoin::Amount,
-        tx_reclaim_fee: bitcoin::Amount,
-        tx_mercy_fee: bitcoin::Amount,
-        tx_refund_fee: bitcoin::Amount,
-        tx_cancel_fee: bitcoin::Amount,
+        fee_limits: bitcoin::SwapFeeLimits,
         tx_lock_fee: bitcoin::Amount,
     ) -> Self {
         let b = bitcoin::SecretKey::new_random(rng);
@@ -451,11 +443,7 @@ impl State0 {
             remaining_refund_timelock: Some(remaining_refund_timelock),
             refund_address,
             min_monero_confirmations,
-            tx_partial_refund_fee: Some(tx_partial_refund_fee),
-            tx_reclaim_fee: Some(tx_reclaim_fee),
-            tx_mercy_fee: Some(tx_mercy_fee),
-            tx_refund_fee,
-            tx_cancel_fee,
+            fee_limits,
             tx_lock_fee,
         }
     }
@@ -469,17 +457,6 @@ impl State0 {
             dleq_proof_s_b: self.dleq_proof_s_b.clone(),
             v_b: self.v_b,
             refund_address: self.refund_address.clone(),
-            tx_refund_fee: self.tx_refund_fee,
-            tx_partial_refund_fee: self
-                .tx_partial_refund_fee
-                .context("tx_partial_refund_fee missing but required to setup swap")?,
-            tx_reclaim_fee: self
-                .tx_reclaim_fee
-                .context("tx_reclaim_fee missing but required to setup swap")?,
-            tx_mercy_fee: self
-                .tx_mercy_fee
-                .context("tx_mercy_fee missing but required to setup swap")?,
-            tx_cancel_fee: self.tx_cancel_fee,
         })
     }
 
@@ -488,6 +465,20 @@ impl State0 {
         wallet: &dyn bitcoin_wallet::BitcoinWallet,
         msg: Message1,
     ) -> Result<State1> {
+        let fees = crate::common::calculate_swap_fees(
+            bitcoin::SwapFeeInputs {
+                a: msg.A,
+                b: self.b.public(),
+                redeem_address: &msg.redeem_address,
+                refund_address: &self.refund_address,
+                punish_address: &msg.punish_address,
+                lock_amount: self.btc,
+                deposit: msg.amnesty_amount,
+            },
+            msg.fee_rate,
+            self.fee_limits,
+        )?;
+
         let valid = CROSS_CURVE_PROOF_SYSTEM.verify(
             &msg.dleq_proof_s_a,
             (msg.S_a_bitcoin.into(), msg.S_a_monero.decompress_ng()),
@@ -525,14 +516,15 @@ impl State0 {
             punish_address: msg.punish_address,
             tx_lock,
             min_monero_confirmations: self.min_monero_confirmations,
-            tx_redeem_fee: msg.tx_redeem_fee,
-            tx_refund_fee: self.tx_refund_fee,
-            tx_partial_refund_fee: self.tx_partial_refund_fee,
-            tx_reclaim_fee: self.tx_reclaim_fee,
-            tx_withhold_fee: Some(msg.tx_withhold_fee),
-            tx_mercy_fee: self.tx_mercy_fee,
-            tx_punish_fee: msg.tx_punish_fee,
-            tx_cancel_fee: self.tx_cancel_fee,
+            tx_redeem_fee: fees.redeem,
+            tx_refund_fee: fees.base,
+            tx_partial_refund_fee: Some(fees.base),
+            tx_reclaim_fee: Some(fees.base),
+            tx_withhold_fee: Some(fees.base),
+            tx_mercy_fee: Some(fees.base),
+            tx_punish_fee: fees.base,
+            tx_cancel_fee: fees.base,
+            cancel_refund_version: bitcoin::CancelRefundVersion::Truc,
         })
     }
 }
@@ -564,6 +556,7 @@ pub struct State1 {
     tx_refund_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
+    cancel_refund_version: bitcoin::CancelRefundVersion,
 }
 
 impl State1 {
@@ -580,7 +573,7 @@ impl State1 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
-            swap_core::bitcoin::CancelRefundVersion::Legacy,
+            self.cancel_refund_version,
         )?;
 
         bitcoin::verify_sig(&self.A, &tx_cancel.digest(), &msg.tx_cancel_sig)
@@ -673,6 +666,7 @@ impl State1 {
             tx_mercy_fee: self.tx_mercy_fee,
             tx_punish_fee: self.tx_punish_fee,
             tx_cancel_fee: self.tx_cancel_fee,
+            cancel_refund_version: self.cancel_refund_version,
         })
     }
 }
@@ -709,6 +703,8 @@ pub struct State2 {
     tx_punish_fee: bitcoin::Amount,
     pub tx_refund_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
+    #[serde(default)]
+    cancel_refund_version: bitcoin::CancelRefundVersion,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
     tx_reclaim_fee: Option<bitcoin::Amount>,
     tx_withhold_fee: Option<bitcoin::Amount>,
@@ -723,7 +719,7 @@ impl State2 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
-            swap_core::bitcoin::CancelRefundVersion::Legacy,
+            self.cancel_refund_version,
         )
         .expect("valid cancel tx");
 
@@ -829,6 +825,7 @@ impl State2 {
                 tx_mercy_fee: self.tx_mercy_fee,
                 tx_punish_fee: self.tx_punish_fee,
                 tx_cancel_fee: self.tx_cancel_fee,
+                cancel_refund_version: self.cancel_refund_version,
                 punish_address: self.punish_address,
             },
             self.tx_lock,
@@ -872,6 +869,8 @@ pub struct State3 {
     tx_mercy_fee: Option<bitcoin::Amount>,
     tx_punish_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
+    #[serde(default)]
+    cancel_refund_version: bitcoin::CancelRefundVersion,
     #[serde(with = "address_serde")]
     punish_address: bitcoin::Address,
 }
@@ -928,6 +927,7 @@ impl State3 {
             tx_redeem_fee: self.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
+            cancel_refund_version: self.cancel_refund_version,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_reclaim_fee: self.tx_reclaim_fee,
             tx_withhold_fee: self.tx_withhold_fee,
@@ -953,6 +953,7 @@ impl State3 {
             refund_signatures: self.refund_signatures.clone(),
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
+            cancel_refund_version: self.cancel_refund_version,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_reclaim_fee: self.tx_reclaim_fee,
             tx_withhold_fee: self.tx_withhold_fee,
@@ -979,7 +980,7 @@ impl State3 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
-            swap_core::bitcoin::CancelRefundVersion::Legacy,
+            self.cancel_refund_version,
         )?;
 
         let tx_lock_status = bitcoin_wallet.status_of_script(&self.tx_lock).await?;
@@ -1080,6 +1081,8 @@ pub struct State4 {
     tx_mercy_fee: Option<bitcoin::Amount>,
     tx_punish_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
+    #[serde(default)]
+    cancel_refund_version: bitcoin::CancelRefundVersion,
     #[serde(with = "address_serde")]
     punish_address: bitcoin::Address,
 }
@@ -1191,7 +1194,7 @@ impl State4 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
-            swap_core::bitcoin::CancelRefundVersion::Legacy,
+            self.cancel_refund_version,
         )?;
 
         let tx_lock_status = bitcoin_wallet.status_of_script(&self.tx_lock).await?;
@@ -1239,6 +1242,7 @@ impl State4 {
             refund_signatures: self.refund_signatures,
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
+            cancel_refund_version: self.cancel_refund_version,
             xmr: self.xmr,
             btc_amnesty_amount: self.btc_amnesty_amount,
             S_a_monero: self.S_a_monero,
@@ -1311,6 +1315,8 @@ pub struct State6 {
     pub refund_signatures: RefundSignatures,
     pub tx_refund_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
+    #[serde(default)]
+    cancel_refund_version: bitcoin::CancelRefundVersion,
     pub tx_partial_refund_fee: Option<bitcoin::Amount>,
     pub tx_reclaim_fee: Option<bitcoin::Amount>,
     pub tx_withhold_fee: Option<bitcoin::Amount>,
@@ -1321,6 +1327,10 @@ pub struct State6 {
 }
 
 impl State6 {
+    pub fn cancel_refund_version(&self) -> bitcoin::CancelRefundVersion {
+        self.cancel_refund_version
+    }
+
     pub async fn expired_timelock(
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
@@ -1331,7 +1341,7 @@ impl State6 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
-            swap_core::bitcoin::CancelRefundVersion::Legacy,
+            self.cancel_refund_version,
         )?;
 
         let tx_lock_status = bitcoin_wallet.status_of_script(&self.tx_lock).await?;
@@ -1363,7 +1373,7 @@ impl State6 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
-            swap_core::bitcoin::CancelRefundVersion::Legacy,
+            self.cancel_refund_version,
         )
     }
 
