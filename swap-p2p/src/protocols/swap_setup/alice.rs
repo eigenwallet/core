@@ -775,8 +775,8 @@ async fn run_swap_setup(
     let tx_lock_input_count = message2.tx_lock_psbt.unsigned_tx.input.len();
     if tx_lock_input_count > MAX_TX_LOCK_INPUTS {
         let error = swap_setup::SwapSetupError::TxLockTooManyInputs {
-            actual: tx_lock_input_count,
-            maximum: MAX_TX_LOCK_INPUTS,
+            actual: u32::try_from(tx_lock_input_count).context("Input count exceeds wire range")?,
+            maximum: u32::try_from(MAX_TX_LOCK_INPUTS).context("Input limit exceeds wire range")?,
         };
         if let Err(write_error) = swap_setup::write_cbor_error(&mut substream, error.clone()).await
         {
