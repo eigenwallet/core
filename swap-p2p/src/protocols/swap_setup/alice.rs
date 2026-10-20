@@ -129,6 +129,7 @@ pub struct WalletSnapshot {
     punish_address: bitcoin::Address,
 
     // Local estimates; setup derives the agreed fees once both output scripts are known.
+    tx_lock_fee: bitcoin::Amount,
     redeem_fee: bitcoin::Amount,
     cancel_fee: bitcoin::Amount,
     refund_fee: bitcoin::Amount,
@@ -147,6 +148,7 @@ impl WalletSnapshot {
         unlocked_balance: swap_core::monero::Amount,
         redeem_address: bitcoin::Address,
         punish_address: bitcoin::Address,
+        tx_lock_fee: bitcoin::Amount,
         redeem_fee: bitcoin::Amount,
         cancel_fee: bitcoin::Amount,
         refund_fee: bitcoin::Amount,
@@ -164,6 +166,7 @@ impl WalletSnapshot {
             lock_fee: swap_core::monero::CONSERVATIVE_MONERO_FEE,
             redeem_address,
             punish_address,
+            tx_lock_fee,
             redeem_fee,
             cancel_fee,
             refund_fee,
@@ -847,6 +850,24 @@ async fn run_swap_setup(
     };
 
     tracing::debug!(%swap_id, "Swap setup transition: State1 -> State2 (received Message2)");
+
+    let tx_lock_fee = state2
+        .tx_lock_fee()
+        .context("Failed to read lock transaction fee from PSBT")?;
+    if let Err(error) = swap_machine::common::sanity_check_transaction_fee_floor(
+        tx_lock_fee,
+        wallet_snapshot.tx_lock_fee,
+    ) {
+        if let Err(write_error) = swap_setup::write_cbor_error(
+            &mut substream,
+            swap_setup::SwapSetupError::InvalidFeeProposal(error.to_string()),
+        )
+        .await
+        {
+            tracing::error!(error = %write_error, "Couldn't send lock fee rejection to Bob");
+        }
+        return Err(error).context("Lock transaction fee sanity check failed");
+    }
 
     swap_setup::write_cbor_message(
         &mut substream,

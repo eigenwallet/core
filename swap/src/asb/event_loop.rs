@@ -1765,6 +1765,9 @@ async fn create_wallet_snapshot(
 
     // Preserve the individual local estimates in the wallet snapshot.
     // The presigned fees are derived separately during setup from the agreed scripts.
+    let tx_lock_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxLock::weight(), Some(transfer_amount))
+        .await?;
     let redeem_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxRedeem::weight(), Some(transfer_amount))
         .await?;
@@ -1794,6 +1797,7 @@ async fn create_wallet_snapshot(
         state.unlocked_balance,
         state.redeem_address,
         state.punish_address,
+        tx_lock_fee,
         redeem_fee,
         cancel_fee,
         refund_fee,

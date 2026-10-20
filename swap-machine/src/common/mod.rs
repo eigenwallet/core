@@ -121,6 +121,20 @@ pub struct Message4 {
     pub tx_mercy_sig: Option<bitcoin::Signature>,
 }
 
+/// Require at least half our local fee estimate, preserving the lock-fee
+/// floor used before shared fee negotiation. Higher lock fees are allowed.
+pub fn sanity_check_transaction_fee_floor(
+    proposed_fee: bitcoin::Amount,
+    conservative_estimated_fee: bitcoin::Amount,
+) -> Result<()> {
+    let floor = bitcoin::Amount::from_sat(conservative_estimated_fee.to_sat() / 2);
+    anyhow::ensure!(
+        proposed_fee >= floor,
+        "Transaction fee is too low compared to our estimate ({proposed_fee} vs {conservative_estimated_fee})"
+    );
+    Ok(())
+}
+
 /// Local acceptance limits, derived without capping the agreed fee schedule.
 pub fn swap_fee_limits(
     rate: bitcoin::SwapFeeRate,
@@ -278,6 +292,28 @@ pub trait Database {
 mod tests {
     use super::*;
     use rand::SeedableRng;
+
+    #[test]
+    fn lock_fee_floor_preserves_the_acceptance_boundary() {
+        let estimate = bitcoin::Amount::from_sat(100);
+        assert!(
+            sanity_check_transaction_fee_floor(bitcoin::Amount::from_sat(49), estimate).is_err()
+        );
+        assert!(
+            sanity_check_transaction_fee_floor(bitcoin::Amount::from_sat(50), estimate).is_ok()
+        );
+        assert!(
+            sanity_check_transaction_fee_floor(bitcoin::Amount::from_sat(1000), estimate).is_ok()
+        );
+        // Preserve the original whole-satoshi rounding for odd estimates.
+        assert!(
+            sanity_check_transaction_fee_floor(
+                bitcoin::Amount::from_sat(50),
+                bitcoin::Amount::from_sat(101),
+            )
+            .is_ok()
+        );
+    }
 
     #[test]
     fn pedersen_blinding_generators_are_not_the_curve_generators() {
