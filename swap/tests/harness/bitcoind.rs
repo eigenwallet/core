@@ -5,7 +5,7 @@ pub const RPC_USER: &str = "admin";
 pub const RPC_PASSWORD: &str = "123";
 pub const RPC_PORT: u16 = 18443;
 pub const PORT: u16 = 18886;
-pub const DATADIR: &str = "/home/bdk";
+pub const DATADIR: &str = "/home/bitcoin/.bitcoin";
 
 #[derive(Debug)]
 pub struct Bitcoind {
@@ -17,11 +17,11 @@ impl Image for Bitcoind {
     type Args = BitcoindArgs;
 
     fn name(&self) -> String {
-        "coblox/bitcoin-core".into()
+        "bitcoin/bitcoin".into()
     }
 
     fn tag(&self) -> String {
-        "0.21.0".into()
+        "28.1".into()
     }
 
     fn ready_conditions(&self) -> Vec<WaitFor> {
@@ -40,7 +40,7 @@ impl Image for Bitcoind {
 impl Default for Bitcoind {
     fn default() -> Self {
         Bitcoind {
-            entrypoint: Some("/usr/bin/bitcoind".into()),
+            entrypoint: Some("/opt/bitcoin-28.1/bin/bitcoind".into()),
             volumes: BTreeMap::default(),
         }
     }
@@ -70,6 +70,9 @@ impl IntoIterator for BitcoindArgs {
         let args = vec![
             "-server".to_string(),
             "-regtest".to_string(),
+            "-acceptnonstdtxn=0".to_string(),
+            // The Electrs test image reads block files without XOR decoding.
+            "-blocksxor=0".to_string(),
             "-listen=1".to_string(),
             "-prune=0".to_string(),
             "-rpcallowip=0.0.0.0/0".to_string(),
