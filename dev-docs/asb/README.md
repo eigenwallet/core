@@ -122,7 +122,8 @@ If the option is not set, a new address from the internal wallet is used for eve
 `developer_tip` allows configuring your maker to donate a small part of swaps to funding further development of the project. This is disabled by default. You can manually enable it if you choose to do so. Set it to a number between 0 and 1. Setting it to 0.02 will donate 2% of each swap to the donation address of the project. The tip is sent by adding an additional output to the Monero lock transaction of a swap. This means this will not impact the availability of your UTXOs (unlocked funds) as it does not require an additonal transaction.
 
 `btc_swap_fee_rate_multiplier` scales the rate Alice proposes for all presigned Bitcoin transactions.
-It defaults to `1.0`; the old name `btc_redeem_fee_multiplier` remains an alias.
+It defaults to `1.0`.
+Existing configurations must rename `btc_redeem_fee_multiplier` to `btc_swap_fee_rate_multiplier`; the old name is no longer accepted.
 Bob accepts or rejects this rate against his local limits before signing.
 Both peers derive one base fee from the largest conservative signed transaction size.
 Redeem pays exactly three times the base fee; every other presigned transaction pays the base fee.

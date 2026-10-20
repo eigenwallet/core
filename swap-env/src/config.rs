@@ -208,10 +208,7 @@ pub struct Maker {
     /// Multiplier applied to the proposed fee rate for all presigned BTC transactions. Defaults to 1.0;
     /// set higher (e.g. 2.0) to overpay for faster confirmation as a safety
     /// margin against fee estimation undershooting actual mempool conditions.
-    #[serde(
-        default = "default_btc_swap_fee_rate_multiplier",
-        alias = "btc_redeem_fee_multiplier"
-    )]
+    #[serde(default = "default_btc_swap_fee_rate_multiplier")]
     pub btc_swap_fee_rate_multiplier: Decimal,
     /// How long wallet state used during swap setup is cached, in seconds.
     #[serde(default = "default_wallet_snapshot_cache_ttl_secs")]
