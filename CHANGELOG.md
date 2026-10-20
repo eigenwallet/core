@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Mark makers older than `5.0.0` as incompatible with the new swap setup protocol.
+
 - Protocol: Accept Bitcoin lock transactions with up to five outputs.
   Exactly one output must pay the agreed swap amount to the shared script; up to four unrelated outputs are allowed.
 
