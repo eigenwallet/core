@@ -1,12 +1,11 @@
-//! Background verification of Bitcoin lock-input ownership and unspentness.
+//! Background verification of Bitcoin lock-input ownership proofs.
 //!
 //! A single [`ProofVerifier`] is shared by all swap setup handlers. Its actor
 //! runs at most one job per peer at a time, lets every peer cool down for
 //! [`PEER_COOLDOWN`] after each of its jobs finished and limits the number of
 //! jobs running concurrently across all peers. Ownership signatures are checked
-//! on Tokio's blocking thread pool; chain checks go through the ASB event loop.
+//! on Tokio's blocking thread pool; this actor has no swap state or chain access.
 
-use super::alice::{LockInputCheck, LockInputCheckError, LockInputReservation};
 use anyhow::Context;
 use futures::StreamExt;
 use futures::future::{BoxFuture, FutureExt};
@@ -15,11 +14,10 @@ use libp2p::PeerId;
 use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 use swap_core::bitcoin;
-use swap_machine::alice::{State1, State2};
-use swap_machine::common::Message2;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time::Instant;
+use utxo_ownership_proof::{Challenge, OwnershipProof, VerifiedPsbt};
 
 /// How long a peer has to wait after one of its jobs finished before its next job starts.
 pub const PEER_COOLDOWN: Duration = Duration::from_secs(5);
@@ -53,12 +51,7 @@ pub enum VerificationError {
     Worker(#[source] JoinError),
     #[error(transparent)]
     Setup(anyhow::Error),
-    #[error("Lock transaction input check failed: {0:?}")]
-    LockInputs(LockInputCheckError),
 }
-
-type LockInputCheckSender =
-    bmrng::RequestSender<LockInputCheck, Result<LockInputReservation, LockInputCheckError>>;
 
 struct Request {
     peer: PeerId,
@@ -68,10 +61,10 @@ struct Request {
 #[allow(clippy::large_enum_variant)]
 enum Job {
     Lock {
-        state1: State1,
-        message2: Message2,
-        check_lock_inputs: LockInputCheckSender,
-        reply: oneshot::Sender<Result<(State2, LockInputReservation), VerificationError>>,
+        psbt: bitcoin::PartiallySignedTransaction,
+        proofs: Vec<OwnershipProof>,
+        challenge: Challenge,
+        reply: oneshot::Sender<Result<VerifiedPsbt, VerificationError>>,
     },
     #[cfg(test)]
     Test {
@@ -118,29 +111,27 @@ impl ProofVerifier {
         Self::spawn_actor().0
     }
 
-    /// Verifies Bob's `Message2` and then checks the lock transaction inputs
-    /// via `check_lock_inputs`, which reserves them on success.
-    ///
-    /// The ownership proofs and the lock amounts are verified on the blocking
-    /// thread pool. If the caller stops waiting during that stage, the input
-    /// check is skipped. If it stops waiting during the input check, the check
-    /// is cancelled and drained before its worker slot is released.
+    /// Verify only ownership signatures. Cancellation never releases a worker
+    /// until its blocking verification has actually ended.
     pub async fn verify_lock(
         &self,
         peer: PeerId,
-        state1: State1,
-        message2: Message2,
-        check_lock_inputs: LockInputCheckSender,
-    ) -> Result<(State2, LockInputReservation), VerificationError> {
+        psbt: bitcoin::PartiallySignedTransaction,
+        proofs: Vec<OwnershipProof>,
+        challenge: Challenge,
+    ) -> Result<VerifiedPsbt, VerificationError> {
         let (reply, response) = oneshot::channel();
-        let job = Job::Lock {
-            state1,
-            message2,
-            check_lock_inputs,
-            reply,
-        };
-
-        self.request(peer, job, response).await
+        self.request(
+            peer,
+            Job::Lock {
+                psbt,
+                proofs,
+                challenge,
+                reply,
+            },
+            response,
+        )
+        .await
     }
 
     fn spawn_actor() -> (Self, JoinHandle<()>) {
@@ -352,12 +343,16 @@ impl Job {
         // In all arms the caller may have stopped waiting, then the result is dropped
         match self {
             Job::Lock {
-                state1,
-                message2,
-                check_lock_inputs,
-                mut reply,
+                psbt,
+                proofs,
+                challenge,
+                reply,
             } => {
-                let result = verify_lock(state1, message2, check_lock_inputs, &mut reply).await;
+                let result = verify_blocking(move || {
+                    VerifiedPsbt::verify(psbt, &proofs, challenge)
+                        .context("Failed to verify lock input ownership proofs")
+                })
+                .await;
                 let _ = reply.send(result);
             }
             #[cfg(test)]
@@ -367,61 +362,6 @@ impl Job {
             }
         }
     }
-}
-
-async fn verify_lock(
-    state1: State1,
-    message2: Message2,
-    check_lock_inputs: LockInputCheckSender,
-    reply: &mut oneshot::Sender<Result<(State2, LockInputReservation), VerificationError>>,
-) -> Result<(State2, LockInputReservation), VerificationError> {
-    let (state2, tx_lock_psbt) = verify_blocking(move || {
-        let tx_lock_psbt = message2.tx_lock_psbt.clone();
-        let state2 = state1
-            .receive(message2)
-            .context("Failed to transition state1 -> state2 using message2")?;
-        state2
-            .tx_lock_fee()
-            .context("Invalid TxLock input/output amounts")?;
-
-        Ok((state2, tx_lock_psbt))
-    })
-    .await?;
-
-    // Don't query the chain for a caller that is no longer waiting
-    if reply.is_closed() {
-        return Err(VerificationError::Closed);
-    }
-
-    let reservation = await_lock_input_check(tx_lock_psbt, check_lock_inputs, reply).await?;
-    Ok((state2, reservation))
-}
-
-/// Cancellation requests cleanup; the response acknowledges that started work
-/// has finished. Never release a worker just because its caller disappeared.
-async fn await_lock_input_check<T: Send>(
-    psbt: bitcoin::PartiallySignedTransaction,
-    check_lock_inputs: LockInputCheckSender,
-    reply: &mut oneshot::Sender<T>,
-) -> Result<LockInputReservation, VerificationError> {
-    let (cancel, cancellation) = watch::channel(false);
-    let response = check_lock_inputs.send_receive(LockInputCheck {
-        psbt,
-        cancel: cancellation,
-        deadline: Instant::now() + super::alice::LOCK_INPUT_CHECK_TIMEOUT,
-    });
-    tokio::pin!(response);
-    let result = tokio::select! {
-        result = &mut response => result,
-        () = reply.closed() => {
-            cancel.send_replace(true);
-            response.await
-        }
-    };
-    result
-        .context("Failed to receive lock input verification result")
-        .map_err(VerificationError::Setup)?
-        .map_err(VerificationError::LockInputs)
 }
 
 /// Runs `work` on the blocking thread pool and waits until it has actually ended.
@@ -469,35 +409,6 @@ mod tests {
     use Event::{Finished, Started};
 
     type Gate = std::sync::mpsc::Sender<anyhow::Result<()>>;
-
-    #[tokio::test]
-    async fn cancelled_chain_check_keeps_worker_until_cleanup_is_acknowledged() {
-        let psbt = bitcoin::PartiallySignedTransaction::from_unsigned_tx(::bitcoin::Transaction {
-            version: ::bitcoin::transaction::Version::TWO,
-            lock_time: ::bitcoin::absolute::LockTime::ZERO,
-            input: vec![],
-            output: vec![],
-        })
-        .unwrap();
-        let (sender, mut receiver) = bmrng::channel(1);
-        let (mut reply, response) = oneshot::channel::<()>();
-        let worker =
-            tokio::spawn(async move { await_lock_input_check(psbt, sender, &mut reply).await });
-        let (mut request, responder) = receiver.recv().await.unwrap();
-        drop(response);
-        request.cancel.changed().await.unwrap();
-        assert!(*request.cancel.borrow());
-        assert!(!worker.is_finished());
-        responder
-            .respond(Err(LockInputCheckError::Cancelled))
-            .unwrap();
-        assert!(matches!(
-            worker.await.unwrap(),
-            Err(VerificationError::LockInputs(
-                LockInputCheckError::Cancelled
-            ))
-        ));
-    }
 
     #[tokio::test(start_paused = true)]
     async fn cloned_handles_share_serialization_and_cooldown_starts_after_completion() {

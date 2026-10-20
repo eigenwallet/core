@@ -796,10 +796,40 @@ async fn run_swap_setup(
         return Err(error.into());
     }
 
-    let (state2, lock_input_reservation) = match proof_verifier
-        .verify_lock(peer_id, state1, message2, check_lock_inputs)
-        .await
-    {
+    let verification = async {
+        let challenge = state1.ownership_challenge(&message2.tx_lock_psbt);
+        let verified = proof_verifier
+            .verify_lock(
+                peer_id,
+                message2.tx_lock_psbt,
+                message2.tx_lock_proofs,
+                challenge,
+            )
+            .await?;
+        let psbt = verified.psbt().clone();
+        let state2 = state1
+            .receive(verified)
+            .context("Failed to reconstruct lock transaction")?;
+        state2
+            .tx_lock_fee()
+            .context("Invalid TxLock input/output amounts")?;
+
+        // Dropping this sender cancels the ASB job. The ASB owns its capacity
+        // permit and drains started work even after this handler disappears.
+        let (_cancel, cancellation) = tokio::sync::watch::channel(false);
+        let reservation = check_lock_inputs
+            .send_receive(LockInputCheck {
+                psbt,
+                cancel: cancellation,
+                deadline: tokio::time::Instant::now() + LOCK_INPUT_CHECK_TIMEOUT,
+            })
+            .await
+            .context("Failed to receive lock input check result")?
+            .map_err(|error| anyhow!("Lock input check failed: {error:?}"))?;
+        Ok::<_, anyhow::Error>((state2, reservation))
+    }
+    .await;
+    let (state2, lock_input_reservation) = match verification {
         Ok(verified) => verified,
         Err(cause) => {
             tracing::warn!(%swap_id, error = %cause, "Lock transaction input verification failed");

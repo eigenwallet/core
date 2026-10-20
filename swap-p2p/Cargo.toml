@@ -12,6 +12,8 @@ swap-feed = { path = "../swap-feed" }
 swap-machine = { path = "../swap-machine" }
 swap-serde = { path = "../swap-serde" }
 
+utxo-ownership-proof = { path = "../utxo-ownership-proof" }
+
 # Networking
 async-trait = { workspace = true, optional = true }
 libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify", "relay"] }

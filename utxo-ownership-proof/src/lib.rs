@@ -19,6 +19,35 @@ pub struct OwnershipProof {
     pub signature: Signature,
 }
 
+/// A PSBT whose ownership proofs passed for a particular challenge.
+/// Private fields prevent callers from changing the verified inputs or context.
+#[derive(Debug)]
+pub struct VerifiedPsbt {
+    psbt: bitcoin::Psbt,
+    challenge: Challenge,
+}
+
+impl VerifiedPsbt {
+    pub fn verify(
+        psbt: bitcoin::Psbt,
+        proofs: &[OwnershipProof],
+        challenge: Challenge,
+    ) -> Result<Self, Error> {
+        verify_psbt(&psbt, proofs, challenge)?;
+        Ok(Self { psbt, challenge })
+    }
+
+    pub fn psbt(&self) -> &bitcoin::Psbt {
+        &self.psbt
+    }
+    pub fn challenge(&self) -> Challenge {
+        self.challenge
+    }
+    pub fn into_psbt(self) -> bitcoin::Psbt {
+        self.psbt
+    }
+}
+
 /// An ownership proof verification error.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

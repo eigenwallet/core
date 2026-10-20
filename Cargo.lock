@@ -10841,6 +10841,7 @@ dependencies = [
  "tracing-subscriber",
  "typeshare",
  "unsigned-varint 0.8.0",
+ "utxo-ownership-proof",
  "uuid",
  "void",
 ]

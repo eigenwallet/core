@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
+use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message3, Message4};
 use anyhow::{Context, Result, bail};
 use monero_wallet::Wallets;
 use rand::{CryptoRng, RngCore};
@@ -449,19 +449,25 @@ impl State1 {
         })
     }
 
-    pub fn receive(self, msg: Message2) -> Result<State2> {
-        let challenge = crate::common::tx_lock_ownership_challenge(
+    pub fn ownership_challenge(
+        &self,
+        psbt: &bitcoin::Psbt,
+    ) -> utxo_ownership_proof::Challenge {
+        crate::common::tx_lock_ownership_challenge(
             self.swap_id,
             self.a.public(),
             self.B,
-            msg.tx_lock_psbt.unsigned_tx.compute_txid(),
+            psbt.unsigned_tx.compute_txid(),
+        )
+    }
+
+    pub fn receive(self, verified: utxo_ownership_proof::VerifiedPsbt) -> Result<State2> {
+        anyhow::ensure!(
+            verified.challenge() == self.ownership_challenge(verified.psbt()),
+            "Lock ownership proofs were verified for a different swap context"
         );
-
-        utxo_ownership_proof::verify_psbt(&msg.tx_lock_psbt, &msg.tx_lock_proofs, challenge)
-            .context("Failed to verify Bob's ownership proofs for the TxLock inputs")?;
-
         let tx_lock = swap_core::bitcoin::TxLock::from_psbt(
-            msg.tx_lock_psbt,
+            verified.into_psbt(),
             self.a.public(),
             self.B,
             self.btc,

@@ -152,7 +152,27 @@ mod tests {
             .unwrap();
         let bob_message2 = bob_state1.next_message();
 
-        let alice_state2 = alice_state1.receive(bob_message2).unwrap();
+        let wrong_challenge = utxo_ownership_proof::challenge(b"another swap context");
+        let wrong_proofs = bob_wallet
+            .prove_utxo_ownership(&bob_message2.tx_lock_psbt, wrong_challenge)
+            .unwrap();
+        let wrong_verified = utxo_ownership_proof::VerifiedPsbt::verify(
+            bob_message2.tx_lock_psbt.clone(),
+            &wrong_proofs,
+            wrong_challenge,
+        )
+        .unwrap();
+        assert!(alice_state1.clone().receive(wrong_verified).is_err());
+        let verified = utxo_ownership_proof::VerifiedPsbt::verify(
+            bob_message2.tx_lock_psbt.clone(),
+            &bob_message2.tx_lock_proofs,
+            alice_state1.ownership_challenge(&bob_message2.tx_lock_psbt),
+        )
+        .unwrap();
+        let mut different_message = message_json.clone();
+        different_message["redeem_multiplier"] = serde_json::json!(199);
+        assert!(serde_json::from_value::<common::Message1>(different_message).is_err());
+        let alice_state2 = alice_state1.receive(verified).unwrap();
         let alice_message3 = alice_state2.next_message().unwrap();
 
         let bob_state2 = bob_state1.receive(alice_message3).unwrap();
@@ -384,7 +404,13 @@ mod tests {
             .unwrap();
         let bob_message2 = bob_state1.next_message();
 
-        let alice_state2 = alice_state1.receive(bob_message2).unwrap();
+        let verified = utxo_ownership_proof::VerifiedPsbt::verify(
+            bob_message2.tx_lock_psbt.clone(),
+            &bob_message2.tx_lock_proofs,
+            alice_state1.ownership_challenge(&bob_message2.tx_lock_psbt),
+        )
+        .unwrap();
+        let alice_state2 = alice_state1.receive(verified).unwrap();
         let alice_message3 = alice_state2.next_message().unwrap();
 
         let bob_state2 = bob_state1.receive(alice_message3).unwrap();
