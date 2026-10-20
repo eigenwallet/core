@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Taker: Recognize confirmed cancellation despite stale Bitcoin lock status,
+  and retry inconsistent wallet status instead of panicking before publishing a refund.
+
 ## [4.16.1] - 2026-10-13
 
 - Report the actual Monero wallet error instead of "unknown error, error not set".

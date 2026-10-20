@@ -274,7 +274,9 @@ pub fn current_epoch(
         }
     }
 
-    if tx_lock_status.is_confirmed_with(cancel_timelock) {
+    // A confirmed cancel proves its relative timelock expired, even when the
+    // separate wallet read for the lock transaction is stale.
+    if tx_cancel_status.is_confirmed() || tx_lock_status.is_confirmed_with(cancel_timelock) {
         return ExpiredTimelocks::Cancel {
             blocks_left: tx_cancel_status.blocks_left_until(punish_timelock),
         };
