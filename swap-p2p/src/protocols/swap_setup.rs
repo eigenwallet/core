@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub mod alice;
 pub mod bob;
 mod vendor_from_fn;
+pub mod verification;
 
 pub const BUF_SIZE: usize = 1024 * 1024;
 

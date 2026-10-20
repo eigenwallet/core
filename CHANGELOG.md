@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Verify Bitcoin lock-input ownership and unspentness in a shared background actor.
+  Verify one job per peer at a time, with a five-second cooldown after completion and a global worker limit.
+  Keep other peers moving during cooldown and cancel abandoned checks without releasing workers before started work finishes.
+
 - New swaps use v3 cancel and refund transactions and delay refunds until the block after cancel confirms.
   Alice proposes one fee rate; both peers derive the base fee from the largest conservative signed transaction template.
   Every presigned transaction pays the base fee except redeem, which pays exactly three times that fee.

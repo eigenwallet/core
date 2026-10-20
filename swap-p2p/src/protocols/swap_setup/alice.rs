@@ -1,9 +1,10 @@
 use crate::out_event;
 use crate::protocols::swap_setup;
+use crate::protocols::swap_setup::verification::{ProofVerifier, VerificationError};
 use crate::protocols::swap_setup::{
     BlockchainNetwork, SpotPriceError, SpotPriceRequest, SpotPriceResponse, protocol,
 };
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use futures::AsyncWriteExt;
 use futures::FutureExt;
 use futures::StreamExt;
@@ -64,7 +65,7 @@ impl From<bitcoin_wallet::PsbtPrevoutVerificationError> for LockInputCheckError 
 /// that already-started verification work has finished.
 #[derive(Debug)]
 pub struct LockInputCheck {
-    pub psbt: LockInputCheck,
+    pub psbt: bitcoin::PartiallySignedTransaction,
     pub cancel: tokio::sync::watch::Receiver<bool>,
 }
 
@@ -211,6 +212,7 @@ pub struct Behaviour<LR> {
 
     latest_rate: LR,
     resume_only: bool,
+    proof_verifier: ProofVerifier,
 }
 
 impl<LR> Behaviour<LR> {
@@ -228,6 +230,7 @@ impl<LR> Behaviour<LR> {
             env_config,
             latest_rate,
             resume_only,
+            proof_verifier: ProofVerifier::spawn(),
         }
     }
 }
@@ -257,6 +260,7 @@ where
             self.env_config,
             self.latest_rate.clone(),
             self.resume_only,
+            self.proof_verifier.clone(),
         );
 
         Ok(handler)
@@ -280,6 +284,7 @@ where
             self.env_config,
             self.latest_rate.clone(),
             self.resume_only,
+            self.proof_verifier.clone(),
         );
 
         Ok(handler)
@@ -345,6 +350,8 @@ pub struct Handler<LR> {
     latest_rate: LR,
     resume_only: bool,
 
+    proof_verifier: ProofVerifier,
+
     // This is the timeout for the negotiation phase where Alice and Bob exchange messages
     negotiation_timeout: Duration,
 }
@@ -358,6 +365,7 @@ impl<LR> Handler<LR> {
         env_config: env::Config,
         latest_rate: LR,
         resume_only: bool,
+        proof_verifier: ProofVerifier,
     ) -> Self {
         Self {
             inbound_streams: FuturesUnordered::new(),
@@ -369,6 +377,7 @@ impl<LR> Handler<LR> {
             env_config,
             latest_rate,
             resume_only,
+            proof_verifier,
             negotiation_timeout: crate::defaults::NEGOTIATION_TIMEOUT,
         }
     }
@@ -441,6 +450,8 @@ where
                         substream,
                         sender,
                         check_lock_inputs_sender,
+                        self.proof_verifier.clone(),
+                        self.peer_id,
                         resume_only,
                         env_config,
                         min_buy,
@@ -613,6 +624,8 @@ async fn run_swap_setup(
         LockInputCheck,
         Result<LockInputReservation, LockInputCheckError>,
     >,
+    proof_verifier: ProofVerifier,
+    peer_id: PeerId,
     resume_only: bool,
     env_config: env::Config,
     min_buy: bitcoin::Amount,
@@ -775,40 +788,22 @@ async fn run_swap_setup(
         return Err(error.into());
     }
 
-    let tx_lock_psbt = message2.tx_lock_psbt.clone();
-    let state2 = state1
-        .receive(message2)
-        .context("Failed to transition state1 -> state2 using message2")?;
-    state2
-        .tx_lock_fee()
-        .context("Invalid TxLock input/output amounts")?;
-
-    tracing::debug!(%swap_id, "Swap setup transition: State1 -> State2 (received Message2)");
-
-    // Routed through the event loop because verifying the inputs against the
-    // chain requires Electrum access.
-    let (_cancel, cancellation) = tokio::sync::watch::channel(false);
-    let lock_input_check = check_lock_inputs
-        .send_receive(LockInputCheck {
-            psbt: tx_lock_psbt,
-            cancel: cancellation,
-        })
+    let (state2, lock_input_reservation) = match proof_verifier
+        .verify_lock(peer_id, state1, message2, check_lock_inputs)
         .await
-        .context("Failed to receive lock input verification result")?;
-    let lock_input_reservation = match lock_input_check {
-        Ok(reservation) => reservation,
-        Err(LockInputCheckError::Invalid(reason)) => {
+    {
+        Ok(verified) => verified,
+        Err(VerificationError::LockInputs(LockInputCheckError::Invalid(reason))) => {
             let error = swap_setup::SwapSetupError::LockInputVerificationFailed { reason };
             if let Err(err) = swap_setup::write_cbor_error(&mut substream, error.clone()).await {
-                tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
+                tracing::error!(error=%err, "Couldn't send lock input verification error to Bob");
             }
             return Err(error).context("Lock transaction input verification failed");
         }
-        Err(LockInputCheckError::Unavailable(reason)) => {
-            bail!("Lock transaction input verification unavailable: {reason}");
-        }
-        Err(error) => bail!("Lock transaction input verification failed: {error:?}"),
+        Err(error) => return Err(error).context("Lock transaction verification failed"),
     };
+
+    tracing::debug!(%swap_id, "Swap setup transition: State1 -> State2 (received Message2)");
 
     swap_setup::write_cbor_message(
         &mut substream,
