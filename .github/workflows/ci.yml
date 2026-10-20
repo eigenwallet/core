@@ -171,6 +171,8 @@ jobs:
           - package: swap
             test_name: alice_and_bob_refund_using_cancel_then_refund_command
           - package: swap
+            test_name: refund_requires_confirmed_cancel
+          - package: swap
             test_name: alice_and_bob_refund_using_cancel_and_refund_command_timelock_not_expired
           - package: swap
             test_name: alice_manually_punishes_after_bob_dead_and_bob_cancels
