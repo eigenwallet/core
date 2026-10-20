@@ -157,7 +157,9 @@ pub enum AliceState {
 
 impl AliceState {
     /// Return the lock transaction while Alice is still waiting for it to
-    /// become confirmed.
+    /// become confirmed. `Started` remains a supported serialized state, so
+    /// imported/older records must be checked too. The current runner first
+    /// persists `BtcLockTransactionSeen`; before that, it holds an input reservation.
     pub fn pending_tx_lock(&self) -> Option<&swap_core::bitcoin::TxLock> {
         match self {
             Self::Started { state3 } | Self::BtcLockTransactionSeen { state3 } => {

@@ -413,6 +413,9 @@ impl Database for SqliteDatabase {
     }
 
     async fn get_alice_swaps_with_pending_tx_lock(&self) -> Result<Vec<(Uuid, State)>> {
+        // Include the supported serialized Started variant for compatibility with
+        // stored/imported states, matching AliceState::pending_tx_lock. The current
+        // runner first persists BtcLockTransactionSeen and reserves inputs until then.
         let rows = sqlx::query!(
             r#"
             SELECT s.swap_id, s.state
