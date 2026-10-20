@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Breaking protocol change: Takers must now prove ownership of the Bitcoin lock transaction’s inputs, and makers must verify those proofs during swap setup.
   Both peers must support the updated protocol to start a swap.
 - ASB: Cache swap-setup wallet state. The cache TTL is configured with
-  `maker.wallet_snapshot_cache_ttl_secs` and defaults to 120 seconds.
+  `maker.wallet_snapshot_cache_ttl_secs` and defaults to 20 seconds.
 
 ## [4.16.1] - 2026-10-13
 

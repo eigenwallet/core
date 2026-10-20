@@ -311,7 +311,7 @@ pub fn default_btc_swap_fee_rate_multiplier() -> Decimal {
 }
 
 pub fn default_wallet_snapshot_cache_ttl_secs() -> u64 {
-    2 * 60
+    20
 }
 
 fn default_anti_spam_deposit_ratio() -> Decimal {
