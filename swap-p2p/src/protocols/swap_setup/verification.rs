@@ -19,7 +19,9 @@ use swap_core::bitcoin;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time::Instant;
+use tracing::Instrument;
 use utxo_ownership_proof::{Challenge, OwnershipProof, VerifiedPsbt};
+use uuid::Uuid;
 
 /// How long a peer has to wait after one of its jobs finished before its next job starts.
 pub const PEER_COOLDOWN: Duration = Duration::from_secs(5);
@@ -64,23 +66,40 @@ struct Request {
 struct QueuedJob {
     work: Job,
     queued_at: Instant,
-}
-
-impl From<Job> for QueuedJob {
-    fn from(work: Job) -> Self {
-        Self {
-            work,
-            queued_at: Instant::now(),
-        }
-    }
+    id: Uuid,
+    peer: PeerId,
+    input_count: usize,
 }
 
 impl QueuedJob {
+    fn new(peer: PeerId, work: Job) -> Self {
+        let input_count = match &work {
+            Job::Lock { psbt, .. } => psbt.unsigned_tx.input.len(),
+            #[cfg(test)]
+            Job::Test { .. } => 0,
+        };
+        Self {
+            work,
+            queued_at: Instant::now(),
+            id: Uuid::new_v4(),
+            peer,
+            input_count,
+        }
+    }
+
+    fn span(&self) -> tracing::Span {
+        tracing::info_span!("lock_proof_verification", job_id = %self.id, peer = %self.peer, input_count = self.input_count)
+    }
+
     fn is_canceled(&self) -> bool {
         self.work.is_canceled()
     }
     fn reject(self, error: VerificationError) {
         self.work.reject(error);
+    }
+
+    fn log_cancelled(&self, running: usize, queued: usize) {
+        tracing::info!(parent: &self.span(), running, queued, queue_wait_seconds = self.queued_at.elapsed().as_secs_f64(), "Cancelled ownership-proof job before it started");
     }
 }
 
@@ -179,16 +198,14 @@ impl ProofVerifier {
         job: Job,
         response: oneshot::Receiver<Result<T, VerificationError>>,
     ) -> Result<T, VerificationError> {
-        self.mailbox
-            .send(Request {
-                peer,
-                job: job.into(),
-            })
-            .await
-            .map_err(|_| {
-                self.metrics.rejected("actor_closed");
-                VerificationError::Closed
-            })?;
+        let job = QueuedJob::new(peer, job);
+        tracing::debug!(parent: &job.span(), "Submitting ownership-proof verification job");
+        if let Err(error) = self.mailbox.send(Request { peer, job }).await {
+            let job = error.0.job;
+            tracing::warn!(parent: &job.span(), "Rejected ownership-proof job because the verifier is closed");
+            self.metrics.rejected("actor_closed");
+            return Err(VerificationError::Closed);
+        }
 
         response.await.map_err(|_| VerificationError::Closed)?
     }
@@ -242,6 +259,7 @@ impl Actor {
 
     fn on_request(&mut self, Request { peer, job }: Request) {
         if job.is_canceled() {
+            job.log_cancelled(self.running.len(), self.pending);
             self.metrics.completed("cancelled");
             return;
         }
@@ -251,7 +269,7 @@ impl Actor {
         }
 
         if let Some(error) = self.queue_full(peer) {
-            tracing::debug!(%peer, %error, "Rejecting verification request");
+            tracing::warn!(parent: &job.span(), %error, running = self.running.len(), queued = self.pending, "Rejected ownership-proof verification job");
             self.metrics.rejected(match error {
                 VerificationError::PeerQueueFull => "peer_queue_full",
                 _ => "global_queue_full",
@@ -260,6 +278,7 @@ impl Actor {
             return;
         }
 
+        tracing::info!(parent: &job.span(), running = self.running.len(), queued = self.pending + 1, "Queued ownership-proof verification job");
         let entry = self.peers.entry(peer).or_default();
         entry.queue.push_back(job);
         self.pending += 1;
@@ -303,17 +322,28 @@ impl Actor {
 
             peer.state = PeerState::Running;
             let metrics = self.metrics.clone();
-            metrics
-                .queue_wait
-                .observe(job.queued_at.elapsed().as_secs_f64());
+            let wait_seconds = job.queued_at.elapsed().as_secs_f64();
+            let span = job.span();
+            metrics.queue_wait.observe(wait_seconds);
+            tracing::info!(parent: &span, queue_wait_seconds = wait_seconds, running = self.running.len() + 1, queued = self.pending, "Started ownership-proof verification job");
             self.running.push(
                 async move {
                     let started = Instant::now();
                     let outcome = job.work.run().await;
-                    metrics.duration.observe(started.elapsed().as_secs_f64());
+                    let duration_seconds = started.elapsed().as_secs_f64();
+                    metrics.duration.observe(duration_seconds);
                     metrics.completed(outcome);
+                    tracing::info!(
+                        outcome,
+                        duration_seconds,
+                        queue_wait_seconds = wait_seconds,
+                        running = metrics.running.get(),
+                        queued = metrics.queued.get(),
+                        "Ownership-proof job finished; releasing its worker"
+                    );
                     peer_id
                 }
+                .instrument(span)
                 .boxed(),
             );
         }
@@ -359,6 +389,7 @@ impl Actor {
         for peer in self.peers.values_mut() {
             peer.queue.retain(|job| {
                 if job.is_canceled() {
+                    job.log_cancelled(self.running.len(), self.pending);
                     self.metrics.completed("cancelled");
                     return false;
                 }
@@ -407,26 +438,40 @@ impl Job {
                 challenge,
                 reply,
             } => {
-                let result = verify_blocking(move || {
+                let verification = verify_blocking(move || {
                     VerifiedPsbt::verify(psbt, &proofs, challenge)
                         .context("Failed to verify lock input ownership proofs")
-                })
-                .await;
-                finish_job(reply, result)
+                });
+                finish_running_job(reply, verification).await
             }
             #[cfg(test)]
-            Job::Test { work, reply } => {
-                let result = verify_blocking(work).await;
-                finish_job(reply, result)
-            }
+            Job::Test { work, reply } => finish_running_job(reply, verify_blocking(work)).await,
         }
     }
+}
+
+async fn finish_running_job<T>(
+    mut reply: oneshot::Sender<Result<T, VerificationError>>,
+    verification: impl std::future::Future<Output = Result<T, VerificationError>>,
+) -> &'static str {
+    tokio::pin!(verification);
+    let result = tokio::select! {
+        result = &mut verification => result,
+        () = reply.closed() => {
+            tracing::info!("Ownership-proof cancellation requested; waiting for started work to finish");
+            verification.await
+        }
+    };
+    finish_job(reply, result)
 }
 
 fn finish_job<T>(
     reply: oneshot::Sender<Result<T, VerificationError>>,
     result: Result<T, VerificationError>,
 ) -> &'static str {
+    if let Err(error) = &result {
+        tracing::warn!(error = %format!("{error:#}"), "Ownership-proof verification failed");
+    }
     let outcome = match &result {
         Ok(_) => "success",
         Err(VerificationError::Worker(_)) => "worker_failure",
@@ -443,7 +488,8 @@ fn finish_job<T>(
 async fn verify_blocking<T: Send + 'static>(
     work: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
 ) -> Result<T, VerificationError> {
-    tokio::task::spawn_blocking(work)
+    let span = tracing::Span::current();
+    tokio::task::spawn_blocking(move || span.in_scope(work))
         .await
         .map_err(VerificationError::Worker)?
         .map_err(VerificationError::Setup)
@@ -460,6 +506,7 @@ fn pop_live_job(
         if !job.is_canceled() {
             return Some(job);
         }
+        job.log_cancelled(metrics.running.get() as usize, *pending);
         metrics.completed("cancelled");
     }
 
@@ -835,11 +882,13 @@ mod tests {
         let (reply, _response) = oneshot::channel();
         actor.on_request(Request {
             peer,
-            job: Job::Test {
-                work: Box::new(|| Ok(())),
-                reply,
-            }
-            .into(),
+            job: QueuedJob::new(
+                peer,
+                Job::Test {
+                    work: Box::new(|| Ok(())),
+                    reply,
+                },
+            ),
         });
         actor.dispatch();
         assert_eq!(actor.running.next().await, Some(peer));
