@@ -74,7 +74,7 @@ pub trait BitcoinWallet: Send + Sync {
 
     /// Prove control of the keys behind every input of an unsigned PSBT owned
     /// by this wallet.
-    async fn prove_utxo_ownership(
+    fn prove_utxo_ownership(
         &self,
         psbt: &bitcoin::psbt::Psbt,
         challenge: utxo_ownership_proof::Challenge,

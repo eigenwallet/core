@@ -2404,7 +2404,7 @@ impl BitcoinWallet for Wallet {
         Wallet::sign_and_finalize(self, psbt).await
     }
 
-    async fn prove_utxo_ownership(
+    fn prove_utxo_ownership(
         &self,
         psbt: &Psbt,
         challenge: utxo_ownership_proof::Challenge,
@@ -3247,7 +3247,7 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         Wallet::sign_and_finalize(self, psbt).await
     }
 
-    async fn prove_utxo_ownership(
+    fn prove_utxo_ownership(
         &self,
         psbt: &Psbt,
         challenge: utxo_ownership_proof::Challenge,

@@ -509,7 +509,6 @@ impl State0 {
                     tx_lock.txid(),
                 ),
             )
-            .await
             .context("Failed to prove ownership of TxLock inputs")?;
 
         let v = msg.v_a + self.v_b;
