@@ -628,61 +628,66 @@ impl SqliteDatabase {
     /// Like [`Database::all`] but only returns swaps whose latest state
     /// update happened within the last `freshness_hours`.
     ///
-    /// `entered_at` is stored as a Rust-formatted string
-    /// (`YYYY-MM-DD HH:MM:SS.fff +00:00:00`). SQLite's date functions don't
-    /// accept the offset trailer, so we `substr` down to the first 19
-    /// characters before parsing with `strftime('%s', ...)`. All writes use
-    /// `OffsetDateTime::now_utc()`, so dropping the offset is safe.
+    /// Normalize the UTC timestamps written by `OffsetDateTime::to_string()` in
+    /// SQL (including single-digit hours) before filtering or decoding state JSON.
     pub async fn all_fresh(&self, freshness_hours: u64) -> Result<Vec<(PeerId, Uuid, State)>> {
-        let freshness_seconds = (freshness_hours as i64).saturating_mul(3600);
+        let seconds = i64::try_from(freshness_hours)?
+            .checked_mul(3600)
+            .context("Freshness interval overflow")?;
+        let cutoff = OffsetDateTime::now_utc()
+            .unix_timestamp()
+            .checked_sub(seconds)
+            .context("Freshness cutoff overflow")?;
+        self.all_fresh_since(cutoff).await
+    }
 
+    async fn all_fresh_since(&self, cutoff: i64) -> Result<Vec<(PeerId, Uuid, State)>> {
         let rows = sqlx::query!(
             r#"
-            SELECT s.swap_id, s.state, p.peer_id
-            FROM (
+            WITH latest AS (
                 SELECT max(id) as id, swap_id, state, entered_at
                 FROM swap_states
                 GROUP BY swap_id
-            ) s
+            ), normalized AS (
+                SELECT *, CASE
+                    WHEN entered_at NOT GLOB '* +00:00:00' THEN NULL
+                    WHEN substr(entered_at, 13, 1) = ':'
+                        THEN substr(entered_at, 1, 11) || '0' || substr(entered_at, 12, length(entered_at) - 21)
+                    ELSE substr(entered_at, 1, length(entered_at) - 10)
+                END AS utc_time
+                FROM latest
+            )
+            -- Parse the entire normalized timestamp so malformed fractional
+            -- seconds cannot be hidden by truncation. Epoch seconds discard
+            -- the fractional part only after the timestamp has been parsed.
+            SELECT s.swap_id, s.state, p.peer_id, s.entered_at,
+                   CAST(strftime('%s', s.utc_time) AS INTEGER) AS "entered_at_unix?: i64"
+            FROM normalized s
             INNER JOIN peers p ON s.swap_id = p.swap_id
-            WHERE CAST(strftime('%s', substr(s.entered_at, 1, 19)) AS INTEGER)
-                  >= CAST(strftime('%s', 'now') AS INTEGER) - ?
+            WHERE strftime('%s', s.utc_time) IS NULL
+               OR CAST(strftime('%s', s.utc_time) AS INTEGER) >= ?
             "#,
-            freshness_seconds,
+            cutoff,
         )
         .fetch_all(&self.pool)
         .await?;
 
-        let result = rows
-            .iter()
-            .filter_map(|row| {
-                let swap_id = match Uuid::from_str(&row.swap_id) {
-                    Ok(id) => id,
-                    Err(e) => {
-                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Failed to parse UUID");
-                        return None;
-                    }
-                };
-                let peer_id = match PeerId::from_str(&row.peer_id) {
-                    Ok(id) => id,
-                    Err(e) => {
-                        tracing::error!(%swap_id, error = ?e, "Failed to parse PeerId");
-                        return None;
-                    }
-                };
-                let state = match serde_json::from_str::<Swap>(&row.state) {
-                    Ok(a) => State::from(a),
-                    Err(e) => {
-                        tracing::error!(%swap_id, error = ?e, "Failed to deserialize state");
-                        return None;
-                    }
-                };
-
-                Some((peer_id, swap_id, state))
+        rows.iter()
+            .map(|row| {
+                // Invalid timestamps must not silently hide a swap from this query.
+                row.entered_at_unix.with_context(|| {
+                    format!(
+                        "Invalid UTC timestamp {:?} for swap {}",
+                        row.entered_at, row.swap_id
+                    )
+                })?;
+                let swap_id = Uuid::from_str(&row.swap_id).context("Invalid swap UUID")?;
+                let peer_id = PeerId::from_str(&row.peer_id).context("Invalid swap peer ID")?;
+                let state = serde_json::from_str::<Swap>(&row.state)
+                    .with_context(|| format!("Failed to deserialize state of swap {swap_id}"))?;
+                Ok((peer_id, swap_id, State::from(state)))
             })
-            .collect();
-
-        Ok(result)
+            .collect()
     }
 }
 
@@ -945,6 +950,85 @@ mod tests {
         assert!(loaded_multiaddr.contains(&multiaddr2));
         assert_eq!(loaded_multiaddr.len(), 2);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fresh_swaps_normalize_hours_and_filter_before_decoding() -> Result<()> {
+        let db = setup_test_db().await?;
+        // Test midnight, single-digit and two-digit hours with fractional seconds.
+        for hour in [0, 1, 9, 10, 23] {
+            sqlx::query("DELETE FROM swap_states")
+                .execute(&db.pool)
+                .await?;
+            sqlx::query("DELETE FROM peers").execute(&db.pool).await?;
+            let cutoff = OffsetDateTime::from_unix_timestamp(1_735_689_600 + hour * 3600)?;
+            let mut expected = Vec::new();
+            for offset in [-1, 0, 1] {
+                let id = Uuid::new_v4();
+                db.insert_peer_id(id, PeerId::random()).await?;
+                let timestamp =
+                    (cutoff + time::Duration::seconds(offset) + time::Duration::milliseconds(123))
+                        .to_string();
+                let state = if offset < 0 {
+                    "this stale JSON must never be decoded"
+                } else {
+                    r#"{"Alice":{"Done":"SafelyAborted"}}"#
+                };
+                sqlx::query(
+                    "INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)",
+                )
+                .bind(id.to_string())
+                .bind(timestamp)
+                .bind(state)
+                .execute(&db.pool)
+                .await?;
+                if offset >= 0 {
+                    expected.push(id);
+                }
+            }
+            let fresh = db.all_fresh_since(cutoff.unix_timestamp()).await?;
+            assert_eq!(fresh.len(), expected.len());
+            assert!(fresh.iter().all(|(_, id, _)| expected.contains(id)));
+            // A newer row supersedes a fresh one even if its timestamp is older.
+            sqlx::query("INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)")
+                .bind(expected[0].to_string())
+                .bind((cutoff - time::Duration::seconds(1)).to_string())
+                .bind("stale JSON")
+                .execute(&db.pool)
+                .await?;
+            assert_eq!(db.all_fresh_since(cutoff.unix_timestamp()).await?.len(), 1);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fresh_swaps_report_malformed_timestamps() -> Result<()> {
+        let db = setup_test_db().await?;
+        let id = Uuid::new_v4();
+        db.insert_peer_id(id, PeerId::random()).await?;
+        for timestamp in [
+            "not a timestamp",
+            "2025-01-01 4:30:00 +01:00:00",
+            "2025-99-01 4:30:00 +00:00:00",
+            "2025-01-01 4:30:00.garbage +00:00:00",
+            "2025-01-01 4:30:00.123 invalid +00:00:00",
+        ] {
+            sqlx::query("INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)")
+                .bind(id.to_string())
+                .bind(timestamp)
+                .bind(r#"{"Alice":{"Done":"SafelyAborted"}}"#)
+                .execute(&db.pool)
+                .await?;
+            assert!(
+                db.all_fresh(24)
+                    .await
+                    .unwrap_err()
+                    .to_string()
+                    .contains("Invalid UTC timestamp")
+            );
+        }
+        assert!(db.all_fresh(u64::MAX).await.is_err());
         Ok(())
     }
 
