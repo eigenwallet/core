@@ -29,6 +29,9 @@ use uuid::Uuid;
 
 const MAX_TX_LOCK_INPUTS: usize = 25;
 
+/// One deadline for backend verification, including retries and queueing.
+pub const LOCK_INPUT_CHECK_TIMEOUT: Duration = Duration::from_secs(45);
+
 #[derive(Debug)]
 pub enum LockInputCheckError {
     Cancelled,
@@ -67,6 +70,7 @@ impl From<bitcoin_wallet::PsbtPrevoutVerificationError> for LockInputCheckError 
 pub struct LockInputCheck {
     pub psbt: bitcoin::PartiallySignedTransaction,
     pub cancel: tokio::sync::watch::Receiver<bool>,
+    pub deadline: tokio::time::Instant,
 }
 
 /// Keeps the inputs of Bob's lock transaction reserved for one swap setup

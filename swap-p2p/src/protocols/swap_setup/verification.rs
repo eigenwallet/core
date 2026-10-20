@@ -408,6 +408,7 @@ async fn await_lock_input_check<T: Send>(
     let response = check_lock_inputs.send_receive(LockInputCheck {
         psbt,
         cancel: cancellation,
+        deadline: Instant::now() + super::alice::LOCK_INPUT_CHECK_TIMEOUT,
     });
     tokio::pin!(response);
     let result = tokio::select! {

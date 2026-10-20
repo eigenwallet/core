@@ -44,7 +44,6 @@ use uuid::Uuid;
 
 pub use service::{EventLoopRequest, EventLoopService, OnionServiceStatusInfo};
 
-const LOCK_INPUT_CHECK_RETRY_TIMEOUT: Duration = Duration::from_secs(60);
 const LOCK_INPUT_CHECK_INITIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
 const LOCK_INPUT_CHECK_MAX_RETRY_DELAY: Duration = Duration::from_secs(5);
 
@@ -676,7 +675,7 @@ where
                 },
 
                 Some(request) = self.inflight_lock_input_requests.next() => {
-                    let Some((LockInputCheck { psbt, cancel }, responder)) = request else {
+                    let Some((LockInputCheck { psbt, cancel, deadline }, responder)) = request else {
                         continue;
                     };
 
@@ -702,7 +701,7 @@ where
 
                     self.inflight_lock_input_checks.push(async move {
                         let result = async {
-                            verify_psbt_prevouts_with_retry(bitcoin_wallet.as_ref(), &psbt, cancel)
+                            verify_psbt_prevouts_with_retry(bitcoin_wallet.as_ref(), &psbt, cancel, deadline)
                                 .await
                                 .map_err(LockInputCheckError::from)?;
                             check_for_conflicting_swap_inputs(db.as_ref(), &psbt).await
@@ -1487,6 +1486,7 @@ async fn verify_psbt_prevouts_with_retry(
     bitcoin_wallet: &dyn BitcoinWallet,
     psbt: &bitcoin::PartiallySignedTransaction,
     cancel: watch::Receiver<bool>,
+    deadline: tokio::time::Instant,
 ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
     retry_lock_input_check(
         |attempt_cancel| async move {
@@ -1494,7 +1494,7 @@ async fn verify_psbt_prevouts_with_retry(
                 .verify_psbt_prevouts(psbt, &attempt_cancel)
                 .await
         },
-        LOCK_INPUT_CHECK_RETRY_TIMEOUT,
+        deadline,
         LOCK_INPUT_CHECK_MAX_RETRY_DELAY,
         cancel,
     )
@@ -1535,7 +1535,7 @@ async fn check_for_conflicting_swap_inputs(
 
 async fn retry_lock_input_check<F, Fut>(
     mut verify: F,
-    max_elapsed_time: Duration,
+    deadline: tokio::time::Instant,
     max_interval: Duration,
     mut cancel: watch::Receiver<bool>,
 ) -> std::result::Result<(), PsbtPrevoutVerificationError>
@@ -1545,7 +1545,6 @@ where
 {
     use backoff::backoff::Backoff;
 
-    let deadline = tokio::time::Instant::now() + max_elapsed_time;
     let mut retry_policy = backoff::ExponentialBackoffBuilder::new()
         .with_initial_interval(LOCK_INPUT_CHECK_INITIAL_RETRY_DELAY.min(max_interval))
         .with_max_elapsed_time(None)
@@ -2308,7 +2307,7 @@ mod tests {
                     })
                 }
             },
-            Duration::from_millis(100),
+            tokio::time::Instant::now() + Duration::from_millis(100),
             Duration::from_millis(1),
             cancellation,
         )
@@ -2319,6 +2318,49 @@ mod tests {
             Err(PsbtPrevoutVerificationError::PrevoutNotFound { .. })
         ));
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn transient_lock_input_failures_retry_within_one_deadline() {
+        let (_cancel, cancellation) = watch::channel(false);
+        let mut attempts = 0;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(45);
+        let result = retry_lock_input_check(
+            |_| {
+                attempts += 1;
+                std::future::ready(if attempts < 3 {
+                    Err(PsbtPrevoutVerificationError::Electrum(anyhow!(
+                        "network unavailable"
+                    )))
+                } else {
+                    Ok(())
+                })
+            },
+            deadline,
+            Duration::from_secs(5),
+            cancellation.clone(),
+        )
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(attempts, 3);
+        assert!(tokio::time::Instant::now() < deadline);
+
+        let result = retry_lock_input_check(
+            |_| {
+                std::future::ready(Err(PsbtPrevoutVerificationError::Electrum(anyhow!(
+                    "still offline"
+                ))))
+            },
+            deadline,
+            Duration::from_secs(5),
+            cancellation,
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(PsbtPrevoutVerificationError::TimedOut)
+        ));
+        assert_eq!(tokio::time::Instant::now(), deadline);
     }
 
     #[tokio::test(start_paused = true)]
@@ -2349,7 +2391,7 @@ mod tests {
                     Err(PsbtPrevoutVerificationError::Cancelled)
                 }
             },
-            Duration::from_secs(60),
+            tokio::time::Instant::now() + Duration::from_secs(45),
             Duration::from_secs(5),
             cancellation,
         ));
@@ -2357,7 +2399,7 @@ mod tests {
         if cancel_requested {
             cancel.send(true).unwrap();
         } else {
-            tokio::time::advance(Duration::from_secs(60)).await;
+            tokio::time::advance(Duration::from_secs(45)).await;
         }
         stopping_rx.await.unwrap();
         assert!(
@@ -2400,7 +2442,7 @@ mod tests {
                     )))
                 }
             },
-            Duration::from_secs(60),
+            tokio::time::Instant::now() + Duration::from_secs(45),
             Duration::from_secs(5),
             cancellation,
         ));
