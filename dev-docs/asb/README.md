@@ -128,6 +128,8 @@ Both peers derive one base fee from the largest conservative signed transaction 
 Redeem pays exactly three times the base fee; every other presigned transaction pays the base fee.
 Setup rejects fees above local budgets and deposits that cannot fund their spending paths.
 
+`wallet_snapshot_cache_ttl_secs` controls how long wallet state is reused during swap setup. It defaults to `120` seconds. This reduces repeated Bitcoin and Monero health checks, Monero balance calls, and Bitcoin address generation across setup requests. Amount-dependent fee projections are still computed per swap.
+
 In order to be able to trade, the ASB must define a price to be able to agree on the amounts to be swapped with a CLI.
 The `XMR<>BTC` price is currently determined by the price from the central exchange Kraken.
 Upon startup the ASB connects to the Kraken price websocket and listens on the stream for price updates.

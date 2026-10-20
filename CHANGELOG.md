@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Both peers must upgrade to start a new swap; stored swaps keep their original fees, signatures, and transaction format.
 
 - PROTOCOL: The taker now needs to construct a cryptographic proof that ownes the inputs of the tx lock transaction before a swap can be started.
+- ASB: Cache swap-setup wallet state. The cache TTL is configured with
+  `maker.wallet_snapshot_cache_ttl_secs` and defaults to 120 seconds.
 
 ## [4.16.1] - 2026-10-13
 

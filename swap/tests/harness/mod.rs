@@ -508,6 +508,7 @@ async fn start_alice(
         max_buy,
         None,
         swap_env::config::default_btc_swap_fee_rate_multiplier(),
+        Duration::from_secs(swap_env::config::default_wallet_snapshot_cache_ttl_secs()),
         developer_tip,
         hermes_funding_policy,
         refund_policy,

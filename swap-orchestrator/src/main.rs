@@ -400,6 +400,8 @@ fn main() {
                 external_bitcoin_redeem_address: None,
                 btc_swap_fee_rate_multiplier:
                     swap_env::config::default_btc_swap_fee_rate_multiplier(),
+                wallet_snapshot_cache_ttl_secs:
+                    swap_env::config::default_wallet_snapshot_cache_ttl_secs(),
                 refund_policy: defaults.refund_policy,
                 developer_tip,
             },

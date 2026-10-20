@@ -23,7 +23,7 @@ use libp2p::metrics::{Metrics, Recorder};
 use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
-use moka::sync::Cache;
+use moka::{future::Cache as AsyncCache, sync::Cache};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use std::collections::{HashMap, HashSet};
@@ -72,6 +72,9 @@ where
 
     /// Cache for quotes
     quote_cache: Cache<QuoteCacheKey, Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
+
+    /// Wallet state used to create snapshots during swap setup.
+    wallet_snapshot_cache: AsyncCache<(), WalletSnapshotState>,
 
     swap_sender: mpsc::Sender<Swap>,
 
@@ -223,6 +226,7 @@ where
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
         btc_swap_fee_rate_multiplier: Decimal,
+        wallet_snapshot_cache_ttl: Duration,
         developer_tip: TipConfig,
         hermes_funding_policy: HermesFundingPolicy,
         refund_policy: RefundPolicy,
@@ -236,6 +240,10 @@ where
         let (lock_input_release_sender, lock_input_releases) = mpsc::unbounded_channel();
 
         let quote_cache = Cache::builder().time_to_live(QUOTE_CACHE_TTL).build();
+        let wallet_snapshot_cache = AsyncCache::builder()
+            .max_capacity(1)
+            .time_to_live(wallet_snapshot_cache_ttl)
+            .build();
 
         let event_loop = EventLoop {
             swarm,
@@ -255,6 +263,7 @@ where
             refund_policy,
             config_path,
             quote_cache,
+            wallet_snapshot_cache,
             recv_encrypted_signature: Default::default(),
             recv_burn_on_refund_instruction: Default::default(),
             inflight_encrypted_signatures: Default::default(),
@@ -352,13 +361,31 @@ where
                             let monero_wallet = self.monero_wallet.clone();
                             let external_redeem_address = self.external_redeem_address.clone();
                             let btc_swap_fee_rate_multiplier = self.btc_swap_fee_rate_multiplier;
+                            let wallet_snapshot_cache = self.wallet_snapshot_cache.clone();
 
                             self.inflight_wallet_snapshots.push(async move {
                                 // Wait for the swap setup handler to request the wallet snapshot
                                 let (btc, responder) = send_wallet_snapshot.recv().await?;
 
-                                // Compute the wallet snapshot
-                                let wallet_snapshot = capture_wallet_snapshot(bitcoin_wallet, &monero_wallet, &external_redeem_address, btc_swap_fee_rate_multiplier, btc).await?;
+                                let wallet_state = get_cached_wallet_snapshot_state(
+                                    &wallet_snapshot_cache,
+                                    async {
+                                        capture_wallet_snapshot_state(
+                                            bitcoin_wallet.clone(),
+                                            &monero_wallet,
+                                            &external_redeem_address,
+                                        )
+                                        .await
+                                    },
+                                )
+                                .await?;
+                                let wallet_snapshot = create_wallet_snapshot(
+                                    bitcoin_wallet,
+                                    wallet_state,
+                                    btc_swap_fee_rate_multiplier,
+                                    btc,
+                                )
+                                .await?;
 
                                 // This is used further down to then actually respond to the swap setup handler
                                 Ok((btc, responder, wallet_snapshot))
@@ -1257,6 +1284,7 @@ where
         }
 
         self.external_redeem_address = reloaded.maker.external_bitcoin_redeem_address;
+        self.wallet_snapshot_cache.invalidate_all();
 
         tracing::info!(
             address = ?self.external_redeem_address.as_ref().map(|a| a.to_string()),
@@ -1597,13 +1625,28 @@ fn apply_anti_spam_policy(
     Ok((btc_amnesty_amount, should_always_withhold))
 }
 
-async fn capture_wallet_snapshot(
+#[derive(Clone)]
+struct WalletSnapshotState {
+    unlocked_balance: swap_core::monero::Amount,
+    redeem_address: bitcoin::Address,
+    punish_address: bitcoin::Address,
+}
+
+async fn get_cached_wallet_snapshot_state(
+    cache: &AsyncCache<(), WalletSnapshotState>,
+    capture: impl std::future::Future<Output = Result<WalletSnapshotState>>,
+) -> Result<WalletSnapshotState> {
+    cache
+        .try_get_with((), capture)
+        .await
+        .map_err(|error| anyhow!("Failed to capture wallet snapshot: {error:#}"))
+}
+
+async fn capture_wallet_snapshot_state(
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: &monero::Wallets,
     external_redeem_address: &Option<bitcoin::Address>,
-    btc_swap_fee_rate_multiplier: Decimal,
-    transfer_amount: bitcoin::Amount,
-) -> Result<WalletSnapshot> {
+) -> Result<WalletSnapshotState> {
     let start_time = Instant::now();
 
     // Don't back a swap setup against an unreachable Bitcoin or Monero backend.
@@ -1621,13 +1664,30 @@ async fn capture_wallet_snapshot(
 
     tracing::info!(%unlocked_balance, %total_balance, "Capturing monero wallet snapshot");
 
-    let redeem_address = external_redeem_address
-        .clone()
-        .unwrap_or(bitcoin_wallet.new_address().await?);
-    let punish_address = external_redeem_address
-        .clone()
-        .unwrap_or(bitcoin_wallet.new_address().await?);
+    let (redeem_address, punish_address) = if let Some(address) = external_redeem_address {
+        (address.clone(), address.clone())
+    } else {
+        (
+            bitcoin_wallet.new_address().await?,
+            bitcoin_wallet.new_address().await?,
+        )
+    };
 
+    tracing::debug!(duration_ms=%start_time.elapsed().as_millis(), "Finished capturing wallet snapshot state");
+
+    Ok(WalletSnapshotState {
+        unlocked_balance: unlocked_balance.into(),
+        redeem_address,
+        punish_address,
+    })
+}
+
+async fn create_wallet_snapshot(
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
+    state: WalletSnapshotState,
+    btc_swap_fee_rate_multiplier: Decimal,
+    transfer_amount: bitcoin::Amount,
+) -> Result<WalletSnapshot> {
     let estimated_rate = bitcoin::SwapFeeRate(
         bitcoin_wallet
             .swap_fee_rate()
@@ -1672,14 +1732,10 @@ async fn capture_wallet_snapshot(
         .estimate_fee(bitcoin::TxWithhold::weight(), Some(transfer_amount))
         .await?;
 
-    let end_time = Instant::now();
-
-    tracing::debug!(duration_ms=%end_time.duration_since(start_time).as_millis(), "Finished capturing wallet snapshot");
-
     Ok(WalletSnapshot::new(
-        unlocked_balance.into(),
-        redeem_address,
-        punish_address,
+        state.unlocked_balance,
+        state.redeem_address,
+        state.punish_address,
         redeem_fee,
         cancel_fee,
         refund_fee,
@@ -2194,6 +2250,7 @@ impl<T> Default for MpscChannels<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use swap_feed::FixedRate;
@@ -2347,6 +2404,43 @@ mod tests {
             Err(PsbtPrevoutVerificationError::Cancelled)
         ));
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn wallet_snapshot_state_cache_coalesces_and_reuses_captures() {
+        let cache = AsyncCache::builder()
+            .max_capacity(1)
+            .time_to_live(Duration::from_secs(120))
+            .build();
+        let captures = Arc::new(AtomicUsize::new(0));
+        let address = ::bitcoin::Address::<::bitcoin::address::NetworkUnchecked>::from_str(
+            "bc1qe4epnfklcaa0mun26yz5g8k24em5u9f92hy325",
+        )
+        .unwrap()
+        .assume_checked();
+        let state = WalletSnapshotState {
+            unlocked_balance: monero::Amount::ZERO,
+            redeem_address: address.clone(),
+            punish_address: address,
+        };
+
+        let capture = |state: WalletSnapshotState, captures: Arc<AtomicUsize>| async move {
+            captures.fetch_add(1, Ordering::SeqCst);
+            tokio::task::yield_now().await;
+            Ok(state)
+        };
+
+        let (first, second) = tokio::join!(
+            get_cached_wallet_snapshot_state(&cache, capture(state.clone(), captures.clone())),
+            get_cached_wallet_snapshot_state(&cache, capture(state.clone(), captures.clone())),
+        );
+        first.unwrap();
+        second.unwrap();
+        get_cached_wallet_snapshot_state(&cache, capture(state, captures.clone()))
+            .await
+            .unwrap();
+
+        assert_eq!(captures.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
