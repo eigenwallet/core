@@ -38,7 +38,7 @@ use swap_env::config::RefundPolicy;
 use swap_env::env;
 use swap_feed::LatestRate;
 use swap_p2p::protocols::cooperative_xmr_redeem_after_punish;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot, watch};
 use tor_hsservice::RunningOnionService;
 use uuid::Uuid;
 
@@ -46,6 +46,19 @@ pub use service::{EventLoopRequest, EventLoopService, OnionServiceStatusInfo};
 
 const LOCK_INPUT_CHECK_INITIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
 const LOCK_INPUT_CHECK_MAX_RETRY_DELAY: Duration = Duration::from_secs(5);
+
+/// Separate from the proof actor: bound network and database work together,
+/// retaining a permit until already-started work has actually finished.
+const MAX_CONCURRENT_LOCK_INPUT_CHECKS: usize = 50;
+
+type LockInputResponder = bmrng::Responder<Result<LockInputReservation, LockInputCheckError>>;
+
+struct CompletedChainCheck {
+    request: LockInputCheck,
+    responder: LockInputResponder,
+    result: Result<(), LockInputCheckError>,
+    permit: OwnedSemaphorePermit,
+}
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop<LR>
@@ -146,9 +159,12 @@ where
         >,
     >,
 
-    /// In-flight TxLock input verifications for swap setup.
-    /// Each future verifies the inputs of a reserved TxLock PSBT against the
-    /// chain and the database and responds with the result.
+    /// Chain checks run without reservations. Successful checks return to the
+    /// event loop for atomic reservation before the database check starts.
+    inflight_lock_chain_checks: FuturesUnordered<BoxFuture<'static, CompletedChainCheck>>,
+    lock_input_check_capacity: Arc<Semaphore>,
+
+    /// Database checks hold a reservation and a capacity permit until completion.
     inflight_lock_input_checks: FuturesUnordered<BoxFuture<'static, Result<()>>>,
 
     /// Inputs of TxLock PSBTs whose swaps are not yet visible to
@@ -275,6 +291,8 @@ where
             inflight_wallet_snapshots: Default::default(),
             inflight_lock_input_requests: Default::default(),
             inflight_lock_input_checks: Default::default(),
+            inflight_lock_chain_checks: Default::default(),
+            lock_input_check_capacity: Arc::new(Semaphore::new(MAX_CONCURRENT_LOCK_INPUT_CHECKS)),
             reserved_lock_inputs: Default::default(),
             lock_input_release_sender,
             lock_input_releases,
@@ -309,6 +327,8 @@ where
         self.inflight_wallet_snapshots
             .push(future::pending().boxed());
         self.inflight_lock_input_requests
+            .push(future::pending().boxed());
+        self.inflight_lock_chain_checks
             .push(future::pending().boxed());
         self.inflight_lock_input_checks
             .push(future::pending().boxed());
@@ -675,44 +695,44 @@ where
                 },
 
                 Some(request) = self.inflight_lock_input_requests.next() => {
-                    let Some((LockInputCheck { psbt, cancel, deadline }, responder)) = request else {
-                        continue;
-                    };
-
-                    if responder.is_closed() || *cancel.borrow() || cancel.has_changed().is_err() {
+                    let Some((request, responder)) = request else { continue; };
+                    if responder.is_closed() || lock_input_check_stopped(&request).is_some() {
                         let _ = responder.respond(Err(LockInputCheckError::Cancelled));
                         continue;
                     }
-
-                    // Reserve before checking the database so that every conflicting swap is
-                    // either still reserved or already persisted
-                    let reservation = match self.reserve_lock_inputs(&psbt) {
+                    let Ok(permit) = self.lock_input_check_capacity.clone().try_acquire_owned() else {
+                        let _ = responder.respond(Err(LockInputCheckError::Unavailable("Lock input check capacity exhausted".into())));
+                        continue;
+                    };
+                    let bitcoin_wallet = self.bitcoin_wallet.clone();
+                    self.inflight_lock_chain_checks.push(async move {
+                        let result = verify_psbt_prevouts_with_retry(
+                            bitcoin_wallet.as_ref(), &request.psbt, request.cancel.clone(), request.deadline,
+                        ).await.map_err(LockInputCheckError::from);
+                        CompletedChainCheck { request, responder, result, permit }
+                    }.boxed());
+                },
+                Some(CompletedChainCheck { request, responder, result, permit }) = self.inflight_lock_chain_checks.next() => {
+                    if responder.is_closed() { continue; }
+                    // This is synchronous: two verified requests cannot claim the same inputs.
+                    let reservation = match reserve_verified_lock_inputs(
+                        &request, result, &mut self.reserved_lock_inputs, &self.lock_input_release_sender,
+                    ) {
                         Ok(reservation) => reservation,
                         Err(error) => {
-                            if responder.respond(Err(error)).is_err() {
-                                tracing::warn!("Failed to send lock input verification result back to swap setup handler, connection may have been dropped");
-                            }
+                            let _ = responder.respond(Err(error));
                             continue;
                         }
                     };
-
-                    let bitcoin_wallet = self.bitcoin_wallet.clone();
                     let db = self.db.clone();
-
                     self.inflight_lock_input_checks.push(async move {
-                        let result = async {
-                            verify_psbt_prevouts_with_retry(bitcoin_wallet.as_ref(), &psbt, cancel, deadline)
-                                .await
-                                .map_err(LockInputCheckError::from)?;
-                            check_for_conflicting_swap_inputs(db.as_ref(), &psbt).await
-                        }
-                        .await
-                        .map(|()| reservation);
-
-                        responder
-                            .respond(result)
-                            .map_err(|_| anyhow!("Failed to send lock input verification result back to swap setup handler, connection may have been dropped"))?;
-
+                        // The database future is drained on cancellation too; dropping a
+                        // SQLx future alone would leave its worker running without a permit.
+                        let result = check_reserved_lock_inputs(db.as_ref(), request).await
+                            .map(|()| reservation);
+                        let _permit = permit;
+                        responder.respond(result)
+                            .map_err(|_| anyhow!("Lock input check requester stopped waiting"))?;
                         Ok(())
                     }.boxed());
                 },
@@ -925,36 +945,6 @@ where
             result
         }
         .boxed()
-    }
-
-    /// Reserve the inputs of Bob's TxLock PSBT for a swap setup, rejecting
-    /// inputs that another swap has reserved already.
-    fn reserve_lock_inputs(
-        &mut self,
-        psbt: &bitcoin::PartiallySignedTransaction,
-    ) -> Result<LockInputReservation, LockInputCheckError> {
-        let outpoints: Vec<_> = psbt
-            .unsigned_tx
-            .input
-            .iter()
-            .map(|input| input.previous_output)
-            .collect();
-
-        if let Some(outpoint) = outpoints
-            .iter()
-            .find(|outpoint| self.reserved_lock_inputs.contains(outpoint))
-        {
-            return Err(LockInputCheckError::Invalid(format!(
-                "Input {outpoint} is reserved by another swap"
-            )));
-        }
-
-        self.reserved_lock_inputs.extend(outpoints.iter().copied());
-
-        Ok(LockInputReservation::new(
-            outpoints,
-            self.lock_input_release_sender.clone(),
-        ))
     }
 
     async fn handle_execution_setup_done(
@@ -1478,6 +1468,66 @@ impl EventLoopHandle {
         let guard = self.recv_burn_on_refund_instruction.lock().await;
         let value = *guard.borrow();
         value
+    }
+}
+
+fn lock_input_check_stopped(request: &LockInputCheck) -> Option<LockInputCheckError> {
+    if *request.cancel.borrow() || request.cancel.has_changed().is_err() {
+        return Some(LockInputCheckError::Cancelled);
+    }
+    (tokio::time::Instant::now() >= request.deadline).then_some(LockInputCheckError::TimedOut)
+}
+
+/// Only chain-verified, live requests may reserve inputs. Called synchronously
+/// by the event loop, so reservation and conflict detection are atomic.
+fn reserve_verified_lock_inputs(
+    request: &LockInputCheck,
+    chain_result: Result<(), LockInputCheckError>,
+    reserved: &mut HashSet<::bitcoin::OutPoint>,
+    release: &mpsc::UnboundedSender<Vec<::bitcoin::OutPoint>>,
+) -> Result<LockInputReservation, LockInputCheckError> {
+    chain_result?;
+    if let Some(error) = lock_input_check_stopped(request) {
+        return Err(error);
+    }
+    let outpoints: Vec<_> = request
+        .psbt
+        .unsigned_tx
+        .input
+        .iter()
+        .map(|input| input.previous_output)
+        .collect();
+    if let Some(outpoint) = outpoints
+        .iter()
+        .find(|outpoint| reserved.contains(outpoint))
+    {
+        return Err(LockInputCheckError::Invalid(format!(
+            "Input {outpoint} is reserved by another swap"
+        )));
+    }
+    reserved.extend(outpoints.iter().copied());
+    Ok(LockInputReservation::new(outpoints, release.clone()))
+}
+
+async fn check_reserved_lock_inputs(
+    db: &(dyn Database + Send + Sync),
+    mut request: LockInputCheck,
+) -> Result<(), LockInputCheckError> {
+    if let Some(error) = lock_input_check_stopped(&request) {
+        return Err(error);
+    }
+    let check = check_for_conflicting_swap_inputs(db, &request.psbt);
+    tokio::pin!(check);
+    tokio::select! {
+        result = &mut check => result,
+        _ = request.cancel.changed() => {
+            let _ = check.await;
+            Err(LockInputCheckError::Cancelled)
+        }
+        _ = tokio::time::sleep_until(request.deadline) => {
+            let _ = check.await;
+            Err(LockInputCheckError::TimedOut)
+        }
     }
 }
 
@@ -2289,6 +2339,95 @@ mod tests {
             apply_anti_spam_policy(amount, &policy).unwrap().0,
             bitcoin::Amount::from_sat(1)
         );
+    }
+
+    #[tokio::test]
+    async fn unverified_inputs_are_never_reserved_and_verified_claims_are_atomic() {
+        let (_cancel, cancellation) = watch::channel(false);
+        let psbt = bitcoin::PartiallySignedTransaction::from_unsigned_tx(::bitcoin::Transaction {
+            version: ::bitcoin::transaction::Version::TWO,
+            lock_time: ::bitcoin::absolute::LockTime::ZERO,
+            input: vec![::bitcoin::TxIn {
+                previous_output: ::bitcoin::OutPoint::null(),
+                ..Default::default()
+            }],
+            output: vec![],
+        })
+        .unwrap();
+        let request = LockInputCheck {
+            psbt,
+            cancel: cancellation,
+            deadline: tokio::time::Instant::now() + Duration::from_secs(45),
+        };
+        let mut reserved = HashSet::new();
+        let (release, mut releases) = mpsc::unbounded_channel();
+        let (chain_reply, chain_result) = oneshot::channel();
+        let pending = tokio::spawn(async move { chain_result.await.unwrap() });
+        // A slow chain lookup has no access to reservations. An honest verified
+        // request can claim these inputs while the fabricated mapping is pending.
+        assert!(reserved.is_empty());
+        let honest =
+            reserve_verified_lock_inputs(&request, Ok(()), &mut reserved, &release).unwrap();
+        chain_reply
+            .send(Err(LockInputCheckError::Invalid(
+                "fabricated outpoint-to-script mapping".into(),
+            )))
+            .unwrap();
+        assert!(
+            reserve_verified_lock_inputs(&request, pending.await.unwrap(), &mut reserved, &release)
+                .is_err()
+        );
+        assert_eq!(reserved.len(), 1);
+        // Two successful chain checks still cannot both claim an overlapping input.
+        assert!(reserve_verified_lock_inputs(&request, Ok(()), &mut reserved, &release).is_err());
+        drop(honest);
+        for outpoint in releases.recv().await.unwrap() {
+            reserved.remove(&outpoint);
+        }
+        assert!(reserved.is_empty());
+        assert!(
+            reserve_verified_lock_inputs(
+                &request,
+                Err(LockInputCheckError::Invalid("invalid".into())),
+                &mut reserved,
+                &release
+            )
+            .is_err()
+        );
+        assert!(reserved.is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelled_or_expired_verified_requests_do_not_reserve_inputs() {
+        let (cancel, cancellation) = watch::channel(false);
+        let psbt = bitcoin::PartiallySignedTransaction::from_unsigned_tx(::bitcoin::Transaction {
+            version: ::bitcoin::transaction::Version::TWO,
+            lock_time: ::bitcoin::absolute::LockTime::ZERO,
+            input: vec![::bitcoin::TxIn {
+                previous_output: ::bitcoin::OutPoint::null(),
+                ..Default::default()
+            }],
+            output: vec![],
+        })
+        .unwrap();
+        let request = LockInputCheck {
+            psbt,
+            cancel: cancellation,
+            deadline: tokio::time::Instant::now() + Duration::from_secs(45),
+        };
+        let mut reserved = HashSet::new();
+        let (release, _releases) = mpsc::unbounded_channel();
+        tokio::time::advance(Duration::from_secs(45)).await;
+        assert!(matches!(
+            reserve_verified_lock_inputs(&request, Ok(()), &mut reserved, &release),
+            Err(LockInputCheckError::TimedOut)
+        ));
+        cancel.send_replace(true);
+        assert!(matches!(
+            reserve_verified_lock_inputs(&request, Ok(()), &mut reserved, &release),
+            Err(LockInputCheckError::Cancelled)
+        ));
+        assert!(reserved.is_empty());
     }
 
     #[tokio::test]
