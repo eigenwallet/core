@@ -223,6 +223,13 @@ pub struct Behaviour<LR> {
 }
 
 impl<LR> Behaviour<LR> {
+    pub fn register_verification_metrics(
+        &self,
+        registry: &mut prometheus_client::registry::Registry,
+    ) {
+        self.proof_verifier.register_metrics(registry);
+    }
+
     pub fn new(
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,

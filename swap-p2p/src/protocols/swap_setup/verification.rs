@@ -6,6 +6,8 @@
 //! jobs running concurrently across all peers. Ownership signatures are checked
 //! on Tokio's blocking thread pool; this actor has no swap state or chain access.
 
+mod metrics;
+
 use anyhow::Context;
 use futures::StreamExt;
 use futures::future::{BoxFuture, FutureExt};
@@ -37,6 +39,7 @@ const MAILBOX_CAPACITY: usize = 64;
 #[derive(Clone, Debug)]
 pub struct ProofVerifier {
     mailbox: mpsc::Sender<Request>,
+    metrics: metrics::Metrics,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -55,7 +58,30 @@ pub enum VerificationError {
 
 struct Request {
     peer: PeerId,
-    job: Job,
+    job: QueuedJob,
+}
+
+struct QueuedJob {
+    work: Job,
+    queued_at: Instant,
+}
+
+impl From<Job> for QueuedJob {
+    fn from(work: Job) -> Self {
+        Self {
+            work,
+            queued_at: Instant::now(),
+        }
+    }
+}
+
+impl QueuedJob {
+    fn is_canceled(&self) -> bool {
+        self.work.is_canceled()
+    }
+    fn reject(self, error: VerificationError) {
+        self.work.reject(error);
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -87,11 +113,12 @@ struct Actor {
     running: FuturesUnordered<BoxFuture<'static, PeerId>>,
     /// Number of queued jobs across all peers.
     pending: usize,
+    metrics: metrics::Metrics,
 }
 
 #[derive(Default)]
 struct Peer {
-    queue: VecDeque<Job>,
+    queue: VecDeque<QueuedJob>,
     state: PeerState,
 }
 
@@ -134,11 +161,16 @@ impl ProofVerifier {
         .await
     }
 
+    pub fn register_metrics(&self, registry: &mut prometheus_client::registry::Registry) {
+        self.metrics.register(registry);
+    }
+
     fn spawn_actor() -> (Self, JoinHandle<()>) {
         let (mailbox, receiver) = mpsc::channel(MAILBOX_CAPACITY);
-        let actor = tokio::spawn(Actor::new(receiver).run());
-
-        (Self { mailbox }, actor)
+        let actor = Actor::new(receiver);
+        let metrics = actor.metrics.clone();
+        let actor = tokio::spawn(actor.run());
+        (Self { mailbox, metrics }, actor)
     }
 
     async fn request<T>(
@@ -148,9 +180,15 @@ impl ProofVerifier {
         response: oneshot::Receiver<Result<T, VerificationError>>,
     ) -> Result<T, VerificationError> {
         self.mailbox
-            .send(Request { peer, job })
+            .send(Request {
+                peer,
+                job: job.into(),
+            })
             .await
-            .map_err(|_| VerificationError::Closed)?;
+            .map_err(|_| {
+                self.metrics.rejected("actor_closed");
+                VerificationError::Closed
+            })?;
 
         response.await.map_err(|_| VerificationError::Closed)?
     }
@@ -165,6 +203,7 @@ impl Actor {
             cooldowns: VecDeque::new(),
             running: FuturesUnordered::new(),
             pending: 0,
+            metrics: metrics::Metrics::default(),
         }
     }
 
@@ -174,6 +213,8 @@ impl Actor {
         loop {
             self.expire_cooldowns();
             self.dispatch();
+            self.metrics.running.set(self.running.len() as i64);
+            self.metrics.queued.set(self.pending as i64);
 
             if !mailbox_open && self.running.is_empty() && self.pending == 0 {
                 return;
@@ -201,6 +242,7 @@ impl Actor {
 
     fn on_request(&mut self, Request { peer, job }: Request) {
         if job.is_canceled() {
+            self.metrics.completed("cancelled");
             return;
         }
 
@@ -210,6 +252,10 @@ impl Actor {
 
         if let Some(error) = self.queue_full(peer) {
             tracing::debug!(%peer, %error, "Rejecting verification request");
+            self.metrics.rejected(match error {
+                VerificationError::PeerQueueFull => "peer_queue_full",
+                _ => "global_queue_full",
+            });
             job.reject(error);
             return;
         }
@@ -250,15 +296,22 @@ impl Actor {
                 .get_mut(&peer_id)
                 .expect("ready peers to have an entry");
 
-            let Some(job) = pop_live_job(&mut peer.queue, &mut self.pending) else {
+            let Some(job) = pop_live_job(&mut peer.queue, &mut self.pending, &self.metrics) else {
                 self.peers.remove(&peer_id);
                 continue;
             };
 
             peer.state = PeerState::Running;
+            let metrics = self.metrics.clone();
+            metrics
+                .queue_wait
+                .observe(job.queued_at.elapsed().as_secs_f64());
             self.running.push(
                 async move {
-                    job.run().await;
+                    let started = Instant::now();
+                    let outcome = job.work.run().await;
+                    metrics.duration.observe(started.elapsed().as_secs_f64());
+                    metrics.completed(outcome);
                     peer_id
                 }
                 .boxed(),
@@ -304,7 +357,13 @@ impl Actor {
     /// Drops queued jobs whose caller stopped waiting and forgets peers left without work.
     fn purge_canceled(&mut self) {
         for peer in self.peers.values_mut() {
-            peer.queue.retain(|job| !job.is_canceled());
+            peer.queue.retain(|job| {
+                if job.is_canceled() {
+                    self.metrics.completed("cancelled");
+                    return false;
+                }
+                true
+            });
         }
         self.pending = self.peers.values().map(|peer| peer.queue.len()).sum();
 
@@ -339,7 +398,7 @@ impl Job {
 
     /// Runs the job to completion. Resolves only once all blocking work has
     /// ended, even if the caller stopped waiting in the meantime.
-    async fn run(self) {
+    async fn run(self) -> &'static str {
         // In all arms the caller may have stopped waiting, then the result is dropped
         match self {
             Job::Lock {
@@ -353,14 +412,30 @@ impl Job {
                         .context("Failed to verify lock input ownership proofs")
                 })
                 .await;
-                let _ = reply.send(result);
+                finish_job(reply, result)
             }
             #[cfg(test)]
             Job::Test { work, reply } => {
                 let result = verify_blocking(work).await;
-                let _ = reply.send(result);
+                finish_job(reply, result)
             }
         }
+    }
+}
+
+fn finish_job<T>(
+    reply: oneshot::Sender<Result<T, VerificationError>>,
+    result: Result<T, VerificationError>,
+) -> &'static str {
+    let outcome = match &result {
+        Ok(_) => "success",
+        Err(VerificationError::Worker(_)) => "worker_failure",
+        Err(_) => "invalid",
+    };
+    if reply.send(result).is_err() {
+        "cancelled"
+    } else {
+        outcome
     }
 }
 
@@ -375,12 +450,17 @@ async fn verify_blocking<T: Send + 'static>(
 }
 
 /// Pops queued jobs until one whose caller is still waiting is found.
-fn pop_live_job(queue: &mut VecDeque<Job>, pending: &mut usize) -> Option<Job> {
+fn pop_live_job(
+    queue: &mut VecDeque<QueuedJob>,
+    pending: &mut usize,
+    metrics: &metrics::Metrics,
+) -> Option<QueuedJob> {
     while let Some(job) = queue.pop_front() {
         *pending -= 1;
         if !job.is_canceled() {
             return Some(job);
         }
+        metrics.completed("cancelled");
     }
 
     None
@@ -409,6 +489,51 @@ mod tests {
     use Event::{Finished, Started};
 
     type Gate = std::sync::mpsc::Sender<anyhow::Result<()>>;
+
+    #[tokio::test(start_paused = true)]
+    async fn metrics_track_capacity_queueing_and_cancelled_work_until_it_finishes() {
+        let (verifier, actor) = ProofVerifier::spawn_actor();
+        let metrics = verifier.metrics.clone();
+        let mut registry = prometheus_client::registry::Registry::default();
+        verifier.register_metrics(&mut registry);
+        let mut events = Events::new();
+        let peer = PeerId::random();
+        let (work, release) = events.gated("running");
+        let running = submit(&verifier, peer, work);
+        assert_eq!(events.next().await, Started("running".into()));
+        let queued = submit(&verifier, peer, || Ok(()));
+        settle().await;
+        assert_eq!(metrics.running.get(), 1);
+        assert_eq!(metrics.queued.get(), 1);
+        queued.abort();
+        running.abort();
+        drop(verifier);
+        settle().await;
+        assert_eq!(
+            metrics.running.get(),
+            1,
+            "cancellation must not free a busy worker"
+        );
+        assert_eq!(metrics.queued.get(), 0);
+        release.send(Ok(())).unwrap();
+        actor.await.unwrap();
+        assert_eq!(metrics.running.get(), 0);
+        let mut text = String::new();
+        prometheus_client::encoding::text::encode(&mut text, &registry).unwrap();
+        assert!(
+            text.contains("lock_proof_verification_capacity 50"),
+            "{text}"
+        );
+        assert!(
+            text.contains("lock_proof_verification_completed_total{outcome=\"cancelled\"} 2"),
+            "{text}"
+        );
+        assert!(
+            text.contains("lock_proof_verification_duration_seconds_count 1"),
+            "{text}"
+        );
+        assert!(!text.contains(&peer.to_string()));
+    }
 
     #[tokio::test(start_paused = true)]
     async fn cloned_handles_share_serialization_and_cooldown_starts_after_completion() {
@@ -713,7 +838,8 @@ mod tests {
             job: Job::Test {
                 work: Box::new(|| Ok(())),
                 reply,
-            },
+            }
+            .into(),
         });
         actor.dispatch();
         assert_eq!(actor.running.next().await, Some(peer));

@@ -136,6 +136,10 @@ The upper bound limits negotiation; each peer still enforces its total spending-
 The multiplier is negotiated during setup only; persisted swaps retain their original fee amounts.
 Setup rejects fees above local budgets and deposits that cannot fund their spending paths.
 
+When Prometheus is enabled, `lock_proof_verification_*` metrics expose running and queued ownership-proof jobs, worker capacity, completion and rejection counts, and queue/verification latency in seconds.
+Cancellation retains a running worker until its blocking work finishes.
+Metric labels contain fixed outcome names, never peer or job IDs.
+
 `wallet_snapshot_cache_ttl_secs` controls how long wallet state is reused during swap setup. It defaults to `20` seconds. This reduces repeated Bitcoin and Monero health checks, Monero balance calls, and Bitcoin address generation across setup requests. Amount-dependent fee projections are still computed per swap.
 
 In order to be able to trade, the ASB must define a price to be able to agree on the amounts to be swapped with a CLI.

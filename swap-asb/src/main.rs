@@ -380,6 +380,10 @@ pub async fn main() -> Result<()> {
             let (metrics, _metrics_server) =
                 match (config.network.prometheus_port, metrics_registry) {
                     (Some(port), Some(mut registry)) => {
+                        swarm
+                            .behaviour()
+                            .swap_setup
+                            .register_verification_metrics(&mut registry);
                         let metrics = metrics::Metrics::new(&mut registry);
                         let server = metrics::MetricsServer::start(port, registry).await?;
                         (Some(metrics), Some(server))
