@@ -497,6 +497,21 @@ impl State0 {
             self.refund_address.clone(),
         )
         .await?;
+
+        let tx_lock_psbt: swap_core::bitcoin::PartiallySignedTransaction = tx_lock.clone().into();
+        let tx_lock_proofs = wallet
+            .prove_utxo_ownership(
+                &tx_lock_psbt,
+                crate::common::tx_lock_ownership_challenge(
+                    self.swap_id,
+                    msg.A,
+                    self.b.public(),
+                    tx_lock.txid(),
+                ),
+            )
+            .await
+            .context("Failed to prove ownership of TxLock inputs")?;
+
         let v = msg.v_a + self.v_b;
 
         Ok(State1 {
@@ -515,6 +530,7 @@ impl State0 {
             redeem_address: msg.redeem_address,
             punish_address: msg.punish_address,
             tx_lock,
+            tx_lock_proofs,
             min_monero_confirmations: self.min_monero_confirmations,
             tx_redeem_fee: fees.redeem,
             tx_refund_fee: fees.base,
@@ -547,6 +563,7 @@ pub struct State1 {
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
     tx_lock: bitcoin::TxLock,
+    tx_lock_proofs: Vec<utxo_ownership_proof::OwnershipProof>,
     min_monero_confirmations: u64,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
     tx_reclaim_fee: Option<bitcoin::Amount>,
@@ -563,6 +580,7 @@ impl State1 {
     pub fn next_message(&self) -> Message2 {
         Message2 {
             tx_lock_psbt: self.tx_lock.clone().into(),
+            tx_lock_proofs: self.tx_lock_proofs.clone(),
         }
     }
 

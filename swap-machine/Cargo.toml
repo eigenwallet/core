@@ -26,6 +26,7 @@ sigma_fun = { workspace = true, default-features = false, features = ["ed25519",
 swap-core = { path = "../swap-core" }
 swap-env = { path = "../swap-env" }
 swap-serde = { path = "../swap-serde" }
+utxo-ownership-proof = { path = "../utxo-ownership-proof" }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }

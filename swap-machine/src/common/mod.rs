@@ -77,6 +77,24 @@ pub struct Message1 {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message2 {
     pub tx_lock_psbt: bitcoin::PartiallySignedTransaction,
+    /// One proof per TxLock input that Bob controls the keys behind it.
+    pub tx_lock_proofs: Vec<utxo_ownership_proof::OwnershipProof>,
+}
+
+/// Binds a TxLock ownership proof to the swap session and the exact lock transaction.
+#[allow(non_snake_case)]
+pub fn tx_lock_ownership_challenge(
+    swap_id: Uuid,
+    A: bitcoin::PublicKey,
+    B: bitcoin::PublicKey,
+    tx_lock_txid: bitcoin::Txid,
+) -> utxo_ownership_proof::Challenge {
+    let mut context = Vec::with_capacity(16 + 33 + 33 + 32);
+    context.extend_from_slice(swap_id.as_bytes());
+    context.extend_from_slice(&ecdsa_fun::fun::Point::from(A).to_bytes());
+    context.extend_from_slice(&ecdsa_fun::fun::Point::from(B).to_bytes());
+    context.extend_from_slice(tx_lock_txid.as_ref());
+    utxo_ownership_proof::challenge(&context)
 }
 
 #[allow(non_snake_case)]

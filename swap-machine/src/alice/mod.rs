@@ -156,6 +156,17 @@ pub enum AliceState {
 }
 
 impl AliceState {
+    /// Return the lock transaction while Alice is still waiting for it to
+    /// become confirmed.
+    pub fn pending_tx_lock(&self) -> Option<&swap_core::bitcoin::TxLock> {
+        match self {
+            Self::Started { state3 } | Self::BtcLockTransactionSeen { state3 } => {
+                Some(&state3.tx_lock)
+            }
+            _ => None,
+        }
+    }
+
     /// Returns true if this state is at or past BtcLocked.
     ///
     /// This indicates that the counterparty has committed real funds to the
@@ -340,6 +351,7 @@ impl State0 {
         Ok((
             msg.swap_id,
             State1 {
+                swap_id: msg.swap_id,
                 a: self.a,
                 B: msg.B,
                 s_a: self.s_a,
@@ -378,6 +390,7 @@ impl State0 {
 #[allow(non_snake_case)]
 #[derive(Clone, Debug)]
 pub struct State1 {
+    swap_id: Uuid,
     a: swap_core::bitcoin::SecretKey,
     B: swap_core::bitcoin::PublicKey,
     s_a: swap_core::monero::Scalar,
@@ -428,6 +441,16 @@ impl State1 {
     }
 
     pub fn receive(self, msg: Message2) -> Result<State2> {
+        let challenge = crate::common::tx_lock_ownership_challenge(
+            self.swap_id,
+            self.a.public(),
+            self.B,
+            msg.tx_lock_psbt.unsigned_tx.compute_txid(),
+        );
+
+        utxo_ownership_proof::verify_psbt(&msg.tx_lock_psbt, &msg.tx_lock_proofs, challenge)
+            .context("Failed to verify Bob's ownership proofs for the TxLock inputs")?;
+
         let tx_lock = swap_core::bitcoin::TxLock::from_psbt(
             msg.tx_lock_psbt,
             self.a.public(),

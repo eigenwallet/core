@@ -116,6 +116,8 @@ pub struct Wallet<Persister = Connection, C = Client> {
     /// We want our transactions to be confirmed after this many blocks
     /// (used for fee estimation).
     target_block: u32,
+    /// The root extended private key the wallet descriptors derive from.
+    xprivkey: Xpriv,
     /// The Tauri handle
     tauri_handle: TauriHandle,
 }
@@ -620,6 +622,7 @@ impl Wallet {
             network,
             finality_confirmations,
             target_block,
+            xprivkey,
         })
     }
 
@@ -679,6 +682,7 @@ impl Wallet {
             network,
             finality_confirmations,
             target_block,
+            xprivkey,
         };
 
         Ok(wallet)
@@ -1169,6 +1173,42 @@ impl<T, C> Wallet<T, C> {
     /// one ofour transaction to be confirmed.
     pub fn target_block(&self) -> u32 {
         self.target_block
+    }
+
+    /// Prove control of the keys behind every input of a PSBT built by this
+    /// wallet, using the BIP-32 derivation entries bdk records per input.
+    pub fn prove_utxo_ownership(
+        &self,
+        psbt: &Psbt,
+        challenge: utxo_ownership_proof::Challenge,
+    ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>> {
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        let root_fingerprint = self.xprivkey.fingerprint(&secp);
+
+        psbt.inputs
+            .iter()
+            .enumerate()
+            .map(|(index, input)| {
+                let (public_key, (_, path)) = input
+                    .bip32_derivation
+                    .iter()
+                    .find(|(_, (fingerprint, _))| *fingerprint == root_fingerprint)
+                    .with_context(|| {
+                        format!("Input {index} has no derivation entry for our wallet root")
+                    })?;
+
+                let derived = self
+                    .xprivkey
+                    .derive_priv(&secp, path)
+                    .with_context(|| format!("Failed to derive key for input {index}"))?;
+
+                if derived.private_key.public_key(&secp) != *public_key {
+                    bail!("Derived key for input {index} does not match its derivation entry");
+                }
+
+                Ok(utxo_ownership_proof::sign(&derived.private_key, challenge))
+            })
+            .collect()
     }
 }
 
@@ -2238,6 +2278,14 @@ impl BitcoinWallet for Wallet {
         Wallet::sign_and_finalize(self, psbt).await
     }
 
+    async fn prove_utxo_ownership(
+        &self,
+        psbt: &Psbt,
+        challenge: utxo_ownership_proof::Challenge,
+    ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>> {
+        Wallet::prove_utxo_ownership(self, psbt, challenge)
+    }
+
     async fn ensure_broadcasted(
         &self,
         tx: bitcoin::Transaction,
@@ -2980,6 +3028,7 @@ impl TestWalletBuilder {
             network: Network::Regtest,
             finality_confirmations: 1,
             target_block: 1,
+            xprivkey: self.key,
         };
 
         let mut locked_wallet = wallet.wallet.try_lock().unwrap();
@@ -3062,6 +3111,14 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
 
     async fn sign_and_finalize(&self, psbt: Psbt) -> Result<bitcoin::Transaction> {
         Wallet::sign_and_finalize(self, psbt).await
+    }
+
+    async fn prove_utxo_ownership(
+        &self,
+        psbt: &Psbt,
+        challenge: utxo_ownership_proof::Challenge,
+    ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>> {
+        Wallet::prove_utxo_ownership(self, psbt, challenge)
     }
 
     async fn sync(&self) -> Result<()> {

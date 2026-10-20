@@ -28,6 +28,7 @@ members = [
   "swap-serde",
   "throttle",
   "tracing-ext",
+  "utxo-ownership-proof",
 ]
 
 [workspace.dependencies]

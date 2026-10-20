@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The cancel timelock and Alice's redeem publication safety margin each increase by six blocks.
   Both peers must upgrade to start a new swap; stored swaps keep their original fees, signatures, and transaction format.
 
+- PROTOCOL: The taker now needs to construct a cryptographic proof that ownes the inputs of the tx lock transaction before a swap can be started.
+
 ## [4.16.1] - 2026-10-13
 
 - Report the actual Monero wallet error instead of "unknown error, error not set".

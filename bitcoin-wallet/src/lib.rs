@@ -41,6 +41,14 @@ pub trait BitcoinWallet: Send + Sync {
 
     async fn sign_and_finalize(&self, psbt: bitcoin::psbt::Psbt) -> Result<bitcoin::Transaction>;
 
+    /// Prove control of the keys behind every input of an unsigned PSBT owned
+    /// by this wallet.
+    async fn prove_utxo_ownership(
+        &self,
+        psbt: &bitcoin::psbt::Psbt,
+        challenge: utxo_ownership_proof::Challenge,
+    ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>>;
+
     async fn ensure_broadcasted(
         &self,
         transaction: bitcoin::Transaction,
