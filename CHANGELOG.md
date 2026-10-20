@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: The AppImage runs on Debian 12 and other distributions older than Ubuntu 24.04 again.
+  It is built on Ubuntu 22.04 now and the wayland libraries are no longer bundled, so they are provided by the host system.
+
 ## [4.16.1] - 2026-10-13
 
 - Report the actual Monero wallet error instead of "unknown error, error not set".
