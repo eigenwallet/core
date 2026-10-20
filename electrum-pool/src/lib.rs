@@ -303,6 +303,34 @@ where
         F: Fn(&C) -> Result<T, Error> + Send + Sync + Clone + 'static,
         T: Send + 'static,
     {
+        self.join_quorum_inner(kind, f, false).await
+    }
+
+    /// Return the same quorum results as `join_quorum`, but wait for every
+    /// started request to finish before returning. Used when the caller must
+    /// retain a verification worker slot until its RPC work has stopped.
+    pub async fn join_quorum_and_drain<F, T>(
+        &self,
+        kind: &str,
+        f: F,
+    ) -> Result<Vec<Result<T, Error>>, Error>
+    where
+        F: Fn(&C) -> Result<T, Error> + Send + Sync + Clone + 'static,
+        T: Send + 'static,
+    {
+        self.join_quorum_inner(kind, f, true).await
+    }
+
+    async fn join_quorum_inner<F, T>(
+        &self,
+        kind: &str,
+        f: F,
+        drain: bool,
+    ) -> Result<Vec<Result<T, Error>>, Error>
+    where
+        F: Fn(&C) -> Result<T, Error> + Send + Sync + Clone + 'static,
+        T: Send + 'static,
+    {
         let start_time = Instant::now();
         let num_clients = self.client_count();
         let quorum = self.config.min_parallel_responses.clamp(1, num_clients);
@@ -352,6 +380,13 @@ where
             }
 
             if successes >= quorum && primary_finished {
+                if drain {
+                    while let Some(result) = tasks.next().await {
+                        if let Err(error) = result {
+                            trace!(%error, "Failed to join remaining Electrum request");
+                        }
+                    }
+                }
                 break;
             }
         }
@@ -361,7 +396,7 @@ where
             successful_requests = successes,
             collected_requests = results.len(),
             detached_requests = tasks.len(),
-            "Quorum execution completed, remaining requests continue in the background"
+            "Quorum execution completed"
         );
 
         Ok(results)
@@ -1259,6 +1294,45 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(|r| r.is_ok()));
         assert!(start.elapsed() < Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn test_join_quorum_and_drain_waits_for_remaining_work() {
+        let urls = vec![
+            "tcp://localhost:50001".to_string(),
+            "tcp://localhost:50002".to_string(),
+            "tcp://localhost:50003".to_string(),
+        ];
+
+        let factory = Arc::new(MockElectrumClientFactory::new());
+        factory.add_client(MockElectrumClient::new(urls[0].clone()));
+        factory.add_client(MockElectrumClient::new(urls[1].clone()));
+        factory.add_client(
+            MockElectrumClient::new(urls[2].clone()).with_delay(Duration::from_millis(200)),
+        );
+
+        let config = ElectrumBalancerConfig {
+            request_timeout: 5,
+            min_retries: 0,
+            min_parallel_responses: 2,
+        };
+
+        let balancer = ElectrumBalancer::new_with_config_and_factory(urls, config, factory.clone())
+            .await
+            .unwrap();
+
+        let start = Instant::now();
+        let results = balancer
+            .join_quorum_and_drain("transaction_broadcast", |client| {
+                client.transaction_broadcast(&create_dummy_transaction())
+            })
+            .await
+            .unwrap();
+
+        // Preserve the quorum result, but retain the worker until the slow call ends.
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|r| r.is_ok()));
+        assert!(start.elapsed() >= Duration::from_millis(200));
     }
 
     #[tokio::test]

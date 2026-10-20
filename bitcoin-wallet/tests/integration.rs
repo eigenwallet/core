@@ -45,7 +45,9 @@ impl bitcoin_wallet::BitcoinWalletSeed for TestSeed {
     ) -> anyhow::Result<bitcoin::bip32::ExtendedPrivKey> {
         #[allow(deprecated)]
         {
-            Ok(bitcoin::bip32::ExtendedPrivKey::new_master(network, &self.0)?)
+            Ok(bitcoin::bip32::ExtendedPrivKey::new_master(
+                network, &self.0,
+            )?)
         }
     }
 
@@ -54,8 +56,7 @@ impl bitcoin_wallet::BitcoinWalletSeed for TestSeed {
         network: bdk::bitcoin::Network,
     ) -> anyhow::Result<bdk::bitcoin::util::bip32::ExtendedPrivKey> {
         Ok(bdk::bitcoin::util::bip32::ExtendedPrivKey::new_master(
-            network,
-            &self.0,
+            network, &self.0,
         )?)
     }
 }
@@ -183,6 +184,7 @@ async fn wallet_sends_broadcasts_and_confirms() -> Result<()> {
 #[tokio::test]
 async fn wallet_rejects_invalid_psbt_prevouts() -> Result<()> {
     init_tracing();
+    let (cancel, cancellation) = tokio::sync::watch::channel(false);
 
     let cli = Cli::default();
     let env = harness::setup(&cli).await?;
@@ -201,10 +203,12 @@ async fn wallet_rejects_invalid_psbt_prevouts() -> Result<()> {
 
     wallet.sync().await?;
 
-    let receive_addr = wallet.new_address().await?;
     let funding = bitcoin::Amount::from_sat(100_000);
-    harness::fund_and_mine(&env.bitcoind, receive_addr, funding).await?;
-    sync_until_balance(&wallet, funding).await?;
+    for count in 1..=2 {
+        let receive_addr = wallet.new_address().await?;
+        harness::fund_and_mine(&env.bitcoind, receive_addr, funding / 2).await?;
+        sync_until_balance(&wallet, funding / 2 * count).await?;
+    }
 
     let recipient = env
         .bitcoind
@@ -216,18 +220,29 @@ async fn wallet_rejects_invalid_psbt_prevouts() -> Result<()> {
     let psbt = wallet
         .send_to_address(
             recipient,
-            bitcoin::Amount::from_sat(25_000),
+            bitcoin::Amount::from_sat(75_000),
             bitcoin::Amount::from_sat(2_000),
             None,
         )
         .await?;
 
-    wallet.verify_psbt_prevouts(&psbt).await?;
+    assert_eq!(psbt.inputs.len(), 2);
+    assert_ne!(
+        psbt.inputs[0].witness_utxo.as_ref().unwrap().script_pubkey,
+        psbt.inputs[1].witness_utxo.as_ref().unwrap().script_pubkey,
+    );
+    wallet.verify_psbt_prevouts(&psbt, &cancellation).await?;
+    cancel.send(true)?;
+    assert!(matches!(
+        wallet.verify_psbt_prevouts(&psbt, &cancellation).await,
+        Err(bitcoin_wallet::PsbtPrevoutVerificationError::Cancelled)
+    ));
+    cancel.send(false)?;
 
     let mut nonexistent_prevout = psbt.clone();
     nonexistent_prevout.unsigned_tx.input[0].previous_output = bitcoin::OutPoint::null();
     let error = wallet
-        .verify_psbt_prevouts(&nonexistent_prevout)
+        .verify_psbt_prevouts(&nonexistent_prevout, &cancellation)
         .await
         .expect_err("a nonexistent prevout must be rejected");
     assert!(matches!(
@@ -243,7 +258,7 @@ async fn wallet_rejects_invalid_psbt_prevouts() -> Result<()> {
     witness_utxo.value += bitcoin::Amount::from_sat(1);
 
     let error = wallet
-        .verify_psbt_prevouts(&wrong_value)
+        .verify_psbt_prevouts(&wrong_value, &cancellation)
         .await
         .expect_err("a falsely claimed prevout value must be rejected");
     assert!(matches!(

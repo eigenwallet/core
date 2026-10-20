@@ -803,6 +803,7 @@ impl Wallet {
     pub async fn verify_psbt_prevouts(
         &self,
         psbt: &Psbt,
+        cancel: &watch::Receiver<bool>,
     ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
         if psbt.inputs.len() != psbt.unsigned_tx.input.len() {
             return Err(PsbtPrevoutVerificationError::InputMapCountMismatch {
@@ -827,12 +828,19 @@ impl Wallet {
                 .push((tx_input.previous_output, witness_utxo.value));
         }
 
-        for (script, outpoints) in claims {
-            let utxos = self
-                .list_unspent(script)
-                .await
-                .map_err(PsbtPrevoutVerificationError::Electrum)?;
+        if *cancel.borrow() || cancel.has_changed().is_err() {
+            return Err(PsbtPrevoutVerificationError::Cancelled);
+        }
+        let (scripts, claims): (Vec<_>, Vec<_>) = claims.into_iter().unzip();
+        let unspent = self
+            .list_unspent(scripts)
+            .await
+            .map_err(PsbtPrevoutVerificationError::Electrum)?;
+        if *cancel.borrow() || cancel.has_changed().is_err() {
+            return Err(PsbtPrevoutVerificationError::Cancelled);
+        }
 
+        for (outpoints, utxos) in claims.into_iter().zip(unspent) {
             for (outpoint, claimed_value) in outpoints {
                 let Some(utxo) = utxos.iter().find(|utxo| {
                     utxo.tx_hash == outpoint.txid && utxo.tx_pos == outpoint.vout as usize
@@ -854,19 +862,23 @@ impl Wallet {
         Ok(())
     }
 
-    /// Query the Electrum servers for the unspent outputs paying to a script.
+    /// Query all scripts in one batch per server, then drain all started calls.
+    /// Returned groups have the same order as `scripts`.
     ///
     /// A UTXO reported by any single server is accepted as existing; the
-    /// responses of all successful servers are merged.
+    /// successful responses collected before reaching quorum are merged.
     async fn list_unspent(
         &self,
-        script: ScriptBuf,
-    ) -> Result<Vec<bdk_electrum::electrum_client::ListUnspentRes>> {
+        scripts: Vec<ScriptBuf>,
+    ) -> Result<Vec<Vec<bdk_electrum::electrum_client::ListUnspentRes>>> {
+        let script_count = scripts.len();
         let results = self
             .electrum_client
             .inner
-            .join_quorum("script_list_unspent", move |client| {
-                client.inner.script_list_unspent(&script)
+            .join_quorum_and_drain("batch_script_list_unspent", move |client| {
+                client
+                    .inner
+                    .batch_script_list_unspent(scripts.iter().map(ScriptBuf::as_script))
             })
             .await
             .context("Failed to query Electrum servers for unspent outputs")?;
@@ -883,12 +895,22 @@ impl Wallet {
         if successful.is_empty() {
             return Err(electrum_pool::MultiError::new(
                 errors,
-                "No Electrum server returned unspent outputs for script".to_owned(),
+                "No Electrum server returned unspent outputs for scripts".to_owned(),
             )
             .into());
         }
 
-        Ok(successful.into_iter().flatten().collect())
+        let mut merged = vec![Vec::new(); script_count];
+        for groups in successful {
+            anyhow::ensure!(
+                groups.len() == script_count,
+                "Electrum returned an unexpected number of script results"
+            );
+            for (utxos, group) in merged.iter_mut().zip(groups) {
+                utxos.extend(group);
+            }
+        }
+        Ok(merged)
     }
 
     // Returns the TxId of the last published Bitcoin transaction
@@ -2393,8 +2415,9 @@ impl BitcoinWallet for Wallet {
     async fn verify_psbt_prevouts(
         &self,
         psbt: &Psbt,
+        cancel: &watch::Receiver<bool>,
     ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
-        Wallet::verify_psbt_prevouts(self, psbt).await
+        Wallet::verify_psbt_prevouts(self, psbt, cancel).await
     }
 
     async fn ensure_broadcasted(
@@ -3235,6 +3258,7 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     async fn verify_psbt_prevouts(
         &self,
         _psbt: &Psbt,
+        _cancel: &watch::Receiver<bool>,
     ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
         unimplemented!("stub method called erroneously")
     }

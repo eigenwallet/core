@@ -8,7 +8,7 @@ use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRej
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
 use crate::network::quote::{BidQuote, RefundPolicyWire};
 use crate::network::swap_setup::alice::{
-    LockInputCheckError, LockInputReservation, WalletSnapshot,
+    LockInputCheck, LockInputCheckError, LockInputReservation, WalletSnapshot,
 };
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
@@ -38,7 +38,7 @@ use swap_env::config::RefundPolicy;
 use swap_env::env;
 use swap_feed::LatestRate;
 use swap_p2p::protocols::cooperative_xmr_redeem_after_punish;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tor_hsservice::RunningOnionService;
 use uuid::Uuid;
 
@@ -137,7 +137,7 @@ where
         BoxFuture<
             'static,
             Option<(
-                bitcoin::PartiallySignedTransaction,
+                LockInputCheck,
                 bmrng::Responder<Result<LockInputReservation, LockInputCheckError>>,
             )>,
         >,
@@ -644,9 +644,14 @@ where
                 },
 
                 Some(request) = self.inflight_lock_input_requests.next() => {
-                    let Some((psbt, responder)) = request else {
+                    let Some((LockInputCheck { psbt, cancel }, responder)) = request else {
                         continue;
                     };
+
+                    if responder.is_closed() || *cancel.borrow() || cancel.has_changed().is_err() {
+                        let _ = responder.respond(Err(LockInputCheckError::Cancelled));
+                        continue;
+                    }
 
                     // Reserve before checking the database so that every conflicting swap is
                     // either still reserved or already persisted
@@ -665,7 +670,7 @@ where
 
                     self.inflight_lock_input_checks.push(async move {
                         let result = async {
-                            verify_psbt_prevouts_with_retry(bitcoin_wallet.as_ref(), &psbt)
+                            verify_psbt_prevouts_with_retry(bitcoin_wallet.as_ref(), &psbt, cancel)
                                 .await
                                 .map_err(LockInputCheckError::from)?;
                             check_for_conflicting_swap_inputs(db.as_ref(), &psbt).await
@@ -1448,11 +1453,17 @@ impl EventLoopHandle {
 async fn verify_psbt_prevouts_with_retry(
     bitcoin_wallet: &dyn BitcoinWallet,
     psbt: &bitcoin::PartiallySignedTransaction,
+    cancel: watch::Receiver<bool>,
 ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
     retry_lock_input_check(
-        || bitcoin_wallet.verify_psbt_prevouts(psbt),
+        |attempt_cancel| async move {
+            bitcoin_wallet
+                .verify_psbt_prevouts(psbt, &attempt_cancel)
+                .await
+        },
         LOCK_INPUT_CHECK_RETRY_TIMEOUT,
         LOCK_INPUT_CHECK_MAX_RETRY_DELAY,
+        cancel,
     )
     .await
 }
@@ -1493,47 +1504,59 @@ async fn retry_lock_input_check<F, Fut>(
     mut verify: F,
     max_elapsed_time: Duration,
     max_interval: Duration,
+    mut cancel: watch::Receiver<bool>,
 ) -> std::result::Result<(), PsbtPrevoutVerificationError>
 where
-    F: FnMut() -> Fut,
+    F: FnMut(watch::Receiver<bool>) -> Fut,
     Fut: std::future::Future<Output = std::result::Result<(), PsbtPrevoutVerificationError>>,
 {
-    let retry_policy = backoff::ExponentialBackoffBuilder::new()
+    use backoff::backoff::Backoff;
+
+    let deadline = tokio::time::Instant::now() + max_elapsed_time;
+    let mut retry_policy = backoff::ExponentialBackoffBuilder::new()
         .with_initial_interval(LOCK_INPUT_CHECK_INITIAL_RETRY_DELAY.min(max_interval))
         .with_max_elapsed_time(None)
         .with_max_interval(max_interval)
         .build();
 
-    let verification = backoff::future::retry_notify(
-        retry_policy,
-        || {
-            let verification = verify();
-            async move {
-                verification.await.map_err(|error| {
-                    if error.is_transient() {
-                        backoff::Error::transient(error)
-                    } else {
-                        backoff::Error::permanent(error)
-                    }
-                })
-            }
-        },
-        |error, retry_after: Duration| {
-            tracing::warn!(
-                error = %error,
-                retry_in_seconds = retry_after.as_secs_f64(),
-                "Electrum query failed while verifying lock transaction inputs, retrying"
-            );
-        },
-    );
+    loop {
+        if *cancel.borrow() || cancel.has_changed().is_err() {
+            return Err(PsbtPrevoutVerificationError::Cancelled);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(PsbtPrevoutVerificationError::TimedOut);
+        }
 
-    tokio::time::timeout(max_elapsed_time, verification)
-        .await
-        .map_err(|_| {
-            PsbtPrevoutVerificationError::Electrum(anyhow!(
-                "Timed out verifying lock transaction inputs"
-            ))
-        })?
+        let (attempt_cancel, attempt_cancellation) = watch::channel(false);
+        let verification = verify(attempt_cancellation);
+        tokio::pin!(verification);
+        let result = tokio::select! {
+            result = &mut verification => result,
+            _ = cancel.changed() => {
+                attempt_cancel.send_replace(true);
+                // Drain started RPCs before acknowledging cancellation to the actor.
+                let _ = verification.await;
+                return Err(PsbtPrevoutVerificationError::Cancelled);
+            }
+            _ = tokio::time::sleep_until(deadline) => {
+                attempt_cancel.send_replace(true);
+                let _ = verification.await;
+                return Err(PsbtPrevoutVerificationError::TimedOut);
+            }
+        };
+        let Err(error) = result else { return Ok(()) };
+        if !error.is_transient() {
+            return Err(error);
+        }
+        let Some(retry_after) = retry_policy.next_backoff() else {
+            return Err(error);
+        };
+        tracing::warn!(%error, retry_in_seconds = retry_after.as_secs_f64(), "Electrum verification failed, retrying");
+        tokio::select! {
+            _ = tokio::time::sleep_until((tokio::time::Instant::now() + retry_after).min(deadline)) => {}
+            _ = cancel.changed() => return Err(PsbtPrevoutVerificationError::Cancelled),
+        }
+    }
 }
 
 /// For a new swap of `swap_amount`, this function calculates how much
@@ -2207,11 +2230,12 @@ mod tests {
 
     #[tokio::test]
     async fn lock_input_check_does_not_retry_invalid_prevout() {
+        let (_cancel, cancellation) = watch::channel(false);
         let attempts = Arc::new(AtomicUsize::new(0));
         let attempts_for_check = attempts.clone();
 
         let result = retry_lock_input_check(
-            move || {
+            move |_cancel| {
                 let attempts = attempts_for_check.clone();
                 async move {
                     attempts.fetch_add(1, Ordering::SeqCst);
@@ -2222,12 +2246,105 @@ mod tests {
             },
             Duration::from_millis(100),
             Duration::from_millis(1),
+            cancellation,
         )
         .await;
 
         assert!(matches!(
             result,
             Err(PsbtPrevoutVerificationError::PrevoutNotFound { .. })
+        ));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelled_lock_input_check_drains_started_work() {
+        check_verification_drains_started_work(true).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn expired_lock_input_check_drains_started_work() {
+        check_verification_drains_started_work(false).await;
+    }
+
+    async fn check_verification_drains_started_work(cancel_requested: bool) {
+        let (cancel, cancellation) = watch::channel(false);
+        let (started, started_rx) = oneshot::channel();
+        let (stopping, stopping_rx) = oneshot::channel();
+        let (release, release_rx) = oneshot::channel();
+        let mut channels = Some((started, stopping, release_rx));
+        let job = tokio::spawn(retry_lock_input_check(
+            move |mut attempt_cancel| {
+                let (started, stopping, release) = channels.take().expect("one attempt only");
+                async move {
+                    started.send(()).unwrap();
+                    attempt_cancel.changed().await.unwrap();
+                    assert!(*attempt_cancel.borrow());
+                    stopping.send(()).unwrap();
+                    release.await.unwrap();
+                    Err(PsbtPrevoutVerificationError::Cancelled)
+                }
+            },
+            Duration::from_secs(60),
+            Duration::from_secs(5),
+            cancellation,
+        ));
+        started_rx.await.unwrap();
+        if cancel_requested {
+            cancel.send(true).unwrap();
+        } else {
+            tokio::time::advance(Duration::from_secs(60)).await;
+        }
+        stopping_rx.await.unwrap();
+        assert!(
+            !job.is_finished(),
+            "must wait for started RPC work to finish"
+        );
+        release.send(()).unwrap();
+        let result = job.await.unwrap();
+        if cancel_requested {
+            assert!(matches!(
+                result,
+                Err(PsbtPrevoutVerificationError::Cancelled)
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Err(PsbtPrevoutVerificationError::TimedOut)
+            ));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelled_lock_input_check_does_not_start_a_retry() {
+        let (cancel, cancellation) = watch::channel(false);
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_for_check = attempts.clone();
+        let (started, started_rx) = oneshot::channel();
+        let mut started = Some(started);
+        let job = tokio::spawn(retry_lock_input_check(
+            move |_cancel| {
+                attempts_for_check.fetch_add(1, Ordering::SeqCst);
+                started
+                    .take()
+                    .expect("no retry after cancellation")
+                    .send(())
+                    .unwrap();
+                async {
+                    Err(PsbtPrevoutVerificationError::Electrum(anyhow!(
+                        "unavailable"
+                    )))
+                }
+            },
+            Duration::from_secs(60),
+            Duration::from_secs(5),
+            cancellation,
+        ));
+        started_rx.await.unwrap();
+        cancel.send(true).unwrap();
+        assert!(matches!(
+            job.await.unwrap(),
+            Err(PsbtPrevoutVerificationError::Cancelled)
         ));
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }

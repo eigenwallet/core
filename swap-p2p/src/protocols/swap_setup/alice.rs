@@ -30,12 +30,26 @@ const MAX_TX_LOCK_INPUTS: usize = 25;
 
 #[derive(Debug)]
 pub enum LockInputCheckError {
+    Cancelled,
+    TimedOut,
     Invalid(String),
     Unavailable(String),
 }
 
 impl From<bitcoin_wallet::PsbtPrevoutVerificationError> for LockInputCheckError {
     fn from(error: bitcoin_wallet::PsbtPrevoutVerificationError) -> Self {
+        if matches!(
+            error,
+            bitcoin_wallet::PsbtPrevoutVerificationError::Cancelled
+        ) {
+            return Self::Cancelled;
+        }
+        if matches!(
+            error,
+            bitcoin_wallet::PsbtPrevoutVerificationError::TimedOut
+        ) {
+            return Self::TimedOut;
+        }
         let is_transient = error.is_transient();
         let reason = format!("{error:#}");
         if is_transient {
@@ -44,6 +58,14 @@ impl From<bitcoin_wallet::PsbtPrevoutVerificationError> for LockInputCheckError 
             Self::Invalid(reason)
         }
     }
+}
+
+/// Local request; cancellation stops new RPC work, and the response confirms
+/// that already-started verification work has finished.
+#[derive(Debug)]
+pub struct LockInputCheck {
+    pub psbt: LockInputCheck,
+    pub cancel: tokio::sync::watch::Receiver<bool>,
 }
 
 /// Keeps the inputs of Bob's lock transaction reserved for one swap setup
@@ -77,7 +99,7 @@ pub enum OutEvent {
         send_wallet_snapshot:
             bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
         check_lock_inputs: bmrng::RequestReceiver<
-            bitcoin::PartiallySignedTransaction,
+            LockInputCheck,
             Result<LockInputReservation, LockInputCheckError>,
         >,
     },
@@ -359,7 +381,7 @@ pub enum HandlerOutEvent {
         send_wallet_snapshot:
             bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
         check_lock_inputs: bmrng::RequestReceiver<
-            bitcoin::PartiallySignedTransaction,
+            LockInputCheck,
             Result<LockInputReservation, LockInputCheckError>,
         >,
     },
@@ -401,11 +423,10 @@ where
                         (WalletSnapshot, bitcoin::Amount, bool),
                     >(1, crate::defaults::SWAP_SETUP_CHANNEL_TIMEOUT);
 
-                let (check_lock_inputs_sender, check_lock_inputs_receiver) =
-                    bmrng::channel_with_timeout::<
-                        bitcoin::PartiallySignedTransaction,
-                        Result<LockInputReservation, LockInputCheckError>,
-                    >(1, crate::defaults::LOCK_INPUT_CHECK_CHANNEL_TIMEOUT);
+                let (check_lock_inputs_sender, check_lock_inputs_receiver) = bmrng::channel::<
+                    LockInputCheck,
+                    Result<LockInputReservation, LockInputCheckError>,
+                >(1);
 
                 let resume_only = self.resume_only;
                 let min_buy = self.min_buy;
@@ -589,7 +610,7 @@ async fn run_swap_setup(
     mut substream: libp2p::swarm::Stream,
     sender: bmrng::RequestSender<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
     check_lock_inputs: bmrng::RequestSender<
-        bitcoin::PartiallySignedTransaction,
+        LockInputCheck,
         Result<LockInputReservation, LockInputCheckError>,
     >,
     resume_only: bool,
@@ -766,8 +787,12 @@ async fn run_swap_setup(
 
     // Routed through the event loop because verifying the inputs against the
     // chain requires Electrum access.
+    let (_cancel, cancellation) = tokio::sync::watch::channel(false);
     let lock_input_check = check_lock_inputs
-        .send_receive(tx_lock_psbt)
+        .send_receive(LockInputCheck {
+            psbt: tx_lock_psbt,
+            cancel: cancellation,
+        })
         .await
         .context("Failed to receive lock input verification result")?;
     let lock_input_reservation = match lock_input_check {
@@ -782,6 +807,7 @@ async fn run_swap_setup(
         Err(LockInputCheckError::Unavailable(reason)) => {
             bail!("Lock transaction input verification unavailable: {reason}");
         }
+        Err(error) => bail!("Lock transaction input verification failed: {error:?}"),
     };
 
     swap_setup::write_cbor_message(

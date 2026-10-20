@@ -27,7 +27,7 @@ pub enum OutEvent {
         // run_swap_setup sends us Bob's TxLock PSBT once received.
         // We verify its inputs against the chain and respond with the result.
         check_lock_inputs: bmrng::RequestReceiver<
-            bitcoin::psbt::Psbt,
+            swap_setup::alice::LockInputCheck,
             Result<swap_setup::alice::LockInputReservation, swap_setup::alice::LockInputCheckError>,
         >,
     },

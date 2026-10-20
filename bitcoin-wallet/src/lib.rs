@@ -13,6 +13,10 @@ pub use bitcoin::{Address, Amount, Network, Psbt, Txid, Weight};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PsbtPrevoutVerificationError {
+    #[error("Lock input verification was cancelled")]
+    Cancelled,
+    #[error("Lock input verification timed out")]
+    TimedOut,
     #[error("PSBT has {input_maps} input maps but {transaction_inputs} transaction inputs")]
     InputMapCountMismatch {
         transaction_inputs: usize,
@@ -82,6 +86,7 @@ pub trait BitcoinWallet: Send + Sync {
     async fn verify_psbt_prevouts(
         &self,
         psbt: &bitcoin::psbt::Psbt,
+        cancel: &tokio::sync::watch::Receiver<bool>,
     ) -> std::result::Result<(), PsbtPrevoutVerificationError>;
 
     async fn ensure_broadcasted(
