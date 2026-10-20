@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Limit Bitcoin lock-input conflict checks to swaps whose latest pending-lock state was recorded in the past 12 hours.
+  Filter timestamps in SQL before parsing state JSON.
+
 - GUI: Mark makers older than `5.0.0` as incompatible with the new swap setup protocol.
 
 - Protocol: Accept Bitcoin lock transactions with up to five outputs.

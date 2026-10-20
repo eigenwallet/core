@@ -412,27 +412,54 @@ impl Database for SqliteDatabase {
         Ok(result)
     }
 
-    async fn get_alice_swaps_with_pending_tx_lock(&self) -> Result<Vec<(Uuid, State)>> {
+    async fn get_alice_swaps_with_pending_tx_lock(
+        &self,
+        updated_since: i64,
+    ) -> Result<Vec<(Uuid, State)>> {
         // Include the supported serialized Started variant for compatibility with
         // stored/imported states, matching AliceState::pending_tx_lock. The current
         // runner first persists BtcLockTransactionSeen and reserves inputs until then.
         let rows = sqlx::query!(
             r#"
-            SELECT s.swap_id, s.state
-            FROM (
-                SELECT max(id), swap_id, state
+            WITH latest AS (
+                SELECT max(id) as id, swap_id, state, entered_at
                 FROM swap_states
                 GROUP BY swap_id
-            ) s
-            WHERE json_extract(s.state, '$.Alice.Started') IS NOT NULL
-               OR json_extract(s.state, '$.Alice.BtcLockTransactionSeen') IS NOT NULL
-        "#
+            ), normalized AS (
+                SELECT *, CASE
+                    WHEN entered_at NOT GLOB '* +00:00:00' THEN NULL
+                    WHEN substr(entered_at, 13, 1) = ':'
+                        THEN substr(entered_at, 1, 11) || '0' || substr(entered_at, 12, length(entered_at) - 21)
+                    ELSE substr(entered_at, 1, length(entered_at) - 10)
+                END AS utc_time
+                FROM latest
+            )
+            SELECT s.swap_id, s.state, s.entered_at,
+                   CAST(strftime('%s', s.utc_time) AS INTEGER) AS "entered_at_unix?: i64"
+            FROM normalized s
+            -- CASE skips JSON parsing entirely for old rows, including malformed
+            -- old state JSON. Invalid timestamps are returned for error reporting.
+            WHERE CASE
+                WHEN strftime('%s', s.utc_time) IS NULL THEN 1
+                WHEN CAST(strftime('%s', s.utc_time) AS INTEGER) >= ?
+                    THEN json_extract(s.state, '$.Alice.Started') IS NOT NULL
+                      OR json_extract(s.state, '$.Alice.BtcLockTransactionSeen') IS NOT NULL
+                ELSE 0
+            END
+        "#,
+            updated_since,
         )
         .fetch_all(&self.pool)
         .await?;
 
         rows.iter()
             .map(|row| {
+                row.entered_at_unix.with_context(|| {
+                    format!(
+                        "Invalid UTC timestamp {:?} for swap {}",
+                        row.entered_at, row.swap_id
+                    )
+                })?;
                 let swap_id = Uuid::from_str(&row.swap_id)
                     .with_context(|| format!("Failed to parse swap id {}", row.swap_id))?;
                 let state = serde_json::from_str::<Swap>(&row.state)
@@ -1003,6 +1030,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pending_lock_checks_filter_timestamps_before_reading_json() -> Result<()> {
+        let db = setup_test_db().await?;
+        for hour in [0, 1, 9, 10, 23] {
+            let cutoff = OffsetDateTime::from_unix_timestamp(1_735_689_600 + hour * 3600)?;
+            for variant in ["Started", "BtcLockTransactionSeen"] {
+                for offset in [-1, 0, 1] {
+                    sqlx::query("DELETE FROM swap_states")
+                        .execute(&db.pool)
+                        .await?;
+                    let id = Uuid::new_v4();
+                    let timestamp = cutoff
+                        + time::Duration::seconds(offset)
+                        + time::Duration::milliseconds(123);
+                    // Recent pending states must reach deserialization (and report
+                    // their missing state3); stale states must not even reach SQL's
+                    // JSON parser. Neither query requires a peers-table record.
+                    let state = if offset < 0 {
+                        "this stale JSON must never be parsed".to_owned()
+                    } else {
+                        format!(r#"{{"Alice":{{"{variant}":{{}}}}}}"#)
+                    };
+                    sqlx::query(
+                        "INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)",
+                    )
+                    .bind(id.to_string())
+                    .bind(timestamp.to_string())
+                    .bind(state)
+                    .execute(&db.pool)
+                    .await?;
+                    let result = db
+                        .get_alice_swaps_with_pending_tx_lock(cutoff.unix_timestamp())
+                        .await;
+                    if offset < 0 {
+                        assert!(result?.is_empty());
+                    } else {
+                        assert_eq!(
+                            result.unwrap_err().to_string(),
+                            format!("Failed to deserialize state of swap {id}")
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_lock_checks_do_not_resurrect_older_states() -> Result<()> {
+        let db = setup_test_db().await?;
+        let cutoff = OffsetDateTime::from_unix_timestamp(1_735_689_600)?;
+        for (latest_timestamp, latest_state) in [
+            (cutoff, r#"{"Alice":{"Done":"SafelyAborted"}}"#),
+            (cutoff - time::Duration::seconds(1), "stale JSON"),
+        ] {
+            let id = Uuid::new_v4();
+            for (timestamp, state) in [
+                (cutoff, r#"{"Alice":{"BtcLockTransactionSeen":{}}}"#),
+                (latest_timestamp, latest_state),
+            ] {
+                sqlx::query(
+                    "INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)",
+                )
+                .bind(id.to_string())
+                .bind(timestamp.to_string())
+                .bind(state)
+                .execute(&db.pool)
+                .await?;
+            }
+            assert!(
+                db.get_alice_swaps_with_pending_tx_lock(cutoff.unix_timestamp())
+                    .await?
+                    .is_empty()
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn fresh_swaps_report_malformed_timestamps() -> Result<()> {
         let db = setup_test_db().await?;
         let id = Uuid::new_v4();
@@ -1022,6 +1127,13 @@ mod tests {
                 .await?;
             assert!(
                 db.all_fresh(24)
+                    .await
+                    .unwrap_err()
+                    .to_string()
+                    .contains("Invalid UTC timestamp")
+            );
+            assert!(
+                db.get_alice_swaps_with_pending_tx_lock(OffsetDateTime::now_utc().unix_timestamp())
                     .await
                     .unwrap_err()
                     .to_string()

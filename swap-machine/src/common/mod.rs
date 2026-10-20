@@ -229,8 +229,12 @@ pub trait Database {
     async fn get_states(&self, swap_id: Uuid) -> Result<Vec<State>>;
     async fn all(&self) -> Result<Vec<(PeerId, Uuid, State)>>;
     /// Returns the Alice swaps whose latest state is `Started` or
-    /// `BtcLockTransactionSeen`.
-    async fn get_alice_swaps_with_pending_tx_lock(&self) -> Result<Vec<(Uuid, State)>>;
+    /// `BtcLockTransactionSeen` and was recorded at or after `updated_since`
+    /// (UTC Unix seconds). Filter before decoding state JSON.
+    async fn get_alice_swaps_with_pending_tx_lock(
+        &self,
+        updated_since: i64,
+    ) -> Result<Vec<(Uuid, State)>>;
     /// Same as `all` but paginated, and returns the first and last state per
     /// swap. Implementations may filter out terminally-aborted swaps.
     async fn all_paginated(

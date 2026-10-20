@@ -46,6 +46,7 @@ pub use service::{EventLoopRequest, EventLoopService, OnionServiceStatusInfo};
 
 const LOCK_INPUT_CHECK_INITIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
 const LOCK_INPUT_CHECK_MAX_RETRY_DELAY: Duration = Duration::from_secs(5);
+const LOCK_INPUT_CONFLICT_LOOKBACK: time::Duration = time::Duration::hours(12);
 
 /// Separate from the proof actor: bound network and database work together,
 /// retaining a permit until already-started work has actually finished.
@@ -1551,14 +1552,16 @@ async fn verify_psbt_prevouts_with_retry(
     .await
 }
 
-/// Reject a PSBT if it spends an input used by a pending lock transaction of
-/// another swap.
+/// Reject a PSBT if it spends an input used by another swap whose latest
+/// pending-lock state was recorded within the conflict lookback window.
 async fn check_for_conflicting_swap_inputs(
     db: &(dyn Database + Send + Sync),
     candidate: &bitcoin::PartiallySignedTransaction,
 ) -> Result<(), LockInputCheckError> {
+    let updated_since =
+        (time::OffsetDateTime::now_utc() - LOCK_INPUT_CONFLICT_LOOKBACK).unix_timestamp();
     let swaps = db
-        .get_alice_swaps_with_pending_tx_lock()
+        .get_alice_swaps_with_pending_tx_lock(updated_since)
         .await
         .context("Failed to load swaps while checking lock transaction inputs")
         .map_err(|error| LockInputCheckError::Unavailable(format!("{error:#}")))?;
