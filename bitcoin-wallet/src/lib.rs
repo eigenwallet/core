@@ -11,6 +11,33 @@ use anyhow::Result;
 use bdk_wallet::{Balance, export::FullyNodedExport};
 pub use bitcoin::{Address, Amount, Network, Psbt, Txid, Weight};
 
+#[derive(Debug, thiserror::Error)]
+pub enum PsbtPrevoutVerificationError {
+    #[error("PSBT has {input_maps} input maps but {transaction_inputs} transaction inputs")]
+    InputMapCountMismatch {
+        transaction_inputs: usize,
+        input_maps: usize,
+    },
+    #[error("Input {input_index} is missing its witness UTXO")]
+    MissingWitnessUtxo { input_index: usize },
+    #[error("Failed to query Electrum servers for unspent outputs")]
+    Electrum(#[source] anyhow::Error),
+    #[error("Prevout {outpoint} not found unspent on chain or in mempool")]
+    PrevoutNotFound { outpoint: bitcoin::OutPoint },
+    #[error("Prevout {outpoint} has value {actual} but the PSBT claims {claimed}")]
+    ValueMismatch {
+        outpoint: bitcoin::OutPoint,
+        actual: Amount,
+        claimed: Amount,
+    },
+}
+
+impl PsbtPrevoutVerificationError {
+    pub fn is_transient(&self) -> bool {
+        matches!(self, Self::Electrum(_))
+    }
+}
+
 #[async_trait::async_trait]
 pub trait BitcoinWallet: Send + Sync {
     async fn balance(&self) -> Result<Amount>;
@@ -48,6 +75,14 @@ pub trait BitcoinWallet: Send + Sync {
         psbt: &bitcoin::psbt::Psbt,
         challenge: utxo_ownership_proof::Challenge,
     ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>>;
+
+    /// Verify that every input of the PSBT references an existing unspent
+    /// output (confirmed or in mempool) whose script and value match the
+    /// claimed `witness_utxo`.
+    async fn verify_psbt_prevouts(
+        &self,
+        psbt: &bitcoin::psbt::Psbt,
+    ) -> std::result::Result<(), PsbtPrevoutVerificationError>;
 
     async fn ensure_broadcasted(
         &self,

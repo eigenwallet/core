@@ -1,5 +1,8 @@
 use crate::primitives::{Confirmed, EstimateFeeRate, ScriptStatus, Subscription, Watchable};
-use crate::{BitcoinWallet, BlockHeight, RpcErrorCode, bitcoin_address, parse_rpc_error_code};
+use crate::{
+    BitcoinWallet, BlockHeight, PsbtPrevoutVerificationError, RpcErrorCode, bitcoin_address,
+    parse_rpc_error_code,
+};
 use anyhow::{Context, Result, anyhow, bail};
 use bdk_chain::CheckPoint;
 use bdk_chain::spk_client::{SyncRequest, SyncRequestBuilder};
@@ -794,6 +797,100 @@ impl Wallet {
             .with_context(|| format!("Could not get raw tx with id: {}", txid))
     }
 
+    /// Verify that every input of the PSBT references an existing unspent
+    /// output (confirmed or in mempool) whose script and value match the
+    /// claimed `witness_utxo`.
+    pub async fn verify_psbt_prevouts(
+        &self,
+        psbt: &Psbt,
+    ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
+        if psbt.inputs.len() != psbt.unsigned_tx.input.len() {
+            return Err(PsbtPrevoutVerificationError::InputMapCountMismatch {
+                transaction_inputs: psbt.unsigned_tx.input.len(),
+                input_maps: psbt.inputs.len(),
+            });
+        }
+
+        let mut claims: HashMap<ScriptBuf, Vec<(bitcoin::OutPoint, Amount)>> = HashMap::new();
+        for (index, (input, tx_input)) in
+            psbt.inputs.iter().zip(&psbt.unsigned_tx.input).enumerate()
+        {
+            let Some(witness_utxo) = input.witness_utxo.as_ref() else {
+                return Err(PsbtPrevoutVerificationError::MissingWitnessUtxo {
+                    input_index: index,
+                });
+            };
+
+            claims
+                .entry(witness_utxo.script_pubkey.clone())
+                .or_default()
+                .push((tx_input.previous_output, witness_utxo.value));
+        }
+
+        for (script, outpoints) in claims {
+            let utxos = self
+                .list_unspent(script)
+                .await
+                .map_err(PsbtPrevoutVerificationError::Electrum)?;
+
+            for (outpoint, claimed_value) in outpoints {
+                let Some(utxo) = utxos.iter().find(|utxo| {
+                    utxo.tx_hash == outpoint.txid && utxo.tx_pos == outpoint.vout as usize
+                }) else {
+                    return Err(PsbtPrevoutVerificationError::PrevoutNotFound { outpoint });
+                };
+
+                let actual_value = Amount::from_sat(utxo.value);
+                if actual_value != claimed_value {
+                    return Err(PsbtPrevoutVerificationError::ValueMismatch {
+                        outpoint,
+                        actual: actual_value,
+                        claimed: claimed_value,
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Query the Electrum servers for the unspent outputs paying to a script.
+    ///
+    /// A UTXO reported by any single server is accepted as existing; the
+    /// responses of all successful servers are merged.
+    async fn list_unspent(
+        &self,
+        script: ScriptBuf,
+    ) -> Result<Vec<bdk_electrum::electrum_client::ListUnspentRes>> {
+        let results = self
+            .electrum_client
+            .inner
+            .join_quorum("script_list_unspent", move |client| {
+                client.inner.script_list_unspent(&script)
+            })
+            .await
+            .context("Failed to query Electrum servers for unspent outputs")?;
+
+        let mut successful = Vec::new();
+        let mut errors = Vec::new();
+        for result in results {
+            match result {
+                Ok(utxos) => successful.push(utxos),
+                Err(error) => errors.push(error),
+            }
+        }
+
+        if successful.is_empty() {
+            return Err(electrum_pool::MultiError::new(
+                errors,
+                "No Electrum server returned unspent outputs for script".to_owned(),
+            )
+            .into());
+        }
+
+        Ok(successful.into_iter().flatten().collect())
+    }
+
     // Returns the TxId of the last published Bitcoin transaction
     pub async fn last_published_txid(&self) -> Result<Txid> {
         let wallet = self.wallet.lock().await;
@@ -1173,6 +1270,13 @@ impl<T, C> Wallet<T, C> {
     /// one ofour transaction to be confirmed.
     pub fn target_block(&self) -> u32 {
         self.target_block
+    }
+
+    /// Insert a wallet-owned UTXO without publishing it to the backing chain.
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn insert_fake_utxo(&self, amount: Amount) -> bitcoin::OutPoint {
+        let mut wallet = self.wallet.lock().await;
+        bdk_wallet::test_utils::receive_output_in_latest_block(&mut wallet, amount)
     }
 
     /// Prove control of the keys behind every input of a PSBT built by this
@@ -2286,6 +2390,13 @@ impl BitcoinWallet for Wallet {
         Wallet::prove_utxo_ownership(self, psbt, challenge)
     }
 
+    async fn verify_psbt_prevouts(
+        &self,
+        psbt: &Psbt,
+    ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
+        Wallet::verify_psbt_prevouts(self, psbt).await
+    }
+
     async fn ensure_broadcasted(
         &self,
         tx: bitcoin::Transaction,
@@ -3119,6 +3230,13 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         challenge: utxo_ownership_proof::Challenge,
     ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>> {
         Wallet::prove_utxo_ownership(self, psbt, challenge)
+    }
+
+    async fn verify_psbt_prevouts(
+        &self,
+        _psbt: &Psbt,
+    ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
+        unimplemented!("stub method called erroneously")
     }
 
     async fn sync(&self) -> Result<()> {

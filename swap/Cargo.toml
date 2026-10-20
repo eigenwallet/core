@@ -121,6 +121,7 @@ typeshare = { workspace = true }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 
 [dev-dependencies]
+bitcoin-wallet = { path = "../bitcoin-wallet", features = ["test-support"] }
 bitcoin-harness = { git = "https://github.com/eigenwallet/bitcoin-harness-rs", branch = "master" }
 data-encoding = { workspace = true }
 mockito = "1.4"

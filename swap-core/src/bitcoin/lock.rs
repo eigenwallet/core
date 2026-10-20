@@ -5,13 +5,31 @@ use ::bitcoin::psbt::Psbt as PartiallySignedTransaction;
 use ::bitcoin::{OutPoint, TxIn, TxOut, Txid};
 use anyhow::{Context, Result, bail};
 use bdk_wallet::miniscript::Descriptor;
-use bdk_wallet::psbt::PsbtUtils;
 use bitcoin::{ScriptBuf, Sequence, locktime::absolute::LockTime as PackedLockTime};
 use bitcoin_wallet::primitives::Watchable;
 use serde::{Deserialize, Serialize};
 
 const SCRIPT_SIZE: usize = 34;
 const TX_LOCK_WEIGHT: usize = 485;
+
+/// Return an outpoint spent by both PSBTs, if one exists.
+pub fn find_conflicting_psbt_input(
+    first: &PartiallySignedTransaction,
+    second: &PartiallySignedTransaction,
+) -> Option<OutPoint> {
+    first
+        .unsigned_tx
+        .input
+        .iter()
+        .map(|input| input.previous_output)
+        .find(|outpoint| {
+            second
+                .unsigned_tx
+                .input
+                .iter()
+                .any(|input| input.previous_output == *outpoint)
+        })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TxLock {
@@ -61,6 +79,19 @@ impl TxLock {
             );
         }
 
+        let mut outpoints = std::collections::HashSet::new();
+        if let Some(duplicate) = psbt
+            .unsigned_tx
+            .input
+            .iter()
+            .find(|input| !outpoints.insert(input.previous_output))
+        {
+            bail!(
+                "PSBT spends input {} more than once",
+                duplicate.previous_output
+            );
+        }
+
         let descriptor = build_shared_output_descriptor(A.0, B.0)?;
         let legit_shared_output_script = descriptor.script_pubkey();
 
@@ -97,10 +128,7 @@ impl TxLock {
     }
 
     pub fn fee(&self) -> Result<Amount> {
-        self.inner
-            .clone()
-            .fee_amount()
-            .context("The PSBT is missing a TxOut for an input")
+        self.inner.fee().context("Failed to calculate TxLock fee")
     }
 
     pub fn txid(&self) -> Txid {
@@ -108,6 +136,10 @@ impl TxLock {
             .clone()
             .extract_tx_unchecked_fee_rate()
             .compute_txid()
+    }
+
+    pub fn as_psbt(&self) -> &PartiallySignedTransaction {
+        &self.inner
     }
 
     pub fn as_outpoint(&self) -> OutPoint {
@@ -197,6 +229,7 @@ impl Watchable for TxLock {
 mod tests {
     use super::*;
     use crate::bitcoin::Amount;
+    use ::bitcoin::hashes::Hash;
     use bitcoin::Psbt;
     use bitcoin_wallet::*;
 
@@ -303,6 +336,33 @@ mod tests {
         result.expect_err("PSBT with more than two outputs must be rejected");
     }
 
+    #[test]
+    fn given_psbt_spends_the_same_input_twice_when_reconstructing_txlock_then_fails() {
+        let (A, B) = alice_and_bob();
+        let agreed_amount = Amount::from_sat(10000);
+        let descriptor = build_shared_output_descriptor(A.0, B.0).unwrap();
+        let input = TxIn {
+            previous_output: OutPoint::new(Txid::all_zeros(), 1),
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::MAX,
+            witness: ::bitcoin::Witness::new(),
+        };
+        let psbt = Psbt::from_unsigned_tx(Transaction {
+            version: bitcoin::transaction::Version(2),
+            lock_time: PackedLockTime::ZERO,
+            input: vec![input.clone(), input],
+            output: vec![TxOut {
+                value: agreed_amount,
+                script_pubkey: descriptor.script_pubkey(),
+            }],
+        })
+        .unwrap();
+
+        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
+
+        result.expect_err("PSBT spending the same input twice must be rejected");
+    }
+
     #[tokio::test]
     async fn given_bob_is_sending_to_a_bad_output_reconstructing_txlock_then_fails() {
         let (A, B, wallet) = setup().await;
@@ -314,6 +374,79 @@ mod tests {
         let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
 
         result.expect_err("PSBT to be invalid");
+    }
+
+    #[test]
+    fn given_outputs_exceed_inputs_when_calculating_fee_then_fails() {
+        let (A, B) = alice_and_bob();
+        let agreed_amount = Amount::from_sat(10_000);
+        let transaction = ::bitcoin::Transaction {
+            version: ::bitcoin::transaction::Version::TWO,
+            lock_time: ::bitcoin::absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::MAX,
+                witness: ::bitcoin::Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: agreed_amount,
+                script_pubkey: build_shared_output_descriptor(A.0, B.0)
+                    .expect("shared descriptor is valid")
+                    .script_pubkey(),
+            }],
+        };
+        let mut psbt =
+            Psbt::from_unsigned_tx(transaction).expect("transaction can be represented as a PSBT");
+        psbt.inputs[0].witness_utxo = Some(TxOut {
+            value: Amount::from_sat(9_000),
+            script_pubkey: ScriptBuf::new(),
+        });
+
+        let tx_lock = TxLock::from_psbt(psbt, A, B, agreed_amount).expect("shared output is valid");
+        let error = tx_lock
+            .fee()
+            .expect_err("outputs exceeding inputs must be rejected");
+
+        assert!(matches!(
+            error.downcast_ref::<::bitcoin::psbt::Error>(),
+            Some(::bitcoin::psbt::Error::NegativeFee)
+        ));
+    }
+
+    #[test]
+    fn given_psbts_spend_the_same_outpoint_then_finds_conflict() {
+        let shared_outpoint = OutPoint::new(Txid::all_zeros(), 1);
+        let first = psbt_spending(shared_outpoint);
+        let second = psbt_spending(shared_outpoint);
+
+        assert_eq!(
+            find_conflicting_psbt_input(&first, &second),
+            Some(shared_outpoint)
+        );
+    }
+
+    #[test]
+    fn given_psbts_spend_different_outpoints_then_finds_no_conflict() {
+        let first = psbt_spending(OutPoint::new(Txid::all_zeros(), 1));
+        let second = psbt_spending(OutPoint::new(Txid::all_zeros(), 2));
+
+        assert_eq!(find_conflicting_psbt_input(&first, &second), None);
+    }
+
+    fn psbt_spending(previous_output: OutPoint) -> Psbt {
+        Psbt::from_unsigned_tx(::bitcoin::Transaction {
+            version: ::bitcoin::transaction::Version::TWO,
+            lock_time: ::bitcoin::absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output,
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::MAX,
+                witness: ::bitcoin::Witness::new(),
+            }],
+            output: vec![],
+        })
+        .expect("transaction can be represented as a PSBT")
     }
 
     proptest::proptest! {

@@ -3,7 +3,7 @@ use crate::protocols::swap_setup;
 use crate::protocols::swap_setup::{
     BlockchainNetwork, SpotPriceError, SpotPriceRequest, SpotPriceResponse, protocol,
 };
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use futures::AsyncWriteExt;
 use futures::FutureExt;
 use futures::StreamExt;
@@ -26,12 +26,36 @@ use swap_machine::common::{Message0, Message2, Message4};
 use tracing::Instrument;
 use uuid::Uuid;
 
+const MAX_TX_LOCK_INPUTS: usize = 25;
+
+#[derive(Debug)]
+pub enum LockInputCheckError {
+    Invalid(String),
+    Unavailable(String),
+}
+
+impl From<bitcoin_wallet::PsbtPrevoutVerificationError> for LockInputCheckError {
+    fn from(error: bitcoin_wallet::PsbtPrevoutVerificationError) -> Self {
+        let is_transient = error.is_transient();
+        let reason = format!("{error:#}");
+        if is_transient {
+            Self::Unavailable(reason)
+        } else {
+            Self::Invalid(reason)
+        }
+    }
+}
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum OutEvent {
     Initiated {
         send_wallet_snapshot:
             bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
+        check_lock_inputs: bmrng::RequestReceiver<
+            bitcoin::PartiallySignedTransaction,
+            Result<(), LockInputCheckError>,
+        >,
     },
     Completed {
         peer_id: PeerId,
@@ -107,8 +131,10 @@ impl From<OutEvent> for out_event::alice::OutEvent {
         match event {
             OutEvent::Initiated {
                 send_wallet_snapshot,
+                check_lock_inputs,
             } => out_event::alice::OutEvent::SwapSetupInitiated {
                 send_wallet_snapshot,
+                check_lock_inputs,
             },
             OutEvent::Completed {
                 peer_id: bob_peer_id,
@@ -220,11 +246,13 @@ where
         // This is done by pushing the event to the [`events`] queue
         // The queue is then polled in the [`poll`] function, and the events are sent to the swarm
         match event {
-            HandlerOutEvent::Initiated(send_wallet_snapshot) => {
-                self.events.push_back(OutEvent::Initiated {
-                    send_wallet_snapshot,
-                })
-            }
+            HandlerOutEvent::Initiated {
+                send_wallet_snapshot,
+                check_lock_inputs,
+            } => self.events.push_back(OutEvent::Initiated {
+                send_wallet_snapshot,
+                check_lock_inputs,
+            }),
             HandlerOutEvent::Completed(Ok((swap_id, state3))) => {
                 self.events.push_back(OutEvent::Completed {
                     peer_id,
@@ -298,7 +326,14 @@ impl<LR> Handler<LR> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum HandlerOutEvent {
-    Initiated(bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>),
+    Initiated {
+        send_wallet_snapshot:
+            bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
+        check_lock_inputs: bmrng::RequestReceiver<
+            bitcoin::PartiallySignedTransaction,
+            Result<(), LockInputCheckError>,
+        >,
+    },
     Completed(Result<(Uuid, State3)>),
 }
 
@@ -337,6 +372,12 @@ where
                         (WalletSnapshot, bitcoin::Amount, bool),
                     >(1, crate::defaults::SWAP_SETUP_CHANNEL_TIMEOUT);
 
+                let (check_lock_inputs_sender, check_lock_inputs_receiver) =
+                    bmrng::channel_with_timeout::<
+                        bitcoin::PartiallySignedTransaction,
+                        Result<(), LockInputCheckError>,
+                    >(1, crate::defaults::LOCK_INPUT_CHECK_CHANNEL_TIMEOUT);
+
                 let resume_only = self.resume_only;
                 let min_buy = self.min_buy;
                 let max_buy = self.max_buy;
@@ -349,6 +390,7 @@ where
                     run_swap_setup(
                         substream,
                         sender,
+                        check_lock_inputs_sender,
                         resume_only,
                         env_config,
                         min_buy,
@@ -401,7 +443,10 @@ where
                     .boxed(),
                 );
 
-                self.events.push_back(HandlerOutEvent::Initiated(receiver));
+                self.events.push_back(HandlerOutEvent::Initiated {
+                    send_wallet_snapshot: receiver,
+                    check_lock_inputs: check_lock_inputs_receiver,
+                });
             }
             ConnectionEvent::DialUpgradeError(..) => {
                 unreachable!("Alice does not dial")
@@ -514,6 +559,10 @@ impl Error {
 async fn run_swap_setup(
     mut substream: libp2p::swarm::Stream,
     sender: bmrng::RequestSender<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
+    check_lock_inputs: bmrng::RequestSender<
+        bitcoin::PartiallySignedTransaction,
+        Result<(), LockInputCheckError>,
+    >,
     resume_only: bool,
     env_config: env::Config,
     min_buy: bitcoin::Amount,
@@ -660,11 +709,51 @@ async fn run_swap_setup(
         .await
         .context("Failed to read message2")?
         .context("Peer sent an error instead of message2")?;
+    let tx_lock_input_count = message2.tx_lock_psbt.unsigned_tx.input.len();
+    if tx_lock_input_count > MAX_TX_LOCK_INPUTS {
+        let error = swap_setup::SwapSetupError::TxLockTooManyInputs {
+            actual: tx_lock_input_count,
+            maximum: MAX_TX_LOCK_INPUTS,
+        };
+        if let Err(write_error) = swap_setup::write_cbor_error(&mut substream, error.clone()).await
+        {
+            tracing::error!(
+                error = %write_error,
+                "Couldn't send error message to Bob after encountering it, closing connection"
+            );
+        }
+        return Err(error.into());
+    }
+
+    let tx_lock_psbt = message2.tx_lock_psbt.clone();
     let state2 = state1
         .receive(message2)
         .context("Failed to transition state1 -> state2 using message2")?;
+    state2
+        .tx_lock_fee()
+        .context("Invalid TxLock input/output amounts")?;
 
     tracing::debug!(%swap_id, "Swap setup transition: State1 -> State2 (received Message2)");
+
+    // Routed through the event loop because verifying the inputs against the
+    // chain requires Electrum access.
+    let lock_input_check = check_lock_inputs
+        .send_receive(tx_lock_psbt)
+        .await
+        .context("Failed to receive lock input verification result")?;
+    match lock_input_check {
+        Ok(()) => {}
+        Err(LockInputCheckError::Invalid(reason)) => {
+            let error = swap_setup::SwapSetupError::LockInputVerificationFailed { reason };
+            if let Err(err) = swap_setup::write_cbor_error(&mut substream, error.clone()).await {
+                tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
+            }
+            return Err(error).context("Lock transaction input verification failed");
+        }
+        Err(LockInputCheckError::Unavailable(reason)) => {
+            bail!("Lock transaction input verification unavailable: {reason}");
+        }
+    }
 
     swap_setup::write_cbor_message(
         &mut substream,

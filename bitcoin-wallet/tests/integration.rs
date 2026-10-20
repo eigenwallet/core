@@ -2,7 +2,7 @@ mod harness;
 
 use anyhow::Result;
 use bitcoin_harness::BitcoindRpcApi;
-use bitcoin_wallet::{PersisterConfig, WalletBuilder};
+use bitcoin_wallet::{PersisterConfig, PsbtPrevoutVerificationError, WalletBuilder};
 use std::time::Duration;
 use testcontainers::clients::Cli;
 
@@ -176,6 +176,80 @@ async fn wallet_sends_broadcasts_and_confirms() -> Result<()> {
         .subscribe_to(Box::new((txid, other_output_script)))
         .await;
     assert!(new_subscription.receiver.borrow().is_confirmed_with(1u32));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn wallet_rejects_invalid_psbt_prevouts() -> Result<()> {
+    init_tracing();
+
+    let cli = Cli::default();
+    let env = harness::setup(&cli).await?;
+
+    let wallet = WalletBuilder::<TestSeed>::default()
+        .seed(TestSeed::default())
+        .network(bitcoin::Network::Regtest)
+        .electrum_rpc_urls(vec![env.electrum_url.clone()])
+        .persister(PersisterConfig::InMemorySqlite)
+        .finality_confirmations(1u32)
+        .target_block(1u32)
+        .sync_interval(Duration::from_millis(0))
+        .use_mempool_space_fee_estimation(false)
+        .build()
+        .await?;
+
+    wallet.sync().await?;
+
+    let receive_addr = wallet.new_address().await?;
+    let funding = bitcoin::Amount::from_sat(100_000);
+    harness::fund_and_mine(&env.bitcoind, receive_addr, funding).await?;
+    sync_until_balance(&wallet, funding).await?;
+
+    let recipient = env
+        .bitcoind
+        .with_wallet(harness::BITCOIN_TEST_WALLET_NAME)?
+        .getnewaddress(None, None)
+        .await?
+        .require_network(env.bitcoind.network().await?)?;
+
+    let psbt = wallet
+        .send_to_address(
+            recipient,
+            bitcoin::Amount::from_sat(25_000),
+            bitcoin::Amount::from_sat(2_000),
+            None,
+        )
+        .await?;
+
+    wallet.verify_psbt_prevouts(&psbt).await?;
+
+    let mut nonexistent_prevout = psbt.clone();
+    nonexistent_prevout.unsigned_tx.input[0].previous_output = bitcoin::OutPoint::null();
+    let error = wallet
+        .verify_psbt_prevouts(&nonexistent_prevout)
+        .await
+        .expect_err("a nonexistent prevout must be rejected");
+    assert!(matches!(
+        error,
+        PsbtPrevoutVerificationError::PrevoutNotFound { .. }
+    ));
+
+    let mut wrong_value = psbt;
+    let witness_utxo = wrong_value.inputs[0]
+        .witness_utxo
+        .as_mut()
+        .expect("wallet PSBT input has a witness UTXO");
+    witness_utxo.value += bitcoin::Amount::from_sat(1);
+
+    let error = wallet
+        .verify_psbt_prevouts(&wrong_value)
+        .await
+        .expect_err("a falsely claimed prevout value must be rejected");
+    assert!(matches!(
+        error,
+        PsbtPrevoutVerificationError::ValueMismatch { .. }
+    ));
 
     Ok(())
 }

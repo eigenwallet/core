@@ -30,6 +30,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 utxo-ownership-proof = { path = "../utxo-ownership-proof" }
 
+[features]
+test-support = []
+
 [dev-dependencies]
 bitcoin-harness = { git = "https://github.com/eigenwallet/bitcoin-harness-rs", branch = "master" }
 rand = { workspace = true }

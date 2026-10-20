@@ -225,6 +225,8 @@ jobs:
           - package: swap
             test_name: swap_rejected_deposit_too_small
           - package: swap
+            test_name: swap_rejected_invalid_bitcoin_lock_input
+          - package: swap
             test_name: partial_refund_bob_restart_detects_withhold
           - package: swap
             test_name: alice_and_bob_refund_using_cancel_and_refund_command_partial_refund

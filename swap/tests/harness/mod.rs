@@ -48,9 +48,56 @@ use uuid::Uuid;
 /// If use_subaddress is true, we will use a subaddress for the developer tip. We do this
 /// because using a subaddress changes things about the tx keys involved
 pub async fn setup_test<T, F, C>(
+    config: C,
+    developer_tip_ratio: Option<(Decimal, bool)>,
+    refund_policy: Option<RefundPolicy>,
+    testfn: T,
+) where
+    T: Fn(TestContext) -> F,
+    F: Future<Output = Result<()>>,
+    C: GetConfig,
+{
+    setup_test_with_bob_funding(
+        config,
+        developer_tip_ratio,
+        refund_policy,
+        BobBitcoinFunding::OnChain,
+        testfn,
+    )
+    .await;
+}
+
+pub async fn setup_test_with_fake_bob_bitcoin_utxo<T, F, C>(
+    config: C,
+    developer_tip_ratio: Option<(Decimal, bool)>,
+    refund_policy: Option<RefundPolicy>,
+    testfn: T,
+) where
+    T: Fn(TestContext) -> F,
+    F: Future<Output = Result<()>>,
+    C: GetConfig,
+{
+    setup_test_with_bob_funding(
+        config,
+        developer_tip_ratio,
+        refund_policy,
+        BobBitcoinFunding::Fake,
+        testfn,
+    )
+    .await;
+}
+
+#[derive(Clone, Copy)]
+enum BobBitcoinFunding {
+    OnChain,
+    Fake,
+}
+
+async fn setup_test_with_bob_funding<T, F, C>(
     _config: C,
     developer_tip_ratio: Option<(Decimal, bool)>,
     refund_policy: Option<RefundPolicy>,
+    bob_bitcoin_funding: BobBitcoinFunding,
     testfn: T,
 ) where
     T: Fn(TestContext) -> F,
@@ -220,18 +267,29 @@ ask_spread = "0"
     let bob_seed = Seed::random().unwrap();
     let bob_starting_balances = StartingBalances::new(btc_amount * 10, monero::Amount::ZERO, None);
     let bob_monero_dir = TempDir::new().unwrap().path().join("bob-monero-wallets");
+    let mut bob_wallet_starting_balances = bob_starting_balances.clone();
+    if matches!(bob_bitcoin_funding, BobBitcoinFunding::Fake) {
+        bob_wallet_starting_balances.btc = bitcoin::Amount::ZERO;
+    }
+
     let (bob_bitcoin_wallet, bob_monero_wallet) = init_test_wallets(
         MONERO_WALLET_NAME_BOB,
         containers.bitcoind_url.clone(),
         &monero,
         &containers._monerod_container,
         bob_monero_dir,
-        bob_starting_balances.clone(),
+        bob_wallet_starting_balances,
         electrs_rpc_port,
         &bob_seed,
         env_config,
     )
     .await;
+
+    if matches!(bob_bitcoin_funding, BobBitcoinFunding::Fake) {
+        bob_bitcoin_wallet
+            .insert_fake_utxo(bob_starting_balances.btc)
+            .await;
+    }
 
     let bob_donation_seed = Seed::random().unwrap();
     let bob_donation_starting_balances =

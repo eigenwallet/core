@@ -7,13 +7,13 @@ use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
 use crate::network::quote::{BidQuote, RefundPolicyWire};
-use crate::network::swap_setup::alice::WalletSnapshot;
+use crate::network::swap_setup::alice::{LockInputCheckError, WalletSnapshot};
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, HermesFundingPolicy, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin_wallet::BitcoinWallet;
+use bitcoin_wallet::{BitcoinWallet, PsbtPrevoutVerificationError};
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -41,6 +41,10 @@ use tor_hsservice::RunningOnionService;
 use uuid::Uuid;
 
 pub use service::{EventLoopRequest, EventLoopService, OnionServiceStatusInfo};
+
+const LOCK_INPUT_CHECK_RETRY_TIMEOUT: Duration = Duration::from_secs(60);
+const LOCK_INPUT_CHECK_INITIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
+const LOCK_INPUT_CHECK_MAX_RETRY_DELAY: Duration = Duration::from_secs(5);
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop<LR>
@@ -122,6 +126,11 @@ where
             )>,
         >,
     >,
+
+    /// In-flight TxLock input verifications for swap setup.
+    /// Each future waits for a single swap setup handler to send Bob's TxLock
+    /// PSBT, verifies its inputs against the chain and responds with the result.
+    inflight_lock_input_checks: FuturesUnordered<BoxFuture<'static, Result<()>>>,
 
     /// Channel for sending transfer proofs to Bobs. The sender is shared with every EventLoopHandle.
     /// The receiver is polled by the event loop to send transfer proofs over the network to Bob.
@@ -230,6 +239,7 @@ where
             pending_quote_channels: Default::default(),
             pending_quote_controller_responders: Default::default(),
             inflight_wallet_snapshots: Default::default(),
+            inflight_lock_input_checks: Default::default(),
             outgoing_transfer_proofs_requests,
             outgoing_transfer_proofs_sender,
             service_requests,
@@ -259,6 +269,8 @@ where
         self.inflight_quote_computation
             .push(future::pending().boxed());
         self.inflight_wallet_snapshots
+            .push(future::pending().boxed());
+        self.inflight_lock_input_checks
             .push(future::pending().boxed());
 
         let swaps = match self.db.all().await {
@@ -305,7 +317,7 @@ where
                     }
 
                     match swarm_event {
-                        SwarmEvent::Behaviour(OutEvent::SwapSetupInitiated { mut send_wallet_snapshot }) => {
+                        SwarmEvent::Behaviour(OutEvent::SwapSetupInitiated { mut send_wallet_snapshot, mut check_lock_inputs }) => {
                             let bitcoin_wallet = self.bitcoin_wallet.clone();
                             let monero_wallet = self.monero_wallet.clone();
                             let external_redeem_address = self.external_redeem_address.clone();
@@ -320,6 +332,34 @@ where
 
                                 // This is used further down to then actually respond to the swap setup handler
                                 Ok((btc, responder, wallet_snapshot))
+                            }.boxed());
+
+                            let bitcoin_wallet = self.bitcoin_wallet.clone();
+                            let db = self.db.clone();
+
+                            self.inflight_lock_input_checks.push(async move {
+                                // Wait for the swap setup handler to send Bob's TxLock PSBT
+                                let (psbt, responder) = check_lock_inputs.recv().await?;
+
+                                let result = verify_psbt_prevouts_with_retry(
+                                    bitcoin_wallet.as_ref(),
+                                    &psbt,
+                                )
+                                .await
+                                .map_err(LockInputCheckError::from);
+
+                                let result = match result {
+                                    Ok(()) => {
+                                        check_for_conflicting_swap_inputs(db.as_ref(), &psbt).await
+                                    }
+                                    Err(error) => Err(error),
+                                };
+
+                                responder
+                                    .respond(result)
+                                    .map_err(|_| anyhow!("Failed to send lock input verification result back to swap setup handler, connection may have been dropped"))?;
+
+                                Ok(())
                             }.boxed());
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3}) => {
@@ -593,6 +633,12 @@ where
 
                     if responder.respond((wallet_snapshot, btc_amnesty_amount, should_publish_tx_withhold)).is_err() {
                         tracing::warn!("Failed to send wallet snapshot and amnesty amount back to swap setup handler, connection may have been dropped");
+                    }
+                },
+
+                Some(result) = self.inflight_lock_input_checks.next() => {
+                    if let Err(error) = result {
+                        tracing::warn!("Lock input verification coordination for swap setup did not complete: {:#}", error);
                     }
                 },
                 Some(request) = self.service_requests.recv() => {
@@ -1316,6 +1362,98 @@ impl EventLoopHandle {
     }
 }
 
+/// Verify the lock transaction prevouts, retrying only transient Electrum failures.
+async fn verify_psbt_prevouts_with_retry(
+    bitcoin_wallet: &dyn BitcoinWallet,
+    psbt: &bitcoin::PartiallySignedTransaction,
+) -> std::result::Result<(), PsbtPrevoutVerificationError> {
+    retry_lock_input_check(
+        || bitcoin_wallet.verify_psbt_prevouts(psbt),
+        LOCK_INPUT_CHECK_RETRY_TIMEOUT,
+        LOCK_INPUT_CHECK_MAX_RETRY_DELAY,
+    )
+    .await
+}
+
+/// Reject a PSBT if it spends an input used by a pending lock transaction of
+/// another swap.
+async fn check_for_conflicting_swap_inputs(
+    db: &(dyn Database + Send + Sync),
+    candidate: &bitcoin::PartiallySignedTransaction,
+) -> Result<(), LockInputCheckError> {
+    let swaps = db
+        .all()
+        .await
+        .context("Failed to load swaps while checking lock transaction inputs")
+        .map_err(|error| LockInputCheckError::Unavailable(format!("{error:#}")))?;
+
+    for (_, swap_id, state) in swaps {
+        let State::Alice(state) = state else {
+            continue;
+        };
+        let Some(tx_lock) = state.pending_tx_lock() else {
+            continue;
+        };
+        let Some(outpoint) = bitcoin::find_conflicting_psbt_input(candidate, tx_lock.as_psbt())
+        else {
+            continue;
+        };
+
+        return Err(LockInputCheckError::Invalid(format!(
+            "Input {outpoint} conflicts with swap {swap_id}"
+        )));
+    }
+
+    Ok(())
+}
+
+async fn retry_lock_input_check<F, Fut>(
+    mut verify: F,
+    max_elapsed_time: Duration,
+    max_interval: Duration,
+) -> std::result::Result<(), PsbtPrevoutVerificationError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = std::result::Result<(), PsbtPrevoutVerificationError>>,
+{
+    let retry_policy = backoff::ExponentialBackoffBuilder::new()
+        .with_initial_interval(LOCK_INPUT_CHECK_INITIAL_RETRY_DELAY.min(max_interval))
+        .with_max_elapsed_time(None)
+        .with_max_interval(max_interval)
+        .build();
+
+    let verification = backoff::future::retry_notify(
+        retry_policy,
+        || {
+            let verification = verify();
+            async move {
+                verification.await.map_err(|error| {
+                    if error.is_transient() {
+                        backoff::Error::transient(error)
+                    } else {
+                        backoff::Error::permanent(error)
+                    }
+                })
+            }
+        },
+        |error, retry_after: Duration| {
+            tracing::warn!(
+                error = %error,
+                retry_in_seconds = retry_after.as_secs_f64(),
+                "Electrum query failed while verifying lock transaction inputs, retrying"
+            );
+        },
+    );
+
+    tokio::time::timeout(max_elapsed_time, verification)
+        .await
+        .map_err(|_| {
+            PsbtPrevoutVerificationError::Electrum(anyhow!(
+                "Timed out verifying lock transaction inputs"
+            ))
+        })?
+}
+
 /// For a new swap of `swap_amount`, this function calculates how much
 /// Bitcoin should go into the anti spam deposit incase of a refund.
 /// Returns ZERO when anti_spam_deposit_ratio is 0, indicating immediate and full refund.
@@ -1951,6 +2089,8 @@ impl<T> Default for MpscChannels<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use swap_feed::FixedRate;
 
     use crate::{
@@ -1981,6 +2121,33 @@ mod tests {
             apply_anti_spam_policy(amount, &policy).unwrap().0,
             bitcoin::Amount::from_sat(1)
         );
+    }
+
+    #[tokio::test]
+    async fn lock_input_check_does_not_retry_invalid_prevout() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_for_check = attempts.clone();
+
+        let result = retry_lock_input_check(
+            move || {
+                let attempts = attempts_for_check.clone();
+                async move {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                    Err(PsbtPrevoutVerificationError::PrevoutNotFound {
+                        outpoint: ::bitcoin::OutPoint::null(),
+                    })
+                }
+            },
+            Duration::from_millis(100),
+            Duration::from_millis(1),
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(PsbtPrevoutVerificationError::PrevoutNotFound { .. })
+        ));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

@@ -32,3 +32,4 @@ pub const QUOTE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 pub const NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(120);
 pub const SWAP_SETUP_KEEP_ALIVE: Duration = Duration::from_secs(30);
 pub const SWAP_SETUP_CHANNEL_TIMEOUT: Duration = Duration::from_secs(60);
+pub const LOCK_INPUT_CHECK_CHANNEL_TIMEOUT: Duration = Duration::from_secs(65);
