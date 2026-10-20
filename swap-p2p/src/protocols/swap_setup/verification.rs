@@ -24,7 +24,7 @@ use tokio::time::Instant;
 /// How long a peer has to wait after one of its jobs finished before its next job starts.
 pub const PEER_COOLDOWN: Duration = Duration::from_secs(5);
 /// Maximum number of jobs running at the same time across all peers.
-pub const MAX_CONCURRENT_JOBS: usize = 4;
+pub const MAX_CONCURRENT_JOBS: usize = 50;
 /// Maximum number of queued (not yet running) jobs across all peers.
 pub const MAX_PENDING_JOBS: usize = 128;
 /// Maximum number of queued (not yet running) jobs of a single peer.
@@ -460,10 +460,10 @@ mod tests {
     use std::collections::HashSet;
     use tokio::sync::mpsc::error::TryRecvError;
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     enum Event {
-        Started(&'static str),
-        Finished(&'static str),
+        Started(String),
+        Finished(String),
     }
     use Event::{Finished, Started};
 
@@ -511,18 +511,18 @@ mod tests {
         settle().await;
         let second_job = submit(&other_handle, peer, second);
 
-        assert_eq!(events.next().await, Started("first"));
+        assert_eq!(events.next().await, Started("first".into()));
         settle().await;
         events.assert_quiet();
 
         // Cooldown must count from completion, not from start
         tokio::time::advance(Duration::from_secs(1)).await;
         release_first.send(Ok(())).unwrap();
-        assert_eq!(events.next().await, Finished("first"));
+        assert_eq!(events.next().await, Finished("first".into()));
         first_job.await.unwrap().unwrap();
         let completed_at = Instant::now();
 
-        assert_eq!(events.next().await, Started("second"));
+        assert_eq!(events.next().await, Started("second".into()));
         assert_eq!(Instant::now(), completed_at + PEER_COOLDOWN);
 
         release_second.send(Ok(())).unwrap();
@@ -541,7 +541,7 @@ mod tests {
         settle().await;
         let next_job = submit(&verifier, peer, next);
 
-        assert_eq!(events.next().await, Started("failing"));
+        assert_eq!(events.next().await, Started("failing".into()));
         tokio::time::advance(Duration::from_secs(2)).await;
         release_failing
             .send(Err(anyhow::anyhow!("invalid proof")))
@@ -553,8 +553,8 @@ mod tests {
         );
         let failed_at = Instant::now();
 
-        assert_eq!(events.next().await, Finished("failing"));
-        assert_eq!(events.next().await, Started("next"));
+        assert_eq!(events.next().await, Finished("failing".into()));
+        assert_eq!(events.next().await, Started("next".into()));
         assert_eq!(Instant::now(), failed_at + PEER_COOLDOWN);
 
         release_next.send(Ok(())).unwrap();
@@ -574,38 +574,38 @@ mod tests {
         let _first_job = submit(&verifier, alice, first);
         settle().await;
         let _second_job = submit(&verifier, alice, second);
-        assert_eq!(events.next().await, Started("alice-1"));
+        assert_eq!(events.next().await, Started("alice-1".into()));
 
         release_first.send(Ok(())).unwrap();
-        assert_eq!(events.next().await, Finished("alice-1"));
+        assert_eq!(events.next().await, Finished("alice-1".into()));
         settle().await;
         let completed_at = Instant::now();
 
         let _other_job = submit(&verifier, bob, other);
-        assert_eq!(events.next().await, Started("bob"));
+        assert_eq!(events.next().await, Started("bob".into()));
         assert_eq!(Instant::now(), completed_at);
 
         release_other.send(Ok(())).unwrap();
-        assert_eq!(events.next().await, Finished("bob"));
-        assert_eq!(events.next().await, Started("alice-2"));
+        assert_eq!(events.next().await, Finished("bob".into()));
+        assert_eq!(events.next().await, Started("alice-2".into()));
         assert_eq!(Instant::now(), completed_at + PEER_COOLDOWN);
 
         release_second.send(Ok(())).unwrap();
-        assert_eq!(events.next().await, Finished("alice-2"));
+        assert_eq!(events.next().await, Finished("alice-2".into()));
     }
 
     #[tokio::test(start_paused = true)]
     async fn at_most_max_concurrent_jobs_run_at_once() {
-        const LABELS: [&str; MAX_CONCURRENT_JOBS + 1] = ["p0", "p1", "p2", "p3", "p4"];
+        let labels: Vec<_> = (0..=MAX_CONCURRENT_JOBS).map(|i| format!("p{i}")).collect();
 
         let verifier = ProofVerifier::spawn();
         let mut events = Events::new();
 
         let mut gates = HashMap::new();
-        for label in LABELS {
+        for label in &labels {
             let (job, gate) = events.gated(label);
             submit(&verifier, PeerId::random(), job);
-            gates.insert(label, gate);
+            gates.insert(label.clone(), gate);
             settle().await;
         }
 
@@ -613,10 +613,10 @@ mod tests {
         for _ in 0..MAX_CONCURRENT_JOBS {
             started.insert(events.next().await);
         }
-        let expected: HashSet<_> = LABELS
-            .into_iter()
+        let expected: HashSet<_> = labels
+            .iter()
             .take(MAX_CONCURRENT_JOBS)
-            .map(Started)
+            .map(|label| Started(label.clone()))
             .collect();
         assert_eq!(started, expected);
         settle().await;
@@ -624,8 +624,11 @@ mod tests {
 
         let started_at = Instant::now();
         gates["p0"].send(Ok(())).unwrap();
-        assert_eq!(events.next().await, Finished("p0"));
-        assert_eq!(events.next().await, Started("p4"));
+        assert_eq!(events.next().await, Finished("p0".into()));
+        assert_eq!(
+            events.next().await,
+            Started(format!("p{MAX_CONCURRENT_JOBS}"))
+        );
         assert_eq!(
             Instant::now(),
             started_at,
@@ -643,7 +646,7 @@ mod tests {
         let (canceled, _release_canceled) = events.gated("canceled");
         let (next, release_next) = events.gated("next");
         let _running_job = submit(&verifier, peer, running);
-        assert_eq!(events.next().await, Started("running"));
+        assert_eq!(events.next().await, Started("running".into()));
 
         let canceled_job = submit(&verifier, peer, canceled);
         settle().await;
@@ -653,33 +656,33 @@ mod tests {
         settle().await;
 
         release_running.send(Ok(())).unwrap();
-        assert_eq!(events.next().await, Finished("running"));
+        assert_eq!(events.next().await, Finished("running".into()));
         let completed_at = Instant::now();
 
-        assert_eq!(events.next().await, Started("next"));
+        assert_eq!(events.next().await, Started("next".into()));
         assert_eq!(Instant::now(), completed_at + PEER_COOLDOWN);
 
         release_next.send(Ok(())).unwrap();
-        assert_eq!(events.next().await, Finished("next"));
+        assert_eq!(events.next().await, Finished("next".into()));
         next_job.await.unwrap().unwrap();
     }
 
     #[tokio::test(start_paused = true)]
     async fn dropped_caller_keeps_worker_slot_until_blocking_work_ends() {
-        const LABELS: [&str; MAX_CONCURRENT_JOBS] = ["p0", "p1", "p2", "p3"];
+        let labels: Vec<_> = (0..MAX_CONCURRENT_JOBS).map(|i| format!("p{i}")).collect();
 
         let verifier = ProofVerifier::spawn();
         let mut events = Events::new();
-        let peers: Vec<_> = LABELS.iter().map(|_| PeerId::random()).collect();
+        let peers: Vec<_> = labels.iter().map(|_| PeerId::random()).collect();
 
         let mut gates = HashMap::new();
         let mut callers = Vec::new();
-        for (label, peer) in LABELS.into_iter().zip(&peers) {
+        for (label, peer) in labels.iter().zip(&peers) {
             let (job, gate) = events.gated(label);
             callers.push(submit(&verifier, *peer, job));
-            gates.insert(label, gate);
+            gates.insert(label.clone(), gate);
         }
-        for _ in LABELS {
+        for _ in &labels {
             assert!(matches!(events.next().await, Started(_)));
         }
 
@@ -691,9 +694,9 @@ mod tests {
         events.assert_quiet();
 
         gates["p0"].send(Ok(())).unwrap();
-        assert_eq!(events.next().await, Finished("p0"));
+        assert_eq!(events.next().await, Finished("p0".into()));
         let completed_at = Instant::now();
-        assert_eq!(events.next().await, Started("waiting"));
+        assert_eq!(events.next().await, Started("waiting".into()));
 
         // The canceled job's peer still cools down from when its work ended
         let (again, release_again) = events.gated("p0-again");
@@ -701,14 +704,14 @@ mod tests {
         settle().await;
         events.assert_quiet();
 
-        for label in LABELS.into_iter().skip(1) {
+        for label in labels.iter().skip(1) {
             gates[label].send(Ok(())).unwrap();
-            assert_eq!(events.next().await, Finished(label));
+            assert_eq!(events.next().await, Finished(label.clone()));
         }
         release_waiting.send(Ok(())).unwrap();
-        assert_eq!(events.next().await, Finished("waiting"));
+        assert_eq!(events.next().await, Finished("waiting".into()));
 
-        assert_eq!(events.next().await, Started("p0-again"));
+        assert_eq!(events.next().await, Started("p0-again".into()));
         assert_eq!(Instant::now(), completed_at + PEER_COOLDOWN);
         release_again.send(Ok(())).unwrap();
     }
@@ -721,7 +724,7 @@ mod tests {
 
         let (running, _release_running) = events.gated("running");
         let _running_job = submit(&verifier, peer, running);
-        assert_eq!(events.next().await, Started("running"));
+        assert_eq!(events.next().await, Started("running".into()));
 
         let mut queued: Vec<_> = (0..MAX_PENDING_JOBS_PER_PEER)
             .map(|_| submit(&verifier, peer, || Ok(())))
@@ -753,11 +756,14 @@ mod tests {
         let verifier = ProofVerifier::spawn();
         let mut events = Events::new();
 
-        let _gates = ["r0", "r1", "r2", "r3"].map(|label| {
-            let (job, gate) = events.gated(label);
-            submit(&verifier, PeerId::random(), job);
-            gate
-        });
+        let _gates: Vec<_> = (0..MAX_CONCURRENT_JOBS)
+            .map(|i| {
+                let label = format!("r{i}");
+                let (job, gate) = events.gated(label);
+                submit(&verifier, PeerId::random(), job);
+                gate
+            })
+            .collect();
         for _ in 0..MAX_CONCURRENT_JOBS {
             assert!(matches!(events.next().await, Started(_)));
         }
@@ -821,7 +827,7 @@ mod tests {
 
         let (running, release_running) = events.gated("running");
         let running_job = submit(&verifier, peer, running);
-        assert_eq!(events.next().await, Started("running"));
+        assert_eq!(events.next().await, Started("running".into()));
         let queued_job = submit(&verifier, peer, || Ok(()));
         settle().await;
 
@@ -832,7 +838,7 @@ mod tests {
         assert!(!actor.is_finished());
 
         release_running.send(Ok(())).unwrap();
-        assert_eq!(events.next().await, Finished("running"));
+        assert_eq!(events.next().await, Finished("running".into()));
         let finished_at = Instant::now();
         actor.await.unwrap();
         assert_eq!(
@@ -873,14 +879,15 @@ mod tests {
         /// until the returned gate yields its result and then reports its end.
         fn gated(
             &self,
-            label: &'static str,
+            label: impl Into<String>,
         ) -> (impl FnOnce() -> anyhow::Result<()> + Send + 'static, Gate) {
+            let label = label.into();
             let (gate, gate_receiver) = std::sync::mpsc::channel();
             let events = self.sender.clone();
             let job = move || {
-                events.send(Started(label)).unwrap();
+                events.send(Started(label.clone())).unwrap();
                 let result = gate_receiver.recv().context("Test dropped the gate")?;
-                events.send(Finished(label)).unwrap();
+                events.send(Finished(label.clone())).unwrap();
                 result
             };
 
