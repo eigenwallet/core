@@ -1,6 +1,6 @@
-//! Fee schedule for setup v3. Never derive these fees from peer-supplied sizes.
+//! Setup-v3 fees calculated from locally constructed transaction templates.
 use super::*;
-use ::bitcoin::{OutPoint, Psbt, TxIn, TxOut, Witness, absolute, transaction};
+use ::bitcoin::{OutPoint, Psbt, Script, TxIn, TxOut, Witness, absolute, transaction};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
@@ -72,7 +72,30 @@ impl SwapFeeInputs<'_> {
         let descriptor = build_shared_output_descriptor(self.a.0, self.b.0)?;
         let shared_script = descriptor.script_pubkey();
         let witness_script = descriptor.explicit_script()?;
+        let max_vsize = self.max_signed_vsize(&shared_script, &witness_script)?;
+        let base = rate.fee(max_vsize)?;
+        let redeem = base.checked_mul(3).context("Redeem fee overflow")?;
 
+        // Without a deposit, redeem (three base fees) is the most expensive path.
+        // With a deposit, cancel -> partial refund -> withhold -> mercy costs four.
+        let longest_path = base
+            .checked_mul(if self.deposit == Amount::ZERO { 3 } else { 4 })
+            .context("Spending path fee overflow")?;
+        ensure!(
+            longest_path <= limits.max_path_fee,
+            "Swap spending path fees ({longest_path}) exceed local budget ({})",
+            limits.max_path_fee
+        );
+        self.validate_funding(base, redeem, &shared_script)?;
+
+        Ok(SwapFees {
+            max_vsize,
+            base,
+            redeem,
+        })
+    }
+
+    fn max_signed_vsize(&self, shared_script: &Script, witness_script: &Script) -> Result<u64> {
         // Values and outpoints do not affect serialized size. Use funded templates
         // with zero fees to measure the actual constructors before validating values.
         let sizing_amount = Amount::ONE_BTC;
@@ -86,7 +109,7 @@ impl SwapFeeInputs<'_> {
                 }],
                 output: vec![TxOut {
                     value: sizing_amount,
-                    script_pubkey: shared_script.clone(),
+                    script_pubkey: shared_script.to_owned(),
                 }],
             })?,
             self.a,
@@ -119,6 +142,7 @@ impl SwapFeeInputs<'_> {
             early.inner,
             punish.inner,
         ];
+        // These spending paths exist only when the swap includes an anti-spam deposit.
         if self.deposit != Amount::ZERO {
             let partial = TxPartialRefund::new(
                 &cancel,
@@ -138,7 +162,7 @@ impl SwapFeeInputs<'_> {
             let mercy = TxMercy::new(&withhold, self.refund_address, Amount::ZERO);
             templates.extend([partial.inner, reclaim.inner, withhold.inner, mercy.inner]);
         }
-        let max_vsize = templates
+        templates
             .into_iter()
             .map(|mut tx| {
                 // Two maximum DER signatures, each including its sighash byte, and
@@ -148,19 +172,11 @@ impl SwapFeeInputs<'_> {
                 tx.vsize() as u64
             })
             .max()
-            .context("No presigned transaction templates")?;
-        let base = rate.fee(max_vsize)?;
-        let redeem = base.checked_mul(3).context("Redeem fee overflow")?;
-        let longest_path = base
-            .checked_mul(if self.deposit == Amount::ZERO { 3 } else { 4 })
-            .context("Spending path fee overflow")?;
-        ensure!(
-            longest_path <= limits.max_path_fee,
-            "Swap spending path fees ({longest_path}) exceed local budget ({})",
-            limits.max_path_fee
-        );
+            .context("No presigned transaction templates")
+    }
 
-        fn output(input: Amount, fee: Amount, script: &::bitcoin::Script) -> Result<Amount> {
+    fn validate_funding(&self, base: Amount, redeem: Amount, shared_script: &Script) -> Result<()> {
+        fn checked_output_amount(input: Amount, fee: Amount, script: &Script) -> Result<Amount> {
             let value = input
                 .checked_sub(fee)
                 .context("Insufficient transaction input value")?;
@@ -170,40 +186,36 @@ impl SwapFeeInputs<'_> {
             );
             Ok(value)
         }
-        output(self.lock_amount, Amount::ZERO, &shared_script)?;
-        output(
+        checked_output_amount(self.lock_amount, Amount::ZERO, shared_script)?;
+        checked_output_amount(
             self.lock_amount,
             redeem,
             &self.redeem_address.script_pubkey(),
         )?;
-        output(self.lock_amount, base, &self.refund_address.script_pubkey())?; // early refund
-        let cancelled = output(self.lock_amount, base, &shared_script)?;
-        output(cancelled, base, &self.punish_address.script_pubkey())?;
-        output(cancelled, base, &self.refund_address.script_pubkey())?;
+        checked_output_amount(self.lock_amount, base, &self.refund_address.script_pubkey())?; // early refund
+        let cancelled = checked_output_amount(self.lock_amount, base, shared_script)?;
+        checked_output_amount(cancelled, base, &self.punish_address.script_pubkey())?;
+        checked_output_amount(cancelled, base, &self.refund_address.script_pubkey())?;
         if self.deposit != Amount::ZERO {
             let partial_cost = self
                 .deposit
                 .checked_add(base)
                 .context("Partial refund amount overflow")?;
-            output(
+            checked_output_amount(
                 cancelled,
                 partial_cost,
                 &self.refund_address.script_pubkey(),
             )?;
-            output(self.deposit, Amount::ZERO, &shared_script)
+            checked_output_amount(self.deposit, Amount::ZERO, shared_script)
                 .context("Anti-spam deposit output is dust")?;
-            output(self.deposit, base, &self.refund_address.script_pubkey())
+            checked_output_amount(self.deposit, base, &self.refund_address.script_pubkey())
                 .context("Anti-spam deposit cannot fund reclaim")?;
-            let withheld = output(self.deposit, base, &shared_script)
+            let withheld = checked_output_amount(self.deposit, base, shared_script)
                 .context("Anti-spam deposit cannot fund withhold")?;
-            output(withheld, base, &self.refund_address.script_pubkey())
+            checked_output_amount(withheld, base, &self.refund_address.script_pubkey())
                 .context("Anti-spam deposit cannot fund mercy")?;
         }
-        Ok(SwapFees {
-            max_vsize,
-            base,
-            redeem,
-        })
+        Ok(())
     }
 }
 
