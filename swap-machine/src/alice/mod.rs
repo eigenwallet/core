@@ -495,6 +495,7 @@ impl State2 {
             self.a.public(),
             self.B,
             self.tx_cancel_fee,
+            swap_core::bitcoin::CancelRefundVersion::Legacy,
         )
         .expect("valid cancel tx");
 
@@ -560,6 +561,7 @@ impl State2 {
             self.a.public(),
             self.B,
             self.tx_cancel_fee,
+            swap_core::bitcoin::CancelRefundVersion::Legacy,
         )?;
 
         // Check if the provided signature by Bob is valid for the transaction
@@ -861,6 +863,7 @@ impl State3 {
             self.a.public(),
             self.B,
             self.tx_cancel_fee,
+            swap_core::bitcoin::CancelRefundVersion::Legacy,
         )
         .expect("valid cancel tx")
     }

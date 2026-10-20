@@ -12,7 +12,7 @@ mod redeem;
 mod timelocks;
 mod withhold;
 
-pub use crate::bitcoin::cancel::TxCancel;
+pub use crate::bitcoin::cancel::{CancelRefundVersion, TxCancel};
 pub use crate::bitcoin::early_refund::TxEarlyRefund;
 pub use crate::bitcoin::full_refund::TxFullRefund;
 pub use crate::bitcoin::lock::TxLock;

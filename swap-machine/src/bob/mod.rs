@@ -580,6 +580,7 @@ impl State1 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
+            swap_core::bitcoin::CancelRefundVersion::Legacy,
         )?;
 
         bitcoin::verify_sig(&self.A, &tx_cancel.digest(), &msg.tx_cancel_sig)
@@ -722,6 +723,7 @@ impl State2 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
+            swap_core::bitcoin::CancelRefundVersion::Legacy,
         )
         .expect("valid cancel tx");
 
@@ -977,6 +979,7 @@ impl State3 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
+            swap_core::bitcoin::CancelRefundVersion::Legacy,
         )?;
 
         let tx_lock_status = bitcoin_wallet.status_of_script(&self.tx_lock).await?;
@@ -1188,6 +1191,7 @@ impl State4 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
+            swap_core::bitcoin::CancelRefundVersion::Legacy,
         )?;
 
         let tx_lock_status = bitcoin_wallet.status_of_script(&self.tx_lock).await?;
@@ -1327,6 +1331,7 @@ impl State6 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
+            swap_core::bitcoin::CancelRefundVersion::Legacy,
         )?;
 
         let tx_lock_status = bitcoin_wallet.status_of_script(&self.tx_lock).await?;
@@ -1358,6 +1363,7 @@ impl State6 {
             self.A,
             self.b.public(),
             self.tx_cancel_fee,
+            swap_core::bitcoin::CancelRefundVersion::Legacy,
         )
     }
 
