@@ -209,3 +209,41 @@ impl ConnectionPool {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper_util::rt::TokioIo;
+    use tokio::net::{TcpListener, TcpStream};
+
+    async fn connect(listener: &TcpListener) -> HttpSender {
+        let stream = TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
+            .await
+            .unwrap();
+        tokio::spawn(conn);
+        sender
+    }
+
+    #[tokio::test]
+    async fn sender_is_reused_when_idle_and_dropped_when_failed() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let key: StreamKey = ("http".into(), "127.0.0.1".into(), 18081, false);
+        let pool = ConnectionPool::new();
+
+        let guard = pool
+            .insert_and_lock(key.clone(), connect(&listener).await)
+            .await;
+        assert!(pool.try_get(&key).await.is_none());
+        assert!(!pool.has_available_connection(&key).await);
+
+        drop(guard);
+        let guard = pool.try_get(&key).await.expect("idle sender is reused");
+
+        guard.mark_failed().await;
+        assert!(pool.try_get(&key).await.is_none());
+        assert!(!pool.has_available_connection(&key).await);
+    }
+}
