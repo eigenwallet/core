@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Protocol: Accept Bitcoin lock transactions with up to five outputs.
+  Exactly one output must pay the agreed swap amount to the shared script; up to four unrelated outputs are allowed.
+
 - ASB: Rename `maker.btc_redeem_fee_multiplier` to `maker.btc_swap_fee_rate_multiplier`.
   The multiplier now scales the proposed fee rate for all presigned Bitcoin transactions and still defaults to `1.0`.
   Existing configurations must use the new name; the old name is no longer accepted.

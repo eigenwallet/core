@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 const SCRIPT_SIZE: usize = 34;
 const TX_LOCK_WEIGHT: usize = 485;
+const MAX_TX_LOCK_OUTPUTS: usize = 5;
 
 /// Return an outpoint spent by both PSBTs, if one exists.
 pub fn find_conflicting_psbt_input(
@@ -72,9 +73,9 @@ impl TxLock {
         B: PublicKey,
         btc: Amount,
     ) -> Result<Self> {
-        if psbt.unsigned_tx.output.len() > 2 {
+        if psbt.unsigned_tx.output.len() > MAX_TX_LOCK_OUTPUTS {
             bail!(
-                "PSBT has {} outputs, expected at most two",
+                "PSBT has {} outputs, expected at most {MAX_TX_LOCK_OUTPUTS}",
                 psbt.unsigned_tx.output.len()
             );
         }
@@ -306,34 +307,40 @@ mod tests {
     }
 
     #[test]
-    fn given_more_than_two_outputs_when_reconstructing_txlock_then_fails() {
+    fn accepts_up_to_five_outputs_with_the_swap_output_at_any_position() {
         let (A, B) = alice_and_bob();
         let agreed_amount = Amount::from_sat(10000);
         let descriptor = build_shared_output_descriptor(A.0, B.0).unwrap();
-        let psbt = Psbt::from_unsigned_tx(Transaction {
-            version: bitcoin::transaction::Version(2),
-            lock_time: PackedLockTime::ZERO,
-            input: vec![],
-            output: vec![
-                TxOut {
+        for count in 1..=6 {
+            for swap_index in 0..count {
+                let mut outputs = vec![
+                    TxOut {
+                        value: Amount::from_sat(1000),
+                        script_pubkey: ScriptBuf::new(),
+                    };
+                    count
+                ];
+                outputs[swap_index] = TxOut {
                     value: agreed_amount,
                     script_pubkey: descriptor.script_pubkey(),
-                },
-                TxOut {
-                    value: Amount::from_sat(1),
-                    script_pubkey: ScriptBuf::new(),
-                },
-                TxOut {
-                    value: Amount::from_sat(1),
-                    script_pubkey: ScriptBuf::new(),
-                },
-            ],
-        })
-        .unwrap();
-
-        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
-
-        result.expect_err("PSBT with more than two outputs must be rejected");
+                };
+                let psbt = Psbt::from_unsigned_tx(Transaction {
+                    version: bitcoin::transaction::Version(2),
+                    lock_time: PackedLockTime::ZERO,
+                    input: vec![],
+                    output: outputs,
+                })
+                .unwrap();
+                let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
+                if count == 6 {
+                    assert!(result.unwrap_err().to_string().contains("at most 5"));
+                    continue;
+                }
+                let lock = result.unwrap();
+                assert_eq!(lock.as_outpoint().vout as usize, swap_index);
+                assert_eq!(lock.lock_amount(), agreed_amount);
+            }
+        }
     }
 
     #[test]
