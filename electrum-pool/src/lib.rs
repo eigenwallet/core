@@ -522,14 +522,23 @@ impl ElectrumClientFactory<BdkElectrumClient<Client>> for BdkElectrumClientFacto
         url: &str,
         config: &ElectrumBalancerConfig,
     ) -> Result<Arc<BdkElectrumClient<Client>>, Error> {
+        // Smart Proxy: Systems 9050 or EigenWallets 9150 Tor proxy
+        let proxy_port = if std::net::TcpStream::connect("127.0.0.1:9050").is_ok() {
+            9050
+        } else {
+            9150
+        };
+        let socks_addr = format!("127.0.0.1:{}", proxy_port);
+        
+        tracing::debug!("Electrum client routing through SOCKS5 at {}", socks_addr);
+
+        // EXTRA ARGUMENT (None) KALDIRILDI
+        let socks_config = bdk_electrum::electrum_client::Socks5Config::new(socks_addr);
+
         let client_config = ConfigBuilder::new()
             .timeout(Some(config.request_timeout))
-            // TODO: Why is this set to 1?
-            // The goal of this crate is to extract retry logic out of the electrum client library
-            // and instead handle inside this crate. However, the electrum client library is quite inflexible.
-            //
-            // Setting it to 0 causes some bugs, see: https://github.com/bitcoindevkit/rust-electrum-client/issues/186
             .retry(1)
+            .socks5(Some(socks_config))
             .build();
 
         let client = Client::from_config(url, client_config).map_err(|e| {

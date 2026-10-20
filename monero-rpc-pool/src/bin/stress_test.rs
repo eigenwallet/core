@@ -82,8 +82,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start the pool server
     println!("Starting RPC pool server...");
+    
     let config =
-        Config::new_random_port_with_tor_client(std::env::temp_dir(), tor_client, args.network);
+        Config::new_random_port_with_tor_client(std::env::temp_dir(), tor_client, None, args.network);
+    
     let (app, _status_receiver, _background_handle) = create_app_with_receiver(config).await?;
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;

@@ -2987,6 +2987,7 @@ version = "0.1.0"
 dependencies = [
  "bdk_electrum",
  "bitcoin 0.32.8",
+ "electrum-client 0.24.1",
  "futures",
  "once_cell",
  "tokio",
@@ -6415,6 +6416,7 @@ dependencies = [
  "swap-serde",
  "tokio",
  "tokio-rustls 0.26.4",
+ "tokio-socks",
  "tor-rtcompat",
  "tower-http",
  "tracing",
@@ -10735,6 +10737,7 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-socks",
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
@@ -11726,6 +11729,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
  "rustls 0.23.37",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-socks"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7e2948f60dbe26b35f2c7fb74ac2854c1fddded0fe9d7548fcc674a246f7615"
+dependencies = [
+ "either",
+ "futures-util",
+ "thiserror 1.0.69",
  "tokio",
 ]
 

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use futures::{SinkExt, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use serde::de::{self, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::convert::TryFrom;
@@ -14,8 +14,8 @@ use url::Url;
 /// price ticker protocol version 2
 /// See: https://docs.bitfinex.com/docs/ws-public
 /// See: https://docs.bitfinex.com/reference/ws-public-ticker
-pub fn connect(price_ticker_ws_url_bitfinex: Url) -> Result<PriceUpdates> {
-    crate::ticker::connect("Bitfinex", price_ticker_ws_url_bitfinex, connection::new)
+pub fn connect(price_ticker_ws_url_bitfinex: Url, proxy: Option<String>) -> Result<PriceUpdates> {
+    crate::ticker::connect("Bitfinex", (price_ticker_ws_url_bitfinex, proxy), connection::new)
 }
 
 pub type PriceUpdates = crate::ticker::PriceUpdates<wire::PriceUpdate>;
@@ -33,19 +33,42 @@ mod connection {
     use futures::stream::BoxStream;
     use std::sync::Arc;
     use tokio_tungstenite::tungstenite;
+    use futures::SinkExt;
 
     pub async fn new(
-        ws_url: Arc<Url>,
+        params: Arc<(Url, Option<String>)>,
     ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Error>>> {
-        let (mut rate_stream, _) = tokio_tungstenite::connect_async(&*ws_url)
-            .await
-            .context("Failed to connect to Bitfinex websocket API")?;
+        let ws_url = &params.0;
+        let proxy = &params.1;
 
-        rate_stream
-            .send(SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD.into())
-            .await?;
+        let stream = if let Some(proxy_addr) = proxy {
+            let host = ws_url.host_str().unwrap_or("");
+            let port = ws_url.port_or_known_default().unwrap_or(443);
 
-        let stream = rate_stream.err_into().try_filter_map(parse_message).boxed();
+            let tcp_stream = tokio_socks::tcp::Socks5Stream::connect(proxy_addr.as_str(), (host, port))
+                .await
+                .context("Failed to connect to SOCKS5 proxy for Bitfinex WS")?;
+
+            let (mut ws_stream, _) = tokio_tungstenite::client_async_tls(ws_url.as_str(), tcp_stream)
+                .await
+                .context("Failed to establish TLS over SOCKS5 for Bitfinex")?;
+
+            ws_stream
+                .send(SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD.into())
+                .await?;
+
+            ws_stream.err_into().try_filter_map(parse_message).boxed()
+        } else {
+            let (mut ws_stream, _) = tokio_tungstenite::connect_async(ws_url.as_str())
+                .await
+                .context("Failed to connect to Bitfinex websocket API directly")?;
+
+            ws_stream
+                .send(SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD.into())
+                .await?;
+
+            ws_stream.err_into().try_filter_map(parse_message).boxed()
+        };
 
         Ok(stream)
     }
@@ -130,7 +153,7 @@ mod connection {
 ///
 /// https://docs.bitfinex.com/reference/ws-public-ticker
 /// ```shell-session
-/// $ websocat wss://api-pub.bitfinex.com/ws/2
+/// $ websocat wss://[api-pub.bitfinex.com/ws/2](https://api-pub.bitfinex.com/ws/2)
 /// {"event":"info","version":2,"serverId":"2307ff06-41db-4d2b-b3ce-220348811755","platform":{"status":1}}
 /// {"event": "subscribe", "channel": "ticker", "symbol": "tXMRBTC" }
 /// {"event":"subscribed","channel":"ticker","chanId":225000,"symbol":"tXMRBTC","pair":"XMRBTC"}

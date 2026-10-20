@@ -27,7 +27,7 @@
     }
   },
   "bundle": {
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "active": true,
     "targets": ["appimage", "dmg", "nsis", "app", "deb"],
     "icon": [
@@ -52,7 +52,7 @@
   },
   "plugins": {
     "updater": {
-      "active": true,
+      "active": false,
       "dialog": true,
       "endpoints": [
         "https://cdn.crabnebula.app/update/unstoppableswap/unstoppableswap-gui-rs/{{target}}-{{arch}}/{{current_version}}"

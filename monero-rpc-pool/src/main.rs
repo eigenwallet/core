@@ -85,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.port,
         std::env::temp_dir().join("monero-rpc-pool"),
         tor_client,
+        None,
         args.network,
     );
 

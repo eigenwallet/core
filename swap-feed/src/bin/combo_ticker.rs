@@ -9,11 +9,11 @@ async fn main() -> Result<()> {
     )?;
 
     let price_ticker_ws_url_kraken = Url::parse("wss://ws.kraken.com")?;
-    let kraken_ticker = swap_feed::connect_kraken(price_ticker_ws_url_kraken)
+    let kraken_ticker = swap_feed::connect_kraken(price_ticker_ws_url_kraken , None)
         .context("Failed to connect to kraken")?;
 
     let price_ticker_ws_url_bitfinex = Url::parse("wss://api-pub.bitfinex.com/ws/2")?;
-    let bitfinex_ticker = swap_feed::connect_bitfinex(price_ticker_ws_url_bitfinex)
+    let bitfinex_ticker = swap_feed::connect_bitfinex(price_ticker_ws_url_bitfinex , None)
         .context("Failed to connect to bitfinex")?;
 
     let price_ticker_rest_url_kucoin = Url::parse("https://api.kucoin.com/api/v1/bullet-public")?;
