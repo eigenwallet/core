@@ -65,6 +65,9 @@ pub trait BitcoinWallet: Send + Sync {
     async fn estimate_fee(&self, weight: Weight, transfer_amount: Option<Amount>)
     -> Result<Amount>;
 
+    /// Uncapped rate for presigned swap transactions.
+    async fn swap_fee_rate(&self) -> Result<bitcoin::FeeRate>;
+
     fn network(&self) -> Network;
 
     fn finality_confirmations(&self) -> u32;

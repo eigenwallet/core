@@ -1620,6 +1620,14 @@ where
         })
     }
 
+    /// Return an uncapped rate for swap setup, including the current relay minimum.
+    pub async fn swap_fee_rate(&self) -> Result<FeeRate> {
+        Ok(self
+            .combined_fee_rate()
+            .await?
+            .max(self.combined_min_relay_fee().await?))
+    }
+
     /// Estimate total tx fee for a pre-defined target block based on the
     /// transaction weight. The max fee cannot be more than MAX_PERCENTAGE_FEE
     /// of amount
@@ -2268,6 +2276,10 @@ impl BitcoinWallet for Wallet {
         transfer_amount: Option<Amount>,
     ) -> Result<Amount> {
         Wallet::estimate_fee(self, weight, transfer_amount).await
+    }
+
+    async fn swap_fee_rate(&self) -> Result<FeeRate> {
+        Wallet::swap_fee_rate(self).await
     }
 
     fn network(&self) -> Network {
@@ -3085,6 +3097,10 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         transfer_amount: Option<Amount>,
     ) -> Result<Amount> {
         Wallet::estimate_fee(self, weight, transfer_amount).await
+    }
+
+    async fn swap_fee_rate(&self) -> Result<FeeRate> {
+        Wallet::swap_fee_rate(self).await
     }
 
     fn network(&self) -> Network {

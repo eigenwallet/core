@@ -29,7 +29,7 @@ pub enum CancelRefundVersion {
 
 #[derive(Debug)]
 pub struct TxCancel {
-    inner: Transaction,
+    pub(super) inner: Transaction,
     digest: Sighash,
     pub(in crate::bitcoin) output_descriptor: Descriptor<::bitcoin::PublicKey>,
     lock_output_descriptor: Descriptor<::bitcoin::PublicKey>,

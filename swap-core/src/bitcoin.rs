@@ -2,7 +2,9 @@
 
 mod cancel;
 mod early_refund;
+mod fees;
 mod full_refund;
+pub use fees::{SwapFeeInputs, SwapFeeLimits, SwapFeeRate, SwapFees};
 mod lock;
 mod mercy;
 mod partial_refund;
