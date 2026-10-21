@@ -5,6 +5,7 @@ pub use core::*;
 pub use wallet::*;
 
 pub mod primitives;
+pub mod rpc_client;
 
 pub use crate::primitives::{ScriptStatus, Subscription, Watchable};
 use anyhow::Result;

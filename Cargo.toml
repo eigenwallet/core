@@ -3,30 +3,9 @@ resolver = "2"
 members = [
   "bitcoin-wallet",
   "electrum-pool",
-  "libp2p-rendezvous-node",
-  "libp2p-tor",
-  "monero-oxide-ext",
-  "monero-rpc-pool",
-  "monero-sys",
-  "monero-tests",
-  "monero-wallet",
-  "monero-wallet-ng",
-  "src-tauri",
-  "swap",
-  "swap-asb",
-  "swap-controller",
-  "swap-controller-api",
   "swap-core",
-  "swap-db",
-  "swap-env",
-  "swap-feed",
   "swap-fs",
-  "swap-machine",
-  "swap-orchestrator",
-  "swap-p2p",
-  "swap-proptest",
   "swap-serde",
-  "throttle",
   "tracing-ext",
 ]
 
@@ -36,6 +15,8 @@ bdk = "0.28"
 bdk_chain = "0.23.0"
 bdk_core = "0.6.0"
 bdk_electrum = { version = "0.23.0", default-features = false }
+bdk_bitcoind_rpc = "0.22.0"
+bitcoincore-rpc = "0.19"
 bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
 
