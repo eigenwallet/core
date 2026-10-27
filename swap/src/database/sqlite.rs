@@ -421,10 +421,16 @@ impl Database for SqliteDatabase {
         // runner first persists BtcLockTransactionSeen and reserves inputs until then.
         let rows = sqlx::query!(
             r#"
-            WITH latest AS (
-                SELECT max(id) as id, swap_id, state, entered_at
+            -- Find the latest ids on the covering (swap_id, id) index first, so only
+            -- the latest state of each swap is read from the table.
+            WITH latest_ids AS (
+                SELECT max(id) AS id
                 FROM swap_states
                 GROUP BY swap_id
+            ), latest AS (
+                SELECT s.id, s.swap_id, s.state, s.entered_at
+                FROM latest_ids l
+                JOIN swap_states s ON s.id = l.id
             ), normalized AS (
                 SELECT *, CASE
                     WHEN entered_at NOT GLOB '* +00:00:00' THEN NULL
@@ -637,7 +643,7 @@ impl Database for SqliteDatabase {
 
         let row = sqlx::query!(
             r#"
-            SELECT 1 as found
+            SELECT 1 as "found!: i64"
             FROM swap_states
             WHERE swap_id = ?
             LIMIT 1
@@ -671,10 +677,16 @@ impl SqliteDatabase {
     async fn all_fresh_since(&self, cutoff: i64) -> Result<Vec<(PeerId, Uuid, State)>> {
         let rows = sqlx::query!(
             r#"
-            WITH latest AS (
-                SELECT max(id) as id, swap_id, state, entered_at
+            -- Find the latest ids on the covering (swap_id, id) index first, so only
+            -- the latest state of each swap is read from the table.
+            WITH latest_ids AS (
+                SELECT max(id) AS id
                 FROM swap_states
                 GROUP BY swap_id
+            ), latest AS (
+                SELECT s.id, s.swap_id, s.state, s.entered_at
+                FROM latest_ids l
+                JOIN swap_states s ON s.id = l.id
             ), normalized AS (
                 SELECT *, CASE
                     WHEN entered_at NOT GLOB '* +00:00:00' THEN NULL
