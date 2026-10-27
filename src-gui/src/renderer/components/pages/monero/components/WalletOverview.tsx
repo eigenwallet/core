@@ -1,4 +1,5 @@
 import { Box, Typography, Card, LinearProgress } from "@mui/material";
+import { useEffect, useState } from "react";
 import { useAppSelector } from "store/hooks";
 import { PiconeroAmount } from "../../../other/Units";
 import { FiatPiconeroAmount } from "../../../other/Units";
@@ -17,6 +18,29 @@ interface TimeEstimationResult {
 }
 
 const AVG_MONERO_BLOCK_SIZE_KB = 130;
+
+// The pool's bandwidth fluctuates (and briefly drops below the "stuck"
+// threshold) while syncing. Keep showing the last time estimate for this long
+// before giving up on it, so it does not flicker in and out.
+const TIME_ESTIMATE_HOLD_MS = 10 * 1000;
+
+/// Returns `value`, or while it is null, the last non-null value until it has
+/// been null for `holdMs`.
+function useHeldValue<T>(value: T | null, holdMs: number): T | null {
+  const [held, setHeld] = useState<T | null>(value);
+  if (value !== null && value !== held) {
+    setHeld(value);
+  }
+
+  useEffect(() => {
+    if (value !== null) return;
+
+    const timeout = setTimeout(() => setHeld(null), holdMs);
+    return () => clearTimeout(timeout);
+  }, [value, holdMs]);
+
+  return value ?? held;
+}
 
 function useSyncTimeEstimation(
   syncProgress: GetMoneroSyncProgressResponse | null,
@@ -104,6 +128,15 @@ export default function WalletOverview({
     : null;
 
   const isSyncing = !!(syncProgress && syncProgress.progress_percentage < 100);
+
+  const timeRemainingText = useHeldValue(
+    poolStatus &&
+      timeEstimation?.formattedTimeRemaining &&
+      !timeEstimation.isStuck
+      ? `${timeEstimation.formattedTimeRemaining} left / ${poolStatus.bandwidth_kb_per_sec?.toFixed(1) ?? "0.0"} KB/s`
+      : null,
+    TIME_ESTIMATE_HOLD_MS,
+  );
 
   // syncProgress.progress_percentage is not good to display
   // assuming we have an old wallet, eventually we will always only use the last few cm of the progress bar
@@ -196,7 +229,9 @@ export default function WalletOverview({
               />
             </Typography>
           </Box>
-          {pendingBalance !== null && pendingBalance > 0 && (
+          {/* While syncing, wallet2 counts outputs as locked relative to the
+              scanned height, so historic receives would flash as pending. */}
+          {!isSyncing && pendingBalance !== null && pendingBalance > 0 && (
             <Box
               sx={{
                 display: "flex",
@@ -238,31 +273,24 @@ export default function WalletOverview({
             color={isSyncing ? "primary" : "success"}
             pulsating={isSyncing}
           />
-          <Box sx={{ textAlign: "right" }}>
-            {poolStatus && isSyncing && !timeEstimation?.isStuck && (
-              <>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ mt: 0.5, fontSize: "0.7rem", display: "block" }}
-                >
-                  {timeEstimation?.formattedTimeRemaining &&
-                    !timeEstimation?.isStuck && (
-                      <>
-                        {timeEstimation.formattedTimeRemaining} left /{" "}
-                        {poolStatus.bandwidth_kb_per_sec?.toFixed(1) ?? "0.0"}{" "}
-                        KB/s
-                      </>
-                    )}
-                </Typography>
-              </>
-            )}
-            {isSyncing && timeEstimation?.hasDirectKnowledge && (
-              <Typography variant="body2" color="text.secondary">
-                {timeEstimation.blocksLeft?.toLocaleString()} blocks left
+          {/* Both lines keep their space while syncing so the card does not
+              jump when an estimate is temporarily unavailable. */}
+          {isSyncing && (
+            <Box sx={{ textAlign: "right" }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ mt: 0.5, fontSize: "0.7rem", display: "block" }}
+              >
+                {timeRemainingText ?? "\u00a0"}
               </Typography>
-            )}
-          </Box>
+              <Typography variant="body2" color="text.secondary">
+                {timeEstimation?.hasDirectKnowledge
+                  ? `${timeEstimation.blocksLeft.toLocaleString()} blocks left`
+                  : "\u00a0"}
+              </Typography>
+            </Box>
+          )}
         </Box>
       </Box>
     </Card>

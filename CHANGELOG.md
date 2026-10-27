@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Fix the wallet setup dialog closing while a wallet was still being restored or opened. If restoring fails (e.g. the wallet name is taken), the seed phrase and other inputs are now kept instead of being cleared.
+- GUI: Fix the sync time estimate and the pending balance flickering in and out while a restored wallet syncs.
+
 ## [4.16.1] - 2026-10-13
 
 - Report the actual Monero wallet error instead of "unknown error, error not set".

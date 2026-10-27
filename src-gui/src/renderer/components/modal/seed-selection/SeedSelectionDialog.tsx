@@ -15,9 +15,11 @@ import {
 import NewPasswordInput from "renderer/components/other/NewPasswordInput";
 import { useState, useEffect, useReducer, useRef } from "react";
 import {
+  useAppSelector,
   usePendingSeedSelectionApproval,
   usePendingSeedBackupApproval,
 } from "store/hooks";
+import { ContextStatusType } from "store/features/rpcSlice";
 import { resolveApproval, checkSeed } from "renderer/rpc";
 import { SeedChoice } from "models/tauriModel";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
@@ -36,7 +38,7 @@ import { useSnackbar } from "notistack";
 // whenever it needs user input. This dialog only renders whichever request is
 // pending — a SeedSelection approval shows the wizard below, a SeedBackup
 // approval shows the backup step — plus a local spinner while the backend is
-// busy creating the wallet between the two.
+// busy creating, restoring or opening the wallet after a choice was submitted.
 type WalletMode = "RandomSeed" | "FromSeed" | "FromWalletPath";
 
 type StepId =
@@ -82,6 +84,12 @@ const FLOWS: Record<WalletMode, Step[]> = {
     { id: "chooseMode", label: "Choose wallet", action: "next" },
     { id: "openFile", label: "Open wallet file", action: "openWallet" },
   ],
+};
+
+const WAITING_DESCRIPTIONS: Record<WalletMode, string> = {
+  RandomSeed: "Creating your new wallet…",
+  FromSeed: "Restoring your wallet…",
+  FromWalletPath: "Opening your wallet…",
 };
 
 const PRIMARY_LABELS: Record<PrimaryActionKind, string> = {
@@ -216,9 +224,18 @@ export default function SeedSelectionDialog() {
   const [wizard, dispatch] = useReducer(wizardReducer, INITIAL_WIZARD);
   const [isPasswordValid, setIsPasswordValid] = useState<boolean>(true);
   const [backupConfirmed, setBackupConfirmed] = useState<boolean>(false);
-  // Backend is creating the wallet: the SeedSelection approval is resolved
-  // but the SeedBackup approval has not arrived yet.
-  const [waitingForWallet, setWaitingForWallet] = useState<boolean>(false);
+  // Mode of the submitted choice while the backend creates, restores or
+  // opens the wallet: the SeedSelection approval is resolved but neither a
+  // follow-up approval nor the opened wallet has arrived yet.
+  const [waitingFor, setWaitingFor] = useState<WalletMode | null>(null);
+  const moneroWalletAvailable = useAppSelector(
+    (state) =>
+      state.rpc.status?.type === ContextStatusType.Status &&
+      state.rpc.status.status.monero_wallet_available,
+  );
+  const contextFailed = useAppSelector(
+    (state) => state.rpc.status?.type === ContextStatusType.Error,
+  );
   // Result of the async seed check, tagged with the seed it belongs to so a
   // stale response can never validate a newer input.
   const [seedValidation, setSeedValidation] = useState<{
@@ -245,17 +262,24 @@ export default function SeedSelectionDialog() {
     if (!requestId || requestId === lastRequestIdRef.current) return;
     lastRequestIdRef.current = requestId;
 
-    // Default to opening a recent wallet when one exists, otherwise create.
-    dispatch({
-      type: "reset",
-      mode: recentWallets.length > 0 ? "FromWalletPath" : "RandomSeed",
-      fields: {
-        directory: content?.default_wallet_directory ?? "",
-        walletPath: recentWallets[0] ?? "",
-      },
-    });
-    setSeedValidation(null);
-    setWaitingForWallet(false);
+    // A submitted choice that failed comes back as a new request carrying
+    // the error: keep what the user entered and stay on the step they
+    // submitted from, so they can fix it instead of starting over.
+    const retrying = waitingFor !== null && content?.error != null;
+    setWaitingFor(null);
+
+    if (!retrying) {
+      // Default to opening a recent wallet when one exists, otherwise create.
+      dispatch({
+        type: "reset",
+        mode: recentWallets.length > 0 ? "FromWalletPath" : "RandomSeed",
+        fields: {
+          directory: content?.default_wallet_directory ?? "",
+          walletPath: recentWallets[0] ?? "",
+        },
+      });
+      setSeedValidation(null);
+    }
 
     if (content?.error) {
       enqueueSnackbar(content.error, {
@@ -275,7 +299,7 @@ export default function SeedSelectionDialog() {
     if (!requestId || requestId === lastBackupRequestIdRef.current) return;
     lastBackupRequestIdRef.current = requestId;
 
-    setWaitingForWallet(false);
+    setWaitingFor(null);
     setBackupConfirmed(false);
   }, [backupApproval?.request_id]);
 
@@ -291,20 +315,28 @@ export default function SeedSelectionDialog() {
       .catch(() => setSeedValidation({ forSeed: trimmedSeed, valid: false }));
   }, [trimmedSeed, needsSeedValidation]);
 
-  // Which screen is shown is decided by the backend's pending request.
+  // Which screen is shown is decided by the backend's pending request. A
+  // submitted choice keeps the dialog up until the wallet is open (or setup
+  // failed), so it does not vanish while the backend is still working.
+  const isWaiting =
+    waitingFor !== null && !moneroWalletAvailable && !contextFailed;
   const view = backupApproval
     ? ("backup" as const)
-    : selectionApproval
-      ? ("wizard" as const)
-      : waitingForWallet
-        ? ("waiting" as const)
+    : isWaiting
+      ? ("waiting" as const)
+      : selectionApproval
+        ? ("wizard" as const)
         : null;
 
   if (view === null) return null;
 
-  // The backup and waiting screens render the last step of the create flow.
-  const mode = view === "wizard" ? wizard.mode : "RandomSeed";
-  const step: StepId = view === "wizard" ? wizard.step : "backupSeed";
+  // The backup screen, and waiting for a new wallet, render the last step of
+  // the create flow; waiting otherwise stays on the submitted step.
+  const mode = view === "backup" ? "RandomSeed" : wizard.mode;
+  const step: StepId =
+    view === "backup" || waitingFor === "RandomSeed"
+      ? "backupSeed"
+      : wizard.step;
   const flow = FLOWS[mode];
   const index = stepIndex(mode, step);
   const { fields } = wizard;
@@ -377,15 +409,16 @@ export default function SeedSelectionDialog() {
     await resolveApproval<SeedChoice>(selectionApproval.request_id, seedChoice);
   };
 
-  // The backend creates the wallet after the choice is resolved and then
-  // requests the seed backup; show a spinner in between.
-  const createWallet = async () => {
-    const seedChoice = buildSeedChoice("RandomSeed");
-    setWaitingForWallet(true);
+  // The backend creates, restores or opens the wallet after the choice is
+  // resolved; show a spinner until it asks for the seed backup, the wallet
+  // becomes available, or it asks again because the choice failed.
+  const submitChoice = async (chosenMode: WalletMode) => {
+    const seedChoice = buildSeedChoice(chosenMode);
+    setWaitingFor(chosenMode);
     try {
       await resolveSelection(seedChoice);
     } catch (e) {
-      setWaitingForWallet(false);
+      setWaitingFor(null);
       throw e;
     }
   };
@@ -400,9 +433,9 @@ export default function SeedSelectionDialog() {
   {
     next: () => dispatch({ type: "next" }),
     finish: finishBackup,
-    createWallet,
-    restoreWallet: () => resolveSelection(buildSeedChoice("FromSeed")),
-    openWallet: () => resolveSelection(buildSeedChoice("FromWalletPath")),
+    createWallet: () => submitChoice("RandomSeed"),
+    restoreWallet: () => submitChoice("FromSeed"),
+    openWallet: () => submitChoice("FromWalletPath"),
   };
 
   return (
@@ -466,144 +499,155 @@ export default function SeedSelectionDialog() {
       <DialogContent
         sx={{ display: "flex", flexDirection: "column", gap: 3, pt: 1 }}
       >
-        {step === "chooseMode" && (
-          <Box sx={{ display: "flex", flexDirection: "row", gap: 2 }}>
-            <ModeCard
-              selected={mode === "FromWalletPath"}
-              icon={
-                <FolderOpenIcon
-                  sx={{ fontSize: 32, color: "text.secondary" }}
+        {view === "waiting" ? (
+          <CircularProgressWithSubtitle
+            description={WAITING_DESCRIPTIONS[waitingFor ?? mode]}
+          />
+        ) : (
+          <>
+            {step === "chooseMode" && (
+              <Box sx={{ display: "flex", flexDirection: "row", gap: 2 }}>
+                <ModeCard
+                  selected={mode === "FromWalletPath"}
+                  icon={
+                    <FolderOpenIcon
+                      sx={{ fontSize: 32, color: "text.secondary" }}
+                    />
+                  }
+                  label="Open existing wallet file"
+                  onClick={() =>
+                    dispatch({ type: "selectMode", mode: "FromWalletPath" })
+                  }
                 />
-              }
-              label="Open existing wallet file"
-              onClick={() =>
-                dispatch({ type: "selectMode", mode: "FromWalletPath" })
-              }
-            />
-            <ModeCard
-              selected={mode === "RandomSeed"}
-              icon={<AddIcon sx={{ fontSize: 32, color: "text.secondary" }} />}
-              label="Create new wallet"
-              onClick={() =>
-                dispatch({ type: "selectMode", mode: "RandomSeed" })
-              }
-            />
-            <ModeCard
-              selected={mode === "FromSeed"}
-              icon={
-                <RefreshIcon sx={{ fontSize: 32, color: "text.secondary" }} />
-              }
-              label="Restore from seed"
-              onClick={() => dispatch({ type: "selectMode", mode: "FromSeed" })}
-            />
-          </Box>
-        )}
+                <ModeCard
+                  selected={mode === "RandomSeed"}
+                  icon={
+                    <AddIcon sx={{ fontSize: 32, color: "text.secondary" }} />
+                  }
+                  label="Create new wallet"
+                  onClick={() =>
+                    dispatch({ type: "selectMode", mode: "RandomSeed" })
+                  }
+                />
+                <ModeCard
+                  selected={mode === "FromSeed"}
+                  icon={
+                    <RefreshIcon
+                      sx={{ fontSize: 32, color: "text.secondary" }}
+                    />
+                  }
+                  label="Restore from seed"
+                  onClick={() =>
+                    dispatch({ type: "selectMode", mode: "FromSeed" })
+                  }
+                />
+              </Box>
+            )}
 
-        {step === "randomPassword" && (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-            <NewPasswordInput
-              password={fields.password}
-              setPassword={setField("password")}
-              isPasswordValid={isPasswordValid}
-              setIsPasswordValid={setIsPasswordValid}
-            />
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ textAlign: "center" }}
-            >
-              A new wallet with a random seed phrase will be generated. You will
-              record the seed in the final step.
-            </Typography>
-          </Box>
-        )}
+            {step === "randomPassword" && (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                <NewPasswordInput
+                  password={fields.password}
+                  setPassword={setField("password")}
+                  isPasswordValid={isPasswordValid}
+                  setIsPasswordValid={setIsPasswordValid}
+                />
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ textAlign: "center" }}
+                >
+                  A new wallet with a random seed phrase will be generated. You
+                  will record the seed in the final step.
+                </Typography>
+              </Box>
+            )}
 
-        {step === "seedPhrase" && (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              Enter the 25-word Monero seed phrase of the wallet you want to
-              restore. Setting the restore height to around when the wallet was
-              created speeds up syncing.
-            </Typography>
-            <TextField
-              fullWidth
-              multiline
-              autoFocus
-              rows={3}
-              label="Enter your seed phrase"
-              value={fields.customSeed}
-              onChange={(e) => setField("customSeed")(e.target.value)}
-              placeholder="Enter your Monero 25 words seed phrase..."
-              error={!isSeedValid && fields.customSeed.length > 0}
-              helperText={
-                isSeedValid
-                  ? "Seed is valid"
-                  : fields.customSeed.length > 0
-                    ? "Seed is invalid"
-                    : ""
-              }
-            />
-            <TextField
-              type="text"
-              inputProps={{ inputmode: "numeric", pattern: "[0-9]*" }}
-              label="Restore blockheight (optional)"
-              value={fields.blockheightInput}
-              onChange={(e) => setField("blockheightInput")(e.target.value)}
-              placeholder="Enter restore blockheight, leave empty to scan from the blockchain start"
-              error={isBlockheightInvalid}
-              helperText={
-                isBlockheightInvalid
-                  ? "Please enter a valid blockheight"
-                  : hasBlockheightInput && isBlockheightValid
-                    ? "Valid blockheight"
-                    : ""
-              }
-            />
-          </Box>
-        )}
+            {step === "seedPhrase" && (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Enter the 25-word Monero seed phrase of the wallet you want to
+                  restore. Setting the restore height to around when the wallet
+                  was created speeds up syncing.
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  autoFocus
+                  rows={3}
+                  label="Enter your seed phrase"
+                  value={fields.customSeed}
+                  onChange={(e) => setField("customSeed")(e.target.value)}
+                  placeholder="Enter your Monero 25 words seed phrase..."
+                  error={!isSeedValid && fields.customSeed.length > 0}
+                  helperText={
+                    isSeedValid
+                      ? "Seed is valid"
+                      : fields.customSeed.length > 0
+                        ? "Seed is invalid"
+                        : ""
+                  }
+                />
+                <TextField
+                  type="text"
+                  inputProps={{ inputmode: "numeric", pattern: "[0-9]*" }}
+                  label="Restore blockheight (optional)"
+                  value={fields.blockheightInput}
+                  onChange={(e) => setField("blockheightInput")(e.target.value)}
+                  placeholder="Enter restore blockheight, leave empty to scan from the blockchain start"
+                  error={isBlockheightInvalid}
+                  helperText={
+                    isBlockheightInvalid
+                      ? "Please enter a valid blockheight"
+                      : hasBlockheightInput && isBlockheightValid
+                        ? "Valid blockheight"
+                        : ""
+                  }
+                />
+              </Box>
+            )}
 
-        {step === "storage" && (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              Set a password to encrypt the wallet file stored on this device.
-              Leave it empty to store the wallet unencrypted.
-            </Typography>
-            <NewPasswordInput
-              password={fields.password}
-              setPassword={setField("password")}
-              isPasswordValid={isPasswordValid}
-              setIsPasswordValid={setIsPasswordValid}
-            />
-          </Box>
-        )}
+            {step === "storage" && (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Set a password to encrypt the wallet file stored on this
+                  device. Leave it empty to store the wallet unencrypted.
+                </Typography>
+                <NewPasswordInput
+                  password={fields.password}
+                  setPassword={setField("password")}
+                  isPasswordValid={isPasswordValid}
+                  setIsPasswordValid={setIsPasswordValid}
+                />
+              </Box>
+            )}
 
-        {step === "nameLocation" && (
-          <NameLocationStep
-            name={fields.name}
-            setName={setField("name")}
-            directory={fields.directory}
-            setDirectory={setField("directory")}
-          />
-        )}
+            {step === "nameLocation" && (
+              <NameLocationStep
+                name={fields.name}
+                setName={setField("name")}
+                directory={fields.directory}
+                setDirectory={setField("directory")}
+              />
+            )}
 
-        {step === "backupSeed" &&
-          (backupContent ? (
-            <BackupSeedStep
-              seed={backupContent.seed}
-              restoreHeight={backupContent.restore_height}
-              confirmed={backupConfirmed}
-              onConfirmedChange={setBackupConfirmed}
-            />
-          ) : (
-            <CircularProgressWithSubtitle description="Creating your new wallet…" />
-          ))}
+            {step === "backupSeed" && backupContent && (
+              <BackupSeedStep
+                seed={backupContent.seed}
+                restoreHeight={backupContent.restore_height}
+                confirmed={backupConfirmed}
+                onConfirmedChange={setBackupConfirmed}
+              />
+            )}
 
-        {step === "openFile" && (
-          <OpenWalletStep
-            walletPath={fields.walletPath}
-            setWalletPath={setField("walletPath")}
-            recentWallets={recentWallets}
-          />
+            {step === "openFile" && (
+              <OpenWalletStep
+                walletPath={fields.walletPath}
+                setWalletPath={setField("walletPath")}
+                recentWallets={recentWallets}
+              />
+            )}
+          </>
         )}
       </DialogContent>
       <DialogActions sx={{ justifyContent: "space-between" }}>
@@ -631,7 +675,7 @@ export default function SeedSelectionDialog() {
         </Box>
         <PromiseInvokeButton
           variant="contained"
-          disabled={!stepValid[step]}
+          disabled={view === "waiting" || !stepValid[step]}
           contextRequirement={false}
           displayErrorSnackbar
           onInvoke={async () => {
