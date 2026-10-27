@@ -334,7 +334,7 @@ mod decimal_string {
 }
 
 pub fn default_btc_redeem_base_fee_multiplier() -> Decimal {
-    Decimal::from(3)
+    Decimal::from(2)
 }
 
 fn default_anti_spam_deposit_ratio() -> Decimal {

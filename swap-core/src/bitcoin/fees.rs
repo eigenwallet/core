@@ -15,7 +15,7 @@ pub struct RedeemFeeMultiplier(u32);
 
 impl Default for RedeemFeeMultiplier {
     fn default() -> Self {
-        Self(300)
+        Self(200)
     }
 }
 
@@ -353,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn deterministic_for_agreed_scripts_and_exact_three_to_one() {
+    fn deterministic_for_agreed_scripts_and_exact_two_to_one() {
         let address = address(22);
         let inputs = inputs(&address);
         let alice = inputs.calculate(SwapFeeRate(1250), limits()).unwrap();
@@ -362,7 +362,7 @@ mod tests {
         // 1 input, 2 outputs, two 73-byte signatures and a 70-byte witness script.
         assert_eq!(alice.max_vsize, 181);
         assert_eq!(alice.base.to_sat(), 227);
-        assert_eq!(alice.redeem, alice.base * 3);
+        assert_eq!(alice.redeem, alice.base * 2);
         let rate = SwapFeeRate(1250);
         let recovered: SwapFeeRate =
             serde_json::from_str(&serde_json::to_string(&rate).unwrap()).unwrap();
@@ -454,7 +454,7 @@ mod tests {
             .calculate(SwapFeeRate(1001), limits())
             .unwrap();
         assert_eq!(fees.base.to_sat(), 182);
-        assert_eq!(fees.redeem.to_sat(), 546);
+        assert_eq!(fees.redeem.to_sat(), 364);
     }
 
     #[test]
@@ -494,7 +494,7 @@ mod tests {
         inputs.deposit = Amount::from_sat(656);
         assert!(inputs.calculate(SwapFeeRate(1000), limits()).is_ok());
         inputs.deposit = Amount::ZERO;
-        inputs.lock_amount = Amount::from_sat(3 * 150 + 294 - 1);
+        inputs.lock_amount = Amount::from_sat(2 * 150 + 294 - 1);
         assert!(inputs.calculate(SwapFeeRate(1000), limits()).is_err());
     }
 

@@ -32,7 +32,7 @@ fn old_redeem_fee_multiplier_is_rejected() {
 fn redeem_base_fee_multiplier_is_an_exact_quoted_decimal() {
     assert_eq!(
         maker("").unwrap().btc_redeem_base_fee_multiplier,
-        Decimal::from(3)
+        Decimal::from(2)
     );
     assert_eq!(
         maker(r#"btc_redeem_base_fee_multiplier = "2.30""#)

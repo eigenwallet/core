@@ -146,7 +146,7 @@ Below an explanation of what each option does:
 | `external_bitcoin_address` | Bitcoin address used by the asb when redeeming or punishing swaps. If omitted, a new internal address is generated for each swap. |
 | `developer_tip` | Optional donation as a fraction between 0 and 1 (e.g. `0.02` = 2%). Disabled by default. Sent in Monero by adding an extra output to the Monero lock transaction, so no extra transaction and no impact on unlocked UTXOs; privacy preserved. |
 | `btc_swap_fee_rate_multiplier` | Multiplier for the fee rate Alice proposes for all presigned Bitcoin transactions. Defaults to `1.0` and must be between `1.0` and `3.0`. Takers reject rates above three times their own estimate, so a multiplier close to `3.0` can still fail when your estimate is higher than the taker's. This option replaces `btc_redeem_fee_multiplier`. The old name is no longer accepted and the asb does not start with it, so rename it in existing configs. |
-| `btc_redeem_base_fee_multiplier` | Redeem fee relative to the shared base fee that every other presigned transaction pays. Defaults to `"3.00"`. Must be a quoted decimal with at most two meaningful decimal places, between `"2.00"` and `"10.00"`. |
+| `btc_redeem_base_fee_multiplier` | Redeem fee relative to the shared base fee that every other presigned transaction pays. Defaults to `"2.00"`. Must be a quoted decimal with at most two meaningful decimal places, between `"2.00"` and `"10.00"`. |
 
 ### Bitcoin Section
 
