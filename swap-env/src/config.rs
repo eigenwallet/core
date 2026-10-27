@@ -208,6 +208,7 @@ pub struct Maker {
     /// Multiplier applied to the proposed fee rate for all presigned BTC transactions. Defaults to 1.0;
     /// set higher (e.g. 2.0) to overpay for faster confirmation as a safety
     /// margin against fee estimation undershooting actual mempool conditions.
+    /// Must be between 1.0 and 3.0, because takers reject rates above three times their own estimate.
     #[serde(default = "default_btc_swap_fee_rate_multiplier")]
     pub btc_swap_fee_rate_multiplier: Decimal,
     /// Redeem fee relative to the shared base fee, written as an exact decimal string.
@@ -392,14 +393,14 @@ pub fn read_config(config_path: PathBuf) -> Result<Result<Config, ConfigNotIniti
 /// and likely indicate a misconfiguration (e.g. deposit exceeding fees).
 pub const MAX_ANTI_SPAM_DEPOSIT_RATIO: Decimal = Decimal::from_parts(2, 0, 0, false, 1); // 0.2
 
-/// Minimum allowed BTC swap fee rate multiplier. Values below this would scale
-/// the estimated rate down so far that swap transactions are unlikely to
-/// confirm, and likely indicate a misconfiguration.
-pub const MIN_BTC_SWAP_FEE_RATE_MULTIPLIER: Decimal = Decimal::from_parts(1, 0, 0, false, 1); // 0.1
+/// Minimum allowed BTC swap fee rate multiplier. Values below this would
+/// propose a rate under the maker's own fee estimate.
+pub const MIN_BTC_SWAP_FEE_RATE_MULTIPLIER: Decimal = Decimal::ONE;
 
-/// Maximum allowed BTC swap fee rate multiplier. Values above this are implausible
-/// (10x the estimated fee) and likely indicate a misconfiguration.
-pub const MAX_BTC_SWAP_FEE_RATE_MULTIPLIER: Decimal = Decimal::from_parts(10, 0, 0, false, 0); // 10
+/// Maximum allowed BTC swap fee rate multiplier. Bob rejects proposals above
+/// three times his own estimate (see `swap_machine::common::swap_fee_limits`),
+/// so a higher multiplier would make every swap setup fail.
+pub const MAX_BTC_SWAP_FEE_RATE_MULTIPLIER: Decimal = Decimal::from_parts(3, 0, 0, false, 0); // 3
 
 pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Result<()> {
     if env_config.monero_lock_construction_cooldown.is_zero() {
@@ -450,16 +451,15 @@ pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Resul
     if multiplier < MIN_BTC_SWAP_FEE_RATE_MULTIPLIER {
         bail!(
             "btc_swap_fee_rate_multiplier of {multiplier} is below minimum of \
-             {MIN_BTC_SWAP_FEE_RATE_MULTIPLIER}. A multiplier this low scales the \
-             swap fee rate down so far that the transaction is unlikely to confirm \
-             (a non-positive rate is rejected during setup)."
+             {MIN_BTC_SWAP_FEE_RATE_MULTIPLIER}. A multiplier below 1 proposes a fee \
+             rate under the maker's own estimate."
         );
     }
     if multiplier > MAX_BTC_SWAP_FEE_RATE_MULTIPLIER {
         bail!(
             "btc_swap_fee_rate_multiplier of {multiplier} exceeds maximum of \
-             {MAX_BTC_SWAP_FEE_RATE_MULTIPLIER}. Such a high multiplier is implausible \
-             and likely a misconfiguration."
+             {MAX_BTC_SWAP_FEE_RATE_MULTIPLIER}. Takers reject fee rates above three \
+             times their own estimate, so every swap setup would fail."
         );
     }
 
