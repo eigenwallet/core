@@ -40,15 +40,6 @@ use tokio::sync::RwLock as TokioRwLock;
 use tokio::sync::watch;
 use tracing::{Instrument, debug_span};
 
-fn input_selection_context(max_inputs: Option<usize>) -> String {
-    if let Some(maximum) = max_inputs {
-        return format!(
-            "Could not fund transaction within the {maximum}-input limit; consolidate wallet inputs before starting this swap"
-        );
-    }
-    "Failed to select transaction inputs".into()
-}
-
 pub type TauriHandle = Option<Arc<dyn BitcoinTauriHandle>>;
 pub trait BitcoinTauriHandle: Send + Sync {
     /// let progress_handle = tauri_handle.new_background_process_with_initial_progress(
@@ -1571,7 +1562,7 @@ where
 
             tx_builder
                 .finish()
-                .with_context(|| input_selection_context(max_inputs))?
+                .context("Failed to select transaction inputs")?
         };
 
         let weight = psbt.unsigned_tx.weight();
@@ -1633,7 +1624,7 @@ where
 
         let mut psbt = tx_builder
             .finish()
-            .with_context(|| input_selection_context(max_inputs))?;
+            .context("Failed to select transaction inputs")?;
 
         match psbt.unsigned_tx.output.as_mut_slice() {
             // our primary output is the 2nd one? reverse the vectors
@@ -3409,7 +3400,7 @@ mod input_limit_tests {
             )
             .await
             .unwrap_err();
-        assert!(error.to_string().contains("consolidate"));
+        assert!(error.to_string().contains("Failed to select transaction inputs"));
         assert!(
             wallet
                 .send_to_address_dynamic_fee(
