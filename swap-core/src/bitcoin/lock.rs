@@ -12,6 +12,12 @@ use serde::{Deserialize, Serialize};
 const SCRIPT_SIZE: usize = 34;
 const TX_LOCK_WEIGHT: usize = 485;
 const MAX_TX_LOCK_OUTPUTS: usize = 5;
+/// Maximum serialized size of a canonical lock PSBT received from the other party.
+///
+/// The largest standard lock PSBT that the protocol allows today (25 P2WPKH inputs,
+/// 5 P2TR outputs) is about 2,140 bytes. The limit leaves room for future protocol
+/// changes and still bounds what is queued for verification and stored with a swap.
+const MAX_CANONICAL_TX_LOCK_PSBT_SIZE: usize = 10_000;
 
 /// Return an outpoint spent by both PSBTs, if one exists.
 pub fn find_conflicting_psbt_input(
@@ -64,6 +70,13 @@ pub fn canonical_received_psbt(
     for (canonical_input, input) in canonical.inputs.iter_mut().zip(psbt.inputs) {
         canonical_input.witness_utxo = input.witness_utxo;
     }
+
+    // Output scripts and witness_utxo scripts have no size limit of their own.
+    let size = canonical.serialize().len();
+    anyhow::ensure!(
+        size <= MAX_CANONICAL_TX_LOCK_PSBT_SIZE,
+        "PSBT has {size} bytes, expected at most {MAX_CANONICAL_TX_LOCK_PSBT_SIZE}"
+    );
 
     Ok(canonical)
 }
@@ -481,6 +494,123 @@ mod tests {
         let second = psbt_spending(OutPoint::new(Txid::all_zeros(), 2));
 
         assert_eq!(find_conflicting_psbt_input(&first, &second), None);
+    }
+
+    #[test]
+    fn largest_standard_lock_psbt_fits_the_size_limit_with_headroom() {
+        let psbt = standard_lock_psbt(25, MAX_TX_LOCK_OUTPUTS);
+
+        let canonical = canonical_received_psbt(psbt).unwrap();
+
+        assert!(canonical.serialize().len() * 4 <= MAX_CANONICAL_TX_LOCK_PSBT_SIZE);
+    }
+
+    #[test]
+    fn rejects_oversized_scripts() {
+        let mut psbt = standard_lock_psbt(1, 1);
+        psbt.unsigned_tx.output[0].script_pubkey = op_return(MAX_CANONICAL_TX_LOCK_PSBT_SIZE);
+        assert!(canonical_received_psbt(psbt).is_err());
+
+        let mut psbt = standard_lock_psbt(1, 1);
+        psbt.inputs[0].witness_utxo.as_mut().unwrap().script_pubkey =
+            op_return(MAX_CANONICAL_TX_LOCK_PSBT_SIZE);
+        assert!(canonical_received_psbt(psbt).is_err());
+    }
+
+    #[test]
+    fn rejects_maps_that_do_not_agree_with_the_transaction() {
+        let mut psbt = standard_lock_psbt(2, 2);
+        psbt.inputs.pop();
+        assert!(canonical_received_psbt(psbt).is_err());
+
+        let mut psbt = standard_lock_psbt(2, 2);
+        psbt.outputs.push(Default::default());
+        assert!(canonical_received_psbt(psbt).is_err());
+    }
+
+    #[test]
+    fn rejects_more_than_five_outputs() {
+        assert!(canonical_received_psbt(standard_lock_psbt(1, MAX_TX_LOCK_OUTPUTS)).is_ok());
+        assert!(canonical_received_psbt(standard_lock_psbt(1, MAX_TX_LOCK_OUTPUTS + 1)).is_err());
+    }
+
+    #[test]
+    fn rejects_a_signed_transaction() {
+        let mut psbt = standard_lock_psbt(1, 1);
+        psbt.unsigned_tx.input[0].script_sig = ScriptBuf::from_bytes(vec![0x51]);
+        assert!(canonical_received_psbt(psbt).is_err());
+
+        let mut psbt = standard_lock_psbt(1, 1);
+        psbt.unsigned_tx.input[0].witness = ::bitcoin::Witness::from_slice(&[[1u8; 72]]);
+        assert!(canonical_received_psbt(psbt).is_err());
+    }
+
+    #[test]
+    fn keeps_only_the_transaction_and_witness_utxos() {
+        let mut psbt = standard_lock_psbt(1, 1);
+        let unsigned_tx = psbt.unsigned_tx.clone();
+        let witness_utxo = psbt.inputs[0].witness_utxo.clone();
+        let key = ::bitcoin::psbt::raw::Key {
+            type_value: 0xF0,
+            key: vec![1],
+        };
+        let public_key = ::bitcoin::secp256k1::PublicKey::from_slice(&[
+            2, 121, 190, 102, 126, 249, 220, 187, 172, 85, 160, 98, 149, 206, 135, 11, 7, 2, 155,
+            252, 219, 45, 206, 40, 217, 89, 242, 129, 91, 22, 248, 23, 152,
+        ])
+        .unwrap();
+        psbt.unknown.insert(key.clone(), vec![0; 100]);
+        psbt.inputs[0].unknown.insert(key.clone(), vec![0; 100]);
+        psbt.inputs[0].non_witness_utxo = Some(unsigned_tx.clone());
+        psbt.inputs[0].bip32_derivation.insert(
+            public_key,
+            (::bitcoin::bip32::Fingerprint::default(), Default::default()),
+        );
+        psbt.outputs[0].unknown.insert(key, vec![0; 100]);
+
+        let canonical = canonical_received_psbt(psbt).unwrap();
+
+        assert_eq!(canonical.unsigned_tx, unsigned_tx);
+        assert_eq!(canonical.inputs[0].witness_utxo, witness_utxo);
+        assert!(canonical.unknown.is_empty());
+        assert!(canonical.inputs[0].unknown.is_empty());
+        assert!(canonical.inputs[0].non_witness_utxo.is_none());
+        assert!(canonical.inputs[0].bip32_derivation.is_empty());
+        assert!(canonical.outputs[0].unknown.is_empty());
+    }
+
+    /// A lock PSBT with P2WPKH inputs and P2TR outputs, the largest standard scripts.
+    fn standard_lock_psbt(inputs: u32, outputs: usize) -> Psbt {
+        let mut psbt = Psbt::from_unsigned_tx(::bitcoin::Transaction {
+            version: ::bitcoin::transaction::Version::TWO,
+            lock_time: ::bitcoin::absolute::LockTime::ZERO,
+            input: (0..inputs)
+                .map(|vout| TxIn {
+                    previous_output: OutPoint::new(Txid::all_zeros(), vout),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::MAX,
+                    witness: ::bitcoin::Witness::new(),
+                })
+                .collect(),
+            output: (0..outputs)
+                .map(|_| TxOut {
+                    value: Amount::from_sat(100_000),
+                    script_pubkey: ScriptBuf::from_bytes([&[0x51, 0x20][..], &[9; 32]].concat()),
+                })
+                .collect(),
+        })
+        .expect("transaction can be represented as a PSBT");
+        for input in &mut psbt.inputs {
+            input.witness_utxo = Some(TxOut {
+                value: Amount::from_sat(100_000),
+                script_pubkey: ScriptBuf::from_bytes([&[0x00, 0x14][..], &[7; 20]].concat()),
+            });
+        }
+        psbt
+    }
+
+    fn op_return(size: usize) -> ScriptBuf {
+        ScriptBuf::from_bytes([vec![0x6a], vec![0; size]].concat())
     }
 
     fn psbt_spending(previous_output: OutPoint) -> Psbt {
