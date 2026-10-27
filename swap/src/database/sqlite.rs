@@ -443,14 +443,15 @@ impl Database for SqliteDatabase {
             SELECT s.swap_id, s.state, s.entered_at,
                    CAST(strftime('%s', s.utc_time) AS INTEGER) AS "entered_at_unix?: i64"
             FROM normalized s
-            -- CASE skips JSON parsing entirely for old rows, including malformed
-            -- old state JSON. Invalid timestamps are returned for error reporting.
+            -- CASE skips JSON parsing entirely for old rows. Rows with an invalid
+            -- timestamp or malformed recent JSON are returned, so that they are logged
+            -- and skipped below instead of failing the whole query.
             WHERE CASE
                 WHEN strftime('%s', s.utc_time) IS NULL THEN 1
-                WHEN CAST(strftime('%s', s.utc_time) AS INTEGER) >= ?
-                    THEN json_extract(s.state, '$.Alice.Started') IS NOT NULL
-                      OR json_extract(s.state, '$.Alice.BtcLockTransactionSeen') IS NOT NULL
-                ELSE 0
+                WHEN CAST(strftime('%s', s.utc_time) AS INTEGER) < ? THEN 0
+                WHEN json_valid(s.state) = 0 THEN 1
+                ELSE json_extract(s.state, '$.Alice.Started') IS NOT NULL
+                  OR json_extract(s.state, '$.Alice.BtcLockTransactionSeen') IS NOT NULL
             END
         "#,
             updated_since,
@@ -458,22 +459,35 @@ impl Database for SqliteDatabase {
         .fetch_all(&self.pool)
         .await?;
 
-        rows.iter()
-            .map(|row| {
-                row.entered_at_unix.with_context(|| {
-                    format!(
-                        "Invalid UTC timestamp {:?} for swap {}",
-                        row.entered_at, row.swap_id
-                    )
-                })?;
-                let swap_id = Uuid::from_str(&row.swap_id)
-                    .with_context(|| format!("Failed to parse swap id {}", row.swap_id))?;
-                let state = serde_json::from_str::<Swap>(&row.state)
-                    .with_context(|| format!("Failed to deserialize state of swap {swap_id}"))?;
+        // A row that cannot be read must not stop every new swap setup. Alice wrote
+        // these rows herself, so a bad row is corruption, not an attack.
+        let result = rows
+            .iter()
+            .filter_map(|row| {
+                if row.entered_at_unix.is_none() {
+                    tracing::error!(swap_id = %row.swap_id, entered_at = %row.entered_at, "Skipping swap state with an invalid UTC timestamp");
+                    return None;
+                }
+                let swap_id = match Uuid::from_str(&row.swap_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Skipping swap state with an invalid swap id");
+                        return None;
+                    }
+                };
+                let state = match serde_json::from_str::<Swap>(&row.state) {
+                    Ok(state) => State::from(state),
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Skipping swap state that does not deserialize");
+                        return None;
+                    }
+                };
 
-                Ok((swap_id, State::from(state)))
+                Some((swap_id, state))
             })
-            .collect()
+            .collect();
+
+        Ok(result)
     }
 
     /// Same as [`all`] except paginated, and returns both the first and last
@@ -1055,8 +1069,8 @@ mod tests {
                     let timestamp = cutoff
                         + time::Duration::seconds(offset)
                         + time::Duration::milliseconds(123);
-                    // Recent pending states must reach deserialization (and report
-                    // their missing state3); stale states must not even reach SQL's
+                    // Recent pending states must reach deserialization (and are skipped
+                    // because state3 is missing); stale states must not even reach SQL's
                     // JSON parser. Neither query requires a peers-table record.
                     let state = if offset < 0 {
                         "this stale JSON must never be parsed".to_owned()
@@ -1071,20 +1085,32 @@ mod tests {
                     .bind(state)
                     .execute(&db.pool)
                     .await?;
-                    let result = db
-                        .get_alice_swaps_with_pending_tx_lock(cutoff.unix_timestamp())
-                        .await;
-                    if offset < 0 {
-                        assert!(result?.is_empty());
-                    } else {
-                        assert_eq!(
-                            result.unwrap_err().to_string(),
-                            format!("Failed to deserialize state of swap {id}")
-                        );
-                    }
+                    assert!(
+                        db.get_alice_swaps_with_pending_tx_lock(cutoff.unix_timestamp())
+                            .await?
+                            .is_empty()
+                    );
                 }
             }
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_lock_checks_skip_recent_malformed_json() -> Result<()> {
+        let db = setup_test_db().await?;
+        sqlx::query("INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)")
+            .bind(Uuid::new_v4().to_string())
+            .bind(OffsetDateTime::now_utc().to_string())
+            .bind("this recent JSON is malformed")
+            .execute(&db.pool)
+            .await?;
+        let cutoff = OffsetDateTime::now_utc() - time::Duration::hours(1);
+        assert!(
+            db.get_alice_swaps_with_pending_tx_lock(cutoff.unix_timestamp())
+                .await?
+                .is_empty()
+        );
         Ok(())
     }
 
@@ -1146,10 +1172,8 @@ mod tests {
             );
             assert!(
                 db.get_alice_swaps_with_pending_tx_lock(OffsetDateTime::now_utc().unix_timestamp())
-                    .await
-                    .unwrap_err()
-                    .to_string()
-                    .contains("Invalid UTC timestamp")
+                    .await?
+                    .is_empty()
             );
         }
         assert!(db.all_fresh(u64::MAX).await.is_err());
