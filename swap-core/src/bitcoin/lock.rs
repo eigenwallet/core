@@ -32,6 +32,42 @@ pub fn find_conflicting_psbt_input(
         })
 }
 
+/// Rebuild a lock PSBT received from the other party from its unsigned
+/// transaction and each input's `witness_utxo`, and drop every other field.
+///
+/// The ownership proofs and the chain check only cover the `witness_utxo`s, so
+/// nothing else in a received PSBT is needed. Dropping it bounds what is queued
+/// for verification and what is stored with the swap.
+pub fn canonical_received_psbt(
+    psbt: PartiallySignedTransaction,
+) -> Result<PartiallySignedTransaction> {
+    let inputs = psbt.unsigned_tx.input.len();
+    let outputs = psbt.unsigned_tx.output.len();
+    anyhow::ensure!(
+        psbt.inputs.len() == inputs,
+        "PSBT has {} input maps for {inputs} inputs",
+        psbt.inputs.len()
+    );
+    anyhow::ensure!(
+        psbt.outputs.len() == outputs,
+        "PSBT has {} output maps for {outputs} outputs",
+        psbt.outputs.len()
+    );
+    anyhow::ensure!(
+        outputs <= MAX_TX_LOCK_OUTPUTS,
+        "PSBT has {outputs} outputs, expected at most {MAX_TX_LOCK_OUTPUTS}"
+    );
+
+    // Rejects unsigned transactions with a non-empty script_sig or witness.
+    let mut canonical = PartiallySignedTransaction::from_unsigned_tx(psbt.unsigned_tx)
+        .context("PSBT contains a signed transaction")?;
+    for (canonical_input, input) in canonical.inputs.iter_mut().zip(psbt.inputs) {
+        canonical_input.witness_utxo = input.witness_utxo;
+    }
+
+    Ok(canonical)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TxLock {
     inner: PartiallySignedTransaction,

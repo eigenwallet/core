@@ -802,14 +802,17 @@ async fn run_swap_setup(
     }
 
     let verification = async {
-        let challenge = state1.ownership_challenge(&message2.tx_lock_psbt);
+        // Reject malformed PSBTs and drop Bob's extra PSBT fields before queueing.
+        let tx_lock_psbt = bitcoin::canonical_received_psbt(message2.tx_lock_psbt)
+            .context("Malformed lock PSBT")?;
+        anyhow::ensure!(
+            message2.tx_lock_proofs.len() == tx_lock_input_count,
+            "Got {} ownership proofs for {tx_lock_input_count} lock inputs",
+            message2.tx_lock_proofs.len()
+        );
+        let challenge = state1.ownership_challenge(&tx_lock_psbt);
         let verified = proof_verifier
-            .verify_lock(
-                peer_id,
-                message2.tx_lock_psbt,
-                message2.tx_lock_proofs,
-                challenge,
-            )
+            .verify_lock(peer_id, tx_lock_psbt, message2.tx_lock_proofs, challenge)
             .await?;
         let psbt = verified.psbt().clone();
         let state2 = state1
