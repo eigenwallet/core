@@ -6,16 +6,18 @@ use serde::{Deserialize, Serialize};
 
 /// Multiplier of the shared base fee, encoded in hundredths on the wire.
 ///
-/// Keep at least a twofold fee margin over cancel. Refund's confirmation delay
+/// Keep at least a twofold fee margin over cancel, so that redeem can replace an
+/// unconfirmed cancel under the replace-by-fee rules. Refund's confirmation delay
 /// prevents it from contributing CPFP fees to unconfirmed cancel under standard
-/// relay policy. The upper bound is local policy; spending-path budgets still apply.
+/// relay policy. Both peers reject multipliers above 4.00, so that redeem cannot
+/// use most of the spending-path budget.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
 pub struct RedeemFeeMultiplier(u32);
 
 impl Default for RedeemFeeMultiplier {
     fn default() -> Self {
-        Self(200)
+        Self(250)
     }
 }
 
@@ -24,8 +26,8 @@ impl TryFrom<u32> for RedeemFeeMultiplier {
 
     fn try_from(hundredths: u32) -> Result<Self> {
         ensure!(
-            (200..=1000).contains(&hundredths),
-            "Redeem fee multiplier must be between 2.00 and 10.00"
+            (200..=400).contains(&hundredths),
+            "Redeem fee multiplier must be between 2.00 and 4.00"
         );
         Ok(Self(hundredths))
     }
@@ -348,7 +350,7 @@ mod tests {
             punish_address: address,
             lock_amount: Amount::from_sat(1_000_000),
             deposit: Amount::from_sat(100_000),
-            redeem_multiplier: RedeemFeeMultiplier::default(),
+            redeem_multiplier: RedeemFeeMultiplier::try_from(200).unwrap(),
         }
     }
 
@@ -372,7 +374,7 @@ mod tests {
 
     #[test]
     fn redeem_multiplier_has_exact_decimal_and_wire_encodings() {
-        for (decimal, encoded) in [("2.00", 200), ("2.30", 230), ("3.000", 300), ("10", 1000)] {
+        for (decimal, encoded) in [("2.00", 200), ("2.30", 230), ("3.000", 300), ("4", 400)] {
             let multiplier =
                 RedeemFeeMultiplier::try_from(decimal.parse::<rust_decimal::Decimal>().unwrap())
                     .unwrap();
@@ -386,15 +388,16 @@ mod tests {
                 multiplier
             );
         }
-        for decimal in ["1.99", "10.01", "2.301", "-2.30"] {
+        for decimal in ["1.99", "4.01", "2.301", "-2.30"] {
             assert!(
                 RedeemFeeMultiplier::try_from(decimal.parse::<rust_decimal::Decimal>().unwrap())
                     .is_err()
             );
         }
-        for invalid in ["0", "199", "1001", "4294967296", "230.5"] {
+        for invalid in ["0", "199", "401", "4294967296", "230.5"] {
             assert!(serde_json::from_str::<RedeemFeeMultiplier>(invalid).is_err());
         }
+        assert_eq!(u32::from(RedeemFeeMultiplier::default()), 250);
         let multiplier = RedeemFeeMultiplier::try_from(230).unwrap();
         assert_eq!(multiplier.fee(Amount::from_sat(101)).unwrap().to_sat(), 233);
         assert!(multiplier.fee(Amount::from_sat(u64::MAX)).is_err());
@@ -406,7 +409,7 @@ mod tests {
         let mut inputs = inputs(&address);
         for deposit in [Amount::ZERO, Amount::from_sat(100_000)] {
             inputs.deposit = deposit;
-            for hundredths in [200, 230, 300, 500, 1000] {
+            for hundredths in [200, 230, 250, 300, 400] {
                 inputs.redeem_multiplier = RedeemFeeMultiplier::try_from(hundredths).unwrap();
                 let fees = inputs.calculate(SwapFeeRate(1000), limits()).unwrap();
                 let refund_path = fees.base * if deposit == Amount::ZERO { 2 } else { 4 };

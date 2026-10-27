@@ -212,6 +212,7 @@ pub struct Maker {
     #[serde(default = "default_btc_swap_fee_rate_multiplier")]
     pub btc_swap_fee_rate_multiplier: Decimal,
     /// Redeem fee relative to the shared base fee, written as an exact decimal string.
+    /// Must be between 2.00 and 4.00. Below 2.00, redeem cannot replace an unconfirmed cancel.
     #[serde(
         default = "default_btc_redeem_base_fee_multiplier",
         with = "decimal_string"
@@ -334,7 +335,7 @@ mod decimal_string {
 }
 
 pub fn default_btc_redeem_base_fee_multiplier() -> Decimal {
-    Decimal::from(2)
+    Decimal::new(250, 2)
 }
 
 fn default_anti_spam_deposit_ratio() -> Decimal {

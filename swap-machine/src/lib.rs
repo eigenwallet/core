@@ -34,7 +34,7 @@ mod tests {
 
     #[tokio::test]
     async fn calculate_transaction_weights() {
-        for multiplier in [200, 230, 300, 1000] {
+        for multiplier in [200, 230, 250, 300, 400] {
             let multiplier = RedeemFeeMultiplier::try_from(multiplier).unwrap();
             check_transaction_weights(Amount::ZERO, multiplier).await;
             check_transaction_weights(Amount::from_sat(100_000), multiplier).await;

@@ -28,8 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New swaps use v3 cancel and refund transactions and delay refunds until the block after cancel confirms.
   Alice proposes one fee rate; both peers derive the base fee from the largest conservative signed transaction template.
-  Every presigned transaction pays the base fee except redeem, which defaults to two times that fee.
-  Makers can configure `maker.btc_redeem_base_fee_multiplier` as an exact quoted decimal from `"2.00"` to `"10.00"` (default `"2.00"`).
+  Every presigned transaction pays the base fee except redeem, which defaults to 2.5 times that fee.
+  Makers can configure `maker.btc_redeem_base_fee_multiplier` as an exact quoted decimal from `"2.00"` to `"4.00"` (default `"2.50"`).
   Both peers validate the multiplier during setup; stored swaps keep their original fees.
   Bob selects the lock fee and rejects proposals outside his local limits before signing.
   Setup rejects fee overflow, unfunded paths, dust outputs, and fees above local budgets.
