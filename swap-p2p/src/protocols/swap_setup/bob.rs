@@ -391,7 +391,7 @@ impl PendingCommit {
     }
 
     /// Returns once Alice was told that we decline the swap, so she can release
-    /// the reserved inputs and Monero right away.
+    /// the reserved lock inputs right away.
     pub async fn abort(self) -> Result<()> {
         self.decide(Decision::Abort).await
     }
