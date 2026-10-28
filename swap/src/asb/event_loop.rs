@@ -173,6 +173,8 @@ where
     lock_input_check_capacity: Arc<Semaphore>,
 
     /// Database checks hold a reservation and a capacity permit until completion.
+    /// Each runs in its own task so that loading and decoding swap states does not
+    /// block the event loop. The task is not aborted when its join handle is dropped.
     inflight_lock_input_checks: FuturesUnordered<BoxFuture<'static, Result<()>>>,
 
     /// Inputs of TxLock PSBTs whose swaps are not yet visible to
@@ -752,15 +754,17 @@ where
                         }
                     };
                     let db = self.db.clone();
-                    self.inflight_lock_input_checks.push(async move {
+                    let check = tokio::spawn(async move {
                         // The database future is drained on cancellation too; dropping a
                         // SQLx future alone would leave its worker running without a permit.
                         let result = check_reserved_lock_inputs(db.as_ref(), request).await
                             .map(|()| reservation);
                         let _permit = permit;
                         responder.respond(result)
-                            .map_err(|_| anyhow!("Lock input check requester stopped waiting"))?;
-                        Ok(())
+                            .map_err(|_| anyhow!("Lock input check requester stopped waiting"))
+                    });
+                    self.inflight_lock_input_checks.push(async move {
+                        check.await.context("Failed to join the lock input check task")?
                     }.boxed());
                 },
                 Some(outpoints) = self.lock_input_releases.recv() => {
