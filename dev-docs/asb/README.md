@@ -142,7 +142,7 @@ When Prometheus is enabled, `lock_proof_verification_*` metrics expose running a
 Cancellation retains a running worker until its blocking work finishes.
 Metric labels contain fixed outcome names, never peer or job IDs.
 
-`wallet_snapshot_cache_ttl_secs` controls how long wallet state is reused during swap setup. It defaults to `20` seconds. This reduces repeated Bitcoin and Monero health checks, Monero balance calls, and Bitcoin address generation across setup requests. Amount-dependent fee projections are still computed per swap.
+`wallet_snapshot_cache_ttl_secs` controls how long wallet state is reused during swap setup. It defaults to `20` seconds. This reduces repeated Bitcoin and Monero health checks, Monero balance calls, and Bitcoin address generation across setup requests.
 
 In order to be able to trade, the ASB must define a price to be able to agree on the amounts to be swapped with a CLI.
 The `XMR<>BTC` price is currently determined by the price from the central exchange Kraken.

@@ -2,7 +2,7 @@
 
 use crate::bitcoin::{Address, Amount, PublicKey, Transaction, build_shared_output_descriptor};
 use ::bitcoin::psbt::Psbt as PartiallySignedTransaction;
-use ::bitcoin::{OutPoint, TxIn, TxOut, Txid};
+use ::bitcoin::{OutPoint, TxIn, TxOut, Txid, Weight};
 use anyhow::{Context, Result, bail};
 use bdk_wallet::miniscript::Descriptor;
 use bitcoin::{ScriptBuf, Sequence, locktime::absolute::LockTime as PackedLockTime};
@@ -79,6 +79,14 @@ pub fn canonical_received_psbt(
     );
 
     Ok(canonical)
+}
+
+/// Weight of a received lock PSBT once signed, rounded up to whole virtual bytes.
+///
+/// Assumes every input is P2WPKH with a maximum-size signature, the only input
+/// type the ownership proofs accept.
+pub fn estimated_signed_lock_weight(psbt: &PartiallySignedTransaction) -> Weight {
+    bitcoin_wallet::estimated_signed_p2wpkh_weight(&psbt.unsigned_tx)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -396,6 +404,51 @@ mod tests {
                 assert_eq!(lock.lock_amount(), agreed_amount);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn estimated_signed_lock_weight_covers_the_signed_transaction() {
+        let (A, B) = alice_and_bob();
+        let utxo_sats = 10_000;
+        let spending_fee = Amount::from_sat(1_000);
+        for inputs in [1, crate::bitcoin::MAX_TX_LOCK_INPUTS] {
+            let wallet = TestWalletBuilder::new(utxo_sats)
+                .with_num_utxos(u8::try_from(inputs).unwrap())
+                .build()
+                .await;
+            // Spend every UTXO without change.
+            let amount = Amount::from_sat(utxo_sats * inputs as u64) - spending_fee;
+            let psbt = bob_make_psbt(A, B, &wallet, amount, spending_fee).await;
+            assert_eq!(psbt.unsigned_tx.input.len(), inputs);
+
+            let estimate = estimated_signed_lock_weight(&psbt);
+            let signed = wallet.sign_and_finalize(psbt).await.unwrap().weight();
+
+            assert!(estimate >= signed, "{estimate} < {signed}");
+            // At most one byte per shorter signature, plus rounding up to a virtual byte.
+            assert!(estimate.to_wu() - signed.to_wu() <= inputs as u64 + 3);
+        }
+    }
+
+    #[test]
+    fn estimated_signed_lock_weight_of_a_single_input_lock_matches_the_fixed_weight() {
+        let (A, B) = alice_and_bob();
+        let descriptor = build_shared_output_descriptor(A.0, B.0).unwrap();
+        let psbt = Psbt::from_unsigned_tx(Transaction {
+            version: bitcoin::transaction::Version(2),
+            lock_time: PackedLockTime::ZERO,
+            input: vec![TxIn::default()],
+            output: vec![TxOut {
+                value: Amount::from_sat(10_000),
+                script_pubkey: descriptor.script_pubkey(),
+            }],
+        })
+        .unwrap();
+
+        assert_eq!(
+            estimated_signed_lock_weight(&psbt).to_vbytes_ceil(),
+            TxLock::weight().to_vbytes_ceil()
+        );
     }
 
     #[test]

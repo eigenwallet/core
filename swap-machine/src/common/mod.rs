@@ -138,18 +138,30 @@ pub enum SetupValidationError {
     },
 }
 
-/// Require at least half our local fee estimate, preserving the lock-fee
-/// floor used before shared fee negotiation. Higher lock fees are allowed.
+/// Require at least half our local fee estimate for a transaction of
+/// `signed_weight`, so the floor holds for the fee rate, not just the absolute
+/// fee. Higher fees are allowed.
+///
+/// `estimated_rate` must already include the relay minimum.
 pub fn sanity_check_transaction_fee_floor(
     proposed_fee: bitcoin::Amount,
-    conservative_estimated_fee: bitcoin::Amount,
+    signed_weight: ::bitcoin::Weight,
+    estimated_rate: ::bitcoin::FeeRate,
+    transfer_amount: bitcoin::Amount,
 ) -> Result<()> {
-    let floor = bitcoin::Amount::from_sat(conservative_estimated_fee.to_sat() / 2);
+    let estimate = bitcoin_wallet::estimate_fee(
+        signed_weight,
+        Some(transfer_amount),
+        estimated_rate,
+        estimated_rate,
+    )
+    .context("Failed to estimate transaction fee")?;
+    let floor = bitcoin::Amount::from_sat(estimate.to_sat() / 2);
     anyhow::ensure!(
         proposed_fee >= floor,
         SetupValidationError::TransactionFeeTooLow {
             fee: proposed_fee,
-            estimate: conservative_estimated_fee,
+            estimate,
         }
     );
     Ok(())
@@ -326,26 +338,77 @@ mod tests {
     use super::*;
     use rand::SeedableRng;
 
+    fn lock_psbt(inputs: usize) -> bitcoin::PartiallySignedTransaction {
+        use ::bitcoin::hashes::Hash;
+        bitcoin::PartiallySignedTransaction::from_unsigned_tx(bitcoin::Transaction {
+            version: ::bitcoin::transaction::Version::TWO,
+            lock_time: ::bitcoin::absolute::LockTime::ZERO,
+            input: vec![::bitcoin::TxIn::default(); inputs],
+            output: vec![::bitcoin::TxOut {
+                value: bitcoin::Amount::from_sat(100_000),
+                script_pubkey: ::bitcoin::ScriptBuf::new_p2wsh(
+                    &::bitcoin::WScriptHash::all_zeros(),
+                ),
+            }],
+        })
+        .unwrap()
+    }
+
+    fn check_lock_fee_floor(fee: u64, inputs: usize) -> Result<()> {
+        sanity_check_transaction_fee_floor(
+            bitcoin::Amount::from_sat(fee),
+            bitcoin::estimated_signed_lock_weight(&lock_psbt(inputs)),
+            ::bitcoin::FeeRate::from_sat_per_vb(10).unwrap(),
+            bitcoin::Amount::ONE_BTC,
+        )
+    }
+
+    fn fee_too_low(result: Result<()>) -> SetupValidationError {
+        *result.unwrap_err().downcast_ref().unwrap()
+    }
+
     #[test]
-    fn lock_fee_floor_preserves_the_acceptance_boundary() {
-        let estimate = bitcoin::Amount::from_sat(100);
-        assert!(
-            sanity_check_transaction_fee_floor(bitcoin::Amount::from_sat(49), estimate).is_err()
+    fn lock_fee_floor_preserves_the_single_input_boundary() {
+        // 122 vB at 10 sat/vB: the fixed-weight estimate rounded up to a virtual byte.
+        assert!(check_lock_fee_floor(610, 1).is_ok());
+        assert!(check_lock_fee_floor(10_000, 1).is_ok());
+        assert_eq!(
+            fee_too_low(check_lock_fee_floor(609, 1)),
+            SetupValidationError::TransactionFeeTooLow {
+                fee: bitcoin::Amount::from_sat(609),
+                estimate: bitcoin::Amount::from_sat(1_220),
+            }
         );
-        assert!(
-            sanity_check_transaction_fee_floor(bitcoin::Amount::from_sat(50), estimate).is_ok()
+    }
+
+    #[test]
+    fn lock_fee_floor_scales_with_the_number_of_inputs() {
+        let inputs = bitcoin::MAX_TX_LOCK_INPUTS;
+        // 1,754 vB at 10 sat/vB.
+        assert_eq!(
+            fee_too_low(check_lock_fee_floor(610, inputs)),
+            SetupValidationError::TransactionFeeTooLow {
+                fee: bitcoin::Amount::from_sat(610),
+                estimate: bitcoin::Amount::from_sat(17_540),
+            }
         );
-        assert!(
-            sanity_check_transaction_fee_floor(bitcoin::Amount::from_sat(1000), estimate).is_ok()
-        );
-        // Preserve the original whole-satoshi rounding for odd estimates.
-        assert!(
+        assert!(check_lock_fee_floor(8_769, inputs).is_err());
+        assert!(check_lock_fee_floor(8_770, inputs).is_ok());
+    }
+
+    #[test]
+    fn lock_fee_floor_keeps_the_absolute_minimum_estimate() {
+        // A 1 sat/vB estimate is raised to the 1,000 sat minimum relay fee.
+        let check = |fee| {
             sanity_check_transaction_fee_floor(
-                bitcoin::Amount::from_sat(50),
-                bitcoin::Amount::from_sat(101),
+                bitcoin::Amount::from_sat(fee),
+                bitcoin::estimated_signed_lock_weight(&lock_psbt(1)),
+                ::bitcoin::FeeRate::from_sat_per_vb(1).unwrap(),
+                bitcoin::Amount::ONE_BTC,
             )
-            .is_ok()
-        );
+        };
+        assert!(check(499).is_err());
+        assert!(check(500).is_ok());
     }
 
     #[test]

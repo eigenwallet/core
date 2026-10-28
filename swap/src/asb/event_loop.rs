@@ -1639,8 +1639,8 @@ async fn create_wallet_snapshot(
     btc_redeem_base_fee_multiplier: bitcoin::RedeemFeeMultiplier,
     transfer_amount: bitcoin::Amount,
 ) -> Result<WalletSnapshot> {
-    let estimated_rate =
-        bitcoin::SwapFeeRate::from_estimate(bitcoin_wallet.swap_fee_rate().await?)?;
+    let estimated_fee_rate = bitcoin_wallet.swap_fee_rate().await?;
+    let estimated_rate = bitcoin::SwapFeeRate::from_estimate(estimated_fee_rate)?;
     let rate: u64 = Decimal::from(estimated_rate.0)
         .checked_mul(btc_swap_fee_rate_multiplier)
         .context("Swap fee rate multiplier overflow")?
@@ -1650,49 +1650,11 @@ async fn create_wallet_snapshot(
     let fee_rate = bitcoin::SwapFeeRate(rate);
     let fee_limits = swap_machine::common::swap_fee_limits(fee_rate, transfer_amount)?;
 
-    // Preserve the individual local estimates in the wallet snapshot.
-    // The presigned fees are derived separately during setup from the agreed scripts.
-    let tx_lock_fee = bitcoin_wallet
-        .estimate_fee(bitcoin::TxLock::weight(), Some(transfer_amount))
-        .await?;
-    let redeem_fee = bitcoin_wallet
-        .estimate_fee(bitcoin::TxRedeem::weight(), Some(transfer_amount))
-        .await?;
-    let cancel_fee = bitcoin_wallet
-        .estimate_fee(bitcoin::TxCancel::weight(), Some(transfer_amount))
-        .await?;
-    let refund_fee = bitcoin_wallet
-        .estimate_fee(bitcoin::TxFullRefund::weight(), Some(transfer_amount))
-        .await?;
-    let partial_refund_fee = bitcoin_wallet
-        .estimate_fee(bitcoin::TxPartialRefund::weight(), Some(transfer_amount))
-        .await?;
-    let reclaim_fee = bitcoin_wallet
-        .estimate_fee(bitcoin::TxReclaim::weight(), Some(transfer_amount))
-        .await?;
-    let mercy_fee = bitcoin_wallet
-        .estimate_fee(bitcoin::TxMercy::weight(), Some(transfer_amount))
-        .await?;
-    let punish_fee = bitcoin_wallet
-        .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
-        .await?;
-    let withhold_fee = bitcoin_wallet
-        .estimate_fee(bitcoin::TxWithhold::weight(), Some(transfer_amount))
-        .await?;
-
     Ok(WalletSnapshot::new(
         state.unlocked_balance,
         state.redeem_address,
         state.punish_address,
-        tx_lock_fee,
-        redeem_fee,
-        cancel_fee,
-        refund_fee,
-        partial_refund_fee,
-        reclaim_fee,
-        mercy_fee,
-        punish_fee,
-        withhold_fee,
+        estimated_fee_rate,
         fee_rate,
         btc_redeem_base_fee_multiplier,
         fee_limits,

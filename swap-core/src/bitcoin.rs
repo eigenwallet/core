@@ -19,7 +19,9 @@ mod withhold;
 pub use crate::bitcoin::cancel::{CancelRefundVersion, TxCancel};
 pub use crate::bitcoin::early_refund::TxEarlyRefund;
 pub use crate::bitcoin::full_refund::TxFullRefund;
-pub use crate::bitcoin::lock::{TxLock, canonical_received_psbt, find_conflicting_psbt_input};
+pub use crate::bitcoin::lock::{
+    TxLock, canonical_received_psbt, estimated_signed_lock_weight, find_conflicting_psbt_input,
+};
 pub use crate::bitcoin::mercy::TxMercy;
 pub use crate::bitcoin::partial_refund::TxPartialRefund;
 pub use crate::bitcoin::punish::TxPunish;

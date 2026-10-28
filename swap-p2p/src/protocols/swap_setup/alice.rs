@@ -118,16 +118,8 @@ pub struct WalletSnapshot {
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
 
-    // Local estimates; setup derives the agreed fees once both output scripts are known.
-    tx_lock_fee: bitcoin::Amount,
-    redeem_fee: bitcoin::Amount,
-    cancel_fee: bitcoin::Amount,
-    refund_fee: bitcoin::Amount,
-    partial_refund_fee: bitcoin::Amount,
-    reclaim_fee: bitcoin::Amount,
-    mercy_fee: bitcoin::Amount,
-    punish_fee: bitcoin::Amount,
-    withhold_fee: bitcoin::Amount,
+    /// Local estimate including the relay minimum; sets the lock fee floor.
+    estimated_fee_rate: ::bitcoin::FeeRate,
     fee_rate: bitcoin::SwapFeeRate,
     redeem_multiplier: bitcoin::RedeemFeeMultiplier,
     fee_limits: bitcoin::SwapFeeLimits,
@@ -138,15 +130,7 @@ impl WalletSnapshot {
         unlocked_balance: swap_core::monero::Amount,
         redeem_address: bitcoin::Address,
         punish_address: bitcoin::Address,
-        tx_lock_fee: bitcoin::Amount,
-        redeem_fee: bitcoin::Amount,
-        cancel_fee: bitcoin::Amount,
-        refund_fee: bitcoin::Amount,
-        partial_refund_fee: bitcoin::Amount,
-        reclaim_fee: bitcoin::Amount,
-        mercy_fee: bitcoin::Amount,
-        punish_fee: bitcoin::Amount,
-        withhold_fee: bitcoin::Amount,
+        estimated_fee_rate: ::bitcoin::FeeRate,
         fee_rate: bitcoin::SwapFeeRate,
         redeem_multiplier: bitcoin::RedeemFeeMultiplier,
         fee_limits: bitcoin::SwapFeeLimits,
@@ -156,15 +140,7 @@ impl WalletSnapshot {
             lock_fee: swap_core::monero::CONSERVATIVE_MONERO_FEE,
             redeem_address,
             punish_address,
-            tx_lock_fee,
-            redeem_fee,
-            cancel_fee,
-            refund_fee,
-            partial_refund_fee,
-            reclaim_fee,
-            mercy_fee,
-            punish_fee,
-            withhold_fee,
+            estimated_fee_rate,
             fee_rate,
             redeem_multiplier,
             fee_limits,
@@ -730,18 +706,6 @@ async fn run_swap_setup(
 
     let xmr = converted_result?;
 
-    tracing::debug!(
-        redeem_fee = %wallet_snapshot.redeem_fee,
-        cancel_fee = %wallet_snapshot.cancel_fee,
-        refund_fee = %wallet_snapshot.refund_fee,
-        partial_refund_fee = %wallet_snapshot.partial_refund_fee,
-        reclaim_fee = %wallet_snapshot.reclaim_fee,
-        mercy_fee = %wallet_snapshot.mercy_fee,
-        punish_fee = %wallet_snapshot.punish_fee,
-        withhold_fee = %wallet_snapshot.withhold_fee,
-        "Local Bitcoin transaction fee estimates before setup"
-    );
-
     let state0 = State0::new(
         request.btc,
         xmr,
@@ -828,7 +792,9 @@ async fn run_swap_setup(
     // The fee uses Bob's claimed prevout values, which the verification job below checks.
     if let Err(error) = swap_machine::common::sanity_check_transaction_fee_floor(
         tx_lock_fee,
-        wallet_snapshot.tx_lock_fee,
+        bitcoin::estimated_signed_lock_weight(&tx_lock_psbt),
+        wallet_snapshot.estimated_fee_rate,
+        request.btc,
     ) {
         let rejection = swap_setup::SwapSetupError::try_from(error)?;
         if let Err(write_error) =
