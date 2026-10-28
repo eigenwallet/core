@@ -18,6 +18,7 @@ use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::template::{Bip84, DescriptorTemplate};
 use bdk_wallet::{Balance, PersistedWallet};
 use bitcoin::bip32::Xpriv;
+use bitcoin::transaction::{InputWeightPrediction, predict_weight};
 use bitcoin::{Address, Amount, Transaction, Txid, psbt::Psbt as PartiallySignedTransaction};
 use bitcoin::{Psbt, ScriptBuf, Weight};
 use derive_builder::Builder;
@@ -1563,7 +1564,7 @@ where
                 .context("Failed to select transaction inputs")?
         };
 
-        let weight = psbt.unsigned_tx.weight();
+        let weight = estimated_signed_wallet_weight(&psbt)?;
         let fee = self.estimate_fee(weight, Some(amount)).await?;
 
         self.send_to_address(address, amount, fee, change_override, max_inputs)
@@ -1692,7 +1693,7 @@ where
                 }
 
                 let max_giveable = psbt.unsigned_tx.output.first().expect("Expected a single output in the dummy transaction").value;
-                let weight = psbt.unsigned_tx.weight();
+                let weight = estimated_signed_wallet_weight(&psbt)?;
 
                 Ok((Some(max_giveable), weight))
             },
@@ -1742,8 +1743,10 @@ where
                     vout: 0,
                 };
 
-                // Worst-case witness weight for our script type.
-                const DUMMY_SATISFACTION_WEIGHT: Weight = Weight::from_wu(107 * 10);
+                let satisfaction_weight = wallet
+                    .public_descriptor(KeychainKind::External)
+                    .max_weight_to_satisfy()
+                    .context("Failed to compute the satisfaction weight of our descriptor")?;
 
                 let mut tx_builder = coin_selection::build_tx(&mut wallet, max_inputs, true)?;
 
@@ -1755,13 +1758,13 @@ where
                     .add_foreign_utxo(
                         fake_deposit_outpoint,
                         fake_deposit_input,
-                        DUMMY_SATISFACTION_WEIGHT,
+                        satisfaction_weight,
                     ).context("Failed to add dummy foreign utxo to calculate fee for max_giveable if we had one more utxo")?;
 
                 // Try building the dummy drain transaction with the new fake UTXO
                 // If we fail now, we propagate the error to the caller
                 let psbt = tx_builder.finish()?;
-                let weight = psbt.unsigned_tx.weight();
+                let weight = estimated_signed_wallet_weight(&psbt)?;
 
                 tracing::trace!(
                     weight = weight.to_wu(),
@@ -2751,6 +2754,32 @@ pub fn trace_status_change(
     new
 }
 
+/// Upper bound on the weight of `tx` once signed, rounded up to whole virtual
+/// bytes. Assumes every input spends a P2WPKH output and is signed with a
+/// maximum-size signature.
+pub fn estimated_signed_p2wpkh_weight(tx: &Transaction) -> Weight {
+    let weight = predict_weight(
+        tx.input.iter().map(|_| InputWeightPrediction::P2WPKH_MAX),
+        tx.script_pubkey_lens(),
+    );
+    Weight::from_vb_unchecked(weight.to_vbytes_ceil())
+}
+
+/// Weight of a transaction built by our wallet once we sign every input.
+fn estimated_signed_wallet_weight(psbt: &Psbt) -> Result<Weight> {
+    for input in &psbt.inputs {
+        let utxo = input
+            .witness_utxo
+            .as_ref()
+            .context("Wallet transaction input has no witness UTXO")?;
+        anyhow::ensure!(
+            utxo.script_pubkey.is_p2wpkh(),
+            "Wallet transaction input does not spend a P2WPKH output"
+        );
+    }
+    Ok(estimated_signed_p2wpkh_weight(&psbt.unsigned_tx))
+}
+
 /// Estimate the absolute fee for a transaction.
 ///
 /// This function takes the following parameters:
@@ -3389,7 +3418,11 @@ mod input_limit_tests {
             )
             .await
             .unwrap_err();
-        assert!(error.to_string().contains("Failed to select transaction inputs"));
+        assert!(
+            error
+                .to_string()
+                .contains("Failed to select transaction inputs")
+        );
         assert!(
             wallet
                 .send_to_address_dynamic_fee(
@@ -3491,5 +3524,110 @@ mod input_limit_tests {
         let wallet = TestWalletBuilder::new(100_000).build().await;
         assert!(wallet.max_giveable(22, Some(0)).await.is_err());
         assert!(wallet.max_giveable(22, Some(1)).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn unconfirmed_v3_outputs_are_not_spent() -> Result<()> {
+        use bdk_wallet::chain::ConfirmationBlockTime;
+        use bdk_wallet::test_utils::{insert_anchor, insert_tx};
+
+        let wallet = TestWalletBuilder::new(100_000).build().await;
+        let receive = |version, sats| {
+            let wallet = &wallet;
+            async move {
+                let mut bdk = wallet.wallet.lock().await;
+                let script_pubkey = bdk
+                    .next_unused_address(KeychainKind::External)
+                    .script_pubkey();
+                let tx = Transaction {
+                    version: bitcoin::transaction::Version(version),
+                    lock_time: bitcoin::absolute::LockTime::ZERO,
+                    input: vec![],
+                    output: vec![bitcoin::TxOut {
+                        value: Amount::from_sat(sats),
+                        script_pubkey,
+                    }],
+                };
+                let txid = tx.compute_txid();
+                insert_tx(&mut bdk, tx);
+                bitcoin::OutPoint::new(txid, 0)
+            }
+        };
+        let v2_output = receive(2, 30_000).await;
+        let v3_output = receive(3, 50_000).await;
+
+        // Drains everything spendable and returns the spent outpoints.
+        let drain = || async {
+            let recipient = wallet.new_address().await?;
+            let (amount, fee) = wallet
+                .max_giveable(recipient.script_pubkey().len(), None)
+                .await?;
+            let psbt = wallet
+                .send_to_address(recipient, amount, fee, None, None)
+                .await?;
+            let spent: Vec<_> = psbt
+                .unsigned_tx
+                .input
+                .iter()
+                .map(|input| input.previous_output)
+                .collect();
+            Ok::<_, anyhow::Error>((amount + fee, spent))
+        };
+
+        let (total, spent) = drain().await?;
+        assert_eq!(total, Amount::from_sat(130_000));
+        assert!(spent.contains(&v2_output));
+        assert!(!spent.contains(&v3_output));
+
+        {
+            let mut bdk = wallet.wallet.lock().await;
+            let block_id = bdk.latest_checkpoint().block_id();
+            insert_anchor(
+                &mut bdk,
+                v3_output.txid,
+                ConfirmationBlockTime {
+                    block_id,
+                    confirmation_time: 0,
+                },
+            );
+        }
+
+        let (total, spent) = drain().await?;
+        assert_eq!(total, Amount::from_sat(180_000));
+        assert!(spent.contains(&v3_output));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fees_cover_the_signed_transaction() -> Result<()> {
+        let sats_per_vb = 10;
+        for inputs in [1, INPUT_LIMIT] {
+            let wallet = TestWalletBuilder::new(100_000)
+                .with_fees(sats_per_vb, 1)
+                .with_num_utxos(u8::try_from(inputs)?)
+                .build()
+                .await;
+            let recipient = wallet.new_address().await?;
+            let (amount, fee) = wallet
+                .max_giveable(recipient.script_pubkey().len(), Some(INPUT_LIMIT))
+                .await?;
+            let max_giveable = wallet
+                .send_to_address(recipient.clone(), amount, fee, None, Some(INPUT_LIMIT))
+                .await?;
+            let dynamic_fee = wallet
+                .send_to_address_dynamic_fee(recipient, amount / 2, None, Some(INPUT_LIMIT))
+                .await?;
+
+            for psbt in [max_giveable, dynamic_fee] {
+                let fee = psbt.fee()?;
+                let signed = wallet.sign_and_finalize(psbt).await?;
+                assert!(
+                    fee.to_sat() >= sats_per_vb * signed.vsize() as u64,
+                    "{fee} for {} vB with {inputs} inputs",
+                    signed.vsize()
+                );
+            }
+        }
+        Ok(())
     }
 }
