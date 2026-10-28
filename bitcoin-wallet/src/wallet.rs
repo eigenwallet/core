@@ -834,10 +834,7 @@ impl Wallet {
             return Err(PsbtPrevoutVerificationError::Cancelled);
         }
         let (scripts, claims): (Vec<_>, Vec<_>) = claims.into_iter().unzip();
-        let unspent = self
-            .list_unspent(scripts)
-            .await
-            .map_err(PsbtPrevoutVerificationError::Electrum)?;
+        let unspent = self.list_unspent(scripts).await?;
         if *cancel.borrow() || cancel.has_changed().is_err() {
             return Err(PsbtPrevoutVerificationError::Cancelled);
         }
@@ -864,55 +861,83 @@ impl Wallet {
         Ok(())
     }
 
-    /// Query all scripts in one batch per server, then drain all started calls.
+    /// Query each script separately on every server, then drain all started calls.
     /// Returned groups have the same order as `scripts`.
     ///
     /// A UTXO reported by any single server is accepted as existing; the
     /// successful responses collected before reaching quorum are merged.
+    /// Scripts are not batched: a server refusing one script (e.g. one with too
+    /// many UTXOs) would fail the whole batch, and we could not tell it apart
+    /// from a server problem.
     async fn list_unspent(
         &self,
         scripts: Vec<ScriptBuf>,
-    ) -> Result<Vec<Vec<bdk_electrum::electrum_client::ListUnspentRes>>> {
-        let script_count = scripts.len();
+    ) -> Result<Vec<Vec<bdk_electrum::electrum_client::ListUnspentRes>>, PsbtPrevoutVerificationError>
+    {
+        let query_scripts = scripts.clone();
         let results = self
             .electrum_client
             .inner
-            .join_quorum_and_drain("batch_script_list_unspent", move |client| {
-                client
-                    .inner
-                    .batch_script_list_unspent(scripts.iter().map(ScriptBuf::as_script))
+            .join_quorum_and_drain("script_list_unspent", move |client| {
+                query_scripts
+                    .iter()
+                    .map(|script| match client.inner.script_list_unspent(script) {
+                        Ok(utxos) => Ok(Ok(utxos)),
+                        // The server answered with an error for this script only
+                        Err(bdk_electrum::electrum_client::Error::Protocol(refusal)) => {
+                            Ok(Err(refusal))
+                        }
+                        Err(error) => Err(error),
+                    })
+                    .collect::<Result<Vec<_>, _>>()
             })
             .await
-            .context("Failed to query Electrum servers for unspent outputs")?;
+            .context("Failed to query Electrum servers for unspent outputs")
+            .map_err(PsbtPrevoutVerificationError::Electrum)?;
 
-        let mut successful = Vec::new();
+        let mut answers = Vec::new();
         let mut errors = Vec::new();
         for result in results {
             match result {
-                Ok(utxos) => successful.push(utxos),
+                Ok(groups) => answers.push(groups),
                 Err(error) => errors.push(error),
             }
         }
 
-        if successful.is_empty() {
-            return Err(electrum_pool::MultiError::new(
-                errors,
-                "No Electrum server returned unspent outputs for scripts".to_owned(),
-            )
-            .into());
+        if answers.is_empty() {
+            return Err(PsbtPrevoutVerificationError::Electrum(
+                electrum_pool::MultiError::new(
+                    errors,
+                    "No Electrum server returned unspent outputs for scripts".to_owned(),
+                )
+                .into(),
+            ));
         }
 
-        let mut merged = vec![Vec::new(); script_count];
-        for groups in successful {
-            anyhow::ensure!(
-                groups.len() == script_count,
-                "Electrum returned an unexpected number of script results"
-            );
-            for (utxos, group) in merged.iter_mut().zip(groups) {
-                utxos.extend(group);
+        let mut per_script = vec![Vec::new(); scripts.len()];
+        for groups in answers {
+            for (script_answers, answer) in per_script.iter_mut().zip(groups) {
+                script_answers.push(answer);
             }
         }
-        Ok(merged)
+
+        scripts
+            .into_iter()
+            .zip(per_script)
+            .map(|(script, answers)| {
+                let (listed, refused): (Vec<_>, Vec<_>) =
+                    answers.into_iter().partition(Result::is_ok);
+                if listed.is_empty()
+                    && let Some(Err(refusal)) = refused.into_iter().next()
+                {
+                    return Err(PsbtPrevoutVerificationError::ScriptRefused {
+                        script,
+                        refusal: refusal.to_string(),
+                    });
+                }
+                Ok(listed.into_iter().flatten().flatten().collect())
+            })
+            .collect()
     }
 
     // Returns the TxId of the last published Bitcoin transaction

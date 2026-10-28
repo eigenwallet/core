@@ -27,6 +27,13 @@ pub enum PsbtPrevoutVerificationError {
     MissingWitnessUtxo { input_index: usize },
     #[error("Failed to query Electrum servers for unspent outputs")]
     Electrum(#[source] anyhow::Error),
+    /// Every Electrum server that answered refused to list this script,
+    /// e.g. because it has too many UTXOs. Retrying cannot help.
+    #[error("Electrum servers refused to list the unspent outputs of script {script}: {refusal}")]
+    ScriptRefused {
+        script: bitcoin::ScriptBuf,
+        refusal: String,
+    },
     #[error("Prevout {outpoint} not found unspent on chain or in mempool")]
     PrevoutNotFound { outpoint: bitcoin::OutPoint },
     #[error("Prevout {outpoint} has value {actual} but the PSBT claims {claimed}")]
