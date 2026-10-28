@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-10-28
+
 - Protocol: Bob commits to or aborts the swap as the last swap setup message, after the user decided whether to lock the Bitcoin.
   The maker keeps Bob's lock inputs reserved only until then, and persists the swap before Bob may publish the lock transaction.
   Swap setup is now `/comit/xmr/btc/swap_setup/5.0.0`.
@@ -1135,7 +1137,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.16.1...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/5.0.0...HEAD
+[5.0.0]: https://github.com/eigenwallet/core/compare/4.16.1...5.0.0
 [4.16.1]: https://github.com/eigenwallet/core/compare/4.16.0...4.16.1
 [4.16.0]: https://github.com/eigenwallet/core/compare/4.15.0...4.16.0
 [4.15.0]: https://github.com/eigenwallet/core/compare/4.14.0...4.15.0
