@@ -334,7 +334,7 @@ function MoneroRpcPoolSetting() {
       <TableCell>
         <SettingLabel
           label="Monero Node Selection"
-          tooltip="Choose between using a load-balanced pool of Monero nodes for better reliability, or configure custom Monero nodes e.g. htttp://localhost:18081"
+          tooltip="Choose between using a load-balanced pool of Monero nodes for better reliability, or configure custom Monero nodes e.g. http://localhost:18081"
         />
       </TableCell>
       <TableCell>
