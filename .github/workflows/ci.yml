@@ -139,6 +139,9 @@ jobs:
       - name: Run Monero construction throttle tests
         run: cargo test --manifest-path monero-wallet/Cargo.toml --test construction_throttle
 
+      - name: Run maker fee config tests
+        run: cargo test --package swap-env --test maker_fee_config
+
   docker_tests:
     strategy:
       fail-fast: false
