@@ -38,13 +38,16 @@ use swap_env::config::RefundPolicy;
 use swap_env::env;
 use swap_feed::LatestRate;
 use swap_p2p::protocols::cooperative_xmr_redeem_after_punish;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Semaphore, mpsc, oneshot};
 use tor_hsservice::RunningOnionService;
 use uuid::Uuid;
 
 pub use service::{EventLoopRequest, EventLoopService, OnionServiceStatusInfo};
 
 const LOCK_INPUT_CONFLICT_LOOKBACK: time::Duration = time::Duration::hours(12);
+/// Database checks share the connection pool with swap persistence, so only a
+/// few run at once. Further checks wait for a permit in FIFO order.
+const MAX_CONCURRENT_LOCK_INPUT_DB_CHECKS: usize = 10;
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop<LR>
@@ -156,6 +159,7 @@ where
     /// Each runs in its own task so that loading and decoding swap states does not
     /// block the event loop. The task is not aborted when its join handle is dropped.
     inflight_lock_input_checks: FuturesUnordered<BoxFuture<'static, Result<()>>>,
+    lock_input_db_checks: Arc<Semaphore>,
 
     /// Inputs of TxLock PSBTs whose swaps are not yet visible to
     /// [`check_for_conflicting_swap_inputs`] through the database.
@@ -282,6 +286,7 @@ where
             inflight_lock_input_requests: Default::default(),
             inflight_swap_registrations: Default::default(),
             inflight_lock_input_checks: Default::default(),
+            lock_input_db_checks: Arc::new(Semaphore::new(MAX_CONCURRENT_LOCK_INPUT_DB_CHECKS)),
             reserved_lock_inputs: Default::default(),
             lock_input_release_sender,
             lock_input_releases,
@@ -713,7 +718,13 @@ where
                         }
                     };
                     let db = self.db.clone();
+                    let db_checks = self.lock_input_db_checks.clone();
                     let check = tokio::spawn(async move {
+                        let _permit = db_checks.acquire_owned().await
+                            .context("Lock input database check capacity closed")?;
+                        if responder.is_closed() {
+                            anyhow::bail!("Lock input check requester stopped waiting");
+                        }
                         // Runs to completion even if the requester stopped waiting;
                         // dropping a SQLx future alone would leave its worker running.
                         let result = check_for_conflicting_swap_inputs(db.as_ref(), &psbt).await
