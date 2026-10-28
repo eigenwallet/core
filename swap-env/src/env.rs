@@ -63,7 +63,8 @@ impl GetConfig for Mainnet {
             bitcoin_lock_mempool_timeout: 10.std_minutes(),
             bitcoin_lock_confirmed_timeout: 2.std_hours(),
             bitcoin_finality_confirmations: 1,
-            // Require a 12-block margin for redeem to confirm before cancel becomes valid.
+            // We assume that a transaction that was constructed to be confirmed within one block
+            // will be confirmed within at most 12 blocks
             bitcoin_blocks_till_confirmed_upper_bound_assumption: 12,
             bitcoin_avg_block_time: 10.std_minutes(),
             bitcoin_cancel_timelock: 30,
