@@ -11,7 +11,11 @@ pub mod bob;
 mod vendor_from_fn;
 pub mod verification;
 
-pub const BUF_SIZE: usize = 1024 * 1024;
+/// Size limit of every swap setup message.
+///
+/// The largest message carries a cross-curve DLEQ proof of ~112 KB in CBOR. Its size
+/// does not depend on user input. 300 KiB is 2.7x that.
+pub const BUF_SIZE: usize = 300 * 1024;
 
 pub mod protocol {
     use futures::future;
@@ -338,5 +342,17 @@ mod tests {
 
         assert_eq!(message4, "message 4");
         assert_eq!(decision, BobDecision::Commit);
+    }
+
+    #[test]
+    fn cross_curve_dleq_proof_is_below_half_of_the_size_limit() {
+        use swap_core::compat::IntoDalekNg;
+
+        let mut rng = rand::thread_rng();
+        let secret = swap_core::monero::Scalar::random(&mut rng).into_dalek_ng();
+        let (proof, _) = swap_machine::common::CROSS_CURVE_PROOF_SYSTEM.prove(&secret, &mut rng);
+
+        let size = serde_cbor::to_vec(&proof).unwrap().len();
+        assert!(2 * size <= BUF_SIZE, "DLEQ proof has {size} bytes");
     }
 }

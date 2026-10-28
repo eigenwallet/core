@@ -759,7 +759,12 @@ async fn run_swap_setup(
         "Transitioned into state1 during swap setup",
     );
 
-    write_cbor_message(&mut substream, state1.next_message())
+    // Alice only reads the unsigned transaction and the `witness_utxo`s. The parent
+    // transactions bdk adds as `non_witness_utxo` can exceed `BUF_SIZE`.
+    let mut message2 = state1.next_message();
+    message2.tx_lock_psbt = bitcoin::canonical_received_psbt(message2.tx_lock_psbt)
+        .context("Failed to strip the lock PSBT down to what Alice reads")?;
+    write_cbor_message(&mut substream, message2)
         .await
         .context("Failed to send state1 message")?;
     let message3 = match read_cbor_message::<Message3>(&mut substream)
