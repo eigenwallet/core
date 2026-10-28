@@ -31,7 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ASB: Rename `maker.btc_redeem_fee_multiplier` to `maker.btc_swap_fee_rate_multiplier`.
   The multiplier now scales the proposed fee rate for all presigned Bitcoin transactions and still defaults to `1.0`.
   It must be between `1.0` and `3.0`, because takers reject rates above three times their own estimate.
-  Existing configurations must use the new name; the old name is no longer accepted.
+  Generated configs contain `btc_redeem_fee_multiplier` even if you never set it, and the asb refuses to start with the old name.
+  Remove that line from your config to use the default, or set `btc_swap_fee_rate_multiplier` instead.
 
 - New swaps use v3 cancel and refund transactions and delay refunds until the block after cancel confirms.
   Alice proposes one fee rate; both peers derive the base fee from the largest conservative signed transaction template.
