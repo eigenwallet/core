@@ -156,6 +156,7 @@ pub fn sanity_check_transaction_fee_floor(
 }
 
 /// Local acceptance limits, derived without capping the agreed fee schedule.
+/// The lower limit is half our estimate, but never below [`bitcoin::SwapFeeRate::MIN`].
 pub fn swap_fee_limits(
     rate: bitcoin::SwapFeeRate,
     amount: bitcoin::Amount,
@@ -163,7 +164,7 @@ pub fn swap_fee_limits(
     use anyhow::Context;
     anyhow::ensure!(rate.0 > 0, "Local fee estimate must be positive");
     Ok(bitcoin::SwapFeeLimits {
-        min_rate: bitcoin::SwapFeeRate(rate.0 / 2 + rate.0 % 2),
+        min_rate: bitcoin::SwapFeeRate((rate.0 / 2 + rate.0 % 2).max(bitcoin::SwapFeeRate::MIN.0)),
         max_rate: bitcoin::SwapFeeRate(rate.0.checked_mul(3).context("Fee rate limit overflow")?),
         max_path_fee: bitcoin_wallet::MAX_ABSOLUTE_TX_FEE
             .min(bitcoin::Amount::from_sat(amount.to_sat() / 3)),

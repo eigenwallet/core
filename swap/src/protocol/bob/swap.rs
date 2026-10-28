@@ -182,14 +182,7 @@ async fn next_state(
             .await
             .context("Monero daemon RPC health check failed; cannot start swap")?;
 
-            let rate = bitcoin::SwapFeeRate(
-                bitcoin_wallet
-                    .swap_fee_rate()
-                    .await?
-                    .to_sat_per_kwu()
-                    .checked_mul(4)
-                    .context("Swap fee rate conversion overflow")?,
-            );
+            let rate = bitcoin::SwapFeeRate::from_estimate(bitcoin_wallet.swap_fee_rate().await?)?;
             let fee_limits = swap_machine::common::swap_fee_limits(rate, btc_amount)?;
 
             // Emit an event to tauri that we are negotiating with the maker to lock the Bitcoin

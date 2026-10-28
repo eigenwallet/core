@@ -32,6 +32,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn minimum_accepted_rate_is_half_the_estimate_but_at_least_one_sat_per_vbyte() {
+        for (estimate, min, max) in [
+            (1000, 1000, 3000),
+            (1999, 1000, 5997),
+            (2001, 1001, 6003),
+            (5000, 2500, 15000),
+        ] {
+            let limits =
+                common::swap_fee_limits(SwapFeeRate(estimate), Amount::from_sat(1_000_000))
+                    .unwrap();
+            assert_eq!(limits.min_rate, SwapFeeRate(min));
+            assert_eq!(limits.max_rate, SwapFeeRate(max));
+            assert!(limits.validate_rate(SwapFeeRate(min - 1)).is_err());
+            assert!(limits.validate_rate(SwapFeeRate(min)).is_ok());
+        }
+    }
+
     #[tokio::test]
     async fn calculate_transaction_weights() {
         for multiplier in [200, 230, 250, 300, 400] {

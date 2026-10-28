@@ -1779,14 +1779,8 @@ async fn create_wallet_snapshot(
     btc_redeem_base_fee_multiplier: bitcoin::RedeemFeeMultiplier,
     transfer_amount: bitcoin::Amount,
 ) -> Result<WalletSnapshot> {
-    let estimated_rate = bitcoin::SwapFeeRate(
-        bitcoin_wallet
-            .swap_fee_rate()
-            .await?
-            .to_sat_per_kwu()
-            .checked_mul(4)
-            .context("Swap fee rate conversion overflow")?,
-    );
+    let estimated_rate =
+        bitcoin::SwapFeeRate::from_estimate(bitcoin_wallet.swap_fee_rate().await?)?;
     let rate: u64 = Decimal::from(estimated_rate.0)
         .checked_mul(btc_swap_fee_rate_multiplier)
         .context("Swap fee rate multiplier overflow")?

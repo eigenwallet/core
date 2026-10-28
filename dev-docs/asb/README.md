@@ -126,6 +126,7 @@ It defaults to `1.0` and must be between `1.0` and `3.0`.
 Bob rejects rates above three times his own estimate, so a higher multiplier would make every swap setup fail; a multiplier close to `3.0` can still fail when Alice's estimate is higher than Bob's.
 Existing configurations must rename `btc_redeem_fee_multiplier` to `btc_swap_fee_rate_multiplier`; the old name is no longer accepted.
 Bob accepts or rejects this rate against his local limits before signing.
+Neither peer proposes or accepts a rate below 1 sat/vB, regardless of the local estimate.
 Both peers derive one base fee from the largest conservative signed transaction size.
 Redeem defaults to 2.5 times the base fee; every other presigned transaction pays the base fee.
 Set `maker.btc_redeem_base_fee_multiplier = "2.30"` to choose a different redeem multiplier.

@@ -74,6 +74,22 @@ impl RedeemFeeMultiplier {
 pub struct SwapFeeRate(pub u64);
 
 impl SwapFeeRate {
+    /// Lowest rate either peer proposes or accepts (1 sat/vB).
+    ///
+    /// Presigned transactions may be published long after setup, and refund
+    /// cannot raise an unconfirmed cancel's fee through CPFP. The relay minimum
+    /// reported at setup time is therefore no safe lower bound.
+    pub const MIN: SwapFeeRate = SwapFeeRate(1_000);
+
+    /// Convert a local fee estimate, raised to at least [`Self::MIN`].
+    pub fn from_estimate(estimate: ::bitcoin::FeeRate) -> Result<Self> {
+        let rate = estimate
+            .to_sat_per_kwu()
+            .checked_mul(4)
+            .context("Swap fee rate conversion overflow")?;
+        Ok(Self(rate.max(Self::MIN.0)))
+    }
+
     pub fn fee(self, vsize: u64) -> Result<Amount> {
         ensure!(self.0 > 0, "Swap fee rate must be positive");
         let product = self.0.checked_mul(vsize).context("Swap fee overflow")?;
@@ -445,6 +461,22 @@ mod tests {
         inputs.deposit = Amount::ZERO;
         let full = inputs.calculate(SwapFeeRate(1000), limits()).unwrap();
         assert!(full.max_vsize < larger.max_vsize);
+    }
+
+    #[test]
+    fn local_estimate_is_raised_to_one_sat_per_vbyte() {
+        for (sat_per_kwu, expected) in
+            [(0, 1000), (25, 1000), (249, 1000), (250, 1000), (251, 1004)]
+        {
+            assert_eq!(
+                SwapFeeRate::from_estimate(::bitcoin::FeeRate::from_sat_per_kwu(sat_per_kwu))
+                    .unwrap(),
+                SwapFeeRate(expected)
+            );
+        }
+        assert!(
+            SwapFeeRate::from_estimate(::bitcoin::FeeRate::from_sat_per_kwu(u64::MAX)).is_err()
+        );
     }
 
     #[test]
