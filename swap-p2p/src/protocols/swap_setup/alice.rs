@@ -28,7 +28,7 @@ use swap_machine::common::{Message0, Message2, Message4};
 use tracing::Instrument;
 use uuid::Uuid;
 
-/// One deadline for backend verification, including retries and queueing.
+/// One deadline for the lock input check, including retries and queueing.
 pub const LOCK_INPUT_CHECK_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug)]
