@@ -898,7 +898,7 @@ impl crate::network::wormhole::WormholeStore for SqliteDatabase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::alice::AliceState;
+    use crate::protocol::alice::{AliceState, test_state3};
     use crate::protocol::bob::BobState;
     use std::fs::File;
     use tempfile::{TempDir, tempdir};
@@ -1202,6 +1202,43 @@ mod tests {
                     .is_empty()
             );
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_lock_checks_return_valid_pending_swaps() -> Result<()> {
+        let db = setup_test_db().await?;
+        let wallet = bitcoin_wallet::TestWalletBuilder::new(1_000_000)
+            .build()
+            .await;
+        let cutoff = OffsetDateTime::now_utc() - time::Duration::hours(1);
+
+        let started = State::Alice(AliceState::Started {
+            state3: Box::new(test_state3(&wallet).await?),
+        });
+        let seen = State::Alice(AliceState::BtcLockTransactionSeen {
+            state3: Box::new(test_state3(&wallet).await?),
+        });
+        let (started_id, seen_id) = (Uuid::new_v4(), Uuid::new_v4());
+        db.insert_latest_state(started_id, started.clone()).await?;
+        db.insert_latest_state(seen_id, seen.clone()).await?;
+
+        // Recorded before the cutoff.
+        let stale = State::Alice(AliceState::Started {
+            state3: Box::new(test_state3(&wallet).await?),
+        });
+        sqlx::query("INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)")
+            .bind(Uuid::new_v4().to_string())
+            .bind((cutoff - time::Duration::seconds(1)).to_string())
+            .bind(serde_json::to_string(&Swap::from(stale))?)
+            .execute(&db.pool)
+            .await?;
+
+        let mut pending = db
+            .get_alice_swaps_with_pending_tx_lock(cutoff.unix_timestamp())
+            .await?;
+        pending.sort_by_key(|(id, _)| *id != started_id);
+        assert_eq!(pending, vec![(started_id, started), (seen_id, seen)]);
         Ok(())
     }
 

@@ -2591,6 +2591,44 @@ mod tests {
         assert!(result.max_quantity < max_buy);
     }
 
+    #[tokio::test]
+    async fn conflict_check_rejects_inputs_of_a_pending_swap() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("db");
+        std::fs::File::create(&path)?;
+        let db =
+            crate::database::SqliteDatabase::open(path, crate::database::AccessMode::ReadWrite)
+                .await?;
+        let wallet = bitcoin_wallet::TestWalletBuilder::new(1_000_000)
+            .build()
+            .await;
+        let state3 = crate::protocol::alice::test_state3(&wallet).await?;
+        let lock_input = state3.tx_lock.as_psbt().unsigned_tx.input[0].previous_output;
+        let state = AliceState::Started {
+            state3: Box::new(state3),
+        };
+        db.insert_latest_state(Uuid::new_v4(), state.into()).await?;
+
+        let candidate = |previous_output| {
+            bitcoin::PartiallySignedTransaction::from_unsigned_tx(bitcoin::Transaction {
+                version: ::bitcoin::transaction::Version::TWO,
+                lock_time: ::bitcoin::absolute::LockTime::ZERO,
+                input: vec![::bitcoin::TxIn {
+                    previous_output,
+                    ..Default::default()
+                }],
+                output: vec![],
+            })
+            .unwrap()
+        };
+
+        let conflicting = check_for_conflicting_swap_inputs(&db, &candidate(lock_input)).await;
+        assert!(matches!(conflicting, Err(LockInputCheckError::Invalid(_))));
+        let unrelated = ::bitcoin::OutPoint::new(lock_input.txid, lock_input.vout + 1);
+        check_for_conflicting_swap_inputs(&db, &candidate(unrelated)).await?;
+        Ok(())
+    }
+
     // Mock struct for testing
     #[derive(Debug, Clone)]
     struct MockReservedItem {

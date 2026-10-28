@@ -132,6 +132,7 @@ tempfile = "3"
 testcontainers = "0.15"
 tokio = { workspace = true, features = ["test-util"] }
 tracing-ext = { path = "../tracing-ext" }
+utxo-ownership-proof = { path = "../utxo-ownership-proof" }
 
 [build-dependencies]
 anyhow = { workspace = true }

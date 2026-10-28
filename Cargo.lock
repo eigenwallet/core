@@ -10583,6 +10583,7 @@ dependencies = [
  "tracing-subscriber",
  "typeshare",
  "url",
+ "utxo-ownership-proof",
  "uuid",
  "vergen-git2",
  "void",

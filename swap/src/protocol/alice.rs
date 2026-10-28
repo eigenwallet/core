@@ -59,3 +59,61 @@ pub struct TipConfig {
     pub ratio: Decimal,
     pub address: monero_address::MoneroAddress,
 }
+
+/// Alice's state after a complete swap setup with a Bob who funds the lock from `wallet`.
+#[cfg(test)]
+pub(crate) async fn test_state3(wallet: &dyn BitcoinWallet) -> anyhow::Result<State3> {
+    use crate::protocol::bob;
+    use swap_core::bitcoin::{
+        Amount, CancelTimelock, PunishTimelock, RedeemFeeMultiplier, RemainingRefundTimelock,
+        SwapFeeRate,
+    };
+    use swap_env::env::{GetConfig, Regtest};
+
+    let mut rng = rand::rngs::OsRng;
+    let env_config = Regtest::get_config();
+    let btc = Amount::from_sat(500_000);
+    let xmr = swap_core::monero::Amount::from_pico(10_000);
+    let fee_rate = SwapFeeRate(5_000);
+    let fee_limits = crate::protocol::swap_fee_limits(fee_rate, btc)?;
+
+    let alice = State0::new(
+        btc,
+        xmr,
+        Amount::ZERO,
+        env_config,
+        wallet.new_address().await?,
+        wallet.new_address().await?,
+        fee_rate,
+        RedeemFeeMultiplier::default(),
+        fee_limits,
+        false,
+        &mut rng,
+    );
+    let bob = bob::State0::new(
+        Uuid::new_v4(),
+        &mut rng,
+        btc,
+        xmr,
+        CancelTimelock::new(env_config.bitcoin_cancel_timelock),
+        PunishTimelock::new(env_config.bitcoin_punish_timelock),
+        RemainingRefundTimelock::new(env_config.bitcoin_remaining_refund_timelock),
+        wallet.new_address().await?,
+        env_config.monero_finality_confirmations,
+        fee_limits,
+        Amount::from_sat(1_000),
+    );
+
+    let (_, alice) = alice.receive(bob.next_message()?)?;
+    let bob = bob.receive(wallet, alice.next_message()?).await?;
+    let message2 = bob.next_message();
+    let challenge = alice.ownership_challenge(&message2.tx_lock_psbt);
+    let verified = utxo_ownership_proof::VerifiedPsbt::verify(
+        message2.tx_lock_psbt,
+        &message2.tx_lock_proofs,
+        challenge,
+    )?;
+    let alice = alice.receive(verified)?;
+    let bob = bob.receive(alice.next_message()?)?;
+    alice.receive(bob.next_message()?)
+}
