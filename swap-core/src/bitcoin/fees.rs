@@ -66,7 +66,7 @@ impl RedeemFeeMultiplier {
     }
 }
 
-/// Integer satoshis per 1,000 virtual bytes. The wire representation is exact.
+/// Integer satoshis per 1,000 virtual bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SwapFeeRate(pub u64);
 
