@@ -22,8 +22,6 @@ use tracing::{debug, error, instrument, trace, warn};
 /// errors, because those may be server deficiencies ("txindex not
 /// ready", unsupported endpoint) that another server does not have.
 ///
-/// Parallel quorum operations always wait for the primary's result.
-///
 /// Clients are created lazily on first use to avoid blocking during initialization.
 pub struct ElectrumBalancer<C = BdkElectrumClient<Client>>
 where
@@ -287,8 +285,7 @@ where
     }
 
     /// Execute the given closure on all Electrum nodes in parallel, returning
-    /// as soon as `min_parallel_responses` nodes have responded successfully
-    /// and the primary (first) node has produced a result.
+    /// as soon as `min_parallel_responses` nodes have responded successfully.
     ///
     /// The requests to the remaining nodes keep running in the background;
     /// their results are discarded. If the quorum cannot be reached the call
@@ -349,23 +346,19 @@ where
                         Err(e) => Err(e),
                     };
 
-                    (idx, result)
+                    result
                 })
             })
             .collect();
 
         let mut results: Vec<Result<T, Error>> = Vec::new();
         let mut successes = 0;
-        let mut primary_finished = false;
 
         while let Some(joined) = tasks.next().await {
             match joined {
-                Ok((idx, result)) => {
+                Ok(result) => {
                     if result.is_ok() {
                         successes += 1;
-                    }
-                    if idx == 0 {
-                        primary_finished = true;
                     }
                     results.push(result);
                 }
@@ -379,7 +372,7 @@ where
                 }
             }
 
-            if successes >= quorum && primary_finished {
+            if successes >= quorum {
                 if drain {
                     while let Some(result) = tasks.next().await {
                         if let Err(error) = result {
@@ -405,9 +398,9 @@ where
     /// Broadcast the given transaction to all Electrum nodes in parallel.
     ///
     /// The transaction is sent to every node, but the method already returns
-    /// once `min_parallel_responses` nodes have accepted it and the primary
-    /// node has responded. The remaining broadcasts continue in the background.
-    /// Errors for individual nodes do not abort the others.
+    /// once `min_parallel_responses` nodes have accepted it. The remaining
+    /// broadcasts continue in the background. Errors for individual nodes do
+    /// not abort the others.
     #[instrument(level = "debug", skip(self, tx), fields(txid = %tx.compute_txid(), total_clients = self.client_count()))]
     pub async fn broadcast_all(
         &self,
@@ -1336,7 +1329,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_join_quorum_waits_for_primary() {
+    async fn test_join_quorum_does_not_wait_for_primary() {
         let urls = vec![
             "tcp://localhost:50001".to_string(),
             "tcp://localhost:50002".to_string(),
@@ -1368,9 +1361,9 @@ mod tests {
             .await
             .unwrap();
 
-        // The quorum of 2 is reached by the fast nodes, but we still wait
-        // for the primary (first) node before returning
-        assert_eq!(results.len(), 3);
-        assert!(start.elapsed() >= Duration::from_millis(500));
+        // The quorum of 2 is reached by the fast nodes, so the slow primary
+        // (first) node is not awaited
+        assert_eq!(results.len(), 2);
+        assert!(start.elapsed() < Duration::from_millis(500));
     }
 }
