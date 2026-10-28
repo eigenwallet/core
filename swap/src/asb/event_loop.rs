@@ -48,6 +48,9 @@ const LOCK_INPUT_CONFLICT_LOOKBACK: time::Duration = time::Duration::hours(12);
 /// Database checks share the connection pool with swap persistence, so only a
 /// few run at once. Further checks wait for a permit in FIFO order.
 const MAX_CONCURRENT_LOCK_INPUT_DB_CHECKS: usize = 10;
+/// How often a check waiting for a permit looks whether its requester is
+/// still waiting, so it releases its reservation once the requester is gone.
+const LOCK_INPUT_REQUESTER_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop<LR>
@@ -720,8 +723,19 @@ where
                     let db = self.db.clone();
                     let db_checks = self.lock_input_db_checks.clone();
                     let check = tokio::spawn(async move {
-                        let _permit = db_checks.acquire_owned().await
-                            .context("Lock input database check capacity closed")?;
+                        let acquire = db_checks.acquire_owned();
+                        tokio::pin!(acquire);
+                        let _permit = loop {
+                            tokio::select! {
+                                permit = &mut acquire => break permit
+                                    .context("Lock input database check capacity closed")?,
+                                _ = tokio::time::sleep(LOCK_INPUT_REQUESTER_POLL_INTERVAL) => {
+                                    if responder.is_closed() {
+                                        anyhow::bail!("Lock input check requester stopped waiting");
+                                    }
+                                }
+                            }
+                        };
                         if responder.is_closed() {
                             anyhow::bail!("Lock input check requester stopped waiting");
                         }
