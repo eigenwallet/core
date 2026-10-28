@@ -765,7 +765,11 @@ async fn run_swap_setup(
         Ok(state) => state,
         Err(error) => {
             let rejection = swap_setup::SwapSetupError::try_from(error)?;
-            swap_setup::write_cbor_error(&mut substream, rejection.clone()).await?;
+            if let Err(write_error) =
+                swap_setup::write_cbor_error(&mut substream, rejection.clone()).await
+            {
+                tracing::error!(error = %write_error, "Couldn't send swap setup rejection to Bob");
+            }
             return Err(rejection).context("Failed to accept swap setup");
         }
     };

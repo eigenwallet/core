@@ -749,7 +749,9 @@ async fn run_swap_setup(
         Ok(state) => state,
         Err(error) => {
             let rejection = super::SwapSetupError::try_from(error)?;
-            write_cbor_error(&mut substream, rejection.clone()).await?;
+            if let Err(write_error) = write_cbor_error(&mut substream, rejection.clone()).await {
+                tracing::error!(error = %write_error, "Couldn't send swap setup rejection to Alice");
+            }
             return Err(SetupError::Rejected(rejection.to_string()));
         }
     };
