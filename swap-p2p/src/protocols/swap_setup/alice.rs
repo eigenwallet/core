@@ -833,26 +833,13 @@ async fn run_swap_setup(
         let state2 = state1
             .receive(verified)
             .context("Failed to reconstruct lock transaction")?;
-        state2
+        let tx_lock_fee = state2
             .tx_lock_fee()
             .context("Invalid TxLock input/output amounts")?;
-
-        // Dropping this sender cancels the ASB job. The ASB owns its capacity
-        // permit and drains started work even after this handler disappears.
-        let (_cancel, cancellation) = tokio::sync::watch::channel(false);
-        let reservation = check_lock_inputs
-            .send_receive(LockInputCheck {
-                psbt,
-                cancel: cancellation,
-                deadline: tokio::time::Instant::now() + LOCK_INPUT_CHECK_TIMEOUT,
-            })
-            .await
-            .context("Failed to receive lock input check result")?
-            .map_err(|error| anyhow!("Lock input check failed: {error:?}"))?;
-        Ok::<_, anyhow::Error>((state2, reservation))
+        Ok::<_, anyhow::Error>((state2, psbt, tx_lock_fee))
     }
     .await;
-    let (state2, lock_input_reservation) = match verification {
+    let (state2, psbt, tx_lock_fee) = match verification {
         Ok(verified) => verified,
         Err(cause) => {
             tracing::warn!(%swap_id, error = %cause, "Lock transaction input verification failed");
@@ -866,9 +853,7 @@ async fn run_swap_setup(
 
     tracing::debug!(%swap_id, "Swap setup transition: State1 -> State2 (received Message2)");
 
-    let tx_lock_fee = state2
-        .tx_lock_fee()
-        .context("Failed to read lock transaction fee from PSBT")?;
+    // The fee uses Bob's claimed prevout values, which the lock input check below verifies.
     if let Err(error) = swap_machine::common::sanity_check_transaction_fee_floor(
         tx_lock_fee,
         wallet_snapshot.tx_lock_fee,
@@ -881,6 +866,33 @@ async fn run_swap_setup(
         }
         return Err(rejection).context("Lock transaction fee sanity check failed");
     }
+
+    let lock_input_check = async {
+        // Dropping this sender cancels the ASB job. The ASB owns its capacity
+        // permit and drains started work even after this handler disappears.
+        let (_cancel, cancellation) = tokio::sync::watch::channel(false);
+        check_lock_inputs
+            .send_receive(LockInputCheck {
+                psbt,
+                cancel: cancellation,
+                deadline: tokio::time::Instant::now() + LOCK_INPUT_CHECK_TIMEOUT,
+            })
+            .await
+            .context("Failed to receive lock input check result")?
+            .map_err(|error| anyhow!("Lock input check failed: {error:?}"))
+    }
+    .await;
+    let lock_input_reservation = match lock_input_check {
+        Ok(reservation) => reservation,
+        Err(cause) => {
+            tracing::warn!(%swap_id, error = %cause, "Lock transaction input verification failed");
+            let error = swap_setup::SwapSetupError::LockInputVerificationFailed;
+            if let Err(err) = swap_setup::write_cbor_error(&mut substream, error.clone()).await {
+                tracing::error!(error=%err, "Couldn't send lock input verification error to Bob");
+            }
+            return Err(cause).context("Lock transaction verification failed");
+        }
+    };
 
     swap_setup::write_cbor_message(
         &mut substream,
