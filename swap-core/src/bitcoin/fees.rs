@@ -236,8 +236,7 @@ impl SwapFeeInputs<'_> {
             PunishTimelock::new(1),
             Amount::ZERO,
         );
-        // Include every output of redeem, including an anchor if its template has one.
-        // Lock and wallet-created fee-bump transactions are deliberately excluded.
+        // Lock is excluded: Bob's wallet funds it and chooses its fee.
         let mut templates = vec![
             cancel.inner.clone(),
             redeem.inner,
