@@ -659,6 +659,15 @@ impl From<anyhow::Error> for SetupError {
     }
 }
 
+impl From<super::SwapSetupError> for SetupError {
+    fn from(err: super::SwapSetupError) -> Self {
+        if err.is_retryable() {
+            return SetupError::Transient(err.into());
+        }
+        SetupError::Rejected(err.to_string())
+    }
+}
+
 impl From<Error> for SetupError {
     fn from(err: Error) -> Self {
         SetupError::Transient(err.into())
@@ -733,7 +742,7 @@ async fn run_swap_setup(
         .context("Failed to read message1 from Alice")?
     {
         Ok(msg) => msg,
-        Err(setup_err) => return Err(SetupError::Rejected(setup_err.to_string())),
+        Err(setup_err) => return Err(setup_err.into()),
     };
 
     let state1 = match state0.receive(bitcoin_wallet.as_ref(), message1).await {
@@ -758,7 +767,7 @@ async fn run_swap_setup(
         .context("Failed to read message3 from Alice")?
     {
         Ok(msg) => msg,
-        Err(setup_err) => return Err(SetupError::Rejected(setup_err.to_string())),
+        Err(setup_err) => return Err(setup_err.into()),
     };
     let state2 = state1
         .receive(message3)

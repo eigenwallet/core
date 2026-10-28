@@ -5,8 +5,8 @@ use swap::protocol::bob;
 
 /// Bob's wallet contains a locally-known UTXO that does not exist on the
 /// Bitcoin chain. Bob can construct and prove ownership of the resulting lock
-/// PSBT, but Alice must reject it when she verifies the prevout through
-/// Electrum.
+/// PSBT, but Alice cannot find the prevout through Electrum. Bob retries, since
+/// the input might not have reached Alice yet, and gives up eventually.
 #[tokio::test]
 async fn alice_rejects_bob_lock_psbt_with_nonexistent_input() {
     harness::setup_test_with_fake_bob_bitcoin_utxo(
@@ -24,7 +24,7 @@ async fn alice_rejects_bob_lock_psbt_with_nonexistent_input() {
             let error = format!("{error:#}");
 
             assert!(
-                error.contains("Input verification failed."),
+                error.contains("Input verification was inconclusive."),
                 "unexpected swap rejection: {error}"
             );
 

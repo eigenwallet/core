@@ -74,6 +74,8 @@ pub enum SwapSetupError {
     TxLockTooManyInputs { actual: u32, maximum: u32 },
     #[error("Input verification failed.")]
     LockInputVerificationFailed,
+    #[error("Input verification was inconclusive.")]
+    LockInputVerificationInconclusive,
     #[error("Invalid DLEQ proof")]
     InvalidDleqProof,
     #[error("Anti-spam deposit {deposit} is too small; minimum required is {minimum}")]
@@ -96,6 +98,13 @@ pub enum SwapSetupError {
         fee: bitcoin::Amount,
         estimate: bitcoin::Amount,
     },
+}
+
+impl SwapSetupError {
+    /// Whether the setup may succeed if Bob starts it again.
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, Self::LockInputVerificationInconclusive)
+    }
 }
 
 impl TryFrom<anyhow::Error> for SwapSetupError {

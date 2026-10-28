@@ -1514,7 +1514,7 @@ fn reserve_verified_lock_inputs(
         .iter()
         .find(|outpoint| reserved.contains(outpoint))
     {
-        return Err(LockInputCheckError::Invalid(format!(
+        return Err(LockInputCheckError::Unavailable(format!(
             "Input {outpoint} is reserved by another swap"
         )));
     }

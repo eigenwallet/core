@@ -58,6 +58,16 @@ pub enum VerificationError {
     Setup(anyhow::Error),
 }
 
+impl VerificationError {
+    /// Whether verification failed on our side rather than because of the proofs.
+    pub fn is_transient(&self) -> bool {
+        matches!(
+            self,
+            Self::Closed | Self::PeerQueueFull | Self::GlobalQueueFull | Self::Worker(_)
+        )
+    }
+}
+
 struct Request {
     peer: PeerId,
     job: QueuedJob,

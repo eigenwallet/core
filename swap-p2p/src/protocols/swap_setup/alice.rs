@@ -1,6 +1,6 @@
 use crate::out_event;
 use crate::protocols::swap_setup;
-use crate::protocols::swap_setup::verification::ProofVerifier;
+use crate::protocols::swap_setup::verification::{ProofVerifier, VerificationError};
 use crate::protocols::swap_setup::{
     BlockchainNetwork, BobDecision, SpotPriceError, SpotPriceRequest, SpotPriceResponse,
     SwapPersisted, protocol,
@@ -31,12 +31,27 @@ use uuid::Uuid;
 /// One deadline for the lock input check, including retries and queueing.
 pub const LOCK_INPUT_CHECK_TIMEOUT: Duration = Duration::from_secs(45);
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum LockInputCheckError {
+    #[error("Lock input check was cancelled")]
     Cancelled,
+    #[error("Lock input check timed out")]
     TimedOut,
+    #[error("{0}")]
     Invalid(String),
+    /// The check may pass later: our backend failed, or the inputs are not yet
+    /// visible to us or reserved by another swap.
+    #[error("{0}")]
     Unavailable(String),
+}
+
+impl LockInputCheckError {
+    pub fn is_transient(&self) -> bool {
+        matches!(
+            self,
+            Self::Cancelled | Self::TimedOut | Self::Unavailable(_)
+        )
+    }
 }
 
 impl From<bitcoin_wallet::PsbtPrevoutVerificationError> for LockInputCheckError {
@@ -53,7 +68,12 @@ impl From<bitcoin_wallet::PsbtPrevoutVerificationError> for LockInputCheckError 
         ) {
             return Self::TimedOut;
         }
-        let is_transient = error.is_transient();
+        // Bob's inputs may not have reached our Electrum servers yet
+        let is_transient = error.is_transient()
+            || matches!(
+                error,
+                bitcoin_wallet::PsbtPrevoutVerificationError::PrevoutNotFound { .. }
+            );
         let reason = format!("{error:#}");
         if is_transient {
             Self::Unavailable(reason)
@@ -842,8 +862,8 @@ async fn run_swap_setup(
     let (state2, psbt, tx_lock_fee) = match verification {
         Ok(verified) => verified,
         Err(cause) => {
-            tracing::warn!(%swap_id, error = %cause, "Lock transaction input verification failed");
-            let error = swap_setup::SwapSetupError::LockInputVerificationFailed;
+            tracing::warn!(%swap_id, error = %format!("{cause:#}"), "Lock transaction input verification failed");
+            let error = lock_input_verification_error(&cause);
             if let Err(err) = swap_setup::write_cbor_error(&mut substream, error.clone()).await {
                 tracing::error!(error=%err, "Couldn't send lock input verification error to Bob");
             }
@@ -879,14 +899,14 @@ async fn run_swap_setup(
             })
             .await
             .context("Failed to receive lock input check result")?
-            .map_err(|error| anyhow!("Lock input check failed: {error:?}"))
+            .context("Lock input check failed")
     }
     .await;
     let lock_input_reservation = match lock_input_check {
         Ok(reservation) => reservation,
         Err(cause) => {
-            tracing::warn!(%swap_id, error = %cause, "Lock transaction input verification failed");
-            let error = swap_setup::SwapSetupError::LockInputVerificationFailed;
+            tracing::warn!(%swap_id, error = %format!("{cause:#}"), "Lock transaction input verification failed");
+            let error = lock_input_verification_error(&cause);
             if let Err(err) = swap_setup::write_cbor_error(&mut substream, error.clone()).await {
                 tracing::error!(error=%err, "Couldn't send lock input verification error to Bob");
             }
@@ -912,6 +932,20 @@ async fn run_swap_setup(
     tracing::debug!(%swap_id, "Swap setup transition: State2 -> State3 (received Message4)");
 
     Ok((swap_id, state3, lock_input_reservation, substream))
+}
+
+/// Bob may retry if verification failed on our side or might pass later.
+fn lock_input_verification_error(cause: &anyhow::Error) -> swap_setup::SwapSetupError {
+    let is_transient = cause
+        .downcast_ref::<LockInputCheckError>()
+        .is_some_and(LockInputCheckError::is_transient)
+        || cause
+            .downcast_ref::<VerificationError>()
+            .is_some_and(VerificationError::is_transient);
+    if is_transient {
+        return swap_setup::SwapSetupError::LockInputVerificationInconclusive;
+    }
+    swap_setup::SwapSetupError::LockInputVerificationFailed
 }
 
 /// Keeps the lock inputs reserved until Bob commits to the swap. The swap is
