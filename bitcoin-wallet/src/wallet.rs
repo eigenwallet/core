@@ -1,4 +1,4 @@
-use crate::coin_selection::InputLimitCoinSelection;
+use crate::coin_selection;
 use crate::primitives::{Confirmed, EstimateFeeRate, ScriptStatus, Subscription, Watchable};
 use crate::{
     BitcoinWallet, BlockHeight, PsbtPrevoutVerificationError, RpcErrorCode, bitcoin_address,
@@ -1553,9 +1553,7 @@ where
             // Build the transaction with a dummy fee rate
             // just to figure out the final weight of the transaction
             // send_to_address(...) takes an absolute fee
-            let mut tx_builder = wallet
-                .build_tx()
-                .coin_selection(InputLimitCoinSelection::new(max_inputs, false)?);
+            let mut tx_builder = coin_selection::build_tx(&mut wallet, max_inputs, false)?;
 
             tx_builder.add_recipient(script.clone(), amount);
             tx_builder.fee_absolute(Amount::ZERO);
@@ -1616,9 +1614,7 @@ where
         let script = address.script_pubkey();
 
         // Build the transaction with a manual fee
-        let mut tx_builder = wallet
-            .build_tx()
-            .coin_selection(InputLimitCoinSelection::new(max_inputs, false)?);
+        let mut tx_builder = coin_selection::build_tx(&mut wallet, max_inputs, false)?;
         tx_builder.add_recipient(script.clone(), amount);
         tx_builder.fee_absolute(spending_fee);
 
@@ -1675,9 +1671,7 @@ where
         // Construct a dummy drain transaction
         let dummy_script = ScriptBuf::from(vec![0u8; locking_script_size]);
 
-        let mut tx_builder = wallet
-            .build_tx()
-            .coin_selection(InputLimitCoinSelection::new(max_inputs, true)?);
+        let mut tx_builder = coin_selection::build_tx(&mut wallet, max_inputs, true)?;
 
         tx_builder.drain_to(dummy_script.clone());
         tx_builder.fee_absolute(Amount::ZERO);
@@ -1751,7 +1745,7 @@ where
                 // Worst-case witness weight for our script type.
                 const DUMMY_SATISFACTION_WEIGHT: Weight = Weight::from_wu(107 * 10);
 
-                let mut tx_builder = wallet.build_tx().coin_selection(InputLimitCoinSelection::new(max_inputs, true)?);
+                let mut tx_builder = coin_selection::build_tx(&mut wallet, max_inputs, true)?;
 
                 tx_builder.drain_to(dummy_script.clone());
                 tx_builder.fee_absolute(Amount::ZERO);

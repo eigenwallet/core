@@ -1,11 +1,39 @@
 use anyhow::{Result, ensure};
-use bdk_wallet::WeightedUtxo;
 use bdk_wallet::coin_selection::{
     CoinSelectionAlgorithm, CoinSelectionResult, DefaultCoinSelectionAlgorithm, InsufficientFunds,
     LargestFirstCoinSelection,
 };
+use bdk_wallet::{TxBuilder, Wallet, WeightedUtxo};
 use bitcoin::secp256k1::rand::RngCore;
-use bitcoin::{Amount, FeeRate, Script};
+use bitcoin::transaction::Version;
+use bitcoin::{Amount, FeeRate, OutPoint, Script, Txid};
+use std::collections::HashSet;
+
+/// Start a transaction capped at `max_inputs` that never spends an output of an
+/// unconfirmed v3 transaction. We build v2 transactions, and TRUC policy
+/// rejects a non-v3 child of an unconfirmed v3 parent.
+pub(crate) fn build_tx(
+    wallet: &mut Wallet,
+    max_inputs: Option<usize>,
+    drain: bool,
+) -> Result<TxBuilder<'_, InputLimitCoinSelection>> {
+    let unconfirmed_v3_txids: HashSet<Txid> = wallet
+        .transactions()
+        .filter(|tx| !tx.chain_position.is_confirmed() && tx.tx_node.tx.version == Version(3))
+        .map(|tx| tx.tx_node.txid)
+        .collect();
+    let unconfirmed_v3_outputs: Vec<OutPoint> = wallet
+        .list_unspent()
+        .map(|utxo| utxo.outpoint)
+        .filter(|outpoint| unconfirmed_v3_txids.contains(&outpoint.txid))
+        .collect();
+
+    let mut tx_builder = wallet
+        .build_tx()
+        .coin_selection(InputLimitCoinSelection::new(max_inputs, drain)?);
+    tx_builder.unspendable(unconfirmed_v3_outputs);
+    Ok(tx_builder)
+}
 
 /// Apply the input cap after BDK has filtered out unspendable wallet outputs.
 /// `drain` is only used with our own drain builders, which mark all eligible
