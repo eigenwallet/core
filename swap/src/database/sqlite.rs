@@ -785,22 +785,41 @@ impl SqliteDatabase {
         .fetch_all(&self.pool)
         .await?;
 
-        rows.iter()
-            .map(|row| {
-                // Invalid timestamps must not silently hide a swap from this query.
-                row.entered_at_unix.with_context(|| {
-                    format!(
-                        "Invalid UTC timestamp {:?} for swap {}",
-                        row.entered_at, row.swap_id
-                    )
-                })?;
-                let swap_id = Uuid::from_str(&row.swap_id).context("Invalid swap UUID")?;
-                let peer_id = PeerId::from_str(&row.peer_id).context("Invalid swap peer ID")?;
-                let state = serde_json::from_str::<Swap>(&row.state)
-                    .with_context(|| format!("Failed to deserialize state of swap {swap_id}"))?;
-                Ok((peer_id, swap_id, State::from(state)))
+        // Log and skip unreadable rows instead of failing the whole call.
+        let result = rows
+            .iter()
+            .filter_map(|row| {
+                if row.entered_at_unix.is_none() {
+                    tracing::error!(swap_id = %row.swap_id, entered_at = %row.entered_at, "Skipping swap state with an invalid UTC timestamp");
+                    return None;
+                }
+                let swap_id = match Uuid::from_str(&row.swap_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Skipping swap state with an invalid swap id");
+                        return None;
+                    }
+                };
+                let peer_id = match PeerId::from_str(&row.peer_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Skipping swap with an invalid peer id");
+                        return None;
+                    }
+                };
+                let state = match serde_json::from_str::<Swap>(&row.state) {
+                    Ok(state) => State::from(state),
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Skipping swap state that does not deserialize");
+                        return None;
+                    }
+                };
+
+                Some((peer_id, swap_id, state))
             })
-            .collect()
+            .collect();
+
+        Ok(result)
     }
 }
 
@@ -1243,7 +1262,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fresh_swaps_report_malformed_timestamps() -> Result<()> {
+    async fn fresh_swaps_skip_malformed_timestamps() -> Result<()> {
         let db = setup_test_db().await?;
         let id = Uuid::new_v4();
         db.insert_peer_id(id, PeerId::random()).await?;
@@ -1260,13 +1279,7 @@ mod tests {
                 .bind(r#"{"Alice":{"Done":"SafelyAborted"}}"#)
                 .execute(&db.pool)
                 .await?;
-            assert!(
-                db.all_fresh(24)
-                    .await
-                    .unwrap_err()
-                    .to_string()
-                    .contains("Invalid UTC timestamp")
-            );
+            assert!(db.all_fresh(24).await?.is_empty());
             assert!(
                 db.get_alice_swaps_with_pending_tx_lock(OffsetDateTime::now_utc().unix_timestamp())
                     .await?
