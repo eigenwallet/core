@@ -1474,7 +1474,7 @@ fn reserve_verified_lock_inputs(
         .iter()
         .find(|outpoint| reserved.contains(outpoint))
     {
-        return Err(LockInputCheckError::Unavailable(format!(
+        return Err(LockInputCheckError(format!(
             "Input {outpoint} is reserved by another swap"
         )));
     }
@@ -1515,7 +1515,7 @@ async fn check_for_conflicting_swap_inputs(
         .get_alice_swaps_with_pending_tx_lock(updated_since)
         .await
         .context("Failed to load swaps while checking lock transaction inputs")
-        .map_err(|error| LockInputCheckError::Unavailable(format!("{error:#}")))?;
+        .map_err(|error| LockInputCheckError(format!("{error:#}")))?;
 
     for (swap_id, state) in swaps {
         let State::Alice(state) = state else {
@@ -1529,7 +1529,9 @@ async fn check_for_conflicting_swap_inputs(
             continue;
         };
 
-        return Err(LockInputCheckError::Invalid(format!(
+        // Not permanent: the pending swap times out if Bob never locks,
+        // e.g. because he never learned that we persisted it.
+        return Err(LockInputCheckError(format!(
             "Input {outpoint} conflicts with swap {swap_id}"
         )));
     }
@@ -2217,7 +2219,7 @@ mod tests {
         // Two verified requests cannot both claim an overlapping input.
         assert!(matches!(
             reserve_verified_lock_inputs(&psbt, &mut reserved, &release),
-            Err(LockInputCheckError::Unavailable(_))
+            Err(LockInputCheckError(_))
         ));
         assert_eq!(reserved.len(), 1);
 
@@ -2623,7 +2625,7 @@ mod tests {
         };
 
         let conflicting = check_for_conflicting_swap_inputs(&db, &candidate(lock_input)).await;
-        assert!(matches!(conflicting, Err(LockInputCheckError::Invalid(_))));
+        assert!(matches!(conflicting, Err(LockInputCheckError(_))));
         let unrelated = ::bitcoin::OutPoint::new(lock_input.txid, lock_input.vout + 1);
         check_for_conflicting_swap_inputs(&db, &candidate(unrelated)).await?;
         Ok(())

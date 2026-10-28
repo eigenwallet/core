@@ -33,21 +33,11 @@ use uuid::Uuid;
 /// starting; a running job stops retrying Electrum at the deadline.
 pub const LOCK_INPUT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(45);
 
+/// The lock input check failed, but may pass later: the inputs are used by
+/// another swap that may still be aborted, or we failed to check them.
 #[derive(Debug, thiserror::Error)]
-pub enum LockInputCheckError {
-    #[error("{0}")]
-    Invalid(String),
-    /// The check may pass later: our database failed, or the inputs are
-    /// reserved by another swap.
-    #[error("{0}")]
-    Unavailable(String),
-}
-
-impl LockInputCheckError {
-    pub fn is_transient(&self) -> bool {
-        matches!(self, Self::Unavailable(_))
-    }
-}
+#[error("{0}")]
+pub struct LockInputCheckError(pub String);
 
 /// Local request to reserve the inputs of Bob's lock transaction once the
 /// [`LockInputVerifier`] verified them. The ASB rejects inputs used by another swap.
@@ -834,17 +824,20 @@ async fn run_swap_setup(
 
     tracing::debug!(%swap_id, "Swap setup transition: State1 -> State2 (received Message2)");
 
-    let lock_input_check = async {
-        check_lock_inputs
-            .send_receive(LockInputCheck { psbt })
-            .await
-            .context("Failed to receive lock input check result")?
-            .context("Lock input check failed")
-    }
-    .await;
+    let lock_input_check = check_lock_inputs
+        .send_receive(LockInputCheck { psbt })
+        .await
+        .unwrap_or_else(|error| {
+            Err(LockInputCheckError(format!(
+                "Failed to receive lock input check result: {error}"
+            )))
+        });
     let lock_input_reservation = match lock_input_check {
         Ok(reservation) => reservation,
-        Err(cause) => return Err(reject_lock_inputs(&mut substream, swap_id, cause).await),
+        Err(cause) => {
+            let cause = anyhow::Error::new(cause).context("Lock input check failed");
+            return Err(reject_lock_inputs(&mut substream, swap_id, cause).await);
+        }
     };
 
     swap_setup::write_cbor_message(
@@ -883,9 +876,7 @@ async fn reject_lock_inputs(
 
 /// Bob may retry if verification failed on our side or might pass later.
 fn lock_input_verification_error(cause: &anyhow::Error) -> swap_setup::SwapSetupError {
-    let is_transient = cause
-        .downcast_ref::<LockInputCheckError>()
-        .is_some_and(LockInputCheckError::is_transient)
+    let is_transient = cause.downcast_ref::<LockInputCheckError>().is_some()
         || cause
             .downcast_ref::<VerificationError>()
             .is_some_and(VerificationError::is_transient);
