@@ -1,3 +1,5 @@
+// Shared with the docker test harness, which uses more of it than this test.
+#[allow(dead_code)]
 #[path = "harness/bitcoind.rs"]
 mod bitcoind;
 

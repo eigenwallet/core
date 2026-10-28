@@ -1,3 +1,5 @@
+#![allow(unused_crate_dependencies)]
+
 use rust_decimal::Decimal;
 use swap_env::config::Maker;
 
