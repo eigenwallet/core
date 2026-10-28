@@ -17,10 +17,11 @@ use anyhow::{Context as AnyContext, Result};
 use bitcoin_wallet::Watchable;
 use monero_interface::PublishTransaction;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use swap_core::bitcoin::ExpiredTimelocks;
 use swap_core::monero::BlockHeight;
 use swap_env::env;
+use time::OffsetDateTime;
 use tokio::select;
 use uuid::Uuid;
 
@@ -267,8 +268,9 @@ async fn next_state(
                     // Alice gives up on the swap if the lock transaction is not in the
                     // mempool within `bitcoin_lock_mempool_timeout` after she persisted it.
                     // Half of it leaves a margin for propagation and clock differences.
-                    let publish_deadline =
-                        SystemTime::now() + env_config.bitcoin_lock_mempool_timeout / 2;
+                    let publish_deadline = (OffsetDateTime::now_utc()
+                        + env_config.bitcoin_lock_mempool_timeout / 2)
+                        .unix_timestamp();
 
                     tracing::debug!(
                         "User approved swap offer. Fetching current Monero blockheight."
@@ -345,7 +347,9 @@ async fn next_state(
             publish_deadline,
             broadcast_attempted: false,
         } => {
-            if publish_deadline.is_some_and(|deadline| SystemTime::now() > deadline) {
+            if publish_deadline
+                .is_some_and(|deadline| OffsetDateTime::now_utc().unix_timestamp() > deadline)
+            {
                 tracing::warn!(
                     "Too late to publish the Bitcoin lock transaction, Alice no longer waits for it. It was never broadcast, so we abort the swap."
                 );

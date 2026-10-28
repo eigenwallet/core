@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::time::SystemTime;
 use swap_core::monero::{BlockHeight, TransferProofMaybeWithTxKey};
 use swap_machine::bob;
 use swap_machine::bob::BobState;
@@ -21,7 +20,7 @@ pub enum Bob {
         state3: bob::State3,
         monero_wallet_restore_blockheight: BlockHeight,
         #[serde(default)]
-        publish_deadline: Option<SystemTime>,
+        publish_deadline: Option<i64>,
         #[serde(default)]
         broadcast_attempted: bool,
     },
