@@ -11,7 +11,7 @@ import { isTestnet } from "store/config";
 // for the cross-curve proof
 const VERSION_FLOOR_SOFT = "4.13.0";
 // First version supporting shared swap fees and v3 cancel/refund transactions.
-const VERSION_FLOOR_HARD = "5.0.0";
+const VERSION_FLOOR_HARD = "5.0.0-0";
 
 export function isMakerOnCorrectNetwork(
   provider: ExtendedMakerStatus,
