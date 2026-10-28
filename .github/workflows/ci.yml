@@ -235,6 +235,10 @@ jobs:
           - package: swap
             test_name: bob_does_not_lock_when_alice_fails_to_persist_swap
           - package: swap
+            test_name: bob_does_not_lock_when_alice_database_is_locked
+          - package: swap
+            test_name: bob_does_not_publish_btc_lock_after_deadline
+          - package: swap
             test_name: swap_rejected_low_bitcoin_lock_fee
           - package: swap
             test_name: partial_refund_bob_restart_detects_withhold

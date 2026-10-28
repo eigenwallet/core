@@ -35,5 +35,11 @@ pub const NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(120);
 pub const SWAP_SETUP_DECISION_TIMEOUT: Duration = Duration::from_secs(180);
 /// How long Bob waits for Alice to confirm that she persisted the swap.
 pub const SWAP_SETUP_PERSISTED_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long Alice may take to persist a swap Bob committed to. Committing can take
+/// another few seconds on a busy database, so this stays well below
+/// [`SWAP_SETUP_PERSISTED_TIMEOUT`] and her confirmation still reaches Bob.
+pub const SWAP_SETUP_PERSIST_TIMEOUT: Duration = Duration::from_secs(20);
+const _: () =
+    assert!(SWAP_SETUP_PERSIST_TIMEOUT.as_secs() * 2 < SWAP_SETUP_PERSISTED_TIMEOUT.as_secs());
 pub const SWAP_SETUP_KEEP_ALIVE: Duration = Duration::from_secs(30);
 pub const SWAP_SETUP_CHANNEL_TIMEOUT: Duration = Duration::from_secs(60);

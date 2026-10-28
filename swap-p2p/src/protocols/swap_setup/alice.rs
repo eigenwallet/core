@@ -6,8 +6,8 @@ use crate::protocols::swap_setup::{
     SwapPersisted, protocol,
 };
 use anyhow::{Context, Result, anyhow};
-use futures::SinkExt;
 use futures::FutureExt;
+use futures::SinkExt;
 use futures::StreamExt;
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
@@ -918,12 +918,7 @@ async fn await_bob_decision(
         swap_setup::read_cbor_message::<BobDecision>(&mut substream),
     )
     .await
-    .with_context(|| {
-        format!(
-            "Bob did not decide within {}s",
-            decision_timeout.as_secs()
-        )
-    })?
+    .with_context(|| format!("Bob did not decide within {}s", decision_timeout.as_secs()))?
     .context("Failed to read the decision of Bob")?
     .context("Peer sent an error instead of the decision")?;
 
@@ -931,6 +926,9 @@ async fn await_bob_decision(
         anyhow::bail!("Bob aborted the swap before locking the Bitcoin");
     }
 
+    // No timeout here: a timeout could fire after the swap was persisted. The event
+    // loop bounds persisting by `SWAP_SETUP_PERSIST_TIMEOUT` instead and only answers
+    // once it knows whether the swap was persisted.
     register_swap
         .send_receive(registration)
         .await

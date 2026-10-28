@@ -13,6 +13,7 @@ use sha2::Sha256;
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
+use std::time::SystemTime;
 use swap_core::bitcoin::{
     self, CancelTimelock, ExpiredTimelocks, PunishTimelock, RemainingRefundTimelock, Transaction,
     TxCancel, TxFullRefund, TxLock, TxMercy, TxPartialRefund, TxReclaim, TxWithhold, Txid,
@@ -90,6 +91,15 @@ pub enum BobState {
         btc_lock_tx_signed: Transaction,
         state3: State3,
         monero_wallet_restore_blockheight: BlockHeight,
+        /// Alice gives up on the swap if the lock transaction does not reach the
+        /// mempool in time, so we must not broadcast it after this. `None` for
+        /// swaps saved before the deadline existed.
+        #[serde(default)]
+        publish_deadline: Option<SystemTime>,
+        /// Saved before the first broadcast. Until then the signed lock
+        /// transaction never left our database, so the swap can still be aborted.
+        #[serde(default)]
+        broadcast_attempted: bool,
     },
     BtcLocked {
         state3: State3,

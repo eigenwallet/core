@@ -5,15 +5,16 @@ use crate::monero::LabeledMoneroAddress;
 use crate::monero::MoneroAddressPool;
 use crate::monero::TransferProof;
 use crate::protocol::{Database, State};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use sqlx::sqlite::{Sqlite, SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{ConnectOptions, Pool};
+use sqlx::{ConnectOptions, Pool, SqliteExecutor};
 use std::path::Path;
 use std::str::FromStr;
+use std::time::Duration;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -79,23 +80,7 @@ impl SqliteDatabase {
 #[async_trait]
 impl Database for SqliteDatabase {
     async fn insert_peer_id(&self, swap_id: Uuid, peer_id: PeerId) -> Result<()> {
-        let swap_id = swap_id.to_string();
-        let peer_id = peer_id.to_string();
-
-        sqlx::query!(
-            r#"
-        insert into peers (
-            swap_id,
-            peer_id
-            ) values (?, ?);
-        "#,
-            swap_id,
-            peer_id
-        )
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
+        insert_peer_id(&self.pool, swap_id, peer_id).await
     }
 
     async fn get_peer_id(&self, swap_id: Uuid) -> Result<PeerId> {
@@ -313,26 +298,7 @@ impl Database for SqliteDatabase {
     }
 
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()> {
-        let entered_at = OffsetDateTime::now_utc();
-
-        let swap = serde_json::to_string(&Swap::from(state))?;
-        let entered_at = entered_at.to_string();
-        let swap_id_str = swap_id.to_string();
-
-        sqlx::query!(
-            r#"
-            insert into swap_states (
-                swap_id,
-                entered_at,
-                state
-                ) values (?, ?, ?);
-        "#,
-            swap_id_str,
-            entered_at,
-            swap
-        )
-        .execute(&self.pool)
-        .await?;
+        insert_latest_state(&self.pool, swap_id, state).await?;
 
         // Emit event to Tauri, the frontend will then send another request to get the latest state
         // This is why we don't send the state here
@@ -652,22 +618,119 @@ impl Database for SqliteDatabase {
     }
 
     async fn has_swap(&self, swap_id: Uuid) -> Result<bool> {
-        let swap_id = swap_id.to_string();
+        has_swap(&self.pool, swap_id).await
+    }
 
-        let row = sqlx::query!(
-            r#"
+    async fn insert_new_swap(
+        &self,
+        swap_id: Uuid,
+        peer_id: PeerId,
+        state: State,
+        timeout: Duration,
+    ) -> Result<()> {
+        // Everything up to the commit is bounded. Dropping the transaction rolls it back.
+        let transaction = tokio::time::timeout(timeout, async {
+            let mut transaction = self.pool.begin().await?;
+
+            // Writing first takes the write lock right away. Reading first would take a
+            // read lock that can fail to upgrade when another connection writes.
+            insert_peer_id(&mut *transaction, swap_id, peer_id)
+                .await
+                .context("Failed to save peer-id in database")?;
+            if has_swap(&mut *transaction, swap_id).await? {
+                bail!("UUID is already in use");
+            }
+            insert_latest_state(&mut *transaction, swap_id, state)
+                .await
+                .context("Failed to save the initial swap state in database")?;
+
+            Ok(transaction)
+        })
+        .await
+        .context("Persisting the new swap timed out")??;
+
+        // Not bounded by the timeout, because we must know whether it happened. On a busy
+        // database SQLite gives up after its busy timeout and rolls the transaction back.
+        transaction
+            .commit()
+            .await
+            .context("Failed to commit the new swap")?;
+
+        self.tauri_handle.emit_swap_state_change_event(swap_id);
+
+        Ok(())
+    }
+}
+
+async fn insert_peer_id<'e>(
+    executor: impl SqliteExecutor<'e>,
+    swap_id: Uuid,
+    peer_id: PeerId,
+) -> Result<()> {
+    let swap_id = swap_id.to_string();
+    let peer_id = peer_id.to_string();
+
+    sqlx::query!(
+        r#"
+        insert into peers (
+            swap_id,
+            peer_id
+            ) values (?, ?);
+        "#,
+        swap_id,
+        peer_id
+    )
+    .execute(executor)
+    .await?;
+
+    Ok(())
+}
+
+async fn insert_latest_state<'e>(
+    executor: impl SqliteExecutor<'e>,
+    swap_id: Uuid,
+    state: State,
+) -> Result<()> {
+    let entered_at = OffsetDateTime::now_utc();
+
+    let swap = serde_json::to_string(&Swap::from(state))?;
+    let entered_at = entered_at.to_string();
+    let swap_id_str = swap_id.to_string();
+
+    sqlx::query!(
+        r#"
+            insert into swap_states (
+                swap_id,
+                entered_at,
+                state
+                ) values (?, ?, ?);
+        "#,
+        swap_id_str,
+        entered_at,
+        swap
+    )
+    .execute(executor)
+    .await?;
+
+    Ok(())
+}
+
+async fn has_swap<'e>(executor: impl SqliteExecutor<'e>, swap_id: Uuid) -> Result<bool> {
+    let swap_id = swap_id.to_string();
+
+    let row = sqlx::query!(
+        r#"
             SELECT 1 as "found!: i64"
             FROM swap_states
             WHERE swap_id = ?
             LIMIT 1
             "#,
-            swap_id
-        )
-        .fetch_optional(&self.pool)
-        .await?;
+        swap_id
+    )
+    .fetch_optional(executor)
+    .await?;
 
-        Ok(row.is_some())
-    }
+    Ok(row.is_some())
 }
 
 impl SqliteDatabase {

@@ -616,8 +616,11 @@ impl ConnectionHandler for Handler {
                     peer = %self.peer_id,
                     connection = %self.connection_id,
                 );
-                self.pending_commits
-                    .push(finish_swap_setup(substream, decision).instrument(span).boxed());
+                self.pending_commits.push(
+                    finish_swap_setup(substream, decision)
+                        .instrument(span)
+                        .boxed(),
+                );
 
                 (
                     state2,
@@ -823,7 +826,10 @@ async fn finish_swap_setup(
 /// Aborts a swap setup when nobody waits for the result.
 async fn abort_unrequested_swap_setup(substream: &mut SetupStream) {
     if let Err(error) = abort_swap_setup(substream).await {
-        tracing::debug!(?error, "Failed to tell Alice that we aborted the swap setup");
+        tracing::debug!(
+            ?error,
+            "Failed to tell Alice that we aborted the swap setup"
+        );
     }
 }
 

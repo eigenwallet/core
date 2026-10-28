@@ -11,6 +11,7 @@ use sigma_fun::HashTranscript;
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::{CrossCurveDLEQ, CrossCurveDLEQProof};
 use std::convert::TryInto;
 use std::sync::LazyLock;
+use std::time::Duration;
 use swap_core::bitcoin;
 use swap_core::monero::{self, MoneroAddressPool};
 use uuid::Uuid;
@@ -309,6 +310,15 @@ pub trait Database {
         swap_id: Uuid,
     ) -> Result<Option<monero::TransferProof>>;
     async fn has_swap(&self, swap_id: Uuid) -> Result<bool>;
+    /// Persists the peer and the first state of a new swap in one transaction.
+    /// Gives up and persists nothing if it cannot get there within `timeout`.
+    async fn insert_new_swap(
+        &self,
+        swap_id: Uuid,
+        peer_id: PeerId,
+        state: State,
+        timeout: Duration,
+    ) -> Result<()>;
 }
 
 #[cfg(test)]

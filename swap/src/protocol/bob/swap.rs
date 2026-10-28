@@ -17,7 +17,7 @@ use anyhow::{Context as AnyContext, Result};
 use bitcoin_wallet::Watchable;
 use monero_interface::PublishTransaction;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use swap_core::bitcoin::ExpiredTimelocks;
 use swap_core::monero::BlockHeight;
 use swap_env::env;
@@ -28,8 +28,7 @@ const PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS: u64 = 90;
 
 // Alice keeps the swap setup open while the user decides
 const _: () = assert!(
-    PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS
-        < swap_p2p::defaults::SWAP_SETUP_DECISION_TIMEOUT.as_secs()
+    PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS < swap_p2p::defaults::SWAP_SETUP_DECISION_TIMEOUT.as_secs()
 );
 
 /// How often we re-publish the Monero redeem transaction while waiting for it to confirm.
@@ -272,6 +271,12 @@ async fn next_state(
                         return Ok(BobState::SafelyAborted);
                     }
 
+                    // Alice gives up on the swap if the lock transaction is not in the
+                    // mempool within `bitcoin_lock_mempool_timeout` after she persisted it.
+                    // Half of it leaves a margin for propagation and clock differences.
+                    let publish_deadline =
+                        SystemTime::now() + env_config.bitcoin_lock_mempool_timeout / 2;
+
                     tracing::debug!(
                         "User approved swap offer. Fetching current Monero blockheight."
                     );
@@ -315,6 +320,8 @@ async fn next_state(
                         monero_wallet_restore_blockheight: BlockHeight {
                             height: monero_wallet_restore_blockheight,
                         },
+                        publish_deadline: Some(publish_deadline),
+                        broadcast_attempted: false,
                     }
                 }
                 Ok(false) => {
@@ -342,6 +349,32 @@ async fn next_state(
             btc_lock_tx_signed,
             state3,
             monero_wallet_restore_blockheight,
+            publish_deadline,
+            broadcast_attempted: false,
+        } => {
+            if publish_deadline.is_some_and(|deadline| SystemTime::now() > deadline) {
+                tracing::warn!(
+                    "Too late to publish the Bitcoin lock transaction, Alice no longer waits for it. It was never broadcast, so we abort the swap."
+                );
+                return Ok(BobState::SafelyAborted);
+            }
+
+            // Saved before we broadcast. From then on the lock transaction might be
+            // public, so we can no longer abort the swap.
+            BobState::BtcLockReadyToPublish {
+                btc_lock_tx_signed,
+                state3,
+                monero_wallet_restore_blockheight,
+                publish_deadline,
+                broadcast_attempted: true,
+            }
+        }
+        BobState::BtcLockReadyToPublish {
+            btc_lock_tx_signed,
+            state3,
+            monero_wallet_restore_blockheight,
+            broadcast_attempted: true,
+            ..
         } => {
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcLockPublishInflight);

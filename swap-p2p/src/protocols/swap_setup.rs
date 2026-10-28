@@ -311,12 +311,17 @@ mod tests {
     async fn messages_sent_back_to_back_are_all_read() {
         let mut sent = framed(futures::io::Cursor::new(Vec::new()));
         write_cbor_message(&mut sent, "message 4").await.unwrap();
-        write_cbor_message(&mut sent, BobDecision::Commit).await.unwrap();
+        write_cbor_message(&mut sent, BobDecision::Commit)
+            .await
+            .unwrap();
         let bytes = sent.into_inner().into_inner();
 
         // Both messages arrive in a single read, so the first read buffers the second one
         let mut received = framed(futures::io::Cursor::new(bytes));
-        let message4 = read_cbor_message::<String>(&mut received).await.unwrap().unwrap();
+        let message4 = read_cbor_message::<String>(&mut received)
+            .await
+            .unwrap()
+            .unwrap();
         let decision = read_cbor_message::<BobDecision>(&mut received)
             .await
             .unwrap()

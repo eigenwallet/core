@@ -1528,31 +1528,19 @@ async fn persist_new_swap(
     db: &(dyn Database + Send + Sync),
     registration: &RegisterSwap,
 ) -> Result<()> {
-    let swap_id = registration.swap_id;
-
-    if db
-        .has_swap(swap_id)
-        .await
-        .context("Failed to check if UUID is already in use")?
-    {
-        // TODO: We should ideally check this during swap setup, not after
-        bail!("UUID is already in use");
-    }
-
-    // Registrations are persisted concurrently, so two of them can both pass the
-    // check above. The primary key on `peers.swap_id` then rejects the second one.
-    // This must stay a plain insert and run before the state is saved.
-    db.insert_peer_id(swap_id, registration.peer_id)
-        .await
-        .context("Failed to save peer-id in database")?;
     let state = AliceState::Started {
         state3: Box::new(registration.state3.clone()),
     };
-    db.insert_latest_state(swap_id, state.into())
-        .await
-        .context("Failed to save the initial swap state in database")?;
 
-    Ok(())
+    // Bob only waits a limited time for our confirmation. If persisting takes longer,
+    // we persist nothing, so we do not run a swap that Bob has already given up on.
+    db.insert_new_swap(
+        registration.swap_id,
+        registration.peer_id,
+        state.into(),
+        swap_p2p::defaults::SWAP_SETUP_PERSIST_TIMEOUT,
+    )
+    .await
 }
 
 async fn check_reserved_lock_inputs(

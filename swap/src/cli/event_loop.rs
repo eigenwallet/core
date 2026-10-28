@@ -9,7 +9,6 @@ use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::Database;
 use crate::protocol::bob::swap::has_already_processed_transfer_proof;
 use crate::protocol::bob::{BobState, State2};
-use swap_p2p::protocols::swap_setup::bob::PendingCommit;
 use anyhow::{Context, Result, anyhow, bail};
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
@@ -23,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::EncryptedSignature;
 use swap_p2p::protocols::redial;
+use swap_p2p::protocols::swap_setup::bob::PendingCommit;
 use uuid::Uuid;
 
 // Timeout for the execution setup protocol within the event loop.
@@ -136,7 +136,8 @@ pub struct EventLoop {
     /// which will resolve once the state machine has "processed" the transfer proof.
     ///
     /// The future will yield the swap_id and the response channel which are used to send an acknowledgement to Alice.
-    pending_transfer_proof_acks: FuturesUnordered<BoxFuture<'static, Option<(Uuid, ResponseChannel<()>)>>>,
+    pending_transfer_proof_acks:
+        FuturesUnordered<BoxFuture<'static, Option<(Uuid, ResponseChannel<()>)>>>,
 
     /// Queue for adding peer addresses to the swarm
     add_peer_address_requests:

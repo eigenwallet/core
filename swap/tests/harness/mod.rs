@@ -1008,6 +1008,23 @@ impl TestContext {
         self.restart_alice().await;
     }
 
+    /// Holds the write lock on Alice's database until the returned connection is dropped.
+    pub async fn lock_alice_database(&self) -> sqlx::SqliteConnection {
+        use sqlx::ConnectOptions;
+
+        let mut connection = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&self.alice_db_path)
+            .connect()
+            .await
+            .unwrap();
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+
+        connection
+    }
+
     pub async fn assert_bob_did_not_lock_btc(&self) {
         assert_eventual_balance(
             self.bob_bitcoin_wallet.as_ref(),
@@ -1804,6 +1821,10 @@ pub mod bob_run_until {
 
     pub fn is_swap_setup_completed(state: &BobState) -> bool {
         matches!(state, BobState::SwapSetupCompleted(..))
+    }
+
+    pub fn is_btc_lock_ready_to_publish(state: &BobState) -> bool {
+        matches!(state, BobState::BtcLockReadyToPublish { .. })
     }
 
     pub fn is_btc_locked(state: &BobState) -> bool {
