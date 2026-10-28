@@ -36,6 +36,7 @@ use swap::common::{self, get_logs, warn_if_outdated};
 use swap::database::{AccessMode, open_db};
 use swap::monero;
 use swap::network::rendezvous::XmrBtcNamespace;
+use swap::network::swap_setup::verification::LockInputVerifier;
 use swap::network::swarm;
 use swap::protocol::alice::{AliceState, HermesFundingPolicy, TipConfig, run};
 use swap::protocol::{Database, State};
@@ -217,7 +218,8 @@ pub async fn main() -> Result<()> {
             }
 
             // Initialize Bitcoin wallet
-            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, false).await?;
+            let bitcoin_wallet =
+                Arc::new(init_bitcoin_wallet(&config, &seed, env_config, false).await?);
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
@@ -300,6 +302,7 @@ pub async fn main() -> Result<()> {
                 kraken_rate.clone(),
                 resume_only,
                 env_config,
+                LockInputVerifier::spawn(bitcoin_wallet.clone()),
                 namespace,
                 &config.network.rendezvous_point,
                 tor_client,
@@ -391,7 +394,6 @@ pub async fn main() -> Result<()> {
                     _ => (None, None),
                 };
 
-            let bitcoin_wallet = Arc::new(bitcoin_wallet);
             let (event_loop, mut swap_receiver, event_loop_service) = EventLoop::new(
                 swarm,
                 metrics,

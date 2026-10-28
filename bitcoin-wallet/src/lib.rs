@@ -44,6 +44,18 @@ impl PsbtPrevoutVerificationError {
 }
 
 #[async_trait::async_trait]
+pub trait VerifyPsbtPrevouts: Send + Sync {
+    /// Verify that every input of the PSBT references an existing unspent
+    /// output (confirmed or in mempool) whose script and value match the
+    /// claimed `witness_utxo`.
+    async fn verify_psbt_prevouts(
+        &self,
+        psbt: &bitcoin::psbt::Psbt,
+        cancel: &tokio::sync::watch::Receiver<bool>,
+    ) -> std::result::Result<(), PsbtPrevoutVerificationError>;
+}
+
+#[async_trait::async_trait]
 pub trait BitcoinWallet: Send + Sync {
     async fn balance(&self) -> Result<Amount>;
 
@@ -82,15 +94,6 @@ pub trait BitcoinWallet: Send + Sync {
         psbt: &bitcoin::psbt::Psbt,
         challenge: utxo_ownership_proof::Challenge,
     ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>>;
-
-    /// Verify that every input of the PSBT references an existing unspent
-    /// output (confirmed or in mempool) whose script and value match the
-    /// claimed `witness_utxo`.
-    async fn verify_psbt_prevouts(
-        &self,
-        psbt: &bitcoin::psbt::Psbt,
-        cancel: &tokio::sync::watch::Receiver<bool>,
-    ) -> std::result::Result<(), PsbtPrevoutVerificationError>;
 
     async fn ensure_broadcasted(
         &self,

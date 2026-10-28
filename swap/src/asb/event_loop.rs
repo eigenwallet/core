@@ -15,7 +15,7 @@ use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, HermesFundingPolicy, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
 use anyhow::{Context, Result, anyhow, bail};
-use bitcoin_wallet::{BitcoinWallet, PsbtPrevoutVerificationError};
+use bitcoin_wallet::BitcoinWallet;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -38,28 +38,13 @@ use swap_env::config::RefundPolicy;
 use swap_env::env;
 use swap_feed::LatestRate;
 use swap_p2p::protocols::cooperative_xmr_redeem_after_punish;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot, watch};
+use tokio::sync::{mpsc, oneshot};
 use tor_hsservice::RunningOnionService;
 use uuid::Uuid;
 
 pub use service::{EventLoopRequest, EventLoopService, OnionServiceStatusInfo};
 
-const LOCK_INPUT_CHECK_INITIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
-const LOCK_INPUT_CHECK_MAX_RETRY_DELAY: Duration = Duration::from_secs(5);
 const LOCK_INPUT_CONFLICT_LOOKBACK: time::Duration = time::Duration::hours(12);
-
-/// Separate from the proof actor: bound network and database work together,
-/// retaining a permit until already-started work has actually finished.
-const MAX_CONCURRENT_LOCK_INPUT_CHECKS: usize = 50;
-
-type LockInputResponder = bmrng::Responder<Result<LockInputReservation, LockInputCheckError>>;
-
-struct CompletedChainCheck {
-    request: LockInputCheck,
-    responder: LockInputResponder,
-    result: Result<(), LockInputCheckError>,
-    permit: OwnedSemaphorePermit,
-}
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop<LR>
@@ -146,9 +131,9 @@ where
         >,
     >,
 
-    /// Swap setup handlers waiting to send Bob's TxLock PSBT.
+    /// Swap setup handlers waiting to send Bob's verified TxLock PSBT.
     /// Each future resolves with the PSBT and the responder, or `None` if the
-    /// swap setup ended before Bob sent Message2.
+    /// swap setup ended before the PSBT was verified.
     #[allow(clippy::type_complexity)]
     inflight_lock_input_requests: FuturesUnordered<
         BoxFuture<
@@ -167,12 +152,7 @@ where
         BoxFuture<'static, Option<(RegisterSwap, bmrng::Responder<Result<()>>, Result<()>)>>,
     >,
 
-    /// Chain checks run without reservations. Successful checks return to the
-    /// event loop for atomic reservation before the database check starts.
-    inflight_lock_chain_checks: FuturesUnordered<BoxFuture<'static, CompletedChainCheck>>,
-    lock_input_check_capacity: Arc<Semaphore>,
-
-    /// Database checks hold a reservation and a capacity permit until completion.
+    /// Database checks hold a reservation until completion.
     /// Each runs in its own task so that loading and decoding swap states does not
     /// block the event loop. The task is not aborted when its join handle is dropped.
     inflight_lock_input_checks: FuturesUnordered<BoxFuture<'static, Result<()>>>,
@@ -302,8 +282,6 @@ where
             inflight_lock_input_requests: Default::default(),
             inflight_swap_registrations: Default::default(),
             inflight_lock_input_checks: Default::default(),
-            inflight_lock_chain_checks: Default::default(),
-            lock_input_check_capacity: Arc::new(Semaphore::new(MAX_CONCURRENT_LOCK_INPUT_CHECKS)),
             reserved_lock_inputs: Default::default(),
             lock_input_release_sender,
             lock_input_releases,
@@ -340,8 +318,6 @@ where
         self.inflight_lock_input_requests
             .push(future::pending().boxed());
         self.inflight_swap_registrations
-            .push(future::pending().boxed());
-        self.inflight_lock_chain_checks
             .push(future::pending().boxed());
         self.inflight_lock_input_checks
             .push(future::pending().boxed());
@@ -724,28 +700,11 @@ where
                 },
 
                 Some(request) = self.inflight_lock_input_requests.next() => {
-                    let Some((request, responder)) = request else { continue; };
-                    if responder.is_closed() || lock_input_check_stopped(&request).is_some() {
-                        let _ = responder.respond(Err(LockInputCheckError::Cancelled));
-                        continue;
-                    }
-                    let Ok(permit) = self.lock_input_check_capacity.clone().try_acquire_owned() else {
-                        let _ = responder.respond(Err(LockInputCheckError::Unavailable("Lock input check capacity exhausted".into())));
-                        continue;
-                    };
-                    let bitcoin_wallet = self.bitcoin_wallet.clone();
-                    self.inflight_lock_chain_checks.push(async move {
-                        let result = verify_psbt_prevouts_with_retry(
-                            bitcoin_wallet.as_ref(), &request.psbt, request.cancel.clone(), request.deadline,
-                        ).await.map_err(LockInputCheckError::from);
-                        CompletedChainCheck { request, responder, result, permit }
-                    }.boxed());
-                },
-                Some(CompletedChainCheck { request, responder, result, permit }) = self.inflight_lock_chain_checks.next() => {
+                    let Some((LockInputCheck { psbt }, responder)) = request else { continue; };
                     if responder.is_closed() { continue; }
                     // This is synchronous: two verified requests cannot claim the same inputs.
                     let reservation = match reserve_verified_lock_inputs(
-                        &request, result, &mut self.reserved_lock_inputs, &self.lock_input_release_sender,
+                        &psbt, &mut self.reserved_lock_inputs, &self.lock_input_release_sender,
                     ) {
                         Ok(reservation) => reservation,
                         Err(error) => {
@@ -755,11 +714,10 @@ where
                     };
                     let db = self.db.clone();
                     let check = tokio::spawn(async move {
-                        // The database future is drained on cancellation too; dropping a
-                        // SQLx future alone would leave its worker running without a permit.
-                        let result = check_reserved_lock_inputs(db.as_ref(), request).await
+                        // Runs to completion even if the requester stopped waiting;
+                        // dropping a SQLx future alone would leave its worker running.
+                        let result = check_for_conflicting_swap_inputs(db.as_ref(), &psbt).await
                             .map(|()| reservation);
-                        let _permit = permit;
                         responder.respond(result)
                             .map_err(|_| anyhow!("Lock input check requester stopped waiting"))
                     });
@@ -1488,27 +1446,14 @@ impl EventLoopHandle {
     }
 }
 
-fn lock_input_check_stopped(request: &LockInputCheck) -> Option<LockInputCheckError> {
-    if *request.cancel.borrow() || request.cancel.has_changed().is_err() {
-        return Some(LockInputCheckError::Cancelled);
-    }
-    (tokio::time::Instant::now() >= request.deadline).then_some(LockInputCheckError::TimedOut)
-}
-
-/// Only chain-verified, live requests may reserve inputs. Called synchronously
-/// by the event loop, so reservation and conflict detection are atomic.
+/// Reserves the inputs of a verified lock PSBT. Called synchronously by the
+/// event loop, so reservation and conflict detection are atomic.
 fn reserve_verified_lock_inputs(
-    request: &LockInputCheck,
-    chain_result: Result<(), LockInputCheckError>,
+    psbt: &bitcoin::PartiallySignedTransaction,
     reserved: &mut HashSet<::bitcoin::OutPoint>,
     release: &mpsc::UnboundedSender<Vec<::bitcoin::OutPoint>>,
 ) -> Result<LockInputReservation, LockInputCheckError> {
-    chain_result?;
-    if let Some(error) = lock_input_check_stopped(request) {
-        return Err(error);
-    }
-    let outpoints: Vec<_> = request
-        .psbt
+    let outpoints: Vec<_> = psbt
         .unsigned_tx
         .input
         .iter()
@@ -1547,48 +1492,6 @@ async fn persist_new_swap(
     .await
 }
 
-async fn check_reserved_lock_inputs(
-    db: &(dyn Database + Send + Sync),
-    mut request: LockInputCheck,
-) -> Result<(), LockInputCheckError> {
-    if let Some(error) = lock_input_check_stopped(&request) {
-        return Err(error);
-    }
-    let check = check_for_conflicting_swap_inputs(db, &request.psbt);
-    tokio::pin!(check);
-    tokio::select! {
-        result = &mut check => result,
-        _ = request.cancel.changed() => {
-            let _ = check.await;
-            Err(LockInputCheckError::Cancelled)
-        }
-        _ = tokio::time::sleep_until(request.deadline) => {
-            let _ = check.await;
-            Err(LockInputCheckError::TimedOut)
-        }
-    }
-}
-
-/// Verify the lock transaction prevouts, retrying only transient Electrum failures.
-async fn verify_psbt_prevouts_with_retry(
-    bitcoin_wallet: &dyn BitcoinWallet,
-    psbt: &bitcoin::PartiallySignedTransaction,
-    cancel: watch::Receiver<bool>,
-    deadline: tokio::time::Instant,
-) -> std::result::Result<(), PsbtPrevoutVerificationError> {
-    retry_lock_input_check(
-        |attempt_cancel| async move {
-            bitcoin_wallet
-                .verify_psbt_prevouts(psbt, &attempt_cancel)
-                .await
-        },
-        deadline,
-        LOCK_INPUT_CHECK_MAX_RETRY_DELAY,
-        cancel,
-    )
-    .await
-}
-
 /// Reject a PSBT if it spends an input used by another swap whose latest
 /// pending-lock state was recorded within the conflict lookback window.
 async fn check_for_conflicting_swap_inputs(
@@ -1621,64 +1524,6 @@ async fn check_for_conflicting_swap_inputs(
     }
 
     Ok(())
-}
-
-async fn retry_lock_input_check<F, Fut>(
-    mut verify: F,
-    deadline: tokio::time::Instant,
-    max_interval: Duration,
-    mut cancel: watch::Receiver<bool>,
-) -> std::result::Result<(), PsbtPrevoutVerificationError>
-where
-    F: FnMut(watch::Receiver<bool>) -> Fut,
-    Fut: std::future::Future<Output = std::result::Result<(), PsbtPrevoutVerificationError>>,
-{
-    use backoff::backoff::Backoff;
-
-    let mut retry_policy = backoff::ExponentialBackoffBuilder::new()
-        .with_initial_interval(LOCK_INPUT_CHECK_INITIAL_RETRY_DELAY.min(max_interval))
-        .with_max_elapsed_time(None)
-        .with_max_interval(max_interval)
-        .build();
-
-    loop {
-        if *cancel.borrow() || cancel.has_changed().is_err() {
-            return Err(PsbtPrevoutVerificationError::Cancelled);
-        }
-        if tokio::time::Instant::now() >= deadline {
-            return Err(PsbtPrevoutVerificationError::TimedOut);
-        }
-
-        let (attempt_cancel, attempt_cancellation) = watch::channel(false);
-        let verification = verify(attempt_cancellation);
-        tokio::pin!(verification);
-        let result = tokio::select! {
-            result = &mut verification => result,
-            _ = cancel.changed() => {
-                attempt_cancel.send_replace(true);
-                // Drain started RPCs before acknowledging cancellation to the actor.
-                let _ = verification.await;
-                return Err(PsbtPrevoutVerificationError::Cancelled);
-            }
-            _ = tokio::time::sleep_until(deadline) => {
-                attempt_cancel.send_replace(true);
-                let _ = verification.await;
-                return Err(PsbtPrevoutVerificationError::TimedOut);
-            }
-        };
-        let Err(error) = result else { return Ok(()) };
-        if !error.is_transient() {
-            return Err(error);
-        }
-        let Some(retry_after) = retry_policy.next_backoff() else {
-            return Err(error);
-        };
-        tracing::warn!(%error, retry_in_seconds = retry_after.as_secs_f64(), "Electrum verification failed, retrying");
-        tokio::select! {
-            _ = tokio::time::sleep_until((tokio::time::Instant::now() + retry_after).min(deadline)) => {}
-            _ = cancel.changed() => return Err(PsbtPrevoutVerificationError::Cancelled),
-        }
-    }
 }
 
 /// For a new swap of `swap_amount`, this function calculates how much
@@ -2380,8 +2225,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unverified_inputs_are_never_reserved_and_verified_claims_are_atomic() {
-        let (_cancel, cancellation) = watch::channel(false);
+    async fn reserved_lock_inputs_are_exclusive_until_released() {
         let psbt = bitcoin::PartiallySignedTransaction::from_unsigned_tx(::bitcoin::Transaction {
             version: ::bitcoin::transaction::Version::TWO,
             lock_time: ::bitcoin::absolute::LockTime::ZERO,
@@ -2392,244 +2236,24 @@ mod tests {
             output: vec![],
         })
         .unwrap();
-        let request = LockInputCheck {
-            psbt,
-            cancel: cancellation,
-            deadline: tokio::time::Instant::now() + Duration::from_secs(45),
-        };
         let mut reserved = HashSet::new();
         let (release, mut releases) = mpsc::unbounded_channel();
-        let (chain_reply, chain_result) = oneshot::channel();
-        let pending = tokio::spawn(async move { chain_result.await.unwrap() });
-        // A slow chain lookup has no access to reservations. An honest verified
-        // request can claim these inputs while the fabricated mapping is pending.
-        assert!(reserved.is_empty());
-        let honest =
-            reserve_verified_lock_inputs(&request, Ok(()), &mut reserved, &release).unwrap();
-        chain_reply
-            .send(Err(LockInputCheckError::Invalid(
-                "fabricated outpoint-to-script mapping".into(),
-            )))
-            .unwrap();
-        assert!(
-            reserve_verified_lock_inputs(&request, pending.await.unwrap(), &mut reserved, &release)
-                .is_err()
-        );
+
+        let first = reserve_verified_lock_inputs(&psbt, &mut reserved, &release).unwrap();
         assert_eq!(reserved.len(), 1);
-        // Two successful chain checks still cannot both claim an overlapping input.
-        assert!(reserve_verified_lock_inputs(&request, Ok(()), &mut reserved, &release).is_err());
-        drop(honest);
+        // Two verified requests cannot both claim an overlapping input.
+        assert!(matches!(
+            reserve_verified_lock_inputs(&psbt, &mut reserved, &release),
+            Err(LockInputCheckError::Unavailable(_))
+        ));
+        assert_eq!(reserved.len(), 1);
+
+        drop(first);
         for outpoint in releases.recv().await.unwrap() {
             reserved.remove(&outpoint);
         }
         assert!(reserved.is_empty());
-        assert!(
-            reserve_verified_lock_inputs(
-                &request,
-                Err(LockInputCheckError::Invalid("invalid".into())),
-                &mut reserved,
-                &release
-            )
-            .is_err()
-        );
-        assert!(reserved.is_empty());
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn cancelled_or_expired_verified_requests_do_not_reserve_inputs() {
-        let (cancel, cancellation) = watch::channel(false);
-        let psbt = bitcoin::PartiallySignedTransaction::from_unsigned_tx(::bitcoin::Transaction {
-            version: ::bitcoin::transaction::Version::TWO,
-            lock_time: ::bitcoin::absolute::LockTime::ZERO,
-            input: vec![::bitcoin::TxIn {
-                previous_output: ::bitcoin::OutPoint::null(),
-                ..Default::default()
-            }],
-            output: vec![],
-        })
-        .unwrap();
-        let request = LockInputCheck {
-            psbt,
-            cancel: cancellation,
-            deadline: tokio::time::Instant::now() + Duration::from_secs(45),
-        };
-        let mut reserved = HashSet::new();
-        let (release, _releases) = mpsc::unbounded_channel();
-        tokio::time::advance(Duration::from_secs(45)).await;
-        assert!(matches!(
-            reserve_verified_lock_inputs(&request, Ok(()), &mut reserved, &release),
-            Err(LockInputCheckError::TimedOut)
-        ));
-        cancel.send_replace(true);
-        assert!(matches!(
-            reserve_verified_lock_inputs(&request, Ok(()), &mut reserved, &release),
-            Err(LockInputCheckError::Cancelled)
-        ));
-        assert!(reserved.is_empty());
-    }
-
-    #[tokio::test]
-    async fn lock_input_check_does_not_retry_invalid_prevout() {
-        let (_cancel, cancellation) = watch::channel(false);
-        let attempts = Arc::new(AtomicUsize::new(0));
-        let attempts_for_check = attempts.clone();
-
-        let result = retry_lock_input_check(
-            move |_cancel| {
-                let attempts = attempts_for_check.clone();
-                async move {
-                    attempts.fetch_add(1, Ordering::SeqCst);
-                    Err(PsbtPrevoutVerificationError::PrevoutNotFound {
-                        outpoint: ::bitcoin::OutPoint::null(),
-                    })
-                }
-            },
-            tokio::time::Instant::now() + Duration::from_millis(100),
-            Duration::from_millis(1),
-            cancellation,
-        )
-        .await;
-
-        assert!(matches!(
-            result,
-            Err(PsbtPrevoutVerificationError::PrevoutNotFound { .. })
-        ));
-        assert_eq!(attempts.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn transient_lock_input_failures_retry_within_one_deadline() {
-        let (_cancel, cancellation) = watch::channel(false);
-        let mut attempts = 0;
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(45);
-        let result = retry_lock_input_check(
-            |_| {
-                attempts += 1;
-                std::future::ready(if attempts < 3 {
-                    Err(PsbtPrevoutVerificationError::Electrum(anyhow!(
-                        "network unavailable"
-                    )))
-                } else {
-                    Ok(())
-                })
-            },
-            deadline,
-            Duration::from_secs(5),
-            cancellation.clone(),
-        )
-        .await;
-        assert!(result.is_ok());
-        assert_eq!(attempts, 3);
-        assert!(tokio::time::Instant::now() < deadline);
-
-        let result = retry_lock_input_check(
-            |_| {
-                std::future::ready(Err(PsbtPrevoutVerificationError::Electrum(anyhow!(
-                    "still offline"
-                ))))
-            },
-            deadline,
-            Duration::from_secs(5),
-            cancellation,
-        )
-        .await;
-        assert!(matches!(
-            result,
-            Err(PsbtPrevoutVerificationError::TimedOut)
-        ));
-        assert_eq!(tokio::time::Instant::now(), deadline);
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn cancelled_lock_input_check_drains_started_work() {
-        check_verification_drains_started_work(true).await;
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn expired_lock_input_check_drains_started_work() {
-        check_verification_drains_started_work(false).await;
-    }
-
-    async fn check_verification_drains_started_work(cancel_requested: bool) {
-        let (cancel, cancellation) = watch::channel(false);
-        let (started, started_rx) = oneshot::channel();
-        let (stopping, stopping_rx) = oneshot::channel();
-        let (release, release_rx) = oneshot::channel();
-        let mut channels = Some((started, stopping, release_rx));
-        let job = tokio::spawn(retry_lock_input_check(
-            move |mut attempt_cancel| {
-                let (started, stopping, release) = channels.take().expect("one attempt only");
-                async move {
-                    started.send(()).unwrap();
-                    attempt_cancel.changed().await.unwrap();
-                    assert!(*attempt_cancel.borrow());
-                    stopping.send(()).unwrap();
-                    release.await.unwrap();
-                    Err(PsbtPrevoutVerificationError::Cancelled)
-                }
-            },
-            tokio::time::Instant::now() + Duration::from_secs(45),
-            Duration::from_secs(5),
-            cancellation,
-        ));
-        started_rx.await.unwrap();
-        if cancel_requested {
-            cancel.send(true).unwrap();
-        } else {
-            tokio::time::advance(Duration::from_secs(45)).await;
-        }
-        stopping_rx.await.unwrap();
-        assert!(
-            !job.is_finished(),
-            "must wait for started RPC work to finish"
-        );
-        release.send(()).unwrap();
-        let result = job.await.unwrap();
-        if cancel_requested {
-            assert!(matches!(
-                result,
-                Err(PsbtPrevoutVerificationError::Cancelled)
-            ));
-        } else {
-            assert!(matches!(
-                result,
-                Err(PsbtPrevoutVerificationError::TimedOut)
-            ));
-        }
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn cancelled_lock_input_check_does_not_start_a_retry() {
-        let (cancel, cancellation) = watch::channel(false);
-        let attempts = Arc::new(AtomicUsize::new(0));
-        let attempts_for_check = attempts.clone();
-        let (started, started_rx) = oneshot::channel();
-        let mut started = Some(started);
-        let job = tokio::spawn(retry_lock_input_check(
-            move |_cancel| {
-                attempts_for_check.fetch_add(1, Ordering::SeqCst);
-                started
-                    .take()
-                    .expect("no retry after cancellation")
-                    .send(())
-                    .unwrap();
-                async {
-                    Err(PsbtPrevoutVerificationError::Electrum(anyhow!(
-                        "unavailable"
-                    )))
-                }
-            },
-            tokio::time::Instant::now() + Duration::from_secs(45),
-            Duration::from_secs(5),
-            cancellation,
-        ));
-        started_rx.await.unwrap();
-        cancel.send(true).unwrap();
-        assert!(matches!(
-            job.await.unwrap(),
-            Err(PsbtPrevoutVerificationError::Cancelled)
-        ));
-        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        reserve_verified_lock_inputs(&psbt, &mut reserved, &release).unwrap();
     }
 
     #[tokio::test]

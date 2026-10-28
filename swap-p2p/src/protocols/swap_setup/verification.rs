@@ -1,22 +1,25 @@
-//! Background verification of Bitcoin lock-input ownership proofs.
+//! Background verification of the inputs of Bob's Bitcoin lock transaction.
 //!
-//! A single [`ProofVerifier`] is shared by all swap setup handlers. Its actor
+//! A single [`LockInputVerifier`] is shared by all swap setup handlers. Its actor
 //! runs at most one job per peer at a time, lets every peer cool down for
 //! [`PEER_COOLDOWN`] after each of its jobs finished and limits the number of
-//! jobs running concurrently across all peers. Ownership signatures are checked
-//! on Tokio's blocking thread pool; this actor has no swap state or chain access.
+//! jobs running concurrently across all peers. A job checks the ownership
+//! signatures on Tokio's blocking thread pool and then queries Electrum for the
+//! spent outputs. Queued jobs do no work. This actor has no swap state.
 
 mod metrics;
 
 use anyhow::Context;
+use bitcoin_wallet::{PsbtPrevoutVerificationError, VerifyPsbtPrevouts};
 use futures::StreamExt;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::FuturesUnordered;
 use libp2p::PeerId;
 use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time::Instant;
 use tracing::Instrument;
@@ -25,28 +28,32 @@ use uuid::Uuid;
 
 /// How long a peer has to wait after one of its jobs finished before its next job starts.
 pub const PEER_COOLDOWN: Duration = Duration::from_secs(5);
-/// Maximum number of jobs running at the same time across all peers.
-pub const MAX_CONCURRENT_JOBS: usize = 50;
-/// Maximum number of queued (not yet running) jobs across all peers.
-pub const MAX_PENDING_JOBS: usize = 128;
+/// Maximum number of jobs doing work (proof verification and Electrum calls)
+/// at the same time across all peers. Queued jobs do not count.
+pub const MAX_CONCURRENT_JOBS: usize = 25;
+/// Maximum number of queued (not yet running) jobs across all peers. Further
+/// jobs are rejected with [`VerificationError::GlobalQueueFull`].
+pub const MAX_PENDING_JOBS: usize = 512;
 /// Maximum number of queued (not yet running) jobs of a single peer.
 pub const MAX_PENDING_JOBS_PER_PEER: usize = 4;
 
 const MAILBOX_CAPACITY: usize = 64;
+const LOCK_INPUT_CHECK_INITIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
+const LOCK_INPUT_CHECK_MAX_RETRY_DELAY: Duration = Duration::from_secs(5);
 
 /// Cloneable handle to the verification actor.
 ///
 /// All clones share the same actor and therefore the same per-peer
 /// serialization, cooldowns and limits.
 #[derive(Clone, Debug)]
-pub struct ProofVerifier {
+pub struct LockInputVerifier {
     mailbox: mpsc::Sender<Request>,
     metrics: metrics::Metrics,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
-    #[error("Proof verifier is not running")]
+    #[error("Lock input verifier is not running")]
     Closed,
     #[error("Too many verification requests are queued for this peer")]
     PeerQueueFull,
@@ -55,16 +62,29 @@ pub enum VerificationError {
     #[error("Verification worker failed")]
     Worker(#[source] JoinError),
     #[error(transparent)]
-    Setup(anyhow::Error),
+    Proofs(anyhow::Error),
+    #[error("Failed to verify lock input prevouts")]
+    Prevouts(#[source] PsbtPrevoutVerificationError),
 }
 
 impl VerificationError {
-    /// Whether verification failed on our side rather than because of the proofs.
+    /// Whether verification failed on our side or might pass later, rather
+    /// than because the inputs are invalid.
     pub fn is_transient(&self) -> bool {
-        matches!(
-            self,
-            Self::Closed | Self::PeerQueueFull | Self::GlobalQueueFull | Self::Worker(_)
-        )
+        match self {
+            Self::Closed | Self::PeerQueueFull | Self::GlobalQueueFull | Self::Worker(_) => true,
+            Self::Proofs(_) => false,
+            // Bob's inputs may not have reached our Electrum servers yet
+            Self::Prevouts(error) => {
+                error.is_transient()
+                    || matches!(
+                        error,
+                        PsbtPrevoutVerificationError::Cancelled
+                            | PsbtPrevoutVerificationError::TimedOut
+                            | PsbtPrevoutVerificationError::PrevoutNotFound { .. }
+                    )
+            }
+        }
     }
 }
 
@@ -98,7 +118,7 @@ impl QueuedJob {
     }
 
     fn span(&self) -> tracing::Span {
-        tracing::info_span!("lock_proof_verification", job_id = %self.id, peer = %self.peer, input_count = self.input_count)
+        tracing::info_span!("lock_input_verification", job_id = %self.id, peer = %self.peer, input_count = self.input_count)
     }
 
     fn is_canceled(&self) -> bool {
@@ -108,10 +128,32 @@ impl QueuedJob {
         self.work.reject(error);
     }
 
+    fn deadline(&self) -> Option<Instant> {
+        self.work.deadline()
+    }
+
+    fn is_expired(&self) -> bool {
+        self.deadline()
+            .is_some_and(|deadline| Instant::now() >= deadline)
+    }
+
     fn log_cancelled(&self, running: usize, queued: usize) {
-        tracing::info!(parent: &self.span(), running, queued, queue_wait_seconds = self.queued_at.elapsed().as_secs_f64(), "Cancelled ownership-proof job before it started");
+        tracing::info!(parent: &self.span(), running, queued, queue_wait_seconds = self.queued_at.elapsed().as_secs_f64(), "Cancelled lock input verification job before it started");
+    }
+
+    /// Answers the job as timed out, like the Electrum retries would have.
+    fn expire(self, running: usize, queued: usize) {
+        tracing::info!(parent: &self.span(), running, queued, queue_wait_seconds = self.queued_at.elapsed().as_secs_f64(), "Lock input verification job expired before it started");
+        self.reject(VerificationError::Prevouts(
+            PsbtPrevoutVerificationError::TimedOut,
+        ));
     }
 }
+
+#[cfg(test)]
+type TestWork = Box<
+    dyn FnOnce(watch::Receiver<bool>) -> BoxFuture<'static, Result<(), VerificationError>> + Send,
+>;
 
 #[allow(clippy::large_enum_variant)]
 enum Job {
@@ -119,11 +161,12 @@ enum Job {
         psbt: bitcoin::PartiallySignedTransaction,
         proofs: Vec<OwnershipProof>,
         challenge: Challenge,
+        deadline: Instant,
         reply: oneshot::Sender<Result<VerifiedPsbt, VerificationError>>,
     },
     #[cfg(test)]
     Test {
-        work: Box<dyn FnOnce() -> anyhow::Result<()> + Send>,
+        work: TestWork,
         reply: oneshot::Sender<Result<(), VerificationError>>,
     },
 }
@@ -143,6 +186,7 @@ struct Actor {
     /// Number of queued jobs across all peers.
     pending: usize,
     metrics: metrics::Metrics,
+    prevout_verifier: Arc<dyn VerifyPsbtPrevouts>,
 }
 
 #[derive(Default)]
@@ -159,22 +203,26 @@ enum PeerState {
     Cooling,
 }
 
-impl ProofVerifier {
+impl LockInputVerifier {
     /// Spawns the verification actor on the current Tokio runtime.
     ///
     /// The actor exits once all handles are dropped and all running work has ended.
-    pub fn spawn() -> Self {
-        Self::spawn_actor().0
+    pub fn spawn(prevout_verifier: Arc<dyn VerifyPsbtPrevouts>) -> Self {
+        Self::spawn_actor(prevout_verifier).0
     }
 
-    /// Verify only ownership signatures. Cancellation never releases a worker
-    /// until its blocking verification has actually ended.
+    /// Verifies the ownership proofs, then that every input spends an existing
+    /// unspent output with the claimed script and value. Transient Electrum
+    /// failures are retried until `deadline`; a job still queued at `deadline`
+    /// never starts. Cancellation never releases a worker until its started
+    /// work has actually ended.
     pub async fn verify_lock(
         &self,
         peer: PeerId,
         psbt: bitcoin::PartiallySignedTransaction,
         proofs: Vec<OwnershipProof>,
         challenge: Challenge,
+        deadline: Instant,
     ) -> Result<VerifiedPsbt, VerificationError> {
         let (reply, response) = oneshot::channel();
         self.request(
@@ -183,6 +231,7 @@ impl ProofVerifier {
                 psbt,
                 proofs,
                 challenge,
+                deadline,
                 reply,
             },
             response,
@@ -194,9 +243,9 @@ impl ProofVerifier {
         self.metrics.register(registry);
     }
 
-    fn spawn_actor() -> (Self, JoinHandle<()>) {
+    fn spawn_actor(prevout_verifier: Arc<dyn VerifyPsbtPrevouts>) -> (Self, JoinHandle<()>) {
         let (mailbox, receiver) = mpsc::channel(MAILBOX_CAPACITY);
-        let actor = Actor::new(receiver);
+        let actor = Actor::new(receiver, prevout_verifier);
         let metrics = actor.metrics.clone();
         let actor = tokio::spawn(actor.run());
         (Self { mailbox, metrics }, actor)
@@ -209,10 +258,10 @@ impl ProofVerifier {
         response: oneshot::Receiver<Result<T, VerificationError>>,
     ) -> Result<T, VerificationError> {
         let job = QueuedJob::new(peer, job);
-        tracing::debug!(parent: &job.span(), "Submitting ownership-proof verification job");
+        tracing::debug!(parent: &job.span(), "Submitting lock input verification job");
         if let Err(error) = self.mailbox.send(Request { peer, job }).await {
             let job = error.0.job;
-            tracing::warn!(parent: &job.span(), "Rejected ownership-proof job because the verifier is closed");
+            tracing::warn!(parent: &job.span(), "Rejected lock input verification job because the verifier is closed");
             self.metrics.rejected("actor_closed");
             return Err(VerificationError::Closed);
         }
@@ -222,7 +271,10 @@ impl ProofVerifier {
 }
 
 impl Actor {
-    fn new(mailbox: mpsc::Receiver<Request>) -> Self {
+    fn new(
+        mailbox: mpsc::Receiver<Request>,
+        prevout_verifier: Arc<dyn VerifyPsbtPrevouts>,
+    ) -> Self {
         Self {
             mailbox,
             peers: HashMap::new(),
@@ -231,6 +283,7 @@ impl Actor {
             running: FuturesUnordered::new(),
             pending: 0,
             metrics: metrics::Metrics::default(),
+            prevout_verifier,
         }
     }
 
@@ -248,13 +301,19 @@ impl Actor {
             }
 
             let next_cooldown_expiry = self.cooldowns.front().map(|(expiry, _)| *expiry);
+            let next_deadline = self
+                .peers
+                .values()
+                .flat_map(|peer| &peer.queue)
+                .filter_map(QueuedJob::deadline)
+                .min();
 
             tokio::select! {
                 request = self.mailbox.recv(), if mailbox_open => {
                     let Some(request) = request else {
                         // No handle is left, so no caller can be waiting for a queued job anymore
                         mailbox_open = false;
-                        self.purge_canceled();
+                        self.purge_stale();
                         continue;
                     };
                     self.on_request(request);
@@ -263,6 +322,8 @@ impl Actor {
                     self.on_finished(peer);
                 }
                 () = sleep_until_expiry(next_cooldown_expiry) => {}
+                // Answers expired queued jobs even while all workers are busy
+                () = sleep_until_expiry(next_deadline) => self.purge_stale(),
             }
         }
     }
@@ -275,11 +336,11 @@ impl Actor {
         }
 
         if self.queue_full(peer).is_some() {
-            self.purge_canceled();
+            self.purge_stale();
         }
 
         if let Some(error) = self.queue_full(peer) {
-            tracing::warn!(parent: &job.span(), %error, running = self.running.len(), queued = self.pending, "Rejected ownership-proof verification job");
+            tracing::warn!(parent: &job.span(), %error, running = self.running.len(), queued = self.pending, "Rejected lock input verification job");
             self.metrics.rejected(match error {
                 VerificationError::PeerQueueFull => "peer_queue_full",
                 _ => "global_queue_full",
@@ -288,7 +349,7 @@ impl Actor {
             return;
         }
 
-        tracing::info!(parent: &job.span(), running = self.running.len(), queued = self.pending + 1, "Queued ownership-proof verification job");
+        tracing::info!(parent: &job.span(), running = self.running.len(), queued = self.pending + 1, "Queued lock input verification job");
         let entry = self.peers.entry(peer).or_default();
         entry.queue.push_back(job);
         self.pending += 1;
@@ -332,14 +393,15 @@ impl Actor {
 
             peer.state = PeerState::Running;
             let metrics = self.metrics.clone();
+            let prevout_verifier = self.prevout_verifier.clone();
             let wait_seconds = job.queued_at.elapsed().as_secs_f64();
             let span = job.span();
             metrics.queue_wait.observe(wait_seconds);
-            tracing::info!(parent: &span, queue_wait_seconds = wait_seconds, running = self.running.len() + 1, queued = self.pending, "Started ownership-proof verification job");
+            tracing::info!(parent: &span, queue_wait_seconds = wait_seconds, running = self.running.len() + 1, queued = self.pending, "Started lock input verification job");
             self.running.push(
                 async move {
                     let started = Instant::now();
-                    let outcome = job.work.run().await;
+                    let outcome = job.work.run(prevout_verifier).await;
                     let duration_seconds = started.elapsed().as_secs_f64();
                     metrics.duration.observe(duration_seconds);
                     metrics.completed(outcome);
@@ -349,7 +411,7 @@ impl Actor {
                         queue_wait_seconds = wait_seconds,
                         running = metrics.running.get(),
                         queued = metrics.queued.get(),
-                        "Ownership-proof job finished; releasing its worker"
+                        "Lock input verification job finished; releasing its worker"
                     );
                     peer_id
                 }
@@ -394,17 +456,15 @@ impl Actor {
         }
     }
 
-    /// Drops queued jobs whose caller stopped waiting and forgets peers left without work.
-    fn purge_canceled(&mut self) {
+    /// Drops queued jobs whose caller stopped waiting, answers expired ones and
+    /// forgets peers left without work.
+    fn purge_stale(&mut self) {
         for peer in self.peers.values_mut() {
-            peer.queue.retain(|job| {
-                if job.is_canceled() {
-                    job.log_cancelled(self.running.len(), self.pending);
-                    self.metrics.completed("cancelled");
-                    return false;
+            for job in std::mem::take(&mut peer.queue) {
+                if let Some(job) = keep_live(job, self.running.len(), self.pending, &self.metrics) {
+                    peer.queue.push_back(job);
                 }
-                true
-            });
+            }
         }
         self.pending = self.peers.values().map(|peer| peer.queue.len()).sum();
 
@@ -424,6 +484,14 @@ impl Job {
         }
     }
 
+    fn deadline(&self) -> Option<Instant> {
+        match self {
+            Job::Lock { deadline, .. } => Some(*deadline),
+            #[cfg(test)]
+            Job::Test { .. } => None,
+        }
+    }
+
     fn reject(self, error: VerificationError) {
         // The caller may have stopped waiting, then there is nobody to tell
         match self {
@@ -437,38 +505,66 @@ impl Job {
         }
     }
 
-    /// Runs the job to completion. Resolves only once all blocking work has
+    /// Runs the job to completion. Resolves only once all started work has
     /// ended, even if the caller stopped waiting in the meantime.
-    async fn run(self) -> &'static str {
+    async fn run(self, prevout_verifier: Arc<dyn VerifyPsbtPrevouts>) -> &'static str {
         // In all arms the caller may have stopped waiting, then the result is dropped
         match self {
             Job::Lock {
                 psbt,
                 proofs,
                 challenge,
+                deadline,
                 reply,
             } => {
-                let verification = verify_blocking(move || {
-                    VerifiedPsbt::verify(psbt, &proofs, challenge)
-                        .context("Failed to verify lock input ownership proofs")
-                });
-                finish_running_job(reply, verification).await
+                finish_running_job(reply, move |cancel| async move {
+                    let verified = verify_blocking(move || {
+                        VerifiedPsbt::verify(psbt, &proofs, challenge)
+                            .context("Failed to verify lock input ownership proofs")
+                    })
+                    .await?;
+                    let psbt = verified.psbt();
+                    let prevout_verifier = prevout_verifier.as_ref();
+                    retry_lock_input_check(
+                        |attempt_cancel| async move {
+                            prevout_verifier
+                                .verify_psbt_prevouts(psbt, &attempt_cancel)
+                                .await
+                        },
+                        deadline,
+                        LOCK_INPUT_CHECK_MAX_RETRY_DELAY,
+                        cancel,
+                    )
+                    .await
+                    .map_err(VerificationError::Prevouts)?;
+                    Ok(verified)
+                })
+                .await
             }
             #[cfg(test)]
-            Job::Test { work, reply } => finish_running_job(reply, verify_blocking(work)).await,
+            Job::Test { work, reply } => finish_running_job(reply, work).await,
         }
     }
 }
 
-async fn finish_running_job<T>(
+/// Runs `verification` and delivers its result. If the caller stops waiting,
+/// the work is told to stop through its cancellation receiver and still awaited.
+async fn finish_running_job<T, F, Fut>(
     mut reply: oneshot::Sender<Result<T, VerificationError>>,
-    verification: impl std::future::Future<Output = Result<T, VerificationError>>,
-) -> &'static str {
+    verification: F,
+) -> &'static str
+where
+    F: FnOnce(watch::Receiver<bool>) -> Fut,
+    Fut: std::future::Future<Output = Result<T, VerificationError>>,
+{
+    let (cancel, cancellation) = watch::channel(false);
+    let verification = verification(cancellation);
     tokio::pin!(verification);
     let result = tokio::select! {
         result = &mut verification => result,
         () = reply.closed() => {
-            tracing::info!("Ownership-proof cancellation requested; waiting for started work to finish");
+            tracing::info!("Lock input verification cancellation requested; waiting for started work to finish");
+            cancel.send_replace(true);
             verification.await
         }
     };
@@ -480,17 +576,77 @@ fn finish_job<T>(
     result: Result<T, VerificationError>,
 ) -> &'static str {
     if let Err(error) = &result {
-        tracing::warn!(error = %format!("{error:#}"), "Ownership-proof verification failed");
+        tracing::warn!(error = %format!("{error:#}"), "Lock input verification failed");
     }
     let outcome = match &result {
         Ok(_) => "success",
         Err(VerificationError::Worker(_)) => "worker_failure",
+        Err(error) if error.is_transient() => "inconclusive",
         Err(_) => "invalid",
     };
     if reply.send(result).is_err() {
         "cancelled"
     } else {
         outcome
+    }
+}
+
+/// Retries only transient Electrum failures until `deadline`.
+async fn retry_lock_input_check<F, Fut>(
+    mut verify: F,
+    deadline: Instant,
+    max_interval: Duration,
+    mut cancel: watch::Receiver<bool>,
+) -> Result<(), PsbtPrevoutVerificationError>
+where
+    F: FnMut(watch::Receiver<bool>) -> Fut,
+    Fut: std::future::Future<Output = Result<(), PsbtPrevoutVerificationError>>,
+{
+    use backoff::backoff::Backoff;
+
+    let mut retry_policy = backoff::ExponentialBackoffBuilder::new()
+        .with_initial_interval(LOCK_INPUT_CHECK_INITIAL_RETRY_DELAY.min(max_interval))
+        .with_max_elapsed_time(None)
+        .with_max_interval(max_interval)
+        .build();
+
+    loop {
+        if *cancel.borrow() || cancel.has_changed().is_err() {
+            return Err(PsbtPrevoutVerificationError::Cancelled);
+        }
+        if Instant::now() >= deadline {
+            return Err(PsbtPrevoutVerificationError::TimedOut);
+        }
+
+        let (attempt_cancel, attempt_cancellation) = watch::channel(false);
+        let verification = verify(attempt_cancellation);
+        tokio::pin!(verification);
+        let result = tokio::select! {
+            result = &mut verification => result,
+            _ = cancel.changed() => {
+                attempt_cancel.send_replace(true);
+                // Drain started RPCs before the worker is released.
+                let _ = verification.await;
+                return Err(PsbtPrevoutVerificationError::Cancelled);
+            }
+            _ = tokio::time::sleep_until(deadline) => {
+                attempt_cancel.send_replace(true);
+                let _ = verification.await;
+                return Err(PsbtPrevoutVerificationError::TimedOut);
+            }
+        };
+        let Err(error) = result else { return Ok(()) };
+        if !error.is_transient() {
+            return Err(error);
+        }
+        let retry_after = retry_policy
+            .next_backoff()
+            .expect("backoff without a maximum elapsed time to never stop");
+        tracing::warn!(%error, retry_in_seconds = retry_after.as_secs_f64(), "Electrum verification failed, retrying");
+        tokio::select! {
+            _ = tokio::time::sleep_until((Instant::now() + retry_after).min(deadline)) => {}
+            _ = cancel.changed() => return Err(PsbtPrevoutVerificationError::Cancelled),
+        }
     }
 }
 
@@ -502,10 +658,11 @@ async fn verify_blocking<T: Send + 'static>(
     tokio::task::spawn_blocking(move || span.in_scope(work))
         .await
         .map_err(VerificationError::Worker)?
-        .map_err(VerificationError::Setup)
+        .map_err(VerificationError::Proofs)
 }
 
-/// Pops queued jobs until one whose caller is still waiting is found.
+/// Pops queued jobs until one whose caller is still waiting and whose deadline
+/// has not passed is found. Skipped jobs are answered without taking a worker.
 fn pop_live_job(
     queue: &mut VecDeque<QueuedJob>,
     pending: &mut usize,
@@ -513,14 +670,33 @@ fn pop_live_job(
 ) -> Option<QueuedJob> {
     while let Some(job) = queue.pop_front() {
         *pending -= 1;
-        if !job.is_canceled() {
+        if let Some(job) = keep_live(job, metrics.running.get() as usize, *pending, metrics) {
             return Some(job);
         }
-        job.log_cancelled(metrics.running.get() as usize, *pending);
-        metrics.completed("cancelled");
     }
 
     None
+}
+
+/// Returns the job unless its caller stopped waiting or its deadline passed,
+/// in which case it is accounted for and answered if anyone is waiting.
+fn keep_live(
+    job: QueuedJob,
+    running: usize,
+    queued: usize,
+    metrics: &metrics::Metrics,
+) -> Option<QueuedJob> {
+    if job.is_canceled() {
+        job.log_cancelled(running, queued);
+        metrics.completed("cancelled");
+        return None;
+    }
+    if job.is_expired() {
+        job.expire(running, queued);
+        metrics.completed("expired");
+        return None;
+    }
+    Some(job)
 }
 
 /// Sleeps until `expiry`, or forever if there is none.
@@ -535,7 +711,9 @@ async fn sleep_until_expiry(expiry: Option<Instant>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::anyhow;
     use std::collections::HashSet;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::sync::mpsc::error::TryRecvError;
 
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -549,7 +727,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn metrics_track_capacity_queueing_and_cancelled_work_until_it_finishes() {
-        let (verifier, actor) = ProofVerifier::spawn_actor();
+        let (verifier, actor) = LockInputVerifier::spawn_actor(stub_prevouts());
         let metrics = verifier.metrics.clone();
         let mut registry = prometheus_client::registry::Registry::default();
         verifier.register_metrics(&mut registry);
@@ -578,7 +756,9 @@ mod tests {
         let mut text = String::new();
         prometheus_client::encoding::text::encode(&mut text, &registry).unwrap();
         assert!(
-            text.contains("lock_proof_verification_capacity 50"),
+            text.contains(&format!(
+                "lock_proof_verification_capacity {MAX_CONCURRENT_JOBS}"
+            )),
             "{text}"
         );
         assert!(
@@ -594,7 +774,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn cloned_handles_share_serialization_and_cooldown_starts_after_completion() {
-        let verifier = ProofVerifier::spawn();
+        let verifier = LockInputVerifier::spawn(stub_prevouts());
         let other_handle = verifier.clone();
         let mut events = Events::new();
         let peer = PeerId::random();
@@ -625,7 +805,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn cooldown_starts_after_failed_job() {
-        let verifier = ProofVerifier::spawn();
+        let verifier = LockInputVerifier::spawn(stub_prevouts());
         let mut events = Events::new();
         let peer = PeerId::random();
 
@@ -642,7 +822,7 @@ mod tests {
             .unwrap();
         let result = failing_job.await.unwrap();
         assert!(
-            matches!(result, Err(VerificationError::Setup(_))),
+            matches!(result, Err(VerificationError::Proofs(_))),
             "{result:?}"
         );
         let failed_at = Instant::now();
@@ -657,7 +837,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn other_peers_progress_while_a_peer_cools_down() {
-        let verifier = ProofVerifier::spawn();
+        let verifier = LockInputVerifier::spawn(stub_prevouts());
         let mut events = Events::new();
         let alice = PeerId::random();
         let bob = PeerId::random();
@@ -692,7 +872,7 @@ mod tests {
     async fn at_most_max_concurrent_jobs_run_at_once() {
         let labels: Vec<_> = (0..=MAX_CONCURRENT_JOBS).map(|i| format!("p{i}")).collect();
 
-        let verifier = ProofVerifier::spawn();
+        let verifier = LockInputVerifier::spawn(stub_prevouts());
         let mut events = Events::new();
 
         let mut gates = HashMap::new();
@@ -732,7 +912,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn canceled_queued_job_is_skipped() {
-        let verifier = ProofVerifier::spawn();
+        let verifier = LockInputVerifier::spawn(stub_prevouts());
         let mut events = Events::new();
         let peer = PeerId::random();
 
@@ -765,7 +945,7 @@ mod tests {
     async fn dropped_caller_keeps_worker_slot_until_blocking_work_ends() {
         let labels: Vec<_> = (0..MAX_CONCURRENT_JOBS).map(|i| format!("p{i}")).collect();
 
-        let verifier = ProofVerifier::spawn();
+        let verifier = LockInputVerifier::spawn(stub_prevouts());
         let mut events = Events::new();
         let peers: Vec<_> = labels.iter().map(|_| PeerId::random()).collect();
 
@@ -812,7 +992,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn per_peer_queue_is_bounded_by_live_requests() {
-        let verifier = ProofVerifier::spawn();
+        let verifier = LockInputVerifier::spawn(stub_prevouts());
         let mut events = Events::new();
         let peer = PeerId::random();
 
@@ -847,7 +1027,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn global_queue_is_bounded_by_live_requests() {
-        let verifier = ProofVerifier::spawn();
+        let verifier = LockInputVerifier::spawn(stub_prevouts());
         let mut events = Events::new();
 
         let _gates: Vec<_> = (0..MAX_CONCURRENT_JOBS)
@@ -886,7 +1066,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn idle_peers_are_forgotten_once_cooled_down() {
         let (_mailbox, receiver) = mpsc::channel(1);
-        let mut actor = Actor::new(receiver);
+        let mut actor = Actor::new(receiver, stub_prevouts());
         let peer = PeerId::random();
 
         let (reply, _response) = oneshot::channel();
@@ -895,7 +1075,7 @@ mod tests {
             job: QueuedJob::new(
                 peer,
                 Job::Test {
-                    work: Box::new(|| Ok(())),
+                    work: Box::new(|_| async { Ok(()) }.boxed()),
                     reply,
                 },
             ),
@@ -918,7 +1098,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn actor_exits_once_handles_are_dropped_and_running_work_ended() {
-        let (verifier, actor) = ProofVerifier::spawn_actor();
+        let (verifier, actor) = LockInputVerifier::spawn_actor(stub_prevouts());
         let mut events = Events::new();
         let peer = PeerId::random();
 
@@ -945,11 +1125,226 @@ mod tests {
         );
     }
 
-    impl ProofVerifier {
+    #[tokio::test(start_paused = true)]
+    async fn dropped_caller_cancels_async_work_and_keeps_worker_until_it_ends() {
+        let (verifier, actor) = LockInputVerifier::spawn_actor(stub_prevouts());
+        let (started, started_rx) = oneshot::channel();
+        let (stopping, stopping_rx) = oneshot::channel();
+        let (release, release_rx) = oneshot::channel();
+        let caller = tokio::spawn({
+            let verifier = verifier.clone();
+            async move {
+                verifier
+                    .run_async_test_job(PeerId::random(), move |mut cancel| {
+                        async move {
+                            started.send(()).unwrap();
+                            cancel.changed().await.unwrap();
+                            stopping.send(()).unwrap();
+                            release_rx.await.unwrap();
+                            Ok(())
+                        }
+                        .boxed()
+                    })
+                    .await
+            }
+        });
+        started_rx.await.unwrap();
+
+        caller.abort();
+        stopping_rx.await.unwrap();
+        drop(verifier);
+        settle().await;
+        assert!(
+            !actor.is_finished(),
+            "cancellation must not free a busy worker"
+        );
+
+        release.send(()).unwrap();
+        actor.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn lock_input_check_does_not_retry_missing_prevout() {
+        let (_cancel, cancellation) = watch::channel(false);
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_for_check = attempts.clone();
+
+        let result = retry_lock_input_check(
+            move |_cancel| {
+                let attempts = attempts_for_check.clone();
+                async move {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                    Err(PsbtPrevoutVerificationError::PrevoutNotFound {
+                        outpoint: ::bitcoin::OutPoint::null(),
+                    })
+                }
+            },
+            Instant::now() + Duration::from_millis(100),
+            Duration::from_millis(1),
+            cancellation,
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(PsbtPrevoutVerificationError::PrevoutNotFound { .. })
+        ));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn transient_lock_input_failures_retry_within_one_deadline() {
+        let (_cancel, cancellation) = watch::channel(false);
+        let mut attempts = 0;
+        let deadline = Instant::now() + Duration::from_secs(45);
+        let result = retry_lock_input_check(
+            |_| {
+                attempts += 1;
+                std::future::ready(if attempts < 3 {
+                    Err(PsbtPrevoutVerificationError::Electrum(anyhow!(
+                        "network unavailable"
+                    )))
+                } else {
+                    Ok(())
+                })
+            },
+            deadline,
+            Duration::from_secs(5),
+            cancellation.clone(),
+        )
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(attempts, 3);
+        assert!(Instant::now() < deadline);
+
+        let result = retry_lock_input_check(
+            |_| {
+                std::future::ready(Err(PsbtPrevoutVerificationError::Electrum(anyhow!(
+                    "still offline"
+                ))))
+            },
+            deadline,
+            Duration::from_secs(5),
+            cancellation,
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(PsbtPrevoutVerificationError::TimedOut)
+        ));
+        assert_eq!(Instant::now(), deadline);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelled_lock_input_check_drains_started_work() {
+        check_verification_drains_started_work(true).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn expired_lock_input_check_drains_started_work() {
+        check_verification_drains_started_work(false).await;
+    }
+
+    async fn check_verification_drains_started_work(cancel_requested: bool) {
+        let (cancel, cancellation) = watch::channel(false);
+        let (started, started_rx) = oneshot::channel();
+        let (stopping, stopping_rx) = oneshot::channel();
+        let (release, release_rx) = oneshot::channel();
+        let mut channels = Some((started, stopping, release_rx));
+        let job = tokio::spawn(retry_lock_input_check(
+            move |mut attempt_cancel| {
+                let (started, stopping, release) = channels.take().expect("one attempt only");
+                async move {
+                    started.send(()).unwrap();
+                    attempt_cancel.changed().await.unwrap();
+                    assert!(*attempt_cancel.borrow());
+                    stopping.send(()).unwrap();
+                    release.await.unwrap();
+                    Err(PsbtPrevoutVerificationError::Cancelled)
+                }
+            },
+            Instant::now() + Duration::from_secs(45),
+            Duration::from_secs(5),
+            cancellation,
+        ));
+        started_rx.await.unwrap();
+        if cancel_requested {
+            cancel.send(true).unwrap();
+        } else {
+            tokio::time::advance(Duration::from_secs(45)).await;
+        }
+        stopping_rx.await.unwrap();
+        assert!(
+            !job.is_finished(),
+            "must wait for started RPC work to finish"
+        );
+        release.send(()).unwrap();
+        let result = job.await.unwrap();
+        if cancel_requested {
+            assert!(matches!(
+                result,
+                Err(PsbtPrevoutVerificationError::Cancelled)
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Err(PsbtPrevoutVerificationError::TimedOut)
+            ));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelled_lock_input_check_does_not_start_a_retry() {
+        let (cancel, cancellation) = watch::channel(false);
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_for_check = attempts.clone();
+        let (started, started_rx) = oneshot::channel();
+        let mut started = Some(started);
+        let job = tokio::spawn(retry_lock_input_check(
+            move |_cancel| {
+                attempts_for_check.fetch_add(1, Ordering::SeqCst);
+                started
+                    .take()
+                    .expect("no retry after cancellation")
+                    .send(())
+                    .unwrap();
+                async {
+                    Err(PsbtPrevoutVerificationError::Electrum(anyhow!(
+                        "unavailable"
+                    )))
+                }
+            },
+            Instant::now() + Duration::from_secs(45),
+            Duration::from_secs(5),
+            cancellation,
+        ));
+        started_rx.await.unwrap();
+        cancel.send(true).unwrap();
+        assert!(matches!(
+            job.await.unwrap(),
+            Err(PsbtPrevoutVerificationError::Cancelled)
+        ));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    impl LockInputVerifier {
         async fn run_test_job(
             &self,
             peer: PeerId,
             work: impl FnOnce() -> anyhow::Result<()> + Send + 'static,
+        ) -> Result<(), VerificationError> {
+            self.run_async_test_job(peer, move |_| verify_blocking(work).boxed())
+                .await
+        }
+
+        async fn run_async_test_job(
+            &self,
+            peer: PeerId,
+            work: impl FnOnce(
+                watch::Receiver<bool>,
+            ) -> BoxFuture<'static, Result<(), VerificationError>>
+            + Send
+            + 'static,
         ) -> Result<(), VerificationError> {
             let (reply, response) = oneshot::channel();
             let job = Job::Test {
@@ -959,6 +1354,259 @@ mod tests {
 
             self.request(peer, job, response).await
         }
+    }
+
+    #[tokio::test]
+    async fn invalid_proofs_never_reach_the_prevout_check() {
+        let prevouts = stub_prevouts();
+        let verifier = LockInputVerifier::spawn(prevouts.clone());
+        let (psbt, _, challenge) = signed_lock_inputs();
+        let wrong_challenge = utxo_ownership_proof::challenge(b"other swap");
+        let proofs = vec![utxo_ownership_proof::sign(&secret_key(), wrong_challenge)];
+
+        let error = verifier
+            .verify_lock(PeerId::random(), psbt, proofs, challenge, deadline())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, VerificationError::Proofs(_)), "{error:?}");
+        assert!(!error.is_transient());
+        assert_eq!(prevouts.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn prevout_results_keep_their_classification() {
+        let (result, calls) = verify_lock_with_prevouts(|| Ok(())).await;
+        result.unwrap();
+        assert_eq!(calls, 1);
+
+        let (result, calls) = verify_lock_with_prevouts(|| {
+            Err(PsbtPrevoutVerificationError::ValueMismatch {
+                outpoint: ::bitcoin::OutPoint::null(),
+                actual: ::bitcoin::Amount::from_sat(1),
+                claimed: ::bitcoin::Amount::from_sat(2),
+            })
+        })
+        .await;
+        let error = result.unwrap_err();
+        assert!(
+            matches!(
+                error,
+                VerificationError::Prevouts(PsbtPrevoutVerificationError::ValueMismatch { .. })
+            ),
+            "{error:?}"
+        );
+        assert!(!error.is_transient());
+        assert_eq!(calls, 1);
+
+        // Bob's inputs may not have reached our Electrum servers yet
+        let (result, calls) = verify_lock_with_prevouts(|| {
+            Err(PsbtPrevoutVerificationError::PrevoutNotFound {
+                outpoint: ::bitcoin::OutPoint::null(),
+            })
+        })
+        .await;
+        let error = result.unwrap_err();
+        assert!(
+            matches!(
+                error,
+                VerificationError::Prevouts(PsbtPrevoutVerificationError::PrevoutNotFound { .. })
+            ),
+            "{error:?}"
+        );
+        assert!(error.is_transient());
+        assert_eq!(calls, 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn job_expired_while_queued_is_answered_without_starting() {
+        let prevouts = stub_prevouts();
+        let verifier = LockInputVerifier::spawn(prevouts.clone());
+        let mut events = Events::new();
+        let peer = PeerId::random();
+
+        let (running, release_running) = events.gated("running");
+        let _running_job = submit(&verifier, peer, running);
+        assert_eq!(events.next().await, Started("running".into()));
+
+        // Invalid proofs: a started job would fail with a proof error instead
+        let (psbt, _, challenge) = signed_lock_inputs();
+        let expiring_job = tokio::spawn({
+            let verifier = verifier.clone();
+            async move {
+                verifier
+                    .verify_lock(
+                        peer,
+                        psbt,
+                        vec![],
+                        challenge,
+                        Instant::now() + Duration::from_secs(1),
+                    )
+                    .await
+            }
+        });
+        settle().await;
+        tokio::time::advance(Duration::from_secs(2)).await;
+        release_running.send(Ok(())).unwrap();
+        assert_eq!(events.next().await, Finished("running".into()));
+        let finished_at = Instant::now();
+
+        let error = expiring_job.await.unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error,
+                VerificationError::Prevouts(PsbtPrevoutVerificationError::TimedOut)
+            ),
+            "{error:?}"
+        );
+        assert!(error.is_transient());
+        assert_eq!(prevouts.calls.load(Ordering::SeqCst), 0);
+
+        // The expired job neither leaves the peer stuck nor adds a cooldown
+        let (next, release_next) = events.gated("next");
+        let _next_job = submit(&verifier, peer, next);
+        assert_eq!(events.next().await, Started("next".into()));
+        assert_eq!(Instant::now(), finished_at + PEER_COOLDOWN);
+        release_next.send(Ok(())).unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn queued_job_expires_while_all_workers_are_busy() {
+        let prevouts = stub_prevouts();
+        let verifier = LockInputVerifier::spawn(prevouts.clone());
+        let mut events = Events::new();
+        let _gates: Vec<_> = (0..MAX_CONCURRENT_JOBS)
+            .map(|i| {
+                let (job, gate) = events.gated(format!("r{i}"));
+                submit(&verifier, PeerId::random(), job);
+                gate
+            })
+            .collect();
+        for _ in 0..MAX_CONCURRENT_JOBS {
+            assert!(matches!(events.next().await, Started(_)));
+        }
+
+        // Invalid proofs: a started job would fail with a proof error instead
+        let peer = PeerId::random();
+        let (psbt, _, challenge) = signed_lock_inputs();
+        let expiring_job = tokio::spawn({
+            let verifier = verifier.clone();
+            async move {
+                verifier
+                    .verify_lock(
+                        peer,
+                        psbt,
+                        vec![],
+                        challenge,
+                        Instant::now() + Duration::from_secs(1),
+                    )
+                    .await
+            }
+        });
+        let _queued: Vec<_> = (1..MAX_PENDING_JOBS_PER_PEER)
+            .map(|_| submit(&verifier, peer, || Ok(())))
+            .collect();
+        settle().await;
+        let result = verifier.run_test_job(peer, || Ok(())).await;
+        assert!(
+            matches!(result, Err(VerificationError::PeerQueueFull)),
+            "{result:?}"
+        );
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        settle().await;
+        assert!(expiring_job.is_finished());
+        let error = expiring_job.await.unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error,
+                VerificationError::Prevouts(PsbtPrevoutVerificationError::TimedOut)
+            ),
+            "{error:?}"
+        );
+        assert!(error.is_transient());
+        assert_eq!(prevouts.calls.load(Ordering::SeqCst), 0);
+        events.assert_quiet();
+
+        // The expired job no longer occupies the peer's queue
+        let accepted = submit(&verifier, peer, || Ok(()));
+        settle().await;
+        assert!(!accepted.is_finished());
+    }
+
+    struct StubPrevouts {
+        result: fn() -> Result<(), PsbtPrevoutVerificationError>,
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl VerifyPsbtPrevouts for StubPrevouts {
+        async fn verify_psbt_prevouts(
+            &self,
+            _psbt: &::bitcoin::Psbt,
+            _cancel: &watch::Receiver<bool>,
+        ) -> Result<(), PsbtPrevoutVerificationError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            (self.result)()
+        }
+    }
+
+    fn stub_prevouts() -> Arc<StubPrevouts> {
+        stub_prevouts_returning(|| Ok(()))
+    }
+
+    fn stub_prevouts_returning(
+        result: fn() -> Result<(), PsbtPrevoutVerificationError>,
+    ) -> Arc<StubPrevouts> {
+        Arc::new(StubPrevouts {
+            result,
+            calls: AtomicUsize::new(0),
+        })
+    }
+
+    /// Runs a lock job with valid proofs against a prevout check returning `result`.
+    async fn verify_lock_with_prevouts(
+        result: fn() -> Result<(), PsbtPrevoutVerificationError>,
+    ) -> (Result<VerifiedPsbt, VerificationError>, usize) {
+        let prevouts = stub_prevouts_returning(result);
+        let verifier = LockInputVerifier::spawn(prevouts.clone());
+        let (psbt, proofs, challenge) = signed_lock_inputs();
+        let result = verifier
+            .verify_lock(PeerId::random(), psbt, proofs, challenge, deadline())
+            .await;
+        (result, prevouts.calls.load(Ordering::SeqCst))
+    }
+
+    /// A one-input PSBT with a valid ownership proof for the returned challenge.
+    fn signed_lock_inputs() -> (
+        bitcoin::PartiallySignedTransaction,
+        Vec<OwnershipProof>,
+        Challenge,
+    ) {
+        let secp = ::bitcoin::secp256k1::Secp256k1::new();
+        let public_key = ::bitcoin::CompressedPublicKey(secret_key().public_key(&secp));
+        let transaction = ::bitcoin::Transaction {
+            version: ::bitcoin::transaction::Version::TWO,
+            lock_time: ::bitcoin::absolute::LockTime::ZERO,
+            input: vec![::bitcoin::TxIn::default()],
+            output: vec![],
+        };
+        let mut psbt = bitcoin::PartiallySignedTransaction::from_unsigned_tx(transaction).unwrap();
+        psbt.inputs[0].witness_utxo = Some(::bitcoin::TxOut {
+            value: ::bitcoin::Amount::from_sat(1_000),
+            script_pubkey: ::bitcoin::ScriptBuf::new_p2wpkh(&public_key.wpubkey_hash()),
+        });
+        let challenge = utxo_ownership_proof::challenge(b"swap");
+        let proofs = vec![utxo_ownership_proof::sign(&secret_key(), challenge)];
+        (psbt, proofs, challenge)
+    }
+
+    fn secret_key() -> ::bitcoin::secp256k1::SecretKey {
+        ::bitcoin::secp256k1::SecretKey::from_slice(&[1; 32]).unwrap()
+    }
+
+    fn deadline() -> Instant {
+        Instant::now() + Duration::from_secs(45)
     }
 
     struct Events {
@@ -1004,7 +1652,7 @@ mod tests {
     }
 
     fn submit(
-        verifier: &ProofVerifier,
+        verifier: &LockInputVerifier,
         peer: PeerId,
         work: impl FnOnce() -> anyhow::Result<()> + Send + 'static,
     ) -> JoinHandle<Result<(), VerificationError>> {

@@ -23,6 +23,7 @@ use swap::database::{AccessMode, SqliteDatabase};
 use swap::monero::wallet::no_listener;
 use swap::monero::{MoneroAddressPool, Wallets};
 use swap::network::rendezvous::XmrBtcNamespace;
+use swap::network::swap_setup::verification::LockInputVerifier;
 use swap::network::swarm;
 use swap::protocol::alice::{AliceState, HermesFundingPolicy, Swap, TipConfig};
 use swap::protocol::bob::BobState;
@@ -480,6 +481,7 @@ async fn start_alice(
         latest_rate,
         resume_only,
         env_config,
+        LockInputVerifier::spawn(bitcoin_wallet.clone()),
         XmrBtcNamespace::Testnet,
         &[],
         None,

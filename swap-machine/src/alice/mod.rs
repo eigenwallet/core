@@ -447,6 +447,11 @@ impl State1 {
         })
     }
 
+    fn tx_lock(&self, psbt: bitcoin::Psbt) -> Result<swap_core::bitcoin::TxLock> {
+        swap_core::bitcoin::TxLock::from_psbt(psbt, self.a.public(), self.B, self.btc)
+            .context("Failed to re-construct TxLock from received PSBT")
+    }
+
     pub fn ownership_challenge(&self, psbt: &bitcoin::Psbt) -> utxo_ownership_proof::Challenge {
         crate::common::tx_lock_ownership_challenge(
             self.swap_id,
@@ -456,18 +461,19 @@ impl State1 {
         )
     }
 
+    /// Checks that `psbt` is a lock transaction for this swap. Its inputs are
+    /// not verified here.
+    pub fn check_tx_lock(&self, psbt: &bitcoin::Psbt) -> Result<()> {
+        self.tx_lock(psbt.clone())?;
+        Ok(())
+    }
+
     pub fn receive(self, verified: utxo_ownership_proof::VerifiedPsbt) -> Result<State2> {
         anyhow::ensure!(
             verified.challenge() == self.ownership_challenge(verified.psbt()),
             "Lock ownership proofs were verified for a different swap context"
         );
-        let tx_lock = swap_core::bitcoin::TxLock::from_psbt(
-            verified.into_psbt(),
-            self.a.public(),
-            self.B,
-            self.btc,
-        )
-        .context("Failed to re-construct TxLock from received PSBT")?;
+        let tx_lock = self.tx_lock(verified.into_psbt())?;
 
         Ok(State2 {
             a: self.a,

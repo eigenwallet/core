@@ -1,8 +1,8 @@
 use crate::coin_selection;
 use crate::primitives::{Confirmed, EstimateFeeRate, ScriptStatus, Subscription, Watchable};
 use crate::{
-    BitcoinWallet, BlockHeight, PsbtPrevoutVerificationError, RpcErrorCode, bitcoin_address,
-    parse_rpc_error_code,
+    BitcoinWallet, BlockHeight, PsbtPrevoutVerificationError, RpcErrorCode, VerifyPsbtPrevouts,
+    bitcoin_address, parse_rpc_error_code,
 };
 use anyhow::{Context, Result, anyhow, bail};
 use bdk_chain::CheckPoint;
@@ -2380,6 +2380,17 @@ impl SyncRequestBuilderFactory {
 }
 
 #[async_trait::async_trait]
+impl VerifyPsbtPrevouts for Wallet {
+    async fn verify_psbt_prevouts(
+        &self,
+        psbt: &Psbt,
+        cancel: &watch::Receiver<bool>,
+    ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
+        Wallet::verify_psbt_prevouts(self, psbt, cancel).await
+    }
+}
+
+#[async_trait::async_trait]
 impl BitcoinWallet for Wallet {
     async fn balance(&self) -> Result<Amount> {
         Wallet::balance(self).await
@@ -2437,14 +2448,6 @@ impl BitcoinWallet for Wallet {
         challenge: utxo_ownership_proof::Challenge,
     ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>> {
         Wallet::prove_utxo_ownership(self, psbt, challenge)
-    }
-
-    async fn verify_psbt_prevouts(
-        &self,
-        psbt: &Psbt,
-        cancel: &watch::Receiver<bool>,
-    ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
-        Wallet::verify_psbt_prevouts(self, psbt, cancel).await
     }
 
     async fn ensure_broadcasted(
@@ -3294,14 +3297,6 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         challenge: utxo_ownership_proof::Challenge,
     ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>> {
         Wallet::prove_utxo_ownership(self, psbt, challenge)
-    }
-
-    async fn verify_psbt_prevouts(
-        &self,
-        _psbt: &Psbt,
-        _cancel: &watch::Receiver<bool>,
-    ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
-        unimplemented!("stub method called erroneously")
     }
 
     async fn sync(&self) -> Result<()> {
