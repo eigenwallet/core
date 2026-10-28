@@ -268,8 +268,7 @@ pub trait Database {
     async fn all(&self) -> Result<Vec<(PeerId, Uuid, State)>>;
     /// Returns the Alice swaps whose latest state is `Started` or
     /// `BtcLockTransactionSeen` and was recorded at or after `updated_since`
-    /// (UTC Unix seconds). Filter before decoding state JSON. Skip and log rows
-    /// that cannot be read, so that one bad row does not stop every swap setup.
+    /// (UTC Unix seconds). Rows that cannot be read are logged and skipped.
     async fn get_alice_swaps_with_pending_tx_lock(
         &self,
         updated_since: i64,

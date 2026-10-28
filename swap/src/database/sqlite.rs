@@ -382,8 +382,7 @@ impl Database for SqliteDatabase {
         &self,
         updated_since: i64,
     ) -> Result<Vec<(Uuid, State)>> {
-        // Matches AliceState::pending_tx_lock: Started is persisted once Bob commits
-        // to the swap, the swap setup reserves the inputs until then.
+        // Must match AliceState::pending_tx_lock.
         let rows = sqlx::query!(
             r#"
             -- Find the latest ids on the covering (swap_id, id) index first, so only
@@ -424,8 +423,7 @@ impl Database for SqliteDatabase {
         .fetch_all(&self.pool)
         .await?;
 
-        // A row that cannot be read must not stop every new swap setup. Alice wrote
-        // these rows herself, so a bad row is corruption, not an attack.
+        // Log and skip unreadable rows instead of failing the whole call.
         let result = rows
             .iter()
             .filter_map(|row| {
