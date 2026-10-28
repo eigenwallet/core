@@ -157,8 +157,7 @@ pub enum AliceState {
 
 impl AliceState {
     /// Return the lock transaction while Alice is still waiting for it to
-    /// become confirmed. `Started` is persisted once Bob commits to the swap;
-    /// before that, the swap setup holds an input reservation.
+    /// become confirmed.
     pub fn pending_tx_lock(&self) -> Option<&swap_core::bitcoin::TxLock> {
         match self {
             Self::Started { state3 } | Self::BtcLockTransactionSeen { state3 } => {
