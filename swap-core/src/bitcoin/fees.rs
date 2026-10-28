@@ -174,8 +174,10 @@ impl SwapFeeInputs<'_> {
         let base = rate.fee(max_vsize)?;
         let redeem = self.redeem_multiplier.fee(base)?;
 
-        // Compare redeem with cancel -> full refund (two base fees), or with
-        // cancel -> partial refund -> withhold -> mercy (four when using a deposit).
+        // Fee of the most expensive spending path of the lock output. Redeem pays the
+        // redeem fee. Cancel + full refund pay one base fee each. With a deposit,
+        // cancel + partial refund + withhold + mercy pay one base fee each. All other
+        // paths (early refund, punish, reclaim) chain fewer transactions.
         let longest_path = base
             .checked_mul(if self.deposit == Amount::ZERO { 2 } else { 4 })
             .context("Spending path fee overflow")?
