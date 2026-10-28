@@ -144,6 +144,13 @@ pub struct SwapFees {
     pub redeem: Amount,
 }
 
+/// Measured from the presigned transaction templates.
+struct PresignedSizes {
+    max_vsize: u64,
+    /// Number of presigned transactions on the longest refund path.
+    longest_path_len: u64,
+}
+
 /// All output scripts and keys are agreed before either side signs.
 pub struct SwapFeeInputs<'a> {
     pub a: PublicKey,
@@ -170,16 +177,17 @@ impl SwapFeeInputs<'_> {
         let descriptor = build_shared_output_descriptor(self.a.0, self.b.0)?;
         let shared_script = descriptor.script_pubkey();
         let witness_script = descriptor.explicit_script()?;
-        let max_vsize = self.max_signed_vsize(&shared_script, &witness_script)?;
+        let PresignedSizes {
+            max_vsize,
+            longest_path_len,
+        } = self.presigned_sizes(&shared_script, &witness_script)?;
         let base = rate.fee(max_vsize)?;
         let redeem = self.redeem_multiplier.fee(base)?;
 
-        // Fee of the most expensive spending path of the lock output. Redeem pays the
-        // redeem fee. Cancel + full refund pay one base fee each. With a deposit,
-        // cancel + partial refund + withhold + mercy pay one base fee each. All other
-        // paths (early refund, punish, reclaim) chain fewer transactions.
+        // The most expensive spending path is either redeem or the longest refund path,
+        // whose presigned transactions pay one base fee each.
         let longest_path = base
-            .checked_mul(if self.deposit == Amount::ZERO { 2 } else { 4 })
+            .checked_mul(longest_path_len)
             .context("Spending path fee overflow")?
             .max(redeem);
         ensure!(
@@ -198,7 +206,11 @@ impl SwapFeeInputs<'_> {
         })
     }
 
-    fn max_signed_vsize(&self, shared_script: &Script, witness_script: &Script) -> Result<u64> {
+    fn presigned_sizes(
+        &self,
+        shared_script: &Script,
+        witness_script: &Script,
+    ) -> Result<PresignedSizes> {
         // Values and outpoints do not affect serialized size. Use funded templates
         // with zero fees to measure the actual constructors before validating values.
         let sizing_amount = Amount::ONE_BTC;
@@ -244,6 +256,8 @@ impl SwapFeeInputs<'_> {
             early.inner,
             punish.inner,
         ];
+        // cancel -> full refund
+        let mut longest_path_len = 2;
         // These spending paths exist only when the swap includes an anti-spam deposit.
         if self.deposit != Amount::ZERO {
             let partial = TxPartialRefund::new(
@@ -263,8 +277,10 @@ impl SwapFeeInputs<'_> {
             let withhold = TxWithhold::new(&partial, self.a, self.b, Amount::ZERO)?;
             let mercy = TxMercy::new(&withhold, self.refund_address, Amount::ZERO);
             templates.extend([partial.inner, reclaim.inner, withhold.inner, mercy.inner]);
+            // cancel -> partial refund -> withhold -> mercy
+            longest_path_len = 4;
         }
-        templates
+        let max_vsize = templates
             .into_iter()
             .map(|mut tx| {
                 // Two maximum DER signatures, each including its sighash byte, and
@@ -274,7 +290,11 @@ impl SwapFeeInputs<'_> {
                 tx.vsize() as u64
             })
             .max()
-            .context("No presigned transaction templates")
+            .context("No presigned transaction templates")?;
+        Ok(PresignedSizes {
+            max_vsize,
+            longest_path_len,
+        })
     }
 
     fn validate_funding(&self, base: Amount, redeem: Amount, shared_script: &Script) -> Result<()> {
