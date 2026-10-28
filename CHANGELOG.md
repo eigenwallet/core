@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Breaking protocol change: Prevent transaction pinning of the cancel and refund transactions.
   Both peers must upgrade to start a new swap; existing swaps are not affected.
-  ASB: `maker.btc_redeem_fee_multiplier` is replaced by `maker.btc_swap_fee_rate_multiplier`. Generated configs contain the old key and the asb does not start with it, so remove that line from your config.
+  ASB: `maker.btc_redeem_fee_multiplier` was removed. Generated configs contain it and the asb does not start with it, so remove that line from your config. Two new options set the Bitcoin fees: `maker.btc_swap_fee_rate_multiplier` (default `1.0`) scales the fee rate of all presigned transactions, and `maker.btc_redeem_base_fee_multiplier` (default `"2.50"`) sets the redeem fee relative to the others.
 - Breaking protocol change: Takers prove that they own the inputs of the Bitcoin lock transaction, and makers verify them during swap setup.
 
 ## [4.16.1] - 2026-10-13

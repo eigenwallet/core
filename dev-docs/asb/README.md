@@ -124,7 +124,6 @@ If the option is not set, a new address from the internal wallet is used for eve
 `btc_swap_fee_rate_multiplier` scales the rate Alice proposes for all presigned Bitcoin transactions.
 It defaults to `1.0` and must be between `1.0` and `3.0`.
 Bob rejects rates above three times his own estimate, so a higher multiplier would make every swap setup fail; a multiplier close to `3.0` can still fail when Alice's estimate is higher than Bob's.
-Generated configs contain `btc_redeem_fee_multiplier` even if it was never set, and the asb refuses to start with the old name. Remove that line to use the default, or set `btc_swap_fee_rate_multiplier` instead.
 Bob accepts or rejects this rate against his local limits before signing.
 Neither peer proposes or accepts a rate below 1 sat/vB, regardless of the local estimate.
 Both peers derive one base fee from the largest conservative signed transaction size.
