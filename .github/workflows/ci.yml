@@ -229,6 +229,12 @@ jobs:
           - package: swap
             test_name: swap_rejected_invalid_bitcoin_lock_input
           - package: swap
+            test_name: bob_abandons_swap_setup_before_committing
+          - package: swap
+            test_name: bob_declines_swap_setup
+          - package: swap
+            test_name: bob_does_not_lock_when_alice_fails_to_persist_swap
+          - package: swap
             test_name: swap_rejected_low_bitcoin_lock_fee
           - package: swap
             test_name: partial_refund_bob_restart_detects_withhold

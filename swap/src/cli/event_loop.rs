@@ -9,6 +9,7 @@ use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::Database;
 use crate::protocol::bob::swap::has_already_processed_transfer_proof;
 use crate::protocol::bob::{BobState, State2};
+use swap_p2p::protocols::swap_setup::bob::PendingCommit;
 use anyhow::{Context, Result, anyhow, bail};
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
@@ -79,7 +80,7 @@ pub struct EventLoop {
     // TODO: technically NewSwap.swap_id already contains the id of the swap
     execution_setup_requests: bmrng::unbounded::UnboundedRequestReceiverStream<
         (PeerId, NewSwap, tracing::Span),
-        Result<State2>,
+        Result<(State2, PendingCommit)>,
     >,
 
     // These streams represents outgoing requests that we have to make (queues)
@@ -115,7 +116,7 @@ pub struct EventLoop {
     inflight_swap_setup: HashMap<
         (PeerId, Uuid),
         (
-            bmrng::unbounded::UnboundedResponder<Result<State2>>,
+            bmrng::unbounded::UnboundedResponder<Result<(State2, PendingCommit)>>,
             tracing::Span,
         ),
     >,
@@ -615,10 +616,12 @@ impl EventLoop {
 pub struct EventLoopHandle {
     /// When a (PeerId, NewSwap) tuple is sent into this channel, the EventLoop will:
     /// 1. Trigger the swap setup protocol with the specified peer to negotiate the swap parameters
-    /// 2. Return the resulting State2 if successful
+    /// 2. Return the resulting State2 and the still open setup if successful
     /// 3. Return an anyhow error if the request fails
-    execution_setup_sender:
-        bmrng::unbounded::UnboundedRequestSender<(PeerId, NewSwap, tracing::Span), Result<State2>>,
+    execution_setup_sender: bmrng::unbounded::UnboundedRequestSender<
+        (PeerId, NewSwap, tracing::Span),
+        Result<(State2, PendingCommit)>,
+    >,
 
     /// When a (PeerId, Uuid, EncryptedSignature) tuple is sent into this channel, the EventLoop will:
     /// 1. Send the encrypted signature to the specified peer over the network
@@ -724,13 +727,18 @@ impl EventLoopHandle {
             peer_id,
             swap_id,
             transfer_proof_receiver: Some(transfer_proof_receiver),
+            pending_commit: None,
         })
     }
 
     /// Sets up a swap with the specified peer
     ///
     /// This will retry until the maximum elapsed time is reached. It is therefore fallible.
-    pub async fn setup_swap(&mut self, peer_id: PeerId, swap: NewSwap) -> Result<State2> {
+    pub async fn setup_swap(
+        &mut self,
+        peer_id: PeerId,
+        swap: NewSwap,
+    ) -> Result<(State2, PendingCommit)> {
         let span = tracing::Span::current();
         tracing::debug!(swap = ?swap, %peer_id, "Sending swap setup request");
 
@@ -739,8 +747,8 @@ impl EventLoopHandle {
 
         backoff::future::retry_notify(backoff, || async {
             match self.execution_setup_sender.send_receive((peer_id, swap.clone(), span.clone())).await {
-                Ok(Ok(state2)) => {
-                    Ok(state2)
+                Ok(Ok(negotiated)) => {
+                    Ok(negotiated)
                 }
                 // These are errors thrown by the swap_setup/bob behaviour
                 Ok(Err(err)) => {
@@ -890,6 +898,8 @@ pub struct SwapEventLoopHandle {
     swap_id: Uuid,
     transfer_proof_receiver:
         Option<bmrng::unbounded::UnboundedRequestReceiver<monero::TransferProof, ()>>,
+    // The open swap setup until Bob commits to the swap or aborts it
+    pending_commit: Option<PendingCommit>,
 }
 
 impl SwapEventLoopHandle {
@@ -924,7 +934,32 @@ impl SwapEventLoopHandle {
     }
 
     pub async fn setup_swap(&mut self, swap: NewSwap) -> Result<State2> {
-        self.handle.setup_swap(self.peer_id, swap).await
+        let (state2, pending_commit) = self.handle.setup_swap(self.peer_id, swap).await?;
+        self.pending_commit = Some(pending_commit);
+        Ok(state2)
+    }
+
+    /// Whether the swap setup is still open. It is gone after a restart.
+    pub fn has_pending_swap_setup(&self) -> bool {
+        self.pending_commit.is_some()
+    }
+
+    /// Returns once Alice persisted the swap. Only then may we lock the Bitcoin.
+    pub async fn commit_swap_setup(&mut self) -> Result<()> {
+        self.pending_commit
+            .take()
+            .context("The swap setup with Alice is no longer open")?
+            .commit()
+            .await
+    }
+
+    /// Returns once Alice was told that we decline the swap.
+    pub async fn abort_swap_setup(&mut self) -> Result<()> {
+        self.pending_commit
+            .take()
+            .context("The swap setup with Alice is no longer open")?
+            .abort()
+            .await
     }
 
     pub async fn request_quote(&mut self) -> Result<BidQuote> {

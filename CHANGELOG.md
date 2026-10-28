@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Protocol: Bob commits to or aborts the swap as the last swap setup message, after the user decided whether to lock the Bitcoin.
+  The maker keeps Bob's lock inputs reserved only until then, and persists the swap before Bob may publish the lock transaction.
+  Swap setup is now `/comit/xmr/btc/swap_setup/5.0.0`.
+
 - ASB: Limit Bitcoin lock-input conflict checks to swaps whose latest pending-lock state was recorded in the past 12 hours.
   Filter timestamps in SQL before parsing state JSON.
 

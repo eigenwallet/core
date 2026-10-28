@@ -30,5 +30,10 @@ pub const QUOTE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 // Swap setup
 pub const NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(120);
+/// How long Alice keeps the setup open while Bob's user decides whether to lock the Bitcoin.
+/// Must be longer than the approval timeout of Bob.
+pub const SWAP_SETUP_DECISION_TIMEOUT: Duration = Duration::from_secs(180);
+/// How long Bob waits for Alice to confirm that she persisted the swap.
+pub const SWAP_SETUP_PERSISTED_TIMEOUT: Duration = Duration::from_secs(60);
 pub const SWAP_SETUP_KEEP_ALIVE: Duration = Duration::from_secs(30);
 pub const SWAP_SETUP_CHANNEL_TIMEOUT: Duration = Duration::from_secs(60);

@@ -8,7 +8,7 @@ use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRej
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
 use crate::network::quote::{BidQuote, RefundPolicyWire};
 use crate::network::swap_setup::alice::{
-    LockInputCheck, LockInputCheckError, LockInputReservation, WalletSnapshot,
+    LockInputCheck, LockInputCheckError, LockInputReservation, RegisterSwap, WalletSnapshot,
 };
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
@@ -160,6 +160,13 @@ where
         >,
     >,
 
+    /// Each future resolves once Bob committed to the swap and we tried to
+    /// persist it, or with `None` if the swap setup ended before that.
+    #[allow(clippy::type_complexity)]
+    inflight_swap_registrations: FuturesUnordered<
+        BoxFuture<'static, Option<(RegisterSwap, bmrng::Responder<Result<()>>, Result<()>)>>,
+    >,
+
     /// Chain checks run without reservations. Successful checks return to the
     /// event loop for atomic reservation before the database check starts.
     inflight_lock_chain_checks: FuturesUnordered<BoxFuture<'static, CompletedChainCheck>>,
@@ -291,6 +298,7 @@ where
             pending_quote_controller_responders: Default::default(),
             inflight_wallet_snapshots: Default::default(),
             inflight_lock_input_requests: Default::default(),
+            inflight_swap_registrations: Default::default(),
             inflight_lock_input_checks: Default::default(),
             inflight_lock_chain_checks: Default::default(),
             lock_input_check_capacity: Arc::new(Semaphore::new(MAX_CONCURRENT_LOCK_INPUT_CHECKS)),
@@ -328,6 +336,8 @@ where
         self.inflight_wallet_snapshots
             .push(future::pending().boxed());
         self.inflight_lock_input_requests
+            .push(future::pending().boxed());
+        self.inflight_swap_registrations
             .push(future::pending().boxed());
         self.inflight_lock_chain_checks
             .push(future::pending().boxed());
@@ -379,7 +389,7 @@ where
                     }
 
                     match swarm_event {
-                        SwarmEvent::Behaviour(OutEvent::SwapSetupInitiated { mut send_wallet_snapshot, mut check_lock_inputs }) => {
+                        SwarmEvent::Behaviour(OutEvent::SwapSetupInitiated { mut send_wallet_snapshot, mut check_lock_inputs, mut register_swap }) => {
                             let bitcoin_wallet = self.bitcoin_wallet.clone();
                             let monero_wallet = self.monero_wallet.clone();
                             let external_redeem_address = self.external_redeem_address.clone();
@@ -420,11 +430,14 @@ where
                                 // Wait for the swap setup handler to send Bob's TxLock PSBT
                                 check_lock_inputs.recv().await.ok()
                             }.boxed());
-                        }
-                        SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3, lock_input_reservation}) => {
-                            if let Err(error) = self.handle_execution_setup_done(peer_id, swap_id, state3, lock_input_reservation).await {
-                                tracing::error!(%swap_id, ?error, "Failed to handle execution setup done");
-                            }
+
+                            let db = self.db.clone();
+                            self.inflight_swap_registrations.push(async move {
+                                // Wait for Bob to commit to the swap
+                                let (registration, responder) = register_swap.recv().await.ok()?;
+                                let persisted = persist_new_swap(db.as_ref(), &registration).await;
+                                Some((registration, responder, persisted))
+                            }.boxed());
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapDeclined { peer, error }) => {
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
@@ -695,6 +708,19 @@ where
                     }
                 },
 
+                Some(registration) = self.inflight_swap_registrations.next() => {
+                    let Some((RegisterSwap { peer_id, swap_id, state3, lock_input_reservation }, responder, persisted)) = registration else { continue; };
+                    let result = match persisted {
+                        Ok(()) => self.handle_execution_setup_done(peer_id, swap_id, state3, lock_input_reservation).await,
+                        Err(error) => Err(error),
+                    };
+                    if let Err(error) = &result {
+                        tracing::error!(%swap_id, ?error, "Failed to handle execution setup done");
+                    }
+                    // Bob does not lock his Bitcoin without this confirmation
+                    let _ = responder.respond(result);
+                },
+
                 Some(request) = self.inflight_lock_input_requests.next() => {
                     let Some((request, responder)) = request else { continue; };
                     if responder.is_closed() || lock_input_check_stopped(&request).is_some() {
@@ -955,16 +981,6 @@ where
         state3: State3,
         lock_input_reservation: LockInputReservation,
     ) -> Result<()> {
-        if self
-            .db
-            .has_swap(swap_id)
-            .await
-            .context("Failed to check if UUID is already in use")?
-        {
-            // TODO: We should ideally check this during swap setup, not after
-            return Err(anyhow::anyhow!("UUID is already in use"));
-        }
-
         let handle = self.new_handle(bob_peer_id, swap_id);
 
         let initial_state = AliceState::Started {
@@ -984,10 +1000,6 @@ where
             lock_input_reservation: Some(lock_input_reservation),
         };
 
-        self.db
-            .insert_peer_id(swap_id, bob_peer_id)
-            .await
-            .context("Failed to save peer-id in database")?;
         self.swap_sender
             .send(swap)
             .await
@@ -1508,6 +1520,39 @@ fn reserve_verified_lock_inputs(
     }
     reserved.extend(outpoints.iter().copied());
     Ok(LockInputReservation::new(outpoints, release.clone()))
+}
+
+/// Persists a swap Bob committed to. Bob locks his Bitcoin once we confirm it,
+/// so the swap must survive a restart. Runs outside the event loop.
+async fn persist_new_swap(
+    db: &(dyn Database + Send + Sync),
+    registration: &RegisterSwap,
+) -> Result<()> {
+    let swap_id = registration.swap_id;
+
+    if db
+        .has_swap(swap_id)
+        .await
+        .context("Failed to check if UUID is already in use")?
+    {
+        // TODO: We should ideally check this during swap setup, not after
+        bail!("UUID is already in use");
+    }
+
+    // Registrations are persisted concurrently, so two of them can both pass the
+    // check above. The primary key on `peers.swap_id` then rejects the second one.
+    // This must stay a plain insert and run before the state is saved.
+    db.insert_peer_id(swap_id, registration.peer_id)
+        .await
+        .context("Failed to save peer-id in database")?;
+    let state = AliceState::Started {
+        state3: Box::new(registration.state3.clone()),
+    };
+    db.insert_latest_state(swap_id, state.into())
+        .await
+        .context("Failed to save the initial swap state in database")?;
+
+    Ok(())
 }
 
 async fn check_reserved_lock_inputs(

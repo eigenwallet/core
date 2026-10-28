@@ -30,13 +30,9 @@ pub enum OutEvent {
             swap_setup::alice::LockInputCheck,
             Result<swap_setup::alice::LockInputReservation, swap_setup::alice::LockInputCheckError>,
         >,
-    },
-    SwapSetupCompleted {
-        peer_id: PeerId,
-        swap_id: Uuid,
-        state3: swap_machine::alice::State3,
-        // Held until the swap is persisted so concurrent setups cannot reuse its inputs
-        lock_input_reservation: swap_setup::alice::LockInputReservation,
+        // run_swap_setup sends us the swap once Bob committed to it.
+        // We persist and start the swap, then respond so Bob may lock his Bitcoin.
+        register_swap: bmrng::RequestReceiver<swap_setup::alice::RegisterSwap, anyhow::Result<()>>,
     },
     SwapDeclined {
         peer: PeerId,

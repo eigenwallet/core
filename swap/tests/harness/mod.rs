@@ -991,6 +991,33 @@ impl TestContext {
         self.alice_rpc_server_handle = alice_rpc_server_handle;
     }
 
+    /// Stops Alice, records `swap_id` in her database and restarts her. She then
+    /// fails to persist a new swap with that id.
+    pub async fn make_alice_fail_to_persist_swap(&mut self, swap_id: Uuid) {
+        self.alice_handle.abort();
+        self.alice_rpc_server_handle.abort();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        {
+            let db = SqliteDatabase::open(self.alice_db_path.as_path(), AccessMode::ReadWrite)
+                .await
+                .unwrap();
+            db.insert_peer_id(swap_id, PeerId::random()).await.unwrap();
+        }
+
+        self.restart_alice().await;
+    }
+
+    pub async fn assert_bob_did_not_lock_btc(&self) {
+        assert_eventual_balance(
+            self.bob_bitcoin_wallet.as_ref(),
+            Ordering::Equal,
+            self.bob_starting_balances.btc,
+        )
+        .await
+        .unwrap();
+    }
+
     /// Stops Alice, mutates her persisted state for `swap_id`, writes it back, and
     /// restarts her. Used to simulate a corrupted/malicious swap from Alice's point of view.
     pub async fn corrupt_alice_state(
@@ -1774,6 +1801,10 @@ pub mod alice_run_until {
 
 pub mod bob_run_until {
     use swap::protocol::bob::BobState;
+
+    pub fn is_swap_setup_completed(state: &BobState) -> bool {
+        matches!(state, BobState::SwapSetupCompleted(..))
+    }
 
     pub fn is_btc_locked(state: &BobState) -> bool {
         matches!(state, BobState::BtcLocked { .. })

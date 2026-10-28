@@ -416,9 +416,8 @@ impl Database for SqliteDatabase {
         &self,
         updated_since: i64,
     ) -> Result<Vec<(Uuid, State)>> {
-        // Include the supported serialized Started variant for compatibility with
-        // stored/imported states, matching AliceState::pending_tx_lock. The current
-        // runner first persists BtcLockTransactionSeen and reserves inputs until then.
+        // Matches AliceState::pending_tx_lock: Started is persisted once Bob commits
+        // to the swap, the swap setup reserves the inputs until then.
         let rows = sqlx::query!(
             r#"
             -- Find the latest ids on the covering (swap_id, id) index first, so only

@@ -1,11 +1,14 @@
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
 use crate::protocols::swap_setup::{
-    BlockchainNetwork, SpotPriceError, SpotPriceResponse, protocol,
+    BlockchainNetwork, BobDecision, SpotPriceError, SpotPriceResponse, SwapPersisted, protocol,
 };
 use anyhow::{Context, Result};
 use bitcoin_wallet::BitcoinWallet;
-use futures::AsyncWriteExt;
+use futures::SinkExt;
+use futures::future::BoxFuture;
+use futures::stream::FuturesUnordered;
+use futures::{FutureExt, StreamExt};
 use libp2p::core::upgrade;
 use libp2p::swarm::behaviour::ConnectionEstablished;
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
@@ -26,7 +29,9 @@ use swap_machine::common::{Message1, Message3};
 use tracing::Instrument;
 use uuid::Uuid;
 
-use super::{SpotPriceRequest, read_cbor_message, write_cbor_error, write_cbor_message};
+use super::{
+    SetupStream, SpotPriceRequest, framed, read_cbor_message, write_cbor_error, write_cbor_message,
+};
 
 // TODO: This should use redial::Behaviour to keep connections alive for peers with queued requests
 // TODO: Do not use swap_id as key inside the ConnectionHandler, use another key
@@ -318,10 +323,13 @@ pub struct Handler {
     inflight_substream_negotiations: HashSet<Uuid>,
 
     // Inflight swap setup requests that we have a fully negotiated outbound substream for
-    outbound_streams: FuturesHashSet<Uuid, Result<State2, Error>>,
+    outbound_streams: FuturesHashSet<Uuid, Result<(State2, SetupStream), Error>>,
+
+    // Negotiated swap setups whose substream stays open until Bob commits or aborts
+    pending_commits: FuturesUnordered<BoxFuture<'static, ()>>,
 
     // Queue of swap setup results that we want to notify the Behaviour about
-    to_behaviour: VecDeque<(Uuid, Result<State2>)>,
+    to_behaviour: VecDeque<(Uuid, Result<(State2, PendingCommit)>)>,
 }
 
 impl Handler {
@@ -339,6 +347,7 @@ impl Handler {
             bitcoin_wallet,
             new_swaps: VecDeque::default(),
             outbound_streams: FuturesHashSet::default(),
+            pending_commits: FuturesUnordered::default(),
             to_behaviour: VecDeque::default(),
             inflight_substream_negotiations: HashSet::default(),
         }
@@ -358,12 +367,46 @@ pub struct NewSwap {
 pub struct SwapSetupResult {
     peer: PeerId,
     swap_id: Uuid,
-    result: Result<State2>,
+    result: Result<(State2, PendingCommit)>,
+}
+
+/// The swap setup substream stays open after the negotiation until Bob decides
+/// whether to lock his Bitcoin. Dropping this aborts the swap.
+#[derive(Debug)]
+pub struct PendingCommit {
+    decision: bmrng::RequestSender<Decision, Result<()>>,
+}
+
+#[derive(Debug)]
+enum Decision {
+    Commit,
+    Abort,
+}
+
+impl PendingCommit {
+    /// Returns once Alice persisted the swap. Only then may Bob lock his Bitcoin,
+    /// otherwise Alice would not know the swap and could not refund it early.
+    pub async fn commit(self) -> Result<()> {
+        self.decide(Decision::Commit).await
+    }
+
+    /// Returns once Alice was told that we decline the swap, so she can release
+    /// the reserved inputs and Monero right away.
+    pub async fn abort(self) -> Result<()> {
+        self.decide(Decision::Abort).await
+    }
+
+    async fn decide(self, decision: Decision) -> Result<()> {
+        self.decision
+            .send_receive(decision)
+            .await
+            .context("The swap setup with Alice is no longer open")?
+    }
 }
 
 impl ConnectionHandler for Handler {
     type FromBehaviour = NewSwap;
-    type ToBehaviour = (Uuid, Result<State2>);
+    type ToBehaviour = (Uuid, Result<(State2, PendingCommit)>);
     type InboundProtocol = upgrade::DeniedUpgrade;
     type OutboundProtocol = protocol::SwapSetup;
     type InboundOpenInfo = ();
@@ -387,7 +430,7 @@ impl ConnectionHandler for Handler {
         match event {
             libp2p::swarm::handler::ConnectionEvent::FullyNegotiatedOutbound(
                 libp2p::swarm::handler::FullyNegotiatedOutbound {
-                    protocol: mut substream,
+                    protocol: substream,
                     info,
                 },
             ) => {
@@ -402,8 +445,7 @@ impl ConnectionHandler for Handler {
                 // This runs runs the actual negotiation protocol
                 // It is wrapped in a timeout to protect against the case where the peer does not respond
                 let protocol = tokio::time::timeout(self.timeout, async move {
-                    let result =
-                        run_swap_setup(&mut substream, info, env_config, bitcoin_wallet).await;
+                    let result = run_swap_setup(substream, info, env_config, bitcoin_wallet).await;
 
                     result.map_err(|err| match err {
                         SetupError::Rejected(reason) => Error::SwapRejected(reason),
@@ -499,8 +541,10 @@ impl ConnectionHandler for Handler {
     }
 
     fn connection_keep_alive(&self) -> bool {
-        // Keep alive as long as there are queued swaps our inflight requests
-        !self.new_swaps.is_empty() || self.outbound_streams.len() > 0
+        // Keep alive as long as there are queued swaps, inflight requests or undecided swaps
+        !self.new_swaps.is_empty()
+            || self.outbound_streams.len() > 0
+            || !self.pending_commits.is_empty()
     }
 
     fn poll(
@@ -564,9 +608,30 @@ impl ConnectionHandler for Handler {
 
         // Check if the outbound stream has completed
         while let Poll::Ready(Some((swap_id, result))) = self.outbound_streams.poll_next_unpin(cx) {
+            let result = result.map(|(state2, substream)| {
+                let (decision_sender, decision) = bmrng::channel(1);
+                let span = tracing::info_span!(
+                    "swap_setup",
+                    %swap_id,
+                    peer = %self.peer_id,
+                    connection = %self.connection_id,
+                );
+                self.pending_commits
+                    .push(finish_swap_setup(substream, decision).instrument(span).boxed());
+
+                (
+                    state2,
+                    PendingCommit {
+                        decision: decision_sender,
+                    },
+                )
+            });
             self.to_behaviour
                 .push_back((swap_id, result.map_err(anyhow::Error::from)));
         }
+
+        // Drive the substreams of swaps that wait for the decision of Bob
+        while let Poll::Ready(Some(())) = self.pending_commits.poll_next_unpin(cx) {}
 
         // Notify the Behaviour about any swap setup results
         if let Some(result) = self.to_behaviour.pop_front() {
@@ -599,11 +664,12 @@ impl From<Error> for SetupError {
 
 // TODO: This is protocol and should be moved to another crate (probably swap-machine, swap-core or swap)
 async fn run_swap_setup(
-    mut substream: &mut libp2p::swarm::Stream,
+    substream: libp2p::swarm::Stream,
     new_swap_request: NewSwap,
     env_config: env::Config,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
-) -> Result<State2, SetupError> {
+) -> Result<(State2, SetupStream), SetupError> {
+    let mut substream = framed(substream);
     // Here we request the spot price from Alice
     write_cbor_message(
         &mut substream,
@@ -709,21 +775,96 @@ async fn run_swap_setup(
     .await
     .context("Failed to send state2 message")?;
 
-    substream
-        .flush()
+    tracing::trace!(
+        %new_swap_request.swap_id,
+        "Swap setup negotiated, waiting for the decision of Bob",
+    );
+
+    Ok((state2, substream))
+}
+
+/// Sends the decision of Bob as the last setup message. Anything but a commit
+/// aborts the swap, including when Bob drops the [`PendingCommit`] or does not
+/// decide in time.
+async fn finish_swap_setup(
+    mut substream: SetupStream,
+    mut decision: bmrng::RequestReceiver<Decision, Result<()>>,
+) {
+    let (decision, responder) = match tokio::time::timeout(
+        crate::defaults::SWAP_SETUP_DECISION_TIMEOUT,
+        decision.recv(),
+    )
+    .await
+    {
+        Ok(Ok(received)) => received,
+        Ok(Err(_)) => {
+            tracing::warn!("The swap setup was dropped without a decision, aborting it");
+            abort_unrequested_swap_setup(&mut substream).await;
+            return;
+        }
+        Err(_) => {
+            tracing::warn!("No decision on the swap setup in time, aborting it");
+            abort_unrequested_swap_setup(&mut substream).await;
+            return;
+        }
+    };
+
+    let result = match decision {
+        Decision::Commit => commit_swap_setup(&mut substream).await,
+        Decision::Abort => {
+            tracing::info!("Declined the swap, aborting the swap setup");
+            abort_swap_setup(&mut substream).await
+        }
+    };
+
+    let _ = responder.respond(result);
+}
+
+/// Aborts a swap setup when nobody waits for the result.
+async fn abort_unrequested_swap_setup(substream: &mut SetupStream) {
+    if let Err(error) = abort_swap_setup(substream).await {
+        tracing::debug!(?error, "Failed to tell Alice that we aborted the swap setup");
+    }
+}
+
+async fn commit_swap_setup(
+    substream: &mut SetupStream<impl futures::AsyncRead + futures::AsyncWrite + Unpin>,
+) -> Result<()> {
+    write_cbor_message(substream, BobDecision::Commit)
         .await
-        .context("Failed to flush substream")?;
+        .context("Failed to commit to the swap")?;
+
+    tokio::time::timeout(
+        crate::defaults::SWAP_SETUP_PERSISTED_TIMEOUT,
+        read_cbor_message::<SwapPersisted>(substream),
+    )
+    .await
+    .context("Alice did not confirm the swap in time")?
+    .context("Failed to read the confirmation of Alice")?
+    .context("Alice sent an error instead of confirming the swap")?;
+
+    // Alice persisted the swap, so we are committed. Her reply proves that she
+    // received our Commit, so a failed close cannot have lost anything.
+    if let Err(error) = substream.close().await {
+        tracing::debug!(
+            ?error,
+            "Failed to close the swap setup substream after Alice confirmed the swap"
+        );
+    }
+
+    Ok(())
+}
+
+async fn abort_swap_setup(substream: &mut SetupStream) -> Result<()> {
+    write_cbor_message(substream, BobDecision::Abort)
+        .await
+        .context("Failed to abort the swap")?;
     substream
         .close()
         .await
         .context("Failed to close substream")?;
 
-    tracing::trace!(
-        %new_swap_request.swap_id,
-        "Swap setup completed",
-    );
-
-    Ok(state2)
+    Ok(())
 }
 
 impl From<SpotPriceResponse> for Result<swap_core::monero::Amount, Error> {
@@ -815,3 +956,71 @@ impl From<SwapSetupResult> for out_event::bob::OutEvent {
 // - Case where Connection dies before the swap setup is started
 // - Case where Connection dies during the swap setup protocol
 // TODO: Extract actual protocol logic into a callback of sorts or some type of event/state system
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+    use std::pin::Pin;
+    use std::task::Context as TaskContext;
+
+    /// Replays what Alice sent, accepts everything we write but fails to close.
+    struct CloseFails {
+        from_alice: futures::io::Cursor<Vec<u8>>,
+    }
+
+    impl futures::AsyncRead for CloseFails {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut TaskContext<'_>,
+            buf: &mut [u8],
+        ) -> Poll<io::Result<usize>> {
+            Pin::new(&mut self.from_alice).poll_read(cx, buf)
+        }
+    }
+
+    impl futures::AsyncWrite for CloseFails {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _: &mut TaskContext<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _: &mut TaskContext<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(self: Pin<&mut Self>, _: &mut TaskContext<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()))
+        }
+    }
+
+    async fn substream_from_alice(confirms: bool) -> SetupStream<CloseFails> {
+        let mut from_alice = framed(futures::io::Cursor::new(Vec::new()));
+        if confirms {
+            write_cbor_message(&mut from_alice, SwapPersisted)
+                .await
+                .unwrap();
+        }
+
+        framed(CloseFails {
+            from_alice: futures::io::Cursor::new(from_alice.into_inner().into_inner()),
+        })
+    }
+
+    #[tokio::test]
+    async fn commit_succeeds_when_close_fails_after_alice_confirmed() {
+        let mut substream = substream_from_alice(true).await;
+
+        commit_swap_setup(&mut substream).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn commit_fails_when_alice_does_not_confirm() {
+        let mut substream = substream_from_alice(false).await;
+
+        assert!(commit_swap_setup(&mut substream).await.is_err());
+    }
+}

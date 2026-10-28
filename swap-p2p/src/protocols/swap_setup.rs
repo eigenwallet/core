@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use asynchronous_codec::{Bytes, Framed};
-use futures::{SinkExt, StreamExt};
+use futures::{AsyncRead, AsyncWrite, SinkExt, StreamExt};
 
 use libp2p::swarm::Stream;
 use serde::de::DeserializeOwned;
@@ -23,7 +23,7 @@ pub mod protocol {
 
     pub fn new() -> SwapSetup {
         from_fn(
-            "/comit/xmr/btc/swap_setup/4.0.0",
+            "/comit/xmr/btc/swap_setup/5.0.0",
             Box::new(|socket, _| future::ready(Ok(socket))),
         )
     }
@@ -41,6 +41,18 @@ pub struct BlockchainNetwork {
     #[serde(with = "swap_serde::monero::network")]
     pub monero: monero_address::Network,
 }
+
+/// Bob's last setup message, sent after the user decided whether to lock the Bitcoin.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BobDecision {
+    Commit,
+    Abort,
+}
+
+/// Alice persisted the swap. Bob must not publish the lock transaction without it,
+/// because Alice would not know the swap and could not refund it early.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct SwapPersisted;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpotPriceRequest {
@@ -152,13 +164,24 @@ fn codec() -> unsigned_varint::codec::UviBytes<Bytes> {
     codec
 }
 
-pub async fn read_cbor_message<T>(stream: &mut Stream) -> Result<Result<T, SwapSetupError>>
+/// The swap setup substream. It is framed once for the whole setup, because the
+/// framing buffers what it reads and a message read ahead would otherwise be lost.
+pub type SetupStream<S = Stream> = Framed<S, unsigned_varint::codec::UviBytes<Bytes>>;
+
+pub fn framed<S>(stream: S) -> SetupStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    Framed::new(stream, codec())
+}
+
+pub async fn read_cbor_message<T>(
+    stream: &mut SetupStream<impl AsyncRead + AsyncWrite + Unpin>,
+) -> Result<Result<T, SwapSetupError>>
 where
     T: DeserializeOwned,
 {
-    let mut frame = Framed::new(stream, codec());
-
-    let bytes = frame
+    let bytes = stream
         .next()
         .await
         .context("Failed to read length-prefixed message from stream")??;
@@ -170,7 +193,10 @@ where
     Ok(message)
 }
 
-pub async fn write_cbor_message<T>(stream: &mut Stream, message: T) -> Result<()>
+pub async fn write_cbor_message<T>(
+    stream: &mut SetupStream<impl AsyncRead + AsyncWrite + Unpin>,
+    message: T,
+) -> Result<()>
 where
     T: Serialize,
 {
@@ -178,9 +204,7 @@ where
     let bytes =
         serde_cbor::to_vec(&wrapped).context("Failed to serialize message as bytes using CBOR")?;
 
-    let mut frame = Framed::new(stream, codec());
-
-    frame
+    stream
         .send(Bytes::from(bytes))
         .await
         .context("Failed to write bytes as length-prefixed message")?;
@@ -188,14 +212,15 @@ where
     Ok(())
 }
 
-pub async fn write_cbor_error(stream: &mut Stream, error: SwapSetupError) -> Result<()> {
+pub async fn write_cbor_error(
+    stream: &mut SetupStream<impl AsyncRead + AsyncWrite + Unpin>,
+    error: SwapSetupError,
+) -> Result<()> {
     let wrapped = Err::<(), _>(error);
     let bytes =
         serde_cbor::to_vec(&wrapped).context("Failed to serialize error as bytes using CBOR")?;
 
-    let mut frame = Framed::new(stream, codec());
-
-    frame
+    stream
         .send(Bytes::from(bytes))
         .await
         .context("Failed to write bytes as length-prefixed message")?;
@@ -280,5 +305,24 @@ mod tests {
             std::io::ErrorKind::TimedOut
         );
         assert!(format!("{local_error:#}").contains("private Electrum server details"));
+    }
+
+    #[tokio::test]
+    async fn messages_sent_back_to_back_are_all_read() {
+        let mut sent = framed(futures::io::Cursor::new(Vec::new()));
+        write_cbor_message(&mut sent, "message 4").await.unwrap();
+        write_cbor_message(&mut sent, BobDecision::Commit).await.unwrap();
+        let bytes = sent.into_inner().into_inner();
+
+        // Both messages arrive in a single read, so the first read buffers the second one
+        let mut received = framed(futures::io::Cursor::new(bytes));
+        let message4 = read_cbor_message::<String>(&mut received).await.unwrap().unwrap();
+        let decision = read_cbor_message::<BobDecision>(&mut received)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(message4, "message 4");
+        assert_eq!(decision, BobDecision::Commit);
     }
 }

@@ -24,7 +24,13 @@ use swap_env::env;
 use tokio::select;
 use uuid::Uuid;
 
-const PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS: u64 = 60 * 3;
+const PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS: u64 = 90;
+
+// Alice keeps the swap setup open while the user decides
+const _: () = assert!(
+    PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS
+        < swap_p2p::defaults::SWAP_SETUP_DECISION_TIMEOUT.as_secs()
+);
 
 /// How often we re-publish the Monero redeem transaction while waiting for it to confirm.
 /// The daemon may forget about the transaction (e.g. after a restart) before it is mined.
@@ -76,6 +82,15 @@ pub async fn run_until(
     mut swap: bob::Swap,
     is_target_state: fn(&BobState) -> bool,
 ) -> Result<BobState> {
+    run_swap_until(&mut swap, is_target_state).await
+}
+
+/// Like [`run_until`], but keeps the swap so the caller can continue with it,
+/// e.g. to decide on the swap setup itself.
+pub async fn run_swap_until(
+    swap: &mut bob::Swap,
+    is_target_state: fn(&BobState) -> bool,
+) -> Result<BobState> {
     let mut current_state = swap.state.clone();
 
     while !is_target_state(&current_state) {
@@ -96,10 +111,11 @@ pub async fn run_until(
             "Persisting latest Bob state",
             || {
                 let db = swap.db.clone();
+                let swap_id = swap.id;
                 let state = next_state.clone();
 
                 async move {
-                    db.insert_latest_state(swap.id, state.into())
+                    db.insert_latest_state(swap_id, state.into())
                         .await
                         .map_err(backoff::Error::transient)
                 }
@@ -116,6 +132,8 @@ pub async fn run_until(
 
         current_state = next_state;
     }
+
+    swap.state = current_state.clone();
 
     Ok(current_state)
 }
@@ -198,6 +216,13 @@ async fn next_state(
             BobState::SwapSetupCompleted(state2)
         }
         BobState::SwapSetupCompleted(state2) => {
+            // Alice only persists the swap once we commit to it through the open swap setup.
+            // After a restart the setup is gone, and Alice has released the swap.
+            if !event_loop_handle.has_pending_swap_setup() {
+                tracing::warn!("The swap setup with Alice is no longer open. Aborting the swap.");
+                return Ok(BobState::SafelyAborted);
+            }
+
             // Alice and Bob have exchanged all necessary signatures
             let xmr_receive_amount = state2.xmr;
             let btc_amnesty_amount = state2
@@ -237,6 +262,16 @@ async fn next_state(
 
             match approval_result {
                 Ok(true) => {
+                    // Without the confirmation, Alice might not know the swap
+                    // and could not refund it early. We would then have to wait for the cancel timelock.
+                    if let Err(error) = event_loop_handle.commit_swap_setup().await {
+                        tracing::warn!(
+                            ?error,
+                            "Alice did not confirm the swap. We will not lock the Bitcoin."
+                        );
+                        return Ok(BobState::SafelyAborted);
+                    }
+
                     tracing::debug!(
                         "User approved swap offer. Fetching current Monero blockheight."
                     );
@@ -284,11 +319,17 @@ async fn next_state(
                 }
                 Ok(false) => {
                     tracing::warn!("User denied or timed out on swap offer approval");
+                    if let Err(error) = event_loop_handle.abort_swap_setup().await {
+                        tracing::warn!(?error, "Failed to tell Alice that we declined the swap");
+                    }
 
                     BobState::SafelyAborted
                 }
                 Err(err) => {
                     tracing::warn!(%err, "Failed to get user approval for swap offer. Assuming swap was aborted.");
+                    if let Err(error) = event_loop_handle.abort_swap_setup().await {
+                        tracing::warn!(?error, "Failed to tell Alice that we declined the swap");
+                    }
 
                     BobState::SafelyAborted
                 }
