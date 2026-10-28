@@ -575,7 +575,7 @@ where
                                 "Failed to receive request-response request from peer");
                         }
                         SwarmEvent::Behaviour(OutEvent::Failure {peer, error}) => {
-                            tracing::error!(
+                            tracing::warn!(
                                 %peer,
                                 "Communication error: {:?}", error);
                         }
