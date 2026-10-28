@@ -9,48 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.0.0] - 2026-10-28
 
-- Protocol: Bob commits to or aborts the swap as the last swap setup message, after the user decided whether to lock the Bitcoin.
-  The maker keeps Bob's lock inputs reserved only until then, and persists the swap before Bob may publish the lock transaction.
-  Swap setup is now `/comit/xmr/btc/swap_setup/5.0.0`.
-- Bob no longer publishes the Bitcoin lock transaction once the maker stopped waiting for it, for example after a restart. He only aborts if he never broadcast the transaction.
-
-- ASB: Limit Bitcoin lock-input conflict checks to swaps whose latest pending-lock state was recorded in the past 12 hours.
-  Filter timestamps in SQL before parsing state JSON.
-
-- Report distinct swap setup errors for invalid DLEQ proofs, insufficient or excessive anti-spam deposits, and spending-path fees above the local budget.
-  Local wallet failures during setup remain retryable and are not sent to the maker.
-
-- ASB: Restore the Bitcoin lock fee floor during swap setup.
-  Reject fees below half the maker's local estimate before sending signatures to the taker.
-
-- GUI: Mark makers older than `5.0.0` as incompatible with the new swap setup protocol.
-
-- Protocol: Accept Bitcoin lock transactions with up to five outputs.
-  Exactly one output must pay the agreed swap amount to the shared script; up to four unrelated outputs are allowed.
-
-- ASB: Rename `maker.btc_redeem_fee_multiplier` to `maker.btc_swap_fee_rate_multiplier`.
-  The multiplier now scales the proposed fee rate for all presigned Bitcoin transactions and still defaults to `1.0`.
-  It must be between `1.0` and `3.0`, because takers reject rates above three times their own estimate.
-  Generated configs contain `btc_redeem_fee_multiplier` even if you never set it, and the asb refuses to start with the old name.
-  Remove that line from your config to use the default, or set `btc_swap_fee_rate_multiplier` instead.
-
-- New swaps use v3 cancel and refund transactions and delay refunds until the block after cancel confirms.
-  Alice proposes one fee rate; both peers derive the base fee from the largest conservative signed transaction template.
-  Every presigned transaction pays the base fee except redeem, which defaults to 2.5 times that fee.
-  Makers can configure `maker.btc_redeem_base_fee_multiplier` as an exact quoted decimal from `"2.00"` to `"4.00"` (default `"2.50"`).
-  Both peers validate the multiplier during setup; stored swaps keep their original fees.
-  Bob selects the lock fee and rejects proposals outside his local limits before signing.
-  Setup rejects fee overflow, unfunded paths, dust outputs, and fees above local budgets.
-  The spending-path fee budget is one third of the swap amount, up to 100,000 sats.
-  The cancel timelock and Alice's redeem publication safety margin each increase by six blocks.
-  Both peers must upgrade to start a new swap; stored swaps keep their original fees, signatures, and transaction format.
-
-- Swaps select at most 25 Bitcoin inputs and estimate the spendable swap amount using that same limit.
-  Ordinary sends and withdrawals can still spend all wallet inputs.
-- Breaking protocol change: Takers must now prove ownership of the Bitcoin lock transaction’s inputs, and makers must verify those proofs during swap setup.
-  Both peers must support the updated protocol to start a swap.
-- ASB: Cache swap-setup wallet state. The cache TTL is configured with
-  `maker.wallet_snapshot_cache_ttl_secs` and defaults to 20 seconds.
+- Breaking protocol change: Prevent transaction pinning of the cancel and refund transactions.
+  Both peers must upgrade to start a new swap; existing swaps are not affected.
+  ASB: `maker.btc_redeem_fee_multiplier` is replaced by `maker.btc_swap_fee_rate_multiplier`. Generated configs contain the old key and the asb does not start with it, so remove that line from your config.
+- Breaking protocol change: Takers prove that they own the inputs of the Bitcoin lock transaction, and makers verify them during swap setup.
 
 ## [4.16.1] - 2026-10-13
 
