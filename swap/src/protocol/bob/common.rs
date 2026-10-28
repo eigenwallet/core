@@ -1,10 +1,11 @@
+use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use uuid::Uuid;
 
-use bitcoin_wallet;
+use bitcoin_wallet::{self, BitcoinWallet};
 use swap_machine::bob::{State3, State4, State5};
 
 use crate::cli::SwapEventLoopHandle;
@@ -77,6 +78,26 @@ async fn wait_for_monero_tx_confirmation(
     }
 
     Ok(())
+}
+
+/// Re-publishes `tx` every `republish_interval` if it is no longer in the
+/// mempool or on chain. Never returns; select it against the confirmation wait.
+/// A reorg can evict a transaction: refunds of new swaps are only valid once
+/// tx_cancel is confirmed, so they are dropped while tx_cancel is unconfirmed again.
+pub(super) async fn keep_bitcoin_tx_published(
+    bitcoin_wallet: &dyn BitcoinWallet,
+    swap_id: Uuid,
+    kind: &str,
+    tx: ::bitcoin::Transaction,
+    republish_interval: Duration,
+) -> Infallible {
+    loop {
+        tokio::time::sleep(republish_interval).await;
+
+        if let Err(error) = bitcoin_wallet.ensure_broadcasted(tx.clone(), kind).await {
+            tracing::warn!(%swap_id, kind, error = %format!("{error:#}"), "Failed to re-publish Bitcoin transaction");
+        }
+    }
 }
 
 /// Infallible variant of [`wait_for_monero_tx_confirmation`]: retries

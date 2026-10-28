@@ -10,6 +10,7 @@ use crate::protocol::bob::common::{
     InfallibleVerifyXmrLockTransaction, InfallibleXmrRedeemable, RecvTransferProof,
     WaitForBtcRedeem, WaitForIncomingXmrLockTransaction, WaitForXmrLockTransactionConfirmation,
     XmrLockTransactionValidity, XmrRedeemable, infallible_wait_for_monero_tx_confirmation,
+    keep_bitcoin_tx_published,
 };
 use crate::protocol::bob::*;
 use crate::protocol::{Database, bob};
@@ -35,6 +36,9 @@ const _: () = assert!(
 /// How often we re-publish the Monero redeem transaction while waiting for it to confirm.
 /// The daemon may forget about the transaction (e.g. after a restart) before it is mined.
 const XMR_REDEEM_REPUBLISH_INTERVAL: Duration = Duration::from_secs(60);
+
+/// How often we check that our Bitcoin refund is still in the mempool while waiting for it to confirm.
+const BTC_REFUND_REPUBLISH_INTERVAL: Duration = Duration::from_secs(60);
 
 /// How often we manually check for tx_redeem while also waiting on the wallet subscription.
 const BTC_REDEEM_FORCE_LOOKUP_INTERVAL_SECS: u64 = 120;
@@ -1171,11 +1175,13 @@ async fn next_state(
             .expect("we never stop retrying to refund")
         }
         BobState::BtcRefundPublished(state) => {
+            let signed_tx_refund = state.signed_full_refund_transaction()?;
+
             // Emit a Tauri event
             event_emitter.emit_swap_progress_event(
                 swap_id,
                 TauriSwapProgressEvent::BtcRefundPublished {
-                    btc_refund_txid: state.signed_full_refund_transaction()?.compute_txid(),
+                    btc_refund_txid: signed_tx_refund.compute_txid(),
                 },
             );
 
@@ -1197,7 +1203,6 @@ async fn next_state(
             // BtcRefunded state with the txid of the confirmed transaction
             select! {
                 // Wait for the refund transaction to be confirmed
-                // TODO: Publish the tx_refund transaction anyway
                 _ = tx_refund_status.wait_until_final() => {
                     let tx_refund_txid = tx_refund.txid();
 
@@ -1221,6 +1226,7 @@ async fn next_state(
 
                     BobState::BtcEarlyRefunded(state)
                 },
+                infallible = keep_bitcoin_tx_published(&*bitcoin_wallet, swap_id, "full btc refund", signed_tx_refund, BTC_REFUND_REPUBLISH_INTERVAL) => match infallible {},
             }
         }
         BobState::BtcEarlyRefundPublished(state) => {
@@ -1283,6 +1289,7 @@ async fn next_state(
             // 2. Wait for either refund transaction to be confirmed
 
             let tx_partial_refund = state.construct_tx_partial_refund()?;
+            let signed_tx_partial_refund = state.signed_partial_refund_transaction()?;
             let tx_early_refund = state.construct_tx_early_refund();
 
             let (tx_partial_refund_status, tx_early_refund_status) = tokio::join!(
@@ -1299,6 +1306,7 @@ async fn next_state(
                     tracing::info!("TxEarlyRefund has been confirmed");
                     BobState::BtcEarlyRefunded(state)
                 }
+                infallible = keep_bitcoin_tx_published(&*bitcoin_wallet, swap_id, "partial btc refund", signed_tx_partial_refund, BTC_REFUND_REPUBLISH_INTERVAL) => match infallible {},
             }
         }
         BobState::BtcPartiallyRefunded(state) => {
