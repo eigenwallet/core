@@ -566,6 +566,12 @@ mod tests {
             public_key,
             (::bitcoin::bip32::Fingerprint::default(), Default::default()),
         );
+        psbt.inputs[0].partial_sigs.insert(
+            ::bitcoin::PublicKey::new(public_key),
+            ::bitcoin::ecdsa::Signature::sighash_all(
+                ::bitcoin::secp256k1::ecdsa::Signature::from_compact(&[1; 64]).unwrap(),
+            ),
+        );
         psbt.outputs[0].unknown.insert(key, vec![0; 100]);
 
         let canonical = canonical_received_psbt(psbt).unwrap();
@@ -576,6 +582,7 @@ mod tests {
         assert!(canonical.inputs[0].unknown.is_empty());
         assert!(canonical.inputs[0].non_witness_utxo.is_none());
         assert!(canonical.inputs[0].bip32_derivation.is_empty());
+        assert!(canonical.inputs[0].partial_sigs.is_empty());
         assert!(canonical.outputs[0].unknown.is_empty());
     }
 
