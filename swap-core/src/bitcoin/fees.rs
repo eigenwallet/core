@@ -6,11 +6,8 @@ use serde::{Deserialize, Serialize};
 
 /// Multiplier of the shared base fee, encoded in hundredths on the wire.
 ///
-/// Keep at least a twofold fee margin over cancel, so that redeem can replace an
-/// unconfirmed cancel under the replace-by-fee rules. Refund's confirmation delay
-/// prevents it from contributing CPFP fees to unconfirmed cancel under standard
-/// relay policy. Both peers reject multipliers above 4.00, so that redeem cannot
-/// use most of the spending-path budget.
+/// At least 2.00 so that redeem can replace an unconfirmed cancel via RBF.
+/// At most 4.00 so that redeem cannot use most of the spending-path budget.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
 pub struct RedeemFeeMultiplier(u32);
