@@ -147,6 +147,7 @@ Below an explanation of what each option does:
 | `developer_tip` | Optional donation as a fraction between 0 and 1 (e.g. `0.02` = 2%). Disabled by default. Sent in Monero by adding an extra output to the Monero lock transaction, so no extra transaction and no impact on unlocked UTXOs; privacy preserved. |
 | `btc_swap_fee_rate_multiplier` | Multiplier for the fee rate Alice proposes for all presigned Bitcoin transactions. Defaults to `1.0` and must be between `1.0` and `3.0`. Takers reject rates above three times their own estimate, so a multiplier close to `3.0` can still fail when your estimate is higher than the taker's. This option replaces `btc_redeem_fee_multiplier`. Generated configs contain the old name even if you never set it, and the asb does not start with it. Remove that line to use the default, or set `btc_swap_fee_rate_multiplier` instead. |
 | `btc_redeem_base_fee_multiplier` | Redeem fee relative to the shared base fee that every other presigned transaction pays. Defaults to `"2.50"`. Must be a quoted decimal with at most two meaningful decimal places, between `"2.00"` and `"4.00"`. Values below `"2.00"` would let a cancel transaction block redeem in the mempool. |
+| `wallet_snapshot_cache_ttl_secs` | How long the asb reuses wallet state across swap setup requests, in seconds. This reduces repeated Bitcoin and Monero health checks, Monero balance calls and Bitcoin address generation. Defaults to `20`. |
 
 ### Bitcoin Section
 
