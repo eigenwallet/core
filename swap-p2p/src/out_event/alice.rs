@@ -16,6 +16,8 @@ use crate::protocols::{
 #[derive(Debug)]
 pub enum OutEvent {
     SwapSetupInitiated {
+        // Span of this swap setup. Work it requests from us is logged under it.
+        span: tracing::Span,
         // run_swap_setup in connection handler sends us the amount of
         // Bitcoin Bob wants to send.
         // We respond with a snapshot of our wallets and how much of that

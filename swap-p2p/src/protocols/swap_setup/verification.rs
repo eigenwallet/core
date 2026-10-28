@@ -96,13 +96,12 @@ struct Request {
 struct QueuedJob {
     work: Job,
     queued_at: Instant,
-    id: Uuid,
-    peer: PeerId,
-    input_count: usize,
+    /// Created when the job is submitted, so it is a child of the caller's span.
+    span: tracing::Span,
 }
 
 impl QueuedJob {
-    fn new(peer: PeerId, work: Job) -> Self {
+    fn new(work: Job) -> Self {
         let input_count = match &work {
             Job::Lock { psbt, .. } => psbt.unsigned_tx.input.len(),
             #[cfg(test)]
@@ -111,14 +110,8 @@ impl QueuedJob {
         Self {
             work,
             queued_at: Instant::now(),
-            id: Uuid::new_v4(),
-            peer,
-            input_count,
+            span: tracing::info_span!("lock_input_verification", job_id = %Uuid::new_v4(), input_count),
         }
-    }
-
-    fn span(&self) -> tracing::Span {
-        tracing::info_span!("lock_input_verification", job_id = %self.id, peer = %self.peer, input_count = self.input_count)
     }
 
     fn is_canceled(&self) -> bool {
@@ -138,12 +131,12 @@ impl QueuedJob {
     }
 
     fn log_cancelled(&self, running: usize, queued: usize) {
-        tracing::info!(parent: &self.span(), running, queued, queue_wait_seconds = self.queued_at.elapsed().as_secs_f64(), "Cancelled lock input verification job before it started");
+        tracing::info!(parent: &self.span, running, queued, queue_wait_seconds = self.queued_at.elapsed().as_secs_f64(), "Cancelled lock input verification job before it started");
     }
 
     /// Answers the job as timed out, like the Electrum retries would have.
     fn expire(self, running: usize, queued: usize) {
-        tracing::info!(parent: &self.span(), running, queued, queue_wait_seconds = self.queued_at.elapsed().as_secs_f64(), "Lock input verification job expired before it started");
+        tracing::info!(parent: &self.span, running, queued, queue_wait_seconds = self.queued_at.elapsed().as_secs_f64(), "Lock input verification job expired before it started");
         self.reject(VerificationError::Prevouts(
             PsbtPrevoutVerificationError::TimedOut,
         ));
@@ -257,11 +250,11 @@ impl LockInputVerifier {
         job: Job,
         response: oneshot::Receiver<Result<T, VerificationError>>,
     ) -> Result<T, VerificationError> {
-        let job = QueuedJob::new(peer, job);
-        tracing::debug!(parent: &job.span(), "Submitting lock input verification job");
+        let job = QueuedJob::new(job);
+        tracing::debug!(parent: &job.span, "Submitting lock input verification job");
         if let Err(error) = self.mailbox.send(Request { peer, job }).await {
             let job = error.0.job;
-            tracing::warn!(parent: &job.span(), "Rejected lock input verification job because the verifier is closed");
+            tracing::warn!(parent: &job.span, "Rejected lock input verification job because the verifier is closed");
             self.metrics.rejected("actor_closed");
             return Err(VerificationError::Closed);
         }
@@ -340,7 +333,7 @@ impl Actor {
         }
 
         if let Some(error) = self.queue_full(peer) {
-            tracing::warn!(parent: &job.span(), %error, running = self.running.len(), queued = self.pending, "Rejected lock input verification job");
+            tracing::warn!(parent: &job.span, %error, running = self.running.len(), queued = self.pending, "Rejected lock input verification job");
             self.metrics.rejected(match error {
                 VerificationError::PeerQueueFull => "peer_queue_full",
                 _ => "global_queue_full",
@@ -349,7 +342,7 @@ impl Actor {
             return;
         }
 
-        tracing::info!(parent: &job.span(), running = self.running.len(), queued = self.pending + 1, "Queued lock input verification job");
+        tracing::info!(parent: &job.span, running = self.running.len(), queued = self.pending + 1, "Queued lock input verification job");
         let entry = self.peers.entry(peer).or_default();
         entry.queue.push_back(job);
         self.pending += 1;
@@ -395,7 +388,7 @@ impl Actor {
             let metrics = self.metrics.clone();
             let prevout_verifier = self.prevout_verifier.clone();
             let wait_seconds = job.queued_at.elapsed().as_secs_f64();
-            let span = job.span();
+            let span = job.span.clone();
             metrics.queue_wait.observe(wait_seconds);
             tracing::info!(parent: &span, queue_wait_seconds = wait_seconds, running = self.running.len() + 1, queued = self.pending, "Started lock input verification job");
             self.running.push(
@@ -518,11 +511,16 @@ impl Job {
                 reply,
             } => {
                 finish_running_job(reply, move |cancel| async move {
+                    let started = Instant::now();
                     let verified = verify_blocking(move || {
                         VerifiedPsbt::verify(psbt, &proofs, challenge)
                             .context("Failed to verify lock input ownership proofs")
                     })
                     .await?;
+                    tracing::debug!(
+                        duration_ms = started.elapsed().as_millis(),
+                        "Verified lock input ownership proofs"
+                    );
                     let psbt = verified.psbt();
                     let prevout_verifier = prevout_verifier.as_ref();
                     retry_lock_input_check(
@@ -537,6 +535,10 @@ impl Job {
                     )
                     .await
                     .map_err(VerificationError::Prevouts)?;
+                    tracing::debug!(
+                        duration_ms = started.elapsed().as_millis(),
+                        "Found lock inputs unspent on Electrum"
+                    );
                     Ok(verified)
                 })
                 .await
@@ -575,9 +577,6 @@ fn finish_job<T>(
     reply: oneshot::Sender<Result<T, VerificationError>>,
     result: Result<T, VerificationError>,
 ) -> &'static str {
-    if let Err(error) = &result {
-        tracing::warn!(error = %format!("{error:#}"), "Lock input verification failed");
-    }
     let outcome = match &result {
         Ok(_) => "success",
         Err(VerificationError::Worker(_)) => "worker_failure",
@@ -610,7 +609,9 @@ where
         .with_max_interval(max_interval)
         .build();
 
+    let mut attempt = 0u32;
     loop {
+        attempt += 1;
         if *cancel.borrow() || cancel.has_changed().is_err() {
             return Err(PsbtPrevoutVerificationError::Cancelled);
         }
@@ -642,7 +643,7 @@ where
         let retry_after = retry_policy
             .next_backoff()
             .expect("backoff without a maximum elapsed time to never stop");
-        tracing::warn!(%error, retry_in_seconds = retry_after.as_secs_f64(), "Electrum verification failed, retrying");
+        tracing::warn!(error = %format!("{error:#}"), attempt, retry_in_seconds = retry_after.as_secs_f64(), "Electrum verification failed, retrying");
         tokio::select! {
             _ = tokio::time::sleep_until((Instant::now() + retry_after).min(deadline)) => {}
             _ = cancel.changed() => return Err(PsbtPrevoutVerificationError::Cancelled),
@@ -1072,13 +1073,10 @@ mod tests {
         let (reply, _response) = oneshot::channel();
         actor.on_request(Request {
             peer,
-            job: QueuedJob::new(
-                peer,
-                Job::Test {
-                    work: Box::new(|_| async { Ok(()) }.boxed()),
-                    reply,
-                },
-            ),
+            job: QueuedJob::new(Job::Test {
+                work: Box::new(|_| async { Ok(()) }.boxed()),
+                reply,
+            }),
         });
         actor.dispatch();
         assert_eq!(actor.running.next().await, Some(peer));

@@ -900,9 +900,18 @@ impl Wallet {
         for result in results {
             match result {
                 Ok(groups) => answers.push(groups),
-                Err(error) => errors.push(error),
+                Err(error) => {
+                    tracing::debug!(%error, "Electrum server failed to list unspent outputs");
+                    errors.push(error);
+                }
             }
         }
+        tracing::debug!(
+            scripts = scripts.len(),
+            answered = answers.len(),
+            failed = errors.len(),
+            "Listed unspent outputs of PSBT input scripts"
+        );
 
         if answers.is_empty() {
             return Err(PsbtPrevoutVerificationError::Electrum(
@@ -927,6 +936,9 @@ impl Wallet {
             .map(|(script, answers)| {
                 let (listed, refused): (Vec<_>, Vec<_>) =
                     answers.into_iter().partition(Result::is_ok);
+                if !refused.is_empty() {
+                    tracing::debug!(%script, refused = refused.len(), listed = listed.len(), "Electrum servers refused to list a script");
+                }
                 if listed.is_empty()
                     && let Some(Err(refusal)) = refused.into_iter().next()
                 {

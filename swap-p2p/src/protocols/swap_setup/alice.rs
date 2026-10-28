@@ -84,6 +84,8 @@ pub struct RegisterSwap {
 #[allow(clippy::large_enum_variant)]
 pub enum OutEvent {
     Initiated {
+        /// Span of this swap setup. Work it requests from the event loop is logged under it.
+        span: tracing::Span,
         send_wallet_snapshot:
             bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
         check_lock_inputs: bmrng::RequestReceiver<
@@ -142,10 +144,12 @@ impl From<OutEvent> for out_event::alice::OutEvent {
     fn from(event: OutEvent) -> Self {
         match event {
             OutEvent::Initiated {
+                span,
                 send_wallet_snapshot,
                 check_lock_inputs,
                 register_swap,
             } => out_event::alice::OutEvent::SwapSetupInitiated {
+                span,
                 send_wallet_snapshot,
                 check_lock_inputs,
                 register_swap,
@@ -264,10 +268,12 @@ where
         // The queue is then polled in the [`poll`] function, and the events are sent to the swarm
         match event {
             HandlerOutEvent::Initiated {
+                span,
                 send_wallet_snapshot,
                 check_lock_inputs,
                 register_swap,
             } => self.events.push_back(OutEvent::Initiated {
+                span,
                 send_wallet_snapshot,
                 check_lock_inputs,
                 register_swap,
@@ -348,6 +354,8 @@ impl<LR> Handler<LR> {
 #[derive(Debug)]
 pub enum HandlerOutEvent {
     Initiated {
+        /// Span of this swap setup. Work it requests from the event loop is logged under it.
+        span: tracing::Span,
         send_wallet_snapshot:
             bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
         check_lock_inputs: bmrng::RequestReceiver<
@@ -431,11 +439,14 @@ where
 
                 // Attach a span so every log emitted during the negotiation is
                 // attributable to the peer and connection it belongs to.
+                // The swap id is recorded once Bob sent it.
                 let span = tracing::info_span!(
                     "swap_setup",
                     peer = %self.peer_id,
                     connection = %self.connection_id,
+                    swap_id = tracing::field::Empty,
                 );
+                let event_span = span.clone();
 
                 let max_seconds = self.negotiation_timeout.as_secs();
                 self.inbound_streams.push(
@@ -473,7 +484,7 @@ where
                                 tracing::info!(%swap_id, "Swap setup completed")
                             }
                             Err(error) => {
-                                tracing::warn!(error = ?error, "Swap setup failed")
+                                tracing::warn!(error = %format!("{error:#}"), "Swap setup failed")
                             }
                         }
 
@@ -484,6 +495,7 @@ where
                 );
 
                 self.events.push_back(HandlerOutEvent::Initiated {
+                    span: event_span,
                     send_wallet_snapshot: receiver,
                     check_lock_inputs: check_lock_inputs_receiver,
                     register_swap: register_swap_receiver,
@@ -617,6 +629,7 @@ async fn run_swap_setup(
         .await
         .context("Failed to read spot price request")?
         .context("Peer sent an error instead of spot price request")?;
+    tracing::debug!(btc = %request.btc, "Received spot price request");
 
     let (wallet_snapshot, btc_amnesty_amount, should_burn_on_refund) = sender
         .send_receive(request.btc)
@@ -728,6 +741,7 @@ async fn run_swap_setup(
         }
     };
 
+    tracing::Span::current().record("swap_id", tracing::field::display(swap_id));
     tracing::debug!(%swap_id, "Swap setup transition: State0 -> State1 (received Message0)");
 
     swap_setup::write_cbor_message(
@@ -744,6 +758,12 @@ async fn run_swap_setup(
         .context("Failed to read message2")?
         .context("Peer sent an error instead of message2")?;
     let tx_lock_input_count = message2.tx_lock_psbt.unsigned_tx.input.len();
+    tracing::debug!(
+        inputs = tx_lock_input_count,
+        outputs = message2.tx_lock_psbt.unsigned_tx.output.len(),
+        proofs = message2.tx_lock_proofs.len(),
+        "Received lock PSBT"
+    );
     if tx_lock_input_count > MAX_TX_LOCK_INPUTS {
         let error = swap_setup::SwapSetupError::TxLockTooManyInputs {
             actual: u32::try_from(tx_lock_input_count).context("Input count exceeds wire range")?,
@@ -776,13 +796,15 @@ async fn run_swap_setup(
     .await;
     let (tx_lock_psbt, tx_lock_fee) = match received {
         Ok(received) => received,
-        Err(cause) => return Err(reject_lock_inputs(&mut substream, swap_id, cause).await),
+        Err(cause) => return Err(reject_lock_inputs(&mut substream, cause).await),
     };
 
     // The fee uses Bob's claimed prevout values, which the verification job below checks.
+    let tx_lock_weight = bitcoin::estimated_signed_lock_weight(&tx_lock_psbt);
+    tracing::debug!(fee = %tx_lock_fee, weight = %tx_lock_weight, "Checking lock fee floor");
     if let Err(error) = swap_machine::common::sanity_check_transaction_fee_floor(
         tx_lock_fee,
-        bitcoin::estimated_signed_lock_weight(&tx_lock_psbt),
+        tx_lock_weight,
         wallet_snapshot.estimated_fee_rate,
         request.btc,
     ) {
@@ -796,9 +818,10 @@ async fn run_swap_setup(
     }
 
     if let Err(cause) = state1.check_tx_lock(&tx_lock_psbt) {
-        return Err(reject_lock_inputs(&mut substream, swap_id, cause).await);
+        return Err(reject_lock_inputs(&mut substream, cause).await);
     }
 
+    let verification_started = std::time::Instant::now();
     let verification = async {
         let challenge = state1.ownership_challenge(&tx_lock_psbt);
         let verified = lock_input_verifier
@@ -819,10 +842,13 @@ async fn run_swap_setup(
     .await;
     let (state2, psbt) = match verification {
         Ok(verified) => verified,
-        Err(cause) => return Err(reject_lock_inputs(&mut substream, swap_id, cause).await),
+        Err(cause) => return Err(reject_lock_inputs(&mut substream, cause).await),
     };
 
-    tracing::debug!(%swap_id, "Swap setup transition: State1 -> State2 (received Message2)");
+    tracing::debug!(
+        duration_ms = verification_started.elapsed().as_millis(),
+        "Swap setup transition: State1 -> State2 (verified lock inputs)"
+    );
 
     let lock_input_check = check_lock_inputs
         .send_receive(LockInputCheck { psbt })
@@ -836,9 +862,10 @@ async fn run_swap_setup(
         Ok(reservation) => reservation,
         Err(cause) => {
             let cause = anyhow::Error::new(cause).context("Lock input check failed");
-            return Err(reject_lock_inputs(&mut substream, swap_id, cause).await);
+            return Err(reject_lock_inputs(&mut substream, cause).await);
         }
     };
+    tracing::debug!("Reserved lock inputs");
 
     swap_setup::write_cbor_message(
         &mut substream,
@@ -863,11 +890,10 @@ async fn run_swap_setup(
 /// Tells Bob that his lock inputs were rejected and returns the cause.
 async fn reject_lock_inputs(
     substream: &mut swap_setup::SetupStream,
-    swap_id: Uuid,
     cause: anyhow::Error,
 ) -> anyhow::Error {
-    tracing::warn!(%swap_id, error = %format!("{cause:#}"), "Lock transaction input verification failed");
     let error = lock_input_verification_error(&cause);
+    tracing::debug!(rejection = ?error, "Rejecting the lock inputs of Bob");
     if let Err(err) = swap_setup::write_cbor_error(substream, error).await {
         tracing::error!(error=%err, "Couldn't send lock input verification error to Bob");
     }
@@ -909,6 +935,7 @@ async fn await_bob_decision(
     if decision == BobDecision::Abort {
         anyhow::bail!("Bob aborted the swap before locking the Bitcoin");
     }
+    tracing::debug!("Bob committed to the swap, persisting it");
 
     // No timeout here: a timeout could fire after the swap was persisted. The event
     // loop bounds persisting by `SWAP_SETUP_PERSIST_TIMEOUT` instead and only answers
@@ -918,6 +945,7 @@ async fn await_bob_decision(
         .await
         .context("Failed to register the swap")?
         .context("Failed to persist the swap")?;
+    tracing::debug!("Persisted the swap, confirming it to Bob");
 
     // The swap is persisted and runs from here on, so failing to tell Bob is not
     // a failure of the swap setup. Without the confirmation Bob does not lock.

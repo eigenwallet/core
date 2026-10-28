@@ -40,6 +40,7 @@ use swap_feed::LatestRate;
 use swap_p2p::protocols::cooperative_xmr_redeem_after_punish;
 use tokio::sync::{Semaphore, mpsc, oneshot};
 use tor_hsservice::RunningOnionService;
+use tracing::Instrument;
 use uuid::Uuid;
 
 pub use service::{EventLoopRequest, EventLoopService, OnionServiceStatusInfo};
@@ -129,11 +130,14 @@ where
     inflight_wallet_snapshots: FuturesUnordered<
         BoxFuture<
             'static,
-            Result<(
-                bitcoin::Amount,
-                bmrng::Responder<(WalletSnapshot, bitcoin::Amount, bool)>,
-                WalletSnapshot,
-            )>,
+            (
+                tracing::Span,
+                Result<(
+                    bitcoin::Amount,
+                    bmrng::Responder<(WalletSnapshot, bitcoin::Amount, bool)>,
+                    WalletSnapshot,
+                )>,
+            ),
         >,
     >,
 
@@ -145,6 +149,7 @@ where
         BoxFuture<
             'static,
             Option<(
+                tracing::Span,
                 LockInputCheck,
                 bmrng::Responder<Result<LockInputReservation, LockInputCheckError>>,
             )>,
@@ -155,13 +160,21 @@ where
     /// persist it, or with `None` if the swap setup ended before that.
     #[allow(clippy::type_complexity)]
     inflight_swap_registrations: FuturesUnordered<
-        BoxFuture<'static, Option<(RegisterSwap, bmrng::Responder<Result<()>>, Result<()>)>>,
+        BoxFuture<
+            'static,
+            Option<(
+                tracing::Span,
+                RegisterSwap,
+                bmrng::Responder<Result<()>>,
+                Result<()>,
+            )>,
+        >,
     >,
 
     /// Database checks hold a reservation until completion.
     /// Each runs in its own task so that loading and decoding swap states does not
     /// block the event loop. The task is not aborted when its join handle is dropped.
-    inflight_lock_input_checks: FuturesUnordered<BoxFuture<'static, Result<()>>>,
+    inflight_lock_input_checks: FuturesUnordered<BoxFuture<'static, (tracing::Span, Result<()>)>>,
     lock_input_db_checks: Arc<Semaphore>,
 
     /// Inputs of TxLock PSBTs whose swaps are not yet visible to
@@ -375,7 +388,7 @@ where
                     }
 
                     match swarm_event {
-                        SwarmEvent::Behaviour(OutEvent::SwapSetupInitiated { mut send_wallet_snapshot, mut check_lock_inputs, mut register_swap }) => {
+                        SwarmEvent::Behaviour(OutEvent::SwapSetupInitiated { span, mut send_wallet_snapshot, mut check_lock_inputs, mut register_swap }) => {
                             let bitcoin_wallet = self.bitcoin_wallet.clone();
                             let monero_wallet = self.monero_wallet.clone();
                             let external_redeem_address = self.external_redeem_address.clone();
@@ -383,9 +396,11 @@ where
                             let btc_redeem_base_fee_multiplier = self.btc_redeem_base_fee_multiplier;
                             let wallet_snapshot_cache = self.wallet_snapshot_cache.clone();
 
+                            let snapshot_span = span.clone();
                             self.inflight_wallet_snapshots.push(async move {
                                 // Wait for the swap setup handler to request the wallet snapshot
                                 let (btc, responder) = send_wallet_snapshot.recv().await?;
+                                tracing::debug!(%btc, "Creating wallet snapshot for swap setup");
 
                                 let wallet_state = get_cached_wallet_snapshot_state(
                                     &wallet_snapshot_cache,
@@ -410,19 +425,21 @@ where
 
                                 // This is used further down to then actually respond to the swap setup handler
                                 Ok((btc, responder, wallet_snapshot))
-                            }.boxed());
+                            }.instrument(snapshot_span.clone()).map(|result| (snapshot_span, result)).boxed());
 
+                            let request_span = span.clone();
                             self.inflight_lock_input_requests.push(async move {
                                 // Wait for the swap setup handler to send Bob's TxLock PSBT
-                                check_lock_inputs.recv().await.ok()
+                                let (check, responder) = check_lock_inputs.recv().await.ok()?;
+                                Some((request_span, check, responder))
                             }.boxed());
 
                             let db = self.db.clone();
                             self.inflight_swap_registrations.push(async move {
                                 // Wait for Bob to commit to the swap
                                 let (registration, responder) = register_swap.recv().await.ok()?;
-                                let persisted = persist_new_swap(db.as_ref(), &registration).await;
-                                Some((registration, responder, persisted))
+                                let persisted = persist_new_swap(db.as_ref(), &registration).instrument(span.clone()).await;
+                                Some((span, registration, responder, persisted))
                             }.boxed());
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapDeclined { peer, error }) => {
@@ -670,12 +687,12 @@ where
                 // 2. We push a future to `inflight_wallet_snapshots` that waits for the swap setup handler to
                 //    request the wallet snapshot (with the BTC amount), then computes it
                 // 3. Once the future resolves, we compute the amnesty amount and respond to the swap setup handler
-                Some(result) = self.inflight_wallet_snapshots.next() => {
+                Some((span, result)) = self.inflight_wallet_snapshots.next() => {
                     let (btc, responder, wallet_snapshot) = match result {
                         Ok((btc, responder, wallet_snapshot)) => (btc, responder, wallet_snapshot),
                         Err(error) => {
                             // TODO: Propagate error to the swap_setup handler instead of swallowing it
-                            tracing::error!("Swap request will be ignored because we were unable to create wallet snapshot for swap: {:#}", error);
+                            tracing::error!(parent: &span, error = %format!("{error:#}"), "Swap request will be ignored because we were unable to create wallet snapshot for swap");
                             continue;
                         }
                     };
@@ -684,45 +701,51 @@ where
                         Ok(amount) => amount,
                         Err(error) => {
                             // TODO: Propagate error to the swap_setup handler instead of swallowing it
-                            tracing::error!("Swap request will be ignored because we were unable to compute the amnesty amount for the swap: {:#}", error);
+                            tracing::error!(parent: &span, error = %format!("{error:#}"), "Swap request will be ignored because we were unable to compute the amnesty amount for the swap");
                             continue;
                         }
                     };
 
                     if responder.respond((wallet_snapshot, btc_amnesty_amount, should_publish_tx_withhold)).is_err() {
-                        tracing::warn!("Failed to send wallet snapshot and amnesty amount back to swap setup handler, connection may have been dropped");
+                        tracing::warn!(parent: &span, "Failed to send wallet snapshot and amnesty amount back to swap setup handler, connection may have been dropped");
                     }
                 },
 
                 Some(registration) = self.inflight_swap_registrations.next() => {
-                    let Some((RegisterSwap { peer_id, swap_id, state3, lock_input_reservation }, responder, persisted)) = registration else { continue; };
+                    let Some((span, RegisterSwap { peer_id, swap_id, state3, lock_input_reservation }, responder, persisted)) = registration else { continue; };
                     let result = match persisted {
-                        Ok(()) => self.handle_execution_setup_done(peer_id, swap_id, state3, lock_input_reservation).await,
+                        Ok(()) => self.handle_execution_setup_done(peer_id, swap_id, state3, lock_input_reservation).instrument(span.clone()).await,
                         Err(error) => Err(error),
                     };
                     if let Err(error) = &result {
-                        tracing::error!(%swap_id, ?error, "Failed to handle execution setup done");
+                        tracing::error!(parent: &span, %swap_id, error = %format!("{error:#}"), "Failed to persist or start the new swap");
                     }
                     // Bob does not lock his Bitcoin without this confirmation
                     let _ = responder.respond(result);
                 },
 
                 Some(request) = self.inflight_lock_input_requests.next() => {
-                    let Some((LockInputCheck { psbt }, responder)) = request else { continue; };
-                    if responder.is_closed() { continue; }
+                    let Some((span, LockInputCheck { psbt }, responder)) = request else { continue; };
+                    if responder.is_closed() {
+                        tracing::debug!(parent: &span, "Lock input check requester stopped waiting before the check");
+                        continue;
+                    }
                     // This is synchronous: two verified requests cannot claim the same inputs.
                     let reservation = match reserve_verified_lock_inputs(
                         &psbt, &mut self.reserved_lock_inputs, &self.lock_input_release_sender,
                     ) {
                         Ok(reservation) => reservation,
                         Err(error) => {
+                            tracing::info!(parent: &span, %error, "Lock inputs are reserved by another swap setup");
                             let _ = responder.respond(Err(error));
                             continue;
                         }
                     };
+                    tracing::debug!(parent: &span, inputs = psbt.unsigned_tx.input.len(), reserved_total = self.reserved_lock_inputs.len(), "Reserved lock inputs, checking them against pending swaps");
                     let db = self.db.clone();
                     let db_checks = self.lock_input_db_checks.clone();
                     let check = tokio::spawn(async move {
+                        let waiting_since = Instant::now();
                         let acquire = db_checks.acquire_owned();
                         tokio::pin!(acquire);
                         let _permit = loop {
@@ -739,15 +762,21 @@ where
                         if responder.is_closed() {
                             anyhow::bail!("Lock input check requester stopped waiting");
                         }
+                        let checking_since = Instant::now();
                         // Runs to completion even if the requester stopped waiting;
                         // dropping a SQLx future alone would leave its worker running.
-                        let result = check_for_conflicting_swap_inputs(db.as_ref(), &psbt).await
-                            .map(|()| reservation);
-                        responder.respond(result)
+                        let result = check_for_conflicting_swap_inputs(db.as_ref(), &psbt).await;
+                        tracing::debug!(
+                            conflict = result.is_err(),
+                            permit_wait_ms = (checking_since - waiting_since).as_millis(),
+                            check_ms = checking_since.elapsed().as_millis(),
+                            "Checked lock inputs against pending swaps"
+                        );
+                        responder.respond(result.map(|()| reservation))
                             .map_err(|_| anyhow!("Lock input check requester stopped waiting"))
-                    });
+                    }.instrument(span.clone()));
                     self.inflight_lock_input_checks.push(async move {
-                        check.await.context("Failed to join the lock input check task")?
+                        (span, check.await.context("Failed to join the lock input check task").and_then(|result| result))
                     }.boxed());
                 },
                 Some(outpoints) = self.lock_input_releases.recv() => {
@@ -755,9 +784,9 @@ where
                         self.reserved_lock_inputs.remove(&outpoint);
                     }
                 },
-                Some(result) = self.inflight_lock_input_checks.next() => {
+                Some((span, result)) = self.inflight_lock_input_checks.next() => {
                     if let Err(error) = result {
-                        tracing::warn!("Lock input verification coordination for swap setup did not complete: {:#}", error);
+                        tracing::warn!(parent: &span, error = %format!("{error:#}"), "Lock input check did not complete");
                     }
                 },
                 Some(request) = self.service_requests.recv() => {
@@ -1508,13 +1537,19 @@ async fn persist_new_swap(
 
     // Bob only waits a limited time for our confirmation. If persisting takes longer,
     // we persist nothing, so we do not run a swap that Bob has already given up on.
+    let started = Instant::now();
     db.insert_new_swap(
         registration.swap_id,
         registration.peer_id,
         state.into(),
         swap_p2p::defaults::SWAP_SETUP_PERSIST_TIMEOUT,
     )
-    .await
+    .await?;
+    tracing::debug!(
+        duration_ms = started.elapsed().as_millis(),
+        "Persisted the new swap"
+    );
+    Ok(())
 }
 
 /// Reject a PSBT if it spends an input used by another swap whose latest
