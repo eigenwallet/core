@@ -300,12 +300,13 @@ where
         F: Fn(&C) -> Result<T, Error> + Send + Sync + Clone + 'static,
         T: Send + 'static,
     {
-        self.join_quorum_inner(kind, f, false).await
+        self.join_quorum_inner(f, false).await
     }
 
     /// Return the same quorum results as `join_quorum`, but wait for every
     /// started request to finish before returning. Used when the caller must
     /// retain a verification worker slot until its RPC work has stopped.
+    #[instrument(level = "debug", skip(self, f), fields(operation = kind, total_clients = self.client_count(), min_parallel_responses = self.config.min_parallel_responses))]
     pub async fn join_quorum_and_drain<F, T>(
         &self,
         kind: &str,
@@ -315,12 +316,11 @@ where
         F: Fn(&C) -> Result<T, Error> + Send + Sync + Clone + 'static,
         T: Send + 'static,
     {
-        self.join_quorum_inner(kind, f, true).await
+        self.join_quorum_inner(f, true).await
     }
 
     async fn join_quorum_inner<F, T>(
         &self,
-        kind: &str,
         f: F,
         drain: bool,
     ) -> Result<Vec<Result<T, Error>>, Error>
@@ -338,15 +338,13 @@ where
                 let balancer = self.clone();
 
                 tokio::spawn(async move {
-                    let result = match balancer.get_or_init_client_async(idx).await {
+                    match balancer.get_or_init_client_async(idx).await {
                         Ok(client) => tokio::task::spawn_blocking(move || f(&client))
                             .await
                             .map_err(|e| Error::IOError(std::io::Error::other(format!("{e:?}"))))
                             .and_then(|result| result),
                         Err(e) => Err(e),
-                    };
-
-                    result
+                    }
                 })
             })
             .collect();
