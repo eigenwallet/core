@@ -1,4 +1,4 @@
-//! Setup-v3 fees calculated from locally constructed transaction templates.
+//! Swap setup v5 fees calculated from locally constructed transaction templates.
 use super::*;
 use ::bitcoin::{OutPoint, Psbt, Script, TxIn, TxOut, Witness, absolute, transaction};
 use anyhow::{Context, Result, ensure};
