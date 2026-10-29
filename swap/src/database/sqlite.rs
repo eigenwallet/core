@@ -454,9 +454,10 @@ impl Database for SqliteDatabase {
     }
 
     /// Same as [`all`] except paginated, and returns both the first and last
-    /// recorded state per swap. Swaps that never progressed past
-    /// `SafelyAborted` are filtered out. `limit` and `offset` must each fit
-    /// into `i32`.
+    /// recorded state per swap. `Alice::Started` is ignored when picking the
+    /// first state, so swaps whose lock transaction was never seen are
+    /// filtered out, as are swaps that never progressed past `SafelyAborted`.
+    /// `limit` and `offset` must each fit into `i32`.
     async fn all_paginated(
         &self,
         limit: u32,
@@ -476,7 +477,9 @@ impl Database for SqliteDatabase {
                 newest.state       AS "last_state!: String",
                 oldest.entered_at  AS start_date
             FROM (SELECT swap_id, state, entered_at, MIN(id) AS id
-                  FROM swap_states GROUP BY swap_id) oldest
+                  FROM swap_states
+                  WHERE json_extract(state, '$.Alice.Started') IS NULL
+                  GROUP BY swap_id) oldest
             JOIN (SELECT swap_id, state, MAX(id) AS id
                   FROM swap_states GROUP BY swap_id) newest
                 ON newest.swap_id = oldest.swap_id
