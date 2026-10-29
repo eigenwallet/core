@@ -133,6 +133,10 @@ jobs:
       - name: Run library tests
         run: cargo test  --lib
 
+      # The other tests of the swap binary are outdated
+      - name: Run swap binary fee test
+        run: cargo test --package swap --bin swap swap_fee_excludes_funds_outside_the_input_limit
+
       - name: Run Monero conflict tests
         run: cargo test --package monero-tests --test double_spend
 
