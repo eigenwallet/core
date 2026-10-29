@@ -41,6 +41,11 @@ const EARNEST_DEPOSIT_TARGET_BLOCKS = 3;
 const MOCK_BTC_LOCK_AMOUNT = 50_000_000; // 0.5 BTC
 const MOCK_BTC_AMNESTY_AMOUNT = 1_000_000; // 0.01 BTC (2% of lock amount)
 
+// Monero amount for MOCK_BTC_LOCK_AMOUNT at the rate of MOCK_QUOTE (0.0066 BTC/XMR)
+const MOCK_XMR_RECEIVE_AMOUNT = 75_757_575_757_576;
+// Monero amount for MOCK_BTC_LOCK_AMOUNT at a rate 10% above MOCK_QUOTE
+const MOCK_XMR_RECEIVE_AMOUNT_HIGH_MARKUP = 68_870_523_415_978;
+
 // Mock addresses
 const MOCK_BTC_DEPOSIT_ADDRESS = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq";
 const MOCK_XMR_ADDRESS =
@@ -53,7 +58,7 @@ const MOCK_KNOWN_QUOTES: QuoteWithAddress[] = [
     multiaddr: "/ip4/127.0.0.1/tcp/9939",
     peer_id: "12D3KooWCdMKjesXMJz1SiZ7HgotrxuqhQJbP5sgBm2BwP1cqThi",
     quote: {
-      price: 0.0066,
+      price: 660_000,
       min_quantity: 10_000_000,
       max_quantity: 100_000_000,
       refund_policy: { type: "FullRefund" },
@@ -64,7 +69,7 @@ const MOCK_KNOWN_QUOTES: QuoteWithAddress[] = [
     multiaddr: "/ip4/192.168.1.50/tcp/9940",
     peer_id: "12D3KooWEyoppNCUzN3sX7atGxPHvqgZvUNQmKzz1mQvNfFhuqP9",
     quote: {
-      price: 0.00662,
+      price: 662_000,
       min_quantity: 5_000_000,
       max_quantity: 200_000_000,
       refund_policy: {
@@ -78,7 +83,7 @@ const MOCK_KNOWN_QUOTES: QuoteWithAddress[] = [
     multiaddr: "/ip4/192.168.1.51/tcp/9941",
     peer_id: "12D3KooWQ1XmPttg1Ut5xD3mcJRoWQYEQ8C1BcvqtrdrDam6DCyn",
     quote: {
-      price: 0.00664,
+      price: 664_000,
       min_quantity: 5_000_000,
       max_quantity: 200_000_000,
       refund_policy: {
@@ -92,7 +97,7 @@ const MOCK_KNOWN_QUOTES: QuoteWithAddress[] = [
     multiaddr: "/ip4/192.168.1.52/tcp/9942",
     peer_id: "12D3KooWKJPkR34byJ9Y5mN9wQ3hEG8mSN2yT8eC2cQFqL3x1V9u",
     quote: {
-      price: 0.00666,
+      price: 666_000,
       min_quantity: 5_000_000,
       max_quantity: 200_000_000,
       refund_policy: {
@@ -106,7 +111,7 @@ const MOCK_KNOWN_QUOTES: QuoteWithAddress[] = [
     multiaddr: "/ip4/192.168.1.53/tcp/9943",
     peer_id: "12D3KooWJ1PiH4H9ceR85S8JQk8MtS5o1vBM2wFp1k3Wf4t8bX4p",
     quote: {
-      price: 0.0067,
+      price: 670_000,
       min_quantity: 5_000_000,
       max_quantity: 200_000_000,
       refund_policy: {
@@ -120,7 +125,7 @@ const MOCK_KNOWN_QUOTES: QuoteWithAddress[] = [
     multiaddr: "/ip4/192.168.1.54/tcp/9944",
     peer_id: "12D3KooWH1TY76YnLwQe3F6uq5WnPaW9DdK7RzWQ6xQG9Sm4F1no",
     quote: {
-      price: 0.00674,
+      price: 674_000,
       min_quantity: 5_000_000,
       max_quantity: 200_000_000,
       refund_policy: {
@@ -134,7 +139,7 @@ const MOCK_KNOWN_QUOTES: QuoteWithAddress[] = [
     multiaddr: "/ip4/192.168.1.55/tcp/9945",
     peer_id: "12D3KooWGW4QmZsfgz6R6eQ5PVbSYcT7B8WcV1P4DnK5LmN2Rt7y",
     quote: {
-      price: 0.0068,
+      price: 680_000,
       min_quantity: 5_000_000,
       max_quantity: 200_000_000,
       refund_policy: {
@@ -519,8 +524,15 @@ const partialRefundWithWithholdAndMercy: TauriSwapProgressEvent[] = [
   { type: "Released" },
 ];
 
+// The maker offers a rate 10% above its quote during swap setup
+const swapSetupMarkupTooHigh: TauriSwapProgressEvent[] = baseScenario.slice(
+  0,
+  baseScenario.findIndex((event) => event.type === "SwapSetupInflight") + 1,
+);
+
 export const scenarios: Record<string, TauriSwapProgressEvent[]> = {
   happyPath,
+  swapSetupMarkupTooHigh,
   cooperativeRedeem,
   cooperativeRedeemRejected,
   earlyRefund,
@@ -537,7 +549,7 @@ export type MockScenario = keyof typeof scenarios;
 const MOCK_LOCK_BITCOIN_DETAILS_PARTIAL: LockBitcoinDetails = {
   btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
   btc_network_fee: 5000,
-  xmr_receive_amount: 7_000_000_000_000, // 7 XMR in piconeros
+  xmr_receive_amount: MOCK_XMR_RECEIVE_AMOUNT,
   monero_receive_pool: MOCK_RECEIVE_POOL,
   swap_id: MOCK_SWAP_ID,
   btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
@@ -548,11 +560,17 @@ const MOCK_LOCK_BITCOIN_DETAILS_PARTIAL: LockBitcoinDetails = {
 const MOCK_LOCK_BITCOIN_DETAILS_FULL: LockBitcoinDetails = {
   btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
   btc_network_fee: 5000,
-  xmr_receive_amount: 7_000_000_000_000, // 7 XMR in piconeros
+  xmr_receive_amount: MOCK_XMR_RECEIVE_AMOUNT,
   monero_receive_pool: MOCK_RECEIVE_POOL,
   swap_id: MOCK_SWAP_ID,
   btc_amnesty_amount: 0,
   has_full_refund_signature: true,
+};
+
+// Full refund version with a rate 10% above the quote
+const MOCK_LOCK_BITCOIN_DETAILS_HIGH_MARKUP: LockBitcoinDetails = {
+  ...MOCK_LOCK_BITCOIN_DETAILS_FULL,
+  xmr_receive_amount: MOCK_XMR_RECEIVE_AMOUNT_HIGH_MARKUP,
 };
 
 const PARTIAL_REFUND_SCENARIOS: MockScenario[] = [
@@ -627,22 +645,32 @@ export function getMockAlertCleanupData(): GetSwapInfoResponse[] {
   );
 }
 
+function getMockLockBitcoinDetails(
+  scenario: MockScenario | null,
+): LockBitcoinDetails {
+  if (scenario === "swapSetupMarkupTooHigh") {
+    return MOCK_LOCK_BITCOIN_DETAILS_HIGH_MARKUP;
+  }
+  if (scenario !== null && isPartialRefundScenario(scenario)) {
+    return MOCK_LOCK_BITCOIN_DETAILS_PARTIAL;
+  }
+  return MOCK_LOCK_BITCOIN_DETAILS_FULL;
+}
+
 export function getMockLockBitcoinApproval(
   scenario: MockScenario | null,
 ): ApprovalRequest {
-  const isPartial = scenario !== null && isPartialRefundScenario(scenario);
   return {
     request_id: "00000000-0000-0000-0000-000000000001",
     request: {
       type: "LockBitcoin",
-      content: isPartial
-        ? MOCK_LOCK_BITCOIN_DETAILS_PARTIAL
-        : MOCK_LOCK_BITCOIN_DETAILS_FULL,
+      content: getMockLockBitcoinDetails(scenario),
     },
     request_status: {
       state: "Pending",
       content: {
-        expiration_ts: Number.MAX_SAFE_INTEGER,
+        // The same timeout as PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS in swap/src/protocol/bob/swap.rs
+        expiration_ts: Math.floor(Date.now() / 1000) + 180,
       },
     },
   };

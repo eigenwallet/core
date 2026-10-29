@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Show a warning before you accept an offer during swap setup if the rate of the maker is more than 5% above its quote, its markup is above 5%, or its markup is more than 25% above the quoted markup.
+
 ## [4.16.1] - 2026-10-13
 
 - Report the actual Monero wallet error instead of "unknown error, error not set".
