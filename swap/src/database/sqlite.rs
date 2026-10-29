@@ -1269,6 +1269,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn paginated_swaps_are_listed_once_their_lock_transaction_was_seen() -> Result<()> {
+        let db = setup_test_db().await?;
+        let wallet = bitcoin_wallet::TestWalletBuilder::new(1_000_000)
+            .build()
+            .await;
+        let state3 = Box::new(test_state3(&wallet).await?);
+        let started = State::Alice(AliceState::Started {
+            state3: state3.clone(),
+        });
+        let seen = State::Alice(AliceState::BtcLockTransactionSeen {
+            state3: state3.clone(),
+        });
+        let locked = State::Alice(AliceState::BtcLocked { state3 });
+        let aborted = State::Alice(AliceState::SafelyAborted);
+
+        let (legacy, locked_id, pending, never_locked, unreadable) = (
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        );
+        for (id, states) in [
+            // Created before Alice persisted swaps at registration
+            (legacy, vec![&seen, &locked]),
+            (locked_id, vec![&started, &seen, &locked]),
+            (pending, vec![&started]),
+            (never_locked, vec![&started, &aborted]),
+            (unreadable, vec![&started, &seen]),
+        ] {
+            db.insert_peer_id(id, PeerId::random()).await?;
+            for state in states {
+                db.insert_latest_state(id, state.clone()).await?;
+            }
+        }
+        // An unreadable row between readable ones must not fail the listing
+        sqlx::query("INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)")
+            .bind(unreadable.to_string())
+            .bind(OffsetDateTime::now_utc().to_string())
+            .bind("{not json")
+            .execute(&db.pool)
+            .await?;
+        db.insert_latest_state(unreadable, locked.clone()).await?;
+
+        let listed: Vec<_> = db
+            .all_paginated(10, 0)
+            .await?
+            .into_iter()
+            .map(|(_, id, first, last)| (id, first, last))
+            .collect();
+        assert_eq!(
+            listed,
+            vec![
+                (legacy, seen.clone(), locked.clone()),
+                (locked_id, seen.clone(), locked.clone()),
+                (unreadable, seen, locked),
+            ]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn fresh_swaps_skip_malformed_timestamps() -> Result<()> {
         let db = setup_test_db().await?;
         let id = Uuid::new_v4();

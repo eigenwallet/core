@@ -1384,6 +1384,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn actor_restarts_after_a_panic_while_a_handle_exists() {
+        let (verifier, actor) = LockInputVerifier::spawn_actor(stub_prevouts());
+        let panicked = verifier
+            .run_async_test_job(PeerId::random(), |_| {
+                async { panic!("job panicked") }.boxed()
+            })
+            .await;
+        assert!(
+            matches!(panicked, Err(VerificationError::Closed)),
+            "{panicked:?}"
+        );
+
+        let after_restart = verifier
+            .run_async_test_job(PeerId::random(), |_| async { Ok(()) }.boxed())
+            .await;
+        assert!(after_restart.is_ok(), "{after_restart:?}");
+
+        drop(verifier);
+        actor.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn actor_stops_after_a_panic_once_all_handles_are_dropped() {
+        let (verifier, actor) = LockInputVerifier::spawn_actor(stub_prevouts());
+        let (started, started_rx) = oneshot::channel();
+        let (panic, panic_rx) = oneshot::channel::<()>();
+        let caller = tokio::spawn({
+            let verifier = verifier.clone();
+            async move {
+                verifier
+                    .run_async_test_job(PeerId::random(), move |_| {
+                        async move {
+                            started.send(()).unwrap();
+                            let _ = panic_rx.await;
+                            panic!("job panicked")
+                        }
+                        .boxed()
+                    })
+                    .await
+            }
+        });
+        started_rx.await.unwrap();
+        drop(verifier);
+        panic.send(()).unwrap();
+
+        actor.await.unwrap();
+        assert!(matches!(
+            caller.await.unwrap(),
+            Err(VerificationError::Closed)
+        ));
+    }
+
+    #[tokio::test]
     async fn invalid_proofs_never_reach_the_prevout_check() {
         let prevouts = stub_prevouts();
         let verifier = LockInputVerifier::spawn(prevouts.clone());
