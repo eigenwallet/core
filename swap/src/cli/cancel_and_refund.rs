@@ -217,8 +217,12 @@ pub async fn refund(
     db: Arc<dyn Database + Send + Sync>,
 ) -> Result<BobState> {
     let (state6, refund_type, subscription) =
-        match publish_refund(swap_id, bitcoin_wallet, db.clone()).await? {
-            RefundPublication::Finished(state) => return Ok(state),
+        match publish_refund(swap_id, bitcoin_wallet.clone(), db.clone()).await? {
+            RefundPublication::Reclaim(state6) => {
+                return reclaim(swap_id, state6, bitcoin_wallet, db)
+                    .await
+                    .context("Couldn't reclaim anti-spam deposit");
+            }
             RefundPublication::Published {
                 state6,
                 refund_type,
@@ -236,15 +240,36 @@ pub async fn refund(
 /// Takes the next step towards refunding the swap, without waiting for any
 /// transaction to confirm, so the caller does not hold the swap lock while one
 /// is pending. Publishes cancel until it is final, then publishes the refund,
-/// then records the refund once it is final. Call it again to take the next step.
+/// then records the refund once it is final. After a partial refund, it does
+/// the same for the reclaim. Call it again to take the next step.
 pub async fn advance_refund(
     swap_id: Uuid,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     db: Arc<dyn Database + Send + Sync>,
 ) -> Result<BobState> {
     let state = db.get_state(swap_id).await?.try_into()?;
-    let state6 = state_to_cancel(swap_id, state).await?;
     let finality = bitcoin_wallet.finality_confirmations();
+
+    // A refund or reclaim we published is recorded once it is final, whatever
+    // the timelocks say by then
+    match &state {
+        BobState::BtcRefundPublished(state6) | BobState::BtcPartialRefundPublished(state6) => {
+            let (refund_tx, refund_type) = state6.construct_best_bitcoin_refund_tx()?;
+            if bitcoin_wallet
+                .status_of_script(&refund_tx)
+                .await?
+                .is_confirmed_with(finality)
+            {
+                return record_refund_confirmed(swap_id, state6.clone(), refund_type, db).await;
+            }
+        }
+        BobState::BtcReclaimPublished(state6) => {
+            return advance_reclaim(swap_id, state6.clone(), bitcoin_wallet, db).await;
+        }
+        _ => {}
+    }
+
+    let state6 = state_to_cancel(swap_id, state).await?;
 
     let tx_cancel_status = bitcoin_wallet
         .status_of_script(&state6.construct_tx_cancel()?)
@@ -256,7 +281,9 @@ pub async fn advance_refund(
 
     let (state6, refund_type) =
         match publish_refund(swap_id, bitcoin_wallet.clone(), db.clone()).await? {
-            RefundPublication::Finished(state) => return Ok(state),
+            RefundPublication::Reclaim(state6) => {
+                return advance_reclaim(swap_id, state6, bitcoin_wallet, db).await;
+            }
             RefundPublication::Published {
                 state6,
                 refund_type,
@@ -277,8 +304,8 @@ pub async fn advance_refund(
 }
 
 enum RefundPublication {
-    /// The swap ended up in this state without a refund being published
-    Finished(BobState),
+    /// The partial refund is done, so the anti-spam deposit is reclaimed next
+    Reclaim(State6),
     Published {
         state6: State6,
         refund_type: RefundType,
@@ -286,8 +313,8 @@ enum RefundPublication {
     },
 }
 
-/// Publishes the best refund we have, or reclaims the anti-spam deposit if
-/// the partial refund is already done.
+/// Publishes the best refund we have, unless the partial refund is already
+/// done and the anti-spam deposit is to be reclaimed instead.
 async fn publish_refund(
     swap_id: Uuid,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
@@ -384,20 +411,24 @@ async fn publish_refund(
             tracing::info!(
                 "TxPartialRefund was already published, attempting to reclaim the remaining Bitcoin (anti-spam deposit)"
             );
-            return reclaim(swap_id, state6, bitcoin_wallet, db)
-                .await
-                .context("Couldn't reclaim anti-spam deposit")
-                .map(RefundPublication::Finished);
+            return Ok(RefundPublication::Reclaim(state6));
         }
     }
 
-    // A v3 refund is only valid after cancel has confirmed (BIP68).
-    // TODO: Fail instead of waiting when cancel is not published. `cancel_and_refund`
-    // also refunds after cancel failed (e.g. Alice already redeemed), and then this
-    // waits forever. Only the manual CLI command gets here without a final cancel.
+    // A v3 refund is only valid after cancel has confirmed (BIP68). Only a
+    // cancel that was seen can confirm: `cancel_and_refund` also refunds after
+    // cancel failed, e.g. because Alice already redeemed.
     if state6.cancel_refund_version() == swap_core::bitcoin::CancelRefundVersion::Truc {
+        let tx_cancel = state6.construct_tx_cancel()?;
+        if !bitcoin_wallet
+            .status_of_script(&tx_cancel)
+            .await?
+            .has_been_seen()
+        {
+            bail!("Cannot refund because the cancel transaction was not published");
+        }
         bitcoin_wallet
-            .subscribe_to(Box::new(state6.construct_tx_cancel()?))
+            .subscribe_to(Box::new(tx_cancel))
             .await
             .wait_until_confirmed_with(1_u32)
             .await
@@ -448,6 +479,65 @@ async fn record_refund_confirmed(
         .await?;
 
     Ok(confirmed_state)
+}
+
+/// Takes the next step towards reclaiming the anti-spam deposit, without
+/// waiting for any transaction to confirm: records Alice's withhold or our
+/// reclaim once final, and otherwise publishes the reclaim.
+async fn advance_reclaim(
+    swap_id: Uuid,
+    state6: State6,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
+    db: Arc<dyn Database + Send + Sync>,
+) -> Result<BobState> {
+    let finality = bitcoin_wallet.finality_confirmations();
+
+    if bitcoin_wallet
+        .status_of_script(&state6.construct_tx_withhold()?)
+        .await?
+        .is_confirmed_with(finality)
+    {
+        tracing::info!("Alice confirmed TxWithhold, anti-spam deposit is burnt");
+        let state = BobState::BtcWithheld(state6);
+        db.insert_latest_state(swap_id, state.clone().into())
+            .await?;
+        return Ok(state);
+    }
+
+    let tx_reclaim = state6
+        .signed_amnesty_transaction()
+        .context("Couldn't construct signed TxReclaim")?;
+    if bitcoin_wallet
+        .status_of_script(&tx_reclaim)
+        .await?
+        .is_confirmed_with(finality)
+    {
+        tracing::info!("TxReclaim confirmed, anti-spam deposit reclaimed");
+        let state = BobState::BtcReclaimConfirmed(state6);
+        db.insert_latest_state(swap_id, state.clone().into())
+            .await?;
+        return Ok(state);
+    }
+
+    let remaining_refund_timelock = state6
+        .remaining_refund_timelock
+        .context("Can't reclaim because remaining_refund_timelock is missing")?;
+    if !bitcoin_wallet
+        .status_of_script(&state6.construct_tx_partial_refund()?)
+        .await?
+        .is_confirmed_with(remaining_refund_timelock)
+    {
+        bail!("Cannot reclaim the anti-spam deposit before the remaining refund timelock expired");
+    }
+
+    bitcoin_wallet
+        .ensure_broadcasted(tx_reclaim, "reclaim")
+        .await
+        .context("Couldn't broadcast TxReclaim")?;
+    let state = BobState::BtcReclaimPublished(state6);
+    db.insert_latest_state(swap_id, state.clone().into())
+        .await?;
+    Ok(state)
 }
 
 /// On the partial refund path we need to attempt to reclaim the remaining

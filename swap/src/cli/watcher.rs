@@ -106,17 +106,25 @@ impl Watcher {
             // Insert new status
             self.cached_timelocks.insert(swap_id, new_timelock_status);
 
-            // If the swap has to be refunded, do it in the background
+            // If the swap has to be refunded, do it in the background. A refund or
+            // reclaim we published is recorded once final, whatever the timelocks say
             if matches!(
                 new_timelock_status,
                 Some(ExpiredTimelocks::Cancel { .. }) | Some(ExpiredTimelocks::RemainingRefund)
+            ) || matches!(
+                state,
+                BobState::BtcRefundPublished(_)
+                    | BobState::BtcPartialRefundPublished(_)
+                    | BobState::BtcReclaimPublished(_)
             ) {
                 // If the swap is already refunded, we can skip the refund
                 if matches!(
                     state,
                     BobState::BtcRefunded(_)
                         | BobState::BtcWithheld(_)
+                        | BobState::BtcMercyPublished(_)
                         | BobState::BtcMercyConfirmed(_)
+                        | BobState::BtcReclaimConfirmed(_)
                 ) {
                     continue;
                 }
@@ -129,8 +137,8 @@ impl Watcher {
                     }
                 }
 
-                // Nothing to do until our cancel or refund is final, so leave the
-                // swap lock free meanwhile
+                // Nothing to do until our cancel, refund or reclaim is final, so leave
+                // the swap lock free meanwhile
                 if self
                     .awaits_confirmation(&state)
                     .await
@@ -172,7 +180,7 @@ impl Watcher {
         Ok(())
     }
 
-    /// Whether the cancel or refund we published has been seen but is not final yet.
+    /// Whether the cancel, refund or reclaim we published has been seen but is not final yet.
     async fn awaits_confirmation(&self, state: &BobState) -> Result<bool> {
         let status = match state {
             BobState::BtcCancelPublished(state6) => {
@@ -183,6 +191,11 @@ impl Watcher {
             BobState::BtcRefundPublished(state6) | BobState::BtcPartialRefundPublished(state6) => {
                 let (refund_tx, _) = state6.construct_best_bitcoin_refund_tx()?;
                 self.wallet.status_of_script(&refund_tx).await?
+            }
+            BobState::BtcReclaimPublished(state6) => {
+                self.wallet
+                    .status_of_script(&state6.signed_amnesty_transaction()?)
+                    .await?
             }
             _ => return Ok(false),
         };
