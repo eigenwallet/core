@@ -74,7 +74,8 @@ impl VerificationError {
         match self {
             Self::Closed | Self::PeerQueueFull | Self::GlobalQueueFull | Self::Worker(_) => true,
             Self::Proofs(_) => false,
-            // Bob's inputs may not have reached our Electrum servers yet
+            // Bob's inputs may not have reached our Electrum servers yet, and a
+            // server refusing a script may answer later
             Self::Prevouts(error) => {
                 error.is_transient()
                     || matches!(
@@ -82,6 +83,7 @@ impl VerificationError {
                         PsbtPrevoutVerificationError::Cancelled
                             | PsbtPrevoutVerificationError::TimedOut
                             | PsbtPrevoutVerificationError::PrevoutNotFound { .. }
+                            | PsbtPrevoutVerificationError::ScriptRefused { .. }
                     )
             }
         }

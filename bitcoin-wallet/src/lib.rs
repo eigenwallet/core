@@ -28,7 +28,8 @@ pub enum PsbtPrevoutVerificationError {
     #[error("Failed to query Electrum servers for unspent outputs")]
     Electrum(#[source] anyhow::Error),
     /// Every Electrum server that answered refused to list this script,
-    /// e.g. because it has too many UTXOs. Retrying cannot help.
+    /// e.g. because it has too many UTXOs, or was busy. Not retried within
+    /// the check.
     #[error("Electrum servers refused to list the unspent outputs of script {script}: {refusal}")]
     ScriptRefused {
         script: bitcoin::ScriptBuf,
