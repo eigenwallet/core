@@ -754,26 +754,30 @@ where
                                     .context("Lock input database check capacity closed")?,
                                 _ = tokio::time::sleep(LOCK_INPUT_REQUESTER_POLL_INTERVAL) => {
                                     if responder.is_closed() {
-                                        anyhow::bail!("Lock input check requester stopped waiting");
+                                        tracing::debug!("Lock input check requester stopped waiting for a database check");
+                                        return Ok(());
                                     }
                                 }
                             }
                         };
                         if responder.is_closed() {
-                            anyhow::bail!("Lock input check requester stopped waiting");
+                            tracing::debug!("Lock input check requester stopped waiting for a database check");
+                            return Ok(());
                         }
                         let checking_since = Instant::now();
                         // Runs to completion even if the requester stopped waiting;
                         // dropping a SQLx future alone would leave its worker running.
                         let result = check_for_conflicting_swap_inputs(db.as_ref(), &psbt).await;
                         tracing::debug!(
-                            conflict = result.is_err(),
+                            rejected = result.is_err(),
                             permit_wait_ms = (checking_since - waiting_since).as_millis(),
                             check_ms = checking_since.elapsed().as_millis(),
                             "Checked lock inputs against pending swaps"
                         );
-                        responder.respond(result.map(|()| reservation))
-                            .map_err(|_| anyhow!("Lock input check requester stopped waiting"))
+                        if responder.respond(result.map(|()| reservation)).is_err() {
+                            tracing::debug!("Lock input check requester stopped waiting for the result");
+                        }
+                        anyhow::Ok(())
                     }.instrument(span.clone()));
                     self.inflight_lock_input_checks.push(async move {
                         (span, check.await.context("Failed to join the lock input check task").and_then(|result| result))

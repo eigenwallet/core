@@ -286,7 +286,9 @@ pub trait Database {
         updated_since: i64,
     ) -> Result<Vec<(Uuid, State)>>;
     /// Same as `all` but paginated, and returns the first and last state per
-    /// swap. Implementations may filter out terminally-aborted swaps.
+    /// swap. `Alice::Started` does not count as a first state, so swaps whose
+    /// lock transaction was never seen are filtered out. Implementations may
+    /// also filter out terminally-aborted swaps.
     async fn all_paginated(
         &self,
         limit: u32,

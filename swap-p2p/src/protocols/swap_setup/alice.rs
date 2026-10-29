@@ -855,7 +855,7 @@ async fn run_swap_setup(
         .await
         .unwrap_or_else(|error| {
             Err(LockInputCheckError(format!(
-                "Failed to receive lock input check result: {error}"
+                "Failed to receive lock input check result: {error:#}"
             )))
         });
     let lock_input_reservation = match lock_input_check {
