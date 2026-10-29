@@ -865,7 +865,7 @@ impl Wallet {
     /// Returned groups have the same order as `scripts`.
     ///
     /// A UTXO reported by any single server is accepted as existing; the
-    /// successful responses collected before reaching quorum are merged.
+    /// responses of all servers are merged.
     /// Scripts are not batched: a server refusing one script (e.g. one with too
     /// many UTXOs) would fail the whole batch, and we could not tell it apart
     /// from a server problem.

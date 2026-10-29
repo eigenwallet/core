@@ -303,9 +303,9 @@ where
         self.join_quorum_inner(f, false).await
     }
 
-    /// Return the same quorum results as `join_quorum`, but wait for every
-    /// started request to finish before returning. Used when the caller must
-    /// retain a verification worker slot until its RPC work has stopped.
+    /// Like `join_quorum`, but wait for every started request to finish and
+    /// return all of their results. Used when the caller must retain a
+    /// verification worker slot until its RPC work has stopped.
     #[instrument(level = "debug", skip(self, f), fields(operation = kind, total_clients = self.client_count(), min_parallel_responses = self.config.min_parallel_responses))]
     pub async fn join_quorum_and_drain<F, T>(
         &self,
@@ -372,9 +372,12 @@ where
 
             if successes >= quorum {
                 if drain {
-                    while let Some(result) = tasks.next().await {
-                        if let Err(error) = result {
-                            trace!(%error, "Failed to join remaining Electrum request");
+                    while let Some(joined) = tasks.next().await {
+                        match joined {
+                            Ok(result) => results.push(result),
+                            Err(error) => {
+                                trace!(%error, "Failed to join remaining Electrum request");
+                            }
                         }
                     }
                 }
@@ -1320,8 +1323,8 @@ mod tests {
             .await
             .unwrap();
 
-        // Preserve the quorum result, but retain the worker until the slow call ends.
-        assert_eq!(results.len(), 2);
+        // Retain the worker until the slow call ends, and keep its result.
+        assert_eq!(results.len(), 3);
         assert!(results.iter().all(|r| r.is_ok()));
         assert!(start.elapsed() >= Duration::from_millis(200));
     }
