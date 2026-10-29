@@ -351,13 +351,12 @@ export function StateAlert({
   }
 }
 
-// How many blocks need to be left for the timelock to be considered unusual
+// How many blocks of the cancel timelock need to have passed for the swap to be
+// considered unusually long running
 // A bit arbitrary but we don't want to alarm the user
-// 24 is the default cancel timelock in blocks (~4 hours)
 // 4 blocks are around 40 minutes
 // If the swap has taken longer than 40 minutes, we consider it unusual
-// See: swap-env/src/env.rs
-const UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_THRESHOLD = 24 - 4;
+const UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_BLOCKS = 4;
 
 /**
  * Main component for displaying the swap status alert.
@@ -389,7 +388,8 @@ export default function SwapStatusAlert({
 
   const hasUnusualAmountOfTimePassed =
     timelock.type === "None" &&
-    timelock.content.blocks_left > UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_THRESHOLD;
+    timelock.content.blocks_left >
+      swap.cancel_timelock - UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_BLOCKS;
 
   if (onlyShowIfUnusualAmountOfTimeHasPassed && !hasUnusualAmountOfTimePassed) {
     return null;
