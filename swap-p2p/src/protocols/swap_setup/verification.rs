@@ -168,7 +168,6 @@ enum Job {
 
 /// Owns all scheduling state. Only ever accessed from the actor task.
 struct Actor {
-    mailbox: mpsc::Receiver<Request>,
     /// Peers that have queued, running or cooling down jobs. Peers without
     /// any of those are removed.
     peers: HashMap<PeerId, Peer>,
@@ -240,9 +239,8 @@ impl LockInputVerifier {
 
     fn spawn_actor(prevout_verifier: Arc<dyn VerifyPsbtPrevouts>) -> (Self, JoinHandle<()>) {
         let (mailbox, receiver) = mpsc::channel(MAILBOX_CAPACITY);
-        let actor = Actor::new(receiver, prevout_verifier);
-        let metrics = actor.metrics.clone();
-        let actor = tokio::spawn(actor.run());
+        let metrics = metrics::Metrics::default();
+        let actor = tokio::spawn(supervise(receiver, prevout_verifier, metrics.clone()));
         (Self { mailbox, metrics }, actor)
     }
 
@@ -265,24 +263,53 @@ impl LockInputVerifier {
     }
 }
 
+/// Runs the actor, and restarts it after a panic as long as a handle can still
+/// send requests. A panic drops the actor's queued jobs, whose callers get
+/// `Closed`, and stops tracking its running work.
+async fn supervise(
+    mut mailbox: mpsc::Receiver<Request>,
+    prevout_verifier: Arc<dyn VerifyPsbtPrevouts>,
+    metrics: metrics::Metrics,
+) {
+    loop {
+        let actor = Actor::new(prevout_verifier.clone(), metrics.clone());
+        // The mailbox is only borrowed, so it survives a panic of the actor
+        let Err(panic) = std::panic::AssertUnwindSafe(actor.run(&mut mailbox))
+            .catch_unwind()
+            .await
+        else {
+            return;
+        };
+        let panic = panic
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("non-string panic payload");
+        if mailbox.is_closed() {
+            tracing::error!(
+                panic,
+                "Lock input verifier panicked after all handles were dropped"
+            );
+            return;
+        }
+        tracing::error!(panic, "Lock input verifier panicked, restarting it");
+    }
+}
+
 impl Actor {
-    fn new(
-        mailbox: mpsc::Receiver<Request>,
-        prevout_verifier: Arc<dyn VerifyPsbtPrevouts>,
-    ) -> Self {
+    fn new(prevout_verifier: Arc<dyn VerifyPsbtPrevouts>, metrics: metrics::Metrics) -> Self {
         Self {
-            mailbox,
             peers: HashMap::new(),
             ready: VecDeque::new(),
             cooldowns: VecDeque::new(),
             running: FuturesUnordered::new(),
             pending: 0,
-            metrics: metrics::Metrics::default(),
+            metrics,
             prevout_verifier,
         }
     }
 
-    async fn run(mut self) {
+    async fn run(mut self, mailbox: &mut mpsc::Receiver<Request>) {
         let mut mailbox_open = true;
 
         loop {
@@ -304,7 +331,7 @@ impl Actor {
                 .min();
 
             tokio::select! {
-                request = self.mailbox.recv(), if mailbox_open => {
+                request = mailbox.recv(), if mailbox_open => {
                     let Some(request) = request else {
                         // No handle is left, so no caller can be waiting for a queued job anymore
                         mailbox_open = false;
@@ -525,6 +552,7 @@ impl Job {
                     );
                     let psbt = verified.psbt();
                     let prevout_verifier = prevout_verifier.as_ref();
+                    let checking_since = Instant::now();
                     retry_lock_input_check(
                         |attempt_cancel| async move {
                             prevout_verifier
@@ -538,7 +566,7 @@ impl Job {
                     .await
                     .map_err(VerificationError::Prevouts)?;
                     tracing::debug!(
-                        duration_ms = started.elapsed().as_millis(),
+                        duration_ms = checking_since.elapsed().as_millis(),
                         "Found lock inputs unspent on Electrum"
                     );
                     Ok(verified)
@@ -1068,8 +1096,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn idle_peers_are_forgotten_once_cooled_down() {
-        let (_mailbox, receiver) = mpsc::channel(1);
-        let mut actor = Actor::new(receiver, stub_prevouts());
+        let mut actor = Actor::new(stub_prevouts(), metrics::Metrics::default());
         let peer = PeerId::random();
 
         let (reply, _response) = oneshot::channel();
