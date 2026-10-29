@@ -478,7 +478,11 @@ impl Database for SqliteDatabase {
                 oldest.entered_at  AS start_date
             FROM (SELECT swap_id, state, entered_at, MIN(id) AS id
                   FROM swap_states
-                  WHERE json_extract(state, '$.Alice.Started') IS NULL
+                  -- Unreadable rows must not fail the whole listing
+                  WHERE CASE
+                      WHEN json_valid(state) THEN json_extract(state, '$.Alice.Started') IS NULL
+                      ELSE 1
+                  END
                   GROUP BY swap_id) oldest
             JOIN (SELECT swap_id, state, MAX(id) AS id
                   FROM swap_states GROUP BY swap_id) newest
