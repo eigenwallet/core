@@ -262,6 +262,18 @@ pub async fn advance_refund(
             {
                 return record_refund_confirmed(swap_id, state6.clone(), refund_type, db).await;
             }
+            // Publish the refund again in case it was dropped. This skips the timelock
+            // checks of `publish_refund`: the refund is valid until Alice punishes.
+            if bitcoin_wallet
+                .status_of_script(&state6.construct_tx_cancel()?)
+                .await?
+                .is_confirmed_with(finality)
+            {
+                bitcoin_wallet
+                    .ensure_broadcasted(refund_tx, &refund_type.to_string())
+                    .await?;
+                return Ok(state.clone());
+            }
         }
         BobState::BtcReclaimPublished(state6) => {
             return advance_reclaim(swap_id, state6.clone(), bitcoin_wallet, db).await;
@@ -522,11 +534,19 @@ async fn advance_reclaim(
     let remaining_refund_timelock = state6
         .remaining_refund_timelock
         .context("Can't reclaim because remaining_refund_timelock is missing")?;
-    if !bitcoin_wallet
+    let tx_partial_refund_status = bitcoin_wallet
         .status_of_script(&state6.construct_tx_partial_refund()?)
-        .await?
-        .is_confirmed_with(remaining_refund_timelock)
-    {
+        .await?;
+    // The reclaim spends the partial refund, which a reorg may have dropped
+    if !tx_partial_refund_status.has_been_seen() {
+        bitcoin_wallet
+            .ensure_broadcasted(
+                state6.signed_partial_refund_transaction()?,
+                "partial btc refund",
+            )
+            .await?;
+    }
+    if !tx_partial_refund_status.is_confirmed_with(remaining_refund_timelock) {
         bail!("Cannot reclaim the anti-spam deposit before the remaining refund timelock expired");
     }
 
