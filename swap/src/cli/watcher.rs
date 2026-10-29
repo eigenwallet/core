@@ -1,6 +1,6 @@
+use super::advance_refund;
 use super::api::SwapLock;
 use super::api::tauri_bindings::{BackgroundRefundProgress, TauriBackgroundProgress, TauriEmitter};
-use super::cancel_and_refund;
 use crate::cli::api::tauri_bindings::TauriHandle;
 use crate::protocol::bob::BobState;
 use crate::protocol::{Database, State};
@@ -129,6 +129,16 @@ impl Watcher {
                     }
                 }
 
+                // Nothing to do until our cancel or refund is final, so leave the
+                // swap lock free meanwhile
+                if self
+                    .awaits_confirmation(&state)
+                    .await
+                    .context("Failed to check whether a refund step awaits confirmation")?
+                {
+                    continue;
+                }
+
                 if let Err(e) = self.swap_lock.acquire_swap_lock(swap_id).await {
                     tracing::error!(%e, %swap_id, "Watcher failed to refund a swap in the background because another swap is already running");
                     continue;
@@ -140,14 +150,15 @@ impl Watcher {
                         BackgroundRefundProgress { swap_id },
                     );
 
-                match cancel_and_refund(swap_id, self.wallet.clone(), self.database.clone()).await {
+                // Takes one step only: the next one follows on a later pass
+                match advance_refund(swap_id, self.wallet.clone(), self.database.clone()).await {
                     Err(e) => {
                         tracing::error!(%e, %swap_id, "Watcher failed to refund a swap in the background");
 
                         // TODO: Emit snackbar error here
                     }
-                    Ok(_) => {
-                        tracing::info!(%swap_id, "Watcher has refunded a swap in the background");
+                    Ok(state) => {
+                        tracing::info!(%swap_id, %state, "Watcher advanced the refund of a swap in the background");
                     }
                 }
 
@@ -159,6 +170,24 @@ impl Watcher {
         }
 
         Ok(())
+    }
+
+    /// Whether the cancel or refund we published has been seen but is not final yet.
+    async fn awaits_confirmation(&self, state: &BobState) -> Result<bool> {
+        let status = match state {
+            BobState::BtcCancelPublished(state6) => {
+                self.wallet
+                    .status_of_script(&state6.construct_tx_cancel()?)
+                    .await?
+            }
+            BobState::BtcRefundPublished(state6) | BobState::BtcPartialRefundPublished(state6) => {
+                let (refund_tx, _) = state6.construct_best_bitcoin_refund_tx()?;
+                self.wallet.status_of_script(&refund_tx).await?
+            }
+            _ => return Ok(false),
+        };
+        Ok(status.has_been_seen()
+            && !status.is_confirmed_with(self.wallet.finality_confirmations()))
     }
 
     /// Helper function for fetching the current list of swaps
