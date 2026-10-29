@@ -830,14 +830,11 @@ impl Wallet {
                 .push((tx_input.previous_output, witness_utxo.value));
         }
 
-        if *cancel.borrow() || cancel.has_changed().is_err() {
+        if is_cancelled(cancel) {
             return Err(PsbtPrevoutVerificationError::Cancelled);
         }
         let (scripts, claims): (Vec<_>, Vec<_>) = claims.into_iter().unzip();
-        let unspent = self.list_unspent(scripts).await?;
-        if *cancel.borrow() || cancel.has_changed().is_err() {
-            return Err(PsbtPrevoutVerificationError::Cancelled);
-        }
+        let unspent = self.list_unspent(scripts, cancel).await?;
 
         for (outpoints, utxos) in claims.into_iter().zip(unspent) {
             for (outpoint, claimed_value) in outpoints {
@@ -869,31 +866,45 @@ impl Wallet {
     /// Scripts are not batched: a server refusing one script (e.g. one with too
     /// many UTXOs) would fail the whole batch, and we could not tell it apart
     /// from a server problem.
+    ///
+    /// Once `cancel` fires, each server stops before its next script.
     async fn list_unspent(
         &self,
         scripts: Vec<ScriptBuf>,
+        cancel: &watch::Receiver<bool>,
     ) -> Result<Vec<Vec<bdk_electrum::electrum_client::ListUnspentRes>>, PsbtPrevoutVerificationError>
     {
         let query_scripts = scripts.clone();
+        let query_cancel = cancel.clone();
         let results = self
             .electrum_client
             .inner
             .join_quorum_and_drain("script_list_unspent", move |client| {
                 query_scripts
                     .iter()
-                    .map(|script| match client.inner.script_list_unspent(script) {
-                        Ok(utxos) => Ok(Ok(utxos)),
-                        // The server answered with an error for this script only
-                        Err(bdk_electrum::electrum_client::Error::Protocol(refusal)) => {
-                            Ok(Err(refusal))
+                    .map(|script| {
+                        if is_cancelled(&query_cancel) {
+                            return Err(bdk_electrum::electrum_client::Error::Message(
+                                "Lock input check was cancelled".to_owned(),
+                            ));
                         }
-                        Err(error) => Err(error),
+                        match client.inner.script_list_unspent(script) {
+                            Ok(utxos) => Ok(Ok(utxos)),
+                            // The server answered with an error for this script only
+                            Err(bdk_electrum::electrum_client::Error::Protocol(refusal)) => {
+                                Ok(Err(refusal))
+                            }
+                            Err(error) => Err(error),
+                        }
                     })
                     .collect::<Result<Vec<_>, _>>()
             })
             .await
             .context("Failed to query Electrum servers for unspent outputs")
             .map_err(PsbtPrevoutVerificationError::Electrum)?;
+        if is_cancelled(cancel) {
+            return Err(PsbtPrevoutVerificationError::Cancelled);
+        }
 
         let mut answers = Vec::new();
         let mut errors = Vec::new();
@@ -2383,6 +2394,11 @@ impl Client {
 
         Ok(fee_rate)
     }
+}
+
+/// Whether the lock input check was cancelled, or its canceller is gone.
+fn is_cancelled(cancel: &watch::Receiver<bool>) -> bool {
+    *cancel.borrow() || cancel.has_changed().is_err()
 }
 
 /// Returns true if the error is a server response indicating that the
