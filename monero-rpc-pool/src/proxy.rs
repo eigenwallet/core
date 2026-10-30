@@ -830,3 +830,395 @@ pub async fn stats_handler(State(state): State<AppState>) -> Response {
     .instrument(info_span!("stats_request"))
     .await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection_pool::ConnectionPool;
+    use crate::database::Database;
+    use crate::pool::NodePool;
+    use axum::response::IntoResponse;
+    use monero_address::Network;
+
+    /// Builds a cloneable request the same way the proxy handler does.
+    async fn cloneable_request(uri: &str, body: &[u8]) -> CloneableRequest {
+        let request = Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_vec()))
+            .expect("build request");
+        CloneableRequest::from_request(request)
+            .await
+            .expect("buffer request body")
+    }
+
+    /// Builds a cloneable response from a status and body.
+    async fn cloneable_response(status: StatusCode, body: &[u8]) -> CloneableResponse {
+        let response = Response::builder()
+            .status(status)
+            .body(Body::from(body.to_vec()))
+            .expect("build response");
+        CloneableResponse::from_response(response)
+            .await
+            .expect("buffer response body")
+    }
+
+    async fn app_state() -> (tempfile::TempDir, AppState) {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Database::new(dir.path().to_path_buf())
+            .await
+            .expect("database with migrations applied");
+
+        let (node_pool, _receiver) = NodePool::new(db, Network::Testnet);
+        let state = AppState {
+            node_pool: Arc::new(node_pool),
+            tor_client: None,
+            connection_pool: ConnectionPool::new(),
+        };
+        (dir, state)
+    }
+
+    /// App state whose pool contains exactly one testnet node, plus the
+    /// database handle for asserting on what the proxy records.
+    async fn app_state_with_node(host: &str, port: u16) -> (tempfile::TempDir, Database, AppState) {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Database::new(dir.path().to_path_buf())
+            .await
+            .expect("database with migrations applied");
+        sqlx::query(
+            r#"
+            INSERT INTO monero_nodes (scheme, host, port, network, first_seen_at)
+            VALUES ('http', ?, ?, 'testnet', datetime('now'))
+            "#,
+        )
+        .bind(host)
+        .bind(port)
+        .execute(&db.pool)
+        .await
+        .expect("insert fixture node");
+
+        let (node_pool, _receiver) = NodePool::new(db.clone(), Network::Testnet);
+        let state = AppState {
+            node_pool: Arc::new(node_pool),
+            tor_client: None,
+            connection_pool: ConnectionPool::new(),
+        };
+        (dir, db, state)
+    }
+
+    /// Spawns a minimal HTTP node that answers every request with the given
+    /// status and body, mirroring how the server binaries start axum.
+    async fn spawn_fake_node(status: StatusCode, body: &'static str) -> u16 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind fake node listener");
+        let port = listener.local_addr().expect("fake node address").port();
+
+        let app = axum::Router::new().route(
+            "/json_rpc",
+            axum::routing::any(move || async move { (status, body).into_response() }),
+        );
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        port
+    }
+
+    async fn error_response_body(error: HandlerError) -> (StatusCode, serde_json::Value) {
+        let response = error.to_response();
+        let status = response.status();
+        let (_, body) = response.into_parts();
+        let bytes = body
+            .collect()
+            .await
+            .expect("collect error body")
+            .to_bytes()
+            .to_vec();
+        let json = serde_json::from_slice(&bytes).expect("error body is JSON");
+        (status, json)
+    }
+
+    #[tokio::test]
+    async fn cloneable_request_round_trips_uri_headers_and_body() {
+        let cloneable =
+            cloneable_request("/json_rpc", br#"{"jsonrpc":"2.0","method":"get_info"}"#).await;
+
+        assert_eq!(cloneable.uri().to_string(), "/json_rpc");
+        assert_eq!(cloneable.jsonrpc_method().as_deref(), Some("get_info"));
+
+        let rebuilt = cloneable.to_request();
+        assert_eq!(rebuilt.method().as_str(), "POST");
+        assert_eq!(rebuilt.uri().to_string(), "/json_rpc");
+        assert_eq!(
+            rebuilt.headers().get("content-type").expect("content type"),
+            "application/json"
+        );
+
+        let (_, body) = rebuilt.into_parts();
+        let bytes = body
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes()
+            .to_vec();
+        assert_eq!(bytes, br#"{"jsonrpc":"2.0","method":"get_info"}"#.to_vec());
+
+        // into_request consumes the cloneable and yields an equivalent request.
+        let consumed = cloneable.into_request();
+        assert_eq!(consumed.uri().to_string(), "/json_rpc");
+        assert_eq!(consumed.method().as_str(), "POST");
+    }
+
+    #[tokio::test]
+    async fn jsonrpc_method_reads_method_field_from_json_body() {
+        let with_method = cloneable_request("/json_rpc", br#"{"method":"get_info"}"#).await;
+        assert_eq!(with_method.jsonrpc_method().as_deref(), Some("get_info"));
+
+        let without_method = cloneable_request("/json_rpc", br#"{"jsonrpc":"2.0"}"#).await;
+        assert_eq!(without_method.jsonrpc_method(), None);
+
+        let not_json = cloneable_request("/json_rpc", b"garbage").await;
+        assert_eq!(not_json.jsonrpc_method(), None);
+    }
+
+    #[tokio::test]
+    async fn clearnet_whitelist_covers_only_bin_downloads() {
+        let blocks = cloneable_request("/getblocks.bin", b"").await;
+        let hashes = cloneable_request("/gethashes.bin", b"").await;
+        let json_rpc = cloneable_request("/json_rpc", b"").await;
+        let transactions = cloneable_request("/get_transactions.bin", b"").await;
+
+        assert!(blocks.clearnet_whitelisted());
+        assert!(hashes.clearnet_whitelisted());
+        assert!(!json_rpc.clearnet_whitelisted());
+        assert!(!transactions.clearnet_whitelisted());
+    }
+
+    #[tokio::test]
+    async fn jsonrpc_string_errors_are_detected_in_bodies() {
+        let with_error = cloneable_response(StatusCode::OK, br#"{"error":"boom"}"#).await;
+        assert_eq!(with_error.get_jsonrpc_error().as_deref(), Some("boom"));
+        assert_eq!(with_error.status(), StatusCode::OK);
+
+        let without_error =
+            cloneable_response(StatusCode::OK, br#"{"result":{"status":"OK"}}"#).await;
+        assert_eq!(without_error.get_jsonrpc_error(), None);
+
+        let not_json = cloneable_response(StatusCode::OK, b"not json").await;
+        assert_eq!(not_json.get_jsonrpc_error(), None);
+
+        // to_response round trips the buffered body and status.
+        let rebuilt = with_error.to_response();
+        let (parts, body) = rebuilt.into_parts();
+        assert_eq!(parts.status, StatusCode::OK);
+        let bytes = body
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes()
+            .to_vec();
+        assert_eq!(bytes, br#"{"error":"boom"}"#.to_vec());
+    }
+
+    #[tokio::test]
+    async fn handler_errors_map_to_status_codes_and_json_body() {
+        let cases = [
+            (
+                HandlerError::NoNodes,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "No nodes available",
+            ),
+            (
+                HandlerError::PoolError("db unavailable".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Pool error",
+            ),
+            (
+                HandlerError::PhyiscalError(SingleRequestError::ConnectionError(
+                    "refused".to_string(),
+                )),
+                StatusCode::BAD_GATEWAY,
+                "Connection error",
+            ),
+            (
+                HandlerError::HttpError(StatusCode::NOT_FOUND),
+                StatusCode::NOT_FOUND,
+                "HTTP error",
+            ),
+            (
+                HandlerError::JsonRpcError("boom".to_string()),
+                StatusCode::BAD_GATEWAY,
+                "JSON-RPC error",
+            ),
+            (
+                HandlerError::AllRequestsFailed(vec![]),
+                StatusCode::BAD_GATEWAY,
+                "All requests failed",
+            ),
+            (
+                HandlerError::CloneRequestError("overflow".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Request processing error",
+            ),
+        ];
+
+        for (error, expected_status, expected_message) in cases {
+            let (status, json) = error_response_body(error).await;
+            assert_eq!(status, expected_status);
+
+            let error_object = json.get("error").expect("error object");
+            assert_eq!(
+                error_object.get("code").and_then(|c| c.as_u64()),
+                Some(expected_status.as_u16() as u64)
+            );
+            assert_eq!(
+                error_object.get("message").and_then(|m| m.as_str()),
+                Some(expected_message)
+            );
+            assert!(error_object.get("details").is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn proxy_handler_returns_service_unavailable_when_no_nodes() {
+        let (_dir, state) = app_state().await;
+        let request = cloneable_request("/json_rpc", br#"{"method":"get_info"}"#)
+            .await
+            .into_request();
+
+        let response = proxy_handler(State(state), request).await;
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let (_, body) = response.into_parts();
+        let bytes = body
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes()
+            .to_vec();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON body");
+        assert_eq!(
+            json.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str()),
+            Some("No nodes available")
+        );
+    }
+
+    #[tokio::test]
+    async fn proxy_returns_upstream_response_and_records_the_success() {
+        const NODE_RESPONSE: &str = r#"{"jsonrpc":"2.0","result":{"height":1},"id":0}"#;
+        let port = spawn_fake_node(StatusCode::OK, NODE_RESPONSE).await;
+
+        let (_dir, db, state) = app_state_with_node("127.0.0.1", port).await;
+        let request = cloneable_request("/json_rpc", br#"{"method":"get_info"}"#).await;
+
+        let response = proxy_to_multiple_nodes(
+            &state,
+            request,
+            vec![("http".to_string(), "127.0.0.1".to_string(), port)],
+        )
+        .await
+        .expect("proxy to fake node");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let (_, body) = response.into_parts();
+        let bytes = body
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes()
+            .to_vec();
+        assert_eq!(bytes, NODE_RESPONSE.as_bytes());
+
+        // The successful round trip is recorded against the node in the db.
+        assert_eq!(db.get_health_check_stats("testnet").await.unwrap(), (1, 0));
+        assert_eq!(db.get_node_stats("testnet").await.unwrap(), (1, 1, 1));
+    }
+
+    #[tokio::test]
+    async fn proxy_converts_upstream_http_error_to_bad_gateway_json() {
+        let port = spawn_fake_node(StatusCode::INTERNAL_SERVER_ERROR, "upstream exploded").await;
+        let (_dir, db, state) = app_state_with_node("127.0.0.1", port).await;
+        let request = cloneable_request("/json_rpc", br#"{"method":"get_info"}"#).await;
+
+        let error = match proxy_to_multiple_nodes(
+            &state,
+            request,
+            vec![("http".to_string(), "127.0.0.1".to_string(), port)],
+        )
+        .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("expected the upstream error to surface"),
+        };
+        let (status, json) = error_response_body(error).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(
+            json.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str()),
+            Some("All requests failed")
+        );
+        let details = json
+            .get("error")
+            .and_then(|e| e.get("details"))
+            .and_then(|d| d.as_str())
+            .expect("details string");
+        assert!(details.contains("HTTP error"));
+
+        // No health check is recorded unless some node eventually succeeds, so
+        // an outage on our side does not smear failures onto the nodes.
+        assert_eq!(db.get_health_check_stats("testnet").await.unwrap(), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn proxy_reports_unreachable_nodes_as_bad_gateway_json() {
+        // Reserve a port, then stop listening so connects are refused.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let port = listener.local_addr().expect("address").port();
+        drop(listener);
+
+        let (_dir, db, state) = app_state_with_node("127.0.0.1", port).await;
+        let request = cloneable_request("/json_rpc", br#"{"method":"get_info"}"#).await;
+
+        let error = match proxy_to_multiple_nodes(
+            &state,
+            request,
+            vec![("http".to_string(), "127.0.0.1".to_string(), port)],
+        )
+        .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("expected a connection error"),
+        };
+        let (status, json) = error_response_body(error).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        let details = json
+            .get("error")
+            .and_then(|e| e.get("details"))
+            .and_then(|d| d.as_str())
+            .expect("details string");
+        assert!(details.contains("Connection error"));
+
+        assert_eq!(db.get_health_check_stats("testnet").await.unwrap(), (0, 0));
+    }
+
+    #[test]
+    fn tls_verifier_accepts_all_certificates_by_design() {
+        let verifier = NoCertificateVerification;
+        let certificate = CertificateDer::from(vec![]);
+        let server_name = ServerName::try_from("node.example".to_string()).expect("server name");
+
+        assert!(
+            verifier
+                .verify_server_cert(&certificate, &[], &server_name, &[], UnixTime::now())
+                .is_ok()
+        );
+        assert!(!verifier.supported_verify_schemes().is_empty());
+    }
+}
