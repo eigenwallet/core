@@ -331,7 +331,7 @@ export default function SwapSetupInflightPage({
         <SwapSetupMarkupWarningDialog
           open={acknowledgedWarningRequestId !== request.request_id}
           warning={rateWarning}
-          onAccept={() => setAcknowledgedWarningRequestId(request.request_id)}
+          onContinue={() => setAcknowledgedWarningRequestId(request.request_id)}
           onDeny={deny}
           quotedRate={quotedRate}
           offeredRate={makerRate}

@@ -16,7 +16,7 @@ type SwapSetupMarkupWarningDialogProps = {
   open: boolean;
   warning: SwapSetupRateWarning;
   /// Closes the dialog. The user then confirms the offer on the page behind it.
-  onAccept: () => void;
+  onContinue: () => void;
   onDeny: () => Promise<unknown>;
   /// The rate of the selected quote in BTC per XMR. Null if the GUI did not
   /// receive a quote for this swap.
@@ -44,7 +44,7 @@ function getWarningText(warning: SwapSetupRateWarning): string {
 export default function SwapSetupMarkupWarningDialog({
   open,
   warning,
-  onAccept,
+  onContinue,
   onDeny,
   quotedRate,
   offeredRate,
@@ -76,7 +76,7 @@ export default function SwapSetupMarkupWarningDialog({
             variant="h5"
             sx={{ fontWeight: "bold" }}
           >
-            Are you sure this is the swap exchange that you want to accept?
+            Are you sure this is the exchange rate that you want to accept?
           </Typography>
           <Typography variant="body1">{getWarningText(warning)}</Typography>
           {warning.type !== "MarkupHigh" && (
@@ -128,10 +128,10 @@ export default function SwapSetupMarkupWarningDialog({
         <Button
           variant="contained"
           color="error"
-          onClick={onAccept}
+          onClick={onContinue}
           disabled={isDenying || timeLeft <= 0}
         >
-          Accept
+          Continue
         </Button>
       </DialogActions>
     </Dialog>
