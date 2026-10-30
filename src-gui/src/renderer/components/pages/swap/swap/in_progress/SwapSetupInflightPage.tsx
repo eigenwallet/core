@@ -11,12 +11,14 @@ import {
   usePendingLockBitcoinApproval,
   useAppSelector,
 } from "store/hooks";
-import { getMarkup, satsToBtc, piconerosToXmr } from "utils/conversionUtils";
+import { getExchangeRate, getMarkup, satsToBtc } from "utils/conversionUtils";
+import { getSwapSetupRateWarning } from "utils/swapSetupMarkup";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import CircularProgressWithSubtitle from "../components/CircularProgressWithSubtitle";
 import CheckIcon from "@mui/icons-material/Check";
 import ArrowRightAltIcon from "@mui/icons-material/ArrowRightAlt";
 import TruncatedText from "renderer/components/other/TruncatedText";
+import SwapSetupMarkupWarningDialog from "./SwapSetupMarkupWarningDialog";
 
 /// A hook that returns the LockBitcoin confirmation request for the active swap
 /// Returns null if no confirmation request is found
@@ -35,6 +37,10 @@ export default function SwapSetupInflightPage({
   const request = useActiveLockBitcoinApprovalRequest();
   // Get market rate for markup calculation (must be called unconditionally)
   const xmrBtcRate = useAppSelector((state) => state.rates.xmrBtcRate);
+  const quote = useAppSelector((state) => state.swap.state?.quote ?? null);
+  // The id of the approval request whose markup warning the user acknowledged.
+  const [acknowledgedWarningRequestId, setAcknowledgedWarningRequestId] =
+    useState<string | null>(null);
 
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const expirationTs =
@@ -90,10 +96,29 @@ export default function SwapSetupInflightPage({
   } = request.request.content;
 
   // Calculate markup compared to market rate
-  const makerRate =
-    satsToBtc(btc_lock_amount) / piconerosToXmr(Number(xmr_receive_amount));
+  const makerRate = getExchangeRate(
+    btc_lock_amount,
+    Number(xmr_receive_amount),
+  );
   const markupPercent =
     xmrBtcRate != null ? getMarkup(makerRate, xmrBtcRate) : null;
+
+  const quotedRate = quote != null ? satsToBtc(quote.price) : null;
+  // Add one piconero to remove the maker's truncation error.
+  const rateForWarning = getExchangeRate(
+    btc_lock_amount,
+    Number(xmr_receive_amount) + 1,
+  );
+  const rateWarning = getSwapSetupRateWarning({
+    quotedRate,
+    offeredRate: rateForWarning,
+    marketRate: xmrBtcRate,
+  });
+
+  const accept = () =>
+    resolveApproval(request.request_id, true as unknown as object);
+  const deny = () =>
+    resolveApproval(request.request_id, false as unknown as object);
 
   // Calculate refund percentages
   const guaranteedRefundPercent =
@@ -274,9 +299,7 @@ export default function SwapSetupInflightPage({
             variant="text"
             size="large"
             sx={(theme) => ({ color: theme.palette.text.secondary })}
-            onInvoke={() =>
-              resolveApproval(request.request_id, false as unknown as object)
-            }
+            onInvoke={deny}
             displayErrorSnackbar
           >
             Deny
@@ -286,9 +309,7 @@ export default function SwapSetupInflightPage({
             variant="contained"
             color="primary"
             size="large"
-            onInvoke={() =>
-              resolveApproval(request.request_id, true as unknown as object)
-            }
+            onInvoke={accept}
             displayErrorSnackbar
             endIcon={<CheckIcon />}
           >
@@ -305,6 +326,18 @@ export default function SwapSetupInflightPage({
           {`Offer expires in ${timeLeft}s`}
         </Typography>
       </Box>
+
+      {rateWarning != null && (
+        <SwapSetupMarkupWarningDialog
+          open={acknowledgedWarningRequestId !== request.request_id}
+          warning={rateWarning}
+          onContinue={() => setAcknowledgedWarningRequestId(request.request_id)}
+          onDeny={deny}
+          quotedRate={quotedRate}
+          offeredRate={makerRate}
+          timeLeft={timeLeft}
+        />
+      )}
     </Box>
   );
 }

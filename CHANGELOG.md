@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - ORCHESTRATOR: Update Tor to 0.4.9.9 and ship the logs of the `tor` container to Loki.
+- GUI: Show a warning before you accept an offer during swap setup if the rate of the maker is more than 5% above its quote, its markup is above 5%, or its markup is more than 25%, and more than 0.25 percentage points, above the quoted markup.
 
 ## [5.0.0] - 2026-10-28
 

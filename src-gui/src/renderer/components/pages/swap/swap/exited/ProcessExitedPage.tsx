@@ -32,6 +32,7 @@ export default function ProcessExitedPage({
           curr: prevState,
           prev: null,
           swapId,
+          quote: null,
         }}
       />
     );
