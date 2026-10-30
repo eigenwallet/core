@@ -2,7 +2,11 @@
 
 mod cancel;
 mod early_refund;
+mod fees;
 mod full_refund;
+pub use fees::{
+    RedeemFeeMultiplier, SwapFeeError, SwapFeeInputs, SwapFeeLimits, SwapFeeRate, SwapFees,
+};
 mod lock;
 mod mercy;
 mod partial_refund;
@@ -12,10 +16,12 @@ mod redeem;
 mod timelocks;
 mod withhold;
 
-pub use crate::bitcoin::cancel::TxCancel;
+pub use crate::bitcoin::cancel::{CancelRefundVersion, TxCancel};
 pub use crate::bitcoin::early_refund::TxEarlyRefund;
 pub use crate::bitcoin::full_refund::TxFullRefund;
-pub use crate::bitcoin::lock::TxLock;
+pub use crate::bitcoin::lock::{
+    TxLock, canonical_received_psbt, estimated_signed_lock_weight, find_conflicting_psbt_input,
+};
 pub use crate::bitcoin::mercy::TxMercy;
 pub use crate::bitcoin::partial_refund::TxPartialRefund;
 pub use crate::bitcoin::punish::TxPunish;
@@ -46,6 +52,9 @@ use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::str::FromStr;
+
+/// Shared setup limit used by Bob's funding policy and Alice's validation.
+pub const MAX_TX_LOCK_INPUTS: usize = 25;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct SecretKey {
@@ -543,7 +552,10 @@ mod tests {
     #[tokio::test]
     async fn given_no_balance_returns_amount_0() {
         let wallet = TestWalletBuilder::new(0).with_fees(1, 1).build().await;
-        let (amount, _fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
+        let (amount, _fee) = wallet
+            .max_giveable(TxLock::script_size(), None)
+            .await
+            .unwrap();
 
         assert_eq!(amount, Amount::ZERO);
     }
@@ -551,7 +563,10 @@ mod tests {
     #[tokio::test]
     async fn given_balance_below_min_relay_fee_returns_amount_0() {
         let wallet = TestWalletBuilder::new(1000).with_fees(1, 1).build().await;
-        let (amount, _fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
+        let (amount, _fee) = wallet
+            .max_giveable(TxLock::script_size(), None)
+            .await
+            .unwrap();
 
         // The wallet can still create a transaction even if the balance is below the min relay fee
         // because BDK's transaction builder will use whatever fee rate is possible
@@ -563,7 +578,10 @@ mod tests {
     #[tokio::test]
     async fn given_balance_above_relay_fee_returns_amount_greater_0() {
         let wallet = TestWalletBuilder::new(10_000).build().await;
-        let (amount, _fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
+        let (amount, _fee) = wallet
+            .max_giveable(TxLock::script_size(), None)
+            .await
+            .unwrap();
 
         assert!(amount.to_sat() > 0);
     }
@@ -571,7 +589,10 @@ mod tests {
     #[tokio::test]
     async fn given_balance_below_dust_returns_amount_0_but_with_sensible_fee() {
         let wallet = TestWalletBuilder::new(0).build().await;
-        let (amount, fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
+        let (amount, fee) = wallet
+            .max_giveable(TxLock::script_size(), None)
+            .await
+            .unwrap();
 
         assert_eq!(amount, Amount::ZERO);
         assert!(fee.to_sat() > 0);
@@ -640,6 +661,7 @@ mod tests {
                 Amount::from_sat(10_000),
                 spending_fee,
                 Some(custom_change.clone()),
+                None,
             )
             .await
             .unwrap();
@@ -714,7 +736,7 @@ TRACE bitcoin_wallet::wallet: Bitcoin transaction status changed txid=0000000000
                     .build()
                     .await;
 
-                let (amount, spending_fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
+                let (amount, spending_fee) = wallet.max_giveable(TxLock::script_size(), None).await.unwrap();
                 let psbt: PartiallySignedTransaction = TxLock::new(&wallet, amount, spending_fee, PublicKey::from(alice), PublicKey::from(bob), wallet.new_address().await.unwrap()).await.unwrap().into();
                 let result = wallet.sign_and_finalize(psbt).await;
 

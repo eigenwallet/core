@@ -1081,6 +1081,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "utxo-ownership-proof",
 ]
 
 [[package]]
@@ -10497,7 +10498,7 @@ checksum = "734676eb262c623cec13c3155096e08d1f8f29adce39ba17948b18dad1e54142"
 
 [[package]]
 name = "swap"
-version = "4.16.1"
+version = "5.0.0"
 dependencies = [
  "anyhow",
  "arti-client",
@@ -10582,6 +10583,7 @@ dependencies = [
  "tracing-subscriber",
  "typeshare",
  "url",
+ "utxo-ownership-proof",
  "uuid",
  "vergen-git2",
  "void",
@@ -10590,7 +10592,7 @@ dependencies = [
 
 [[package]]
 name = "swap-asb"
-version = "4.16.1"
+version = "5.0.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.8",
@@ -10621,7 +10623,7 @@ dependencies = [
 
 [[package]]
 name = "swap-controller"
-version = "4.16.1"
+version = "5.0.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.8",
@@ -10771,6 +10773,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rust_decimal",
  "serde",
+ "serde_json",
  "sha2",
  "sigma_fun",
  "swap-core",
@@ -10779,6 +10782,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "utxo-ownership-proof",
  "uuid",
 ]
 
@@ -10838,6 +10842,7 @@ dependencies = [
  "tracing-subscriber",
  "typeshare",
  "unsigned-varint 0.8.0",
+ "utxo-ownership-proof",
  "uuid",
  "void",
 ]
@@ -13410,7 +13415,7 @@ dependencies = [
 
 [[package]]
 name = "unstoppableswap-gui-rs"
-version = "4.16.1"
+version = "5.0.0"
 dependencies = [
  "rustls 0.23.37",
  "serde",
@@ -13493,6 +13498,16 @@ name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+
+[[package]]
+name = "utxo-ownership-proof"
+version = "0.1.0"
+dependencies = [
+ "bitcoin 0.32.8",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
 
 [[package]]
 name = "uuid"

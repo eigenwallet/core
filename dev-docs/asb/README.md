@@ -121,7 +121,27 @@ If the option is not set, a new address from the internal wallet is used for eve
 
 `developer_tip` allows configuring your maker to donate a small part of swaps to funding further development of the project. This is disabled by default. You can manually enable it if you choose to do so. Set it to a number between 0 and 1. Setting it to 0.02 will donate 2% of each swap to the donation address of the project. The tip is sent by adding an additional output to the Monero lock transaction of a swap. This means this will not impact the availability of your UTXOs (unlocked funds) as it does not require an additonal transaction.
 
-`btc_redeem_fee_multiplier` scales the estimated BTC redeem fee. Defaults to `1.0`. Set higher (e.g. `2.0`) as a safety margin so the redeem still confirms when fee estimation undershoots actual mempool conditions. The fee is deducted from the BTC Alice receives, so a higher value reduces her net redeem amount.
+`btc_swap_fee_rate_multiplier` scales the rate Alice proposes for all presigned Bitcoin transactions.
+It defaults to `1.0` and must be between `1.0` and `3.0`.
+Bob rejects rates above three times his own estimate, so a higher multiplier would make every swap setup fail; a multiplier close to `3.0` can still fail when Alice's estimate is higher than Bob's.
+Bob accepts or rejects this rate against his local limits before signing.
+Neither peer proposes or accepts a rate below 1 sat/vB, regardless of the local estimate.
+Both peers derive one base fee from the largest conservative signed transaction size.
+Redeem defaults to 2.5 times the base fee; every other presigned transaction pays the base fee.
+Set `maker.btc_redeem_base_fee_multiplier = "2.30"` to choose a different redeem multiplier.
+This is an exact quoted decimal with at most two meaningful decimal places, in the range `2.00` through `4.00`.
+Both peers validate the range and round the resulting redeem fee up to whole satoshis.
+The lower bound keeps at least a twofold fee margin over cancel, so that redeem can replace an unconfirmed cancel under the replace-by-fee rules, while the refund confirmation delay prevents refund from raising an unconfirmed cancel's fee through CPFP under standard relay policy.
+This does not guarantee inclusion under arbitrary miner policies.
+The upper bound limits negotiation; each peer still enforces its total spending-path fee budget.
+The multiplier is negotiated during setup only; persisted swaps retain their original fee amounts.
+Setup rejects fees above local budgets and deposits that cannot fund their spending paths.
+
+When Prometheus is enabled, `lock_proof_verification_*` metrics expose running and queued ownership-proof jobs, worker capacity, completion and rejection counts, and queue/verification latency in seconds.
+Cancellation retains a running worker until its blocking work finishes.
+Metric labels contain fixed outcome names, never peer or job IDs.
+
+`wallet_snapshot_cache_ttl_secs` controls how long wallet state is reused during swap setup. It defaults to `20` seconds. This reduces repeated Bitcoin and Monero health checks, Monero balance calls, and Bitcoin address generation across setup requests.
 
 In order to be able to trade, the ASB must define a price to be able to agree on the amounts to be swapped with a CLI.
 The `XMR<>BTC` price is currently determined by the price from the central exchange Kraken.

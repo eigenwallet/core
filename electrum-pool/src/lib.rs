@@ -22,8 +22,6 @@ use tracing::{debug, error, instrument, trace, warn};
 /// errors, because those may be server deficiencies ("txindex not
 /// ready", unsupported endpoint) that another server does not have.
 ///
-/// Parallel quorum operations always wait for the primary's result.
-///
 /// Clients are created lazily on first use to avoid blocking during initialization.
 pub struct ElectrumBalancer<C = BdkElectrumClient<Client>>
 where
@@ -287,8 +285,7 @@ where
     }
 
     /// Execute the given closure on all Electrum nodes in parallel, returning
-    /// as soon as `min_parallel_responses` nodes have responded successfully
-    /// and the primary (first) node has produced a result.
+    /// as soon as `min_parallel_responses` nodes have responded successfully.
     ///
     /// The requests to the remaining nodes keep running in the background;
     /// their results are discarded. If the quorum cannot be reached the call
@@ -303,6 +300,34 @@ where
         F: Fn(&C) -> Result<T, Error> + Send + Sync + Clone + 'static,
         T: Send + 'static,
     {
+        self.join_quorum_inner(f, false).await
+    }
+
+    /// Like `join_quorum`, but wait for every started request to finish and
+    /// return all of their results. Used when the caller must retain a
+    /// verification worker slot until its RPC work has stopped.
+    #[instrument(level = "debug", skip(self, f), fields(operation = kind, total_clients = self.client_count(), min_parallel_responses = self.config.min_parallel_responses))]
+    pub async fn join_quorum_and_drain<F, T>(
+        &self,
+        kind: &str,
+        f: F,
+    ) -> Result<Vec<Result<T, Error>>, Error>
+    where
+        F: Fn(&C) -> Result<T, Error> + Send + Sync + Clone + 'static,
+        T: Send + 'static,
+    {
+        self.join_quorum_inner(f, true).await
+    }
+
+    async fn join_quorum_inner<F, T>(
+        &self,
+        f: F,
+        drain: bool,
+    ) -> Result<Vec<Result<T, Error>>, Error>
+    where
+        F: Fn(&C) -> Result<T, Error> + Send + Sync + Clone + 'static,
+        T: Send + 'static,
+    {
         let start_time = Instant::now();
         let num_clients = self.client_count();
         let quorum = self.config.min_parallel_responses.clamp(1, num_clients);
@@ -313,31 +338,25 @@ where
                 let balancer = self.clone();
 
                 tokio::spawn(async move {
-                    let result = match balancer.get_or_init_client_async(idx).await {
+                    match balancer.get_or_init_client_async(idx).await {
                         Ok(client) => tokio::task::spawn_blocking(move || f(&client))
                             .await
                             .map_err(|e| Error::IOError(std::io::Error::other(format!("{e:?}"))))
                             .and_then(|result| result),
                         Err(e) => Err(e),
-                    };
-
-                    (idx, result)
+                    }
                 })
             })
             .collect();
 
         let mut results: Vec<Result<T, Error>> = Vec::new();
         let mut successes = 0;
-        let mut primary_finished = false;
 
         while let Some(joined) = tasks.next().await {
             match joined {
-                Ok((idx, result)) => {
+                Ok(result) => {
                     if result.is_ok() {
                         successes += 1;
-                    }
-                    if idx == 0 {
-                        primary_finished = true;
                     }
                     results.push(result);
                 }
@@ -351,7 +370,17 @@ where
                 }
             }
 
-            if successes >= quorum && primary_finished {
+            if successes >= quorum {
+                if drain {
+                    while let Some(joined) = tasks.next().await {
+                        match joined {
+                            Ok(result) => results.push(result),
+                            Err(error) => {
+                                trace!(%error, "Failed to join remaining Electrum request");
+                            }
+                        }
+                    }
+                }
                 break;
             }
         }
@@ -361,7 +390,7 @@ where
             successful_requests = successes,
             collected_requests = results.len(),
             detached_requests = tasks.len(),
-            "Quorum execution completed, remaining requests continue in the background"
+            "Quorum execution completed"
         );
 
         Ok(results)
@@ -370,9 +399,9 @@ where
     /// Broadcast the given transaction to all Electrum nodes in parallel.
     ///
     /// The transaction is sent to every node, but the method already returns
-    /// once `min_parallel_responses` nodes have accepted it and the primary
-    /// node has responded. The remaining broadcasts continue in the background.
-    /// Errors for individual nodes do not abort the others.
+    /// once `min_parallel_responses` nodes have accepted it. The remaining
+    /// broadcasts continue in the background. Errors for individual nodes do
+    /// not abort the others.
     #[instrument(level = "debug", skip(self, tx), fields(txid = %tx.compute_txid(), total_clients = self.client_count()))]
     pub async fn broadcast_all(
         &self,
@@ -1262,7 +1291,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_join_quorum_waits_for_primary() {
+    async fn test_join_quorum_and_drain_waits_for_remaining_work() {
+        let urls = vec![
+            "tcp://localhost:50001".to_string(),
+            "tcp://localhost:50002".to_string(),
+            "tcp://localhost:50003".to_string(),
+        ];
+
+        let factory = Arc::new(MockElectrumClientFactory::new());
+        factory.add_client(MockElectrumClient::new(urls[0].clone()));
+        factory.add_client(MockElectrumClient::new(urls[1].clone()));
+        factory.add_client(
+            MockElectrumClient::new(urls[2].clone()).with_delay(Duration::from_millis(200)),
+        );
+
+        let config = ElectrumBalancerConfig {
+            request_timeout: 5,
+            min_retries: 0,
+            min_parallel_responses: 2,
+        };
+
+        let balancer = ElectrumBalancer::new_with_config_and_factory(urls, config, factory.clone())
+            .await
+            .unwrap();
+
+        let start = Instant::now();
+        let results = balancer
+            .join_quorum_and_drain("transaction_broadcast", |client| {
+                client.transaction_broadcast(&create_dummy_transaction())
+            })
+            .await
+            .unwrap();
+
+        // Retain the worker until the slow call ends, and keep its result.
+        assert_eq!(results.len(), 3);
+        assert!(results.iter().all(|r| r.is_ok()));
+        assert!(start.elapsed() >= Duration::from_millis(200));
+    }
+
+    #[tokio::test]
+    async fn test_join_quorum_does_not_wait_for_primary() {
         let urls = vec![
             "tcp://localhost:50001".to_string(),
             "tcp://localhost:50002".to_string(),
@@ -1294,9 +1362,9 @@ mod tests {
             .await
             .unwrap();
 
-        // The quorum of 2 is reached by the fast nodes, but we still wait
-        // for the primary (first) node before returning
-        assert_eq!(results.len(), 3);
-        assert!(start.elapsed() >= Duration::from_millis(500));
+        // The quorum of 2 is reached by the fast nodes, so the slow primary
+        // (first) node is not awaited
+        assert_eq!(results.len(), 2);
+        assert!(start.elapsed() < Duration::from_millis(500));
     }
 }

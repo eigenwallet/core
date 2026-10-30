@@ -1,6 +1,6 @@
+use super::advance_refund;
 use super::api::SwapLock;
 use super::api::tauri_bindings::{BackgroundRefundProgress, TauriBackgroundProgress, TauriEmitter};
-use super::cancel_and_refund;
 use crate::cli::api::tauri_bindings::TauriHandle;
 use crate::protocol::bob::BobState;
 use crate::protocol::{Database, State};
@@ -106,17 +106,25 @@ impl Watcher {
             // Insert new status
             self.cached_timelocks.insert(swap_id, new_timelock_status);
 
-            // If the swap has to be refunded, do it in the background
+            // If the swap has to be refunded, do it in the background. A refund or
+            // reclaim we published is recorded once final, whatever the timelocks say
             if matches!(
                 new_timelock_status,
                 Some(ExpiredTimelocks::Cancel { .. }) | Some(ExpiredTimelocks::RemainingRefund)
+            ) || matches!(
+                state,
+                BobState::BtcRefundPublished(_)
+                    | BobState::BtcPartialRefundPublished(_)
+                    | BobState::BtcReclaimPublished(_)
             ) {
                 // If the swap is already refunded, we can skip the refund
                 if matches!(
                     state,
                     BobState::BtcRefunded(_)
                         | BobState::BtcWithheld(_)
+                        | BobState::BtcMercyPublished(_)
                         | BobState::BtcMercyConfirmed(_)
+                        | BobState::BtcReclaimConfirmed(_)
                 ) {
                     continue;
                 }
@@ -127,6 +135,16 @@ impl Watcher {
                     if current_swap_id == swap_id {
                         continue;
                     }
+                }
+
+                // Nothing to do until our cancel, refund or reclaim is final, so leave
+                // the swap lock free meanwhile
+                if self
+                    .awaits_confirmation(&state)
+                    .await
+                    .context("Failed to check whether a refund step awaits confirmation")?
+                {
+                    continue;
                 }
 
                 if let Err(e) = self.swap_lock.acquire_swap_lock(swap_id).await {
@@ -140,14 +158,15 @@ impl Watcher {
                         BackgroundRefundProgress { swap_id },
                     );
 
-                match cancel_and_refund(swap_id, self.wallet.clone(), self.database.clone()).await {
+                // Takes one step only: the next one follows on a later pass
+                match advance_refund(swap_id, self.wallet.clone(), self.database.clone()).await {
                     Err(e) => {
                         tracing::error!(%e, %swap_id, "Watcher failed to refund a swap in the background");
 
                         // TODO: Emit snackbar error here
                     }
-                    Ok(_) => {
-                        tracing::info!(%swap_id, "Watcher has refunded a swap in the background");
+                    Ok(state) => {
+                        tracing::info!(%swap_id, %state, "Watcher advanced the refund of a swap in the background");
                     }
                 }
 
@@ -159,6 +178,29 @@ impl Watcher {
         }
 
         Ok(())
+    }
+
+    /// Whether the cancel, refund or reclaim we published has been seen but is not final yet.
+    async fn awaits_confirmation(&self, state: &BobState) -> Result<bool> {
+        let status = match state {
+            BobState::BtcCancelPublished(state6) => {
+                self.wallet
+                    .status_of_script(&state6.construct_tx_cancel()?)
+                    .await?
+            }
+            BobState::BtcRefundPublished(state6) | BobState::BtcPartialRefundPublished(state6) => {
+                let (refund_tx, _) = state6.construct_best_bitcoin_refund_tx()?;
+                self.wallet.status_of_script(&refund_tx).await?
+            }
+            BobState::BtcReclaimPublished(state6) => {
+                self.wallet
+                    .status_of_script(&state6.signed_amnesty_transaction()?)
+                    .await?
+            }
+            _ => return Ok(false),
+        };
+        Ok(status.has_been_seen()
+            && !status.is_confirmed_with(self.wallet.finality_confirmations()))
     }
 
     /// Helper function for fetching the current list of swaps

@@ -15,11 +15,21 @@ use anyhow::Result;
 use bdk_wallet::miniscript::Descriptor;
 use bitcoin_wallet::primitives::Watchable;
 use ecdsa_fun::Signature;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Transaction format agreed during swap setup. Missing fields in stored swaps
+/// mean Legacy: changing their format would invalidate the exchanged signatures.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub enum CancelRefundVersion {
+    #[default]
+    Legacy,
+    Truc,
+}
 
 #[derive(Debug)]
 pub struct TxCancel {
-    inner: Transaction,
+    pub(super) inner: Transaction,
     digest: Sighash,
     pub(in crate::bitcoin) output_descriptor: Descriptor<::bitcoin::PublicKey>,
     lock_output_descriptor: Descriptor<::bitcoin::PublicKey>,
@@ -32,6 +42,7 @@ impl TxCancel {
         A: PublicKey,
         B: PublicKey,
         spending_fee: Amount,
+        version: CancelRefundVersion,
     ) -> Result<Self> {
         let cancel_output_descriptor = build_shared_output_descriptor(A.0, B.0)?;
 
@@ -48,7 +59,10 @@ impl TxCancel {
         };
 
         let transaction = Transaction {
-            version: Version(2),
+            version: match version {
+                CancelRefundVersion::Legacy => Version::TWO,
+                CancelRefundVersion::Truc => Version(3),
+            },
             lock_time: PackedLockTime::from_height(0).expect("0 to be below lock time threshold"),
             input: vec![tx_in],
             output: vec![tx_out],
@@ -172,7 +186,13 @@ impl TxCancel {
     ) -> Transaction {
         let previous_output = self.as_outpoint();
 
-        let sequence = Sequence(sequence.map(|seq| seq.0).unwrap_or(0xFFFF_FFFF));
+        // Punish keeps its own delay and v2 format. Refund must wait until
+        // cancel confirms, so its fees cannot help mine an unconfirmed cancel.
+        let (sequence, version) = if let Some(timelock) = sequence {
+            (Sequence(timelock.0), Version::TWO)
+        } else {
+            (self.refund_sequence(), self.inner.version)
+        };
         let tx_in = TxIn {
             previous_output,
             script_sig: Default::default(),
@@ -186,7 +206,7 @@ impl TxCancel {
         };
 
         Transaction {
-            version: Version(2),
+            version,
             lock_time: PackedLockTime::from_height(0).expect("0 to be below lock time threshold"),
             input: vec![tx_in],
             output: vec![tx_out],
@@ -205,7 +225,7 @@ impl TxCancel {
         let tx_in = TxIn {
             previous_output,
             script_sig: Default::default(),
-            sequence: Sequence(0xFFFF_FFFF),
+            sequence: self.refund_sequence(),
             witness: Default::default(),
         };
 
@@ -223,11 +243,18 @@ impl TxCancel {
         };
 
         Transaction {
-            version: Version(2),
+            version: self.inner.version,
             lock_time: PackedLockTime::from_height(0).expect("0 to be below lock time threshold"),
             input: vec![tx_in],
             output: vec![tx_out_refund, tx_out_amnesty],
         }
+    }
+
+    fn refund_sequence(&self) -> Sequence {
+        if self.inner.version == Version(3) {
+            return Sequence::from_height(1);
+        }
+        Sequence::MAX
     }
 
     pub fn weight() -> Weight {

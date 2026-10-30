@@ -205,11 +205,22 @@ pub struct Maker {
     /// If specified, Bitcoin received from successful swaps will be sent to this address.
     #[serde(default, with = "swap_serde::bitcoin::address_serde::option")]
     pub external_bitcoin_redeem_address: Option<bitcoin::Address>,
-    /// Multiplier applied to the estimated BTC redeem fee. Defaults to 1.0;
+    /// Multiplier applied to the proposed fee rate for all presigned BTC transactions. Defaults to 1.0;
     /// set higher (e.g. 2.0) to overpay for faster confirmation as a safety
     /// margin against fee estimation undershooting actual mempool conditions.
-    #[serde(default = "default_btc_redeem_fee_multiplier")]
-    pub btc_redeem_fee_multiplier: Decimal,
+    /// Must be between 1.0 and 3.0, because takers reject rates above three times their own estimate.
+    #[serde(default = "default_btc_swap_fee_rate_multiplier")]
+    pub btc_swap_fee_rate_multiplier: Decimal,
+    /// Redeem fee relative to the shared base fee, written as an exact decimal string.
+    /// Must be between 2.00 and 4.00. Below 2.00, redeem cannot replace an unconfirmed cancel.
+    #[serde(
+        default = "default_btc_redeem_base_fee_multiplier",
+        with = "decimal_string"
+    )]
+    pub btc_redeem_base_fee_multiplier: Decimal,
+    /// How long wallet state used during swap setup is cached, in seconds.
+    #[serde(default = "default_wallet_snapshot_cache_ttl_secs")]
+    pub wallet_snapshot_cache_ttl_secs: u64,
     /// Percentage (between 0.0 and 1.0) of the swap amount
     /// that will be donated to the devepment fund as part of the Monero lock transaction.
     #[serde(default = "default_developer_tip")]
@@ -300,8 +311,31 @@ pub fn default_hermes_min_swap_amount() -> bitcoin::Amount {
     bitcoin::Amount::from_btc(0.001).expect("0.001 BTC to be a valid amount")
 }
 
-pub fn default_btc_redeem_fee_multiplier() -> Decimal {
+pub fn default_btc_swap_fee_rate_multiplier() -> Decimal {
     Decimal::ONE
+}
+
+pub fn default_wallet_snapshot_cache_ttl_secs() -> u64 {
+    20
+}
+
+/// Require quoted decimals so TOML never rounds through an f64 first.
+mod decimal_string {
+    use rust_decimal::Decimal;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &Decimal, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Decimal, D::Error> {
+        Decimal::from_str_exact(&String::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+pub fn default_btc_redeem_base_fee_multiplier() -> Decimal {
+    Decimal::new(250, 2)
 }
 
 fn default_anti_spam_deposit_ratio() -> Decimal {
@@ -360,14 +394,14 @@ pub fn read_config(config_path: PathBuf) -> Result<Result<Config, ConfigNotIniti
 /// and likely indicate a misconfiguration (e.g. deposit exceeding fees).
 pub const MAX_ANTI_SPAM_DEPOSIT_RATIO: Decimal = Decimal::from_parts(2, 0, 0, false, 1); // 0.2
 
-/// Minimum allowed BTC redeem fee multiplier. Values below this would scale
-/// the estimated fee down so far that the redeem transaction is unlikely to
-/// confirm, and likely indicate a misconfiguration.
-pub const MIN_BTC_REDEEM_FEE_MULTIPLIER: Decimal = Decimal::from_parts(1, 0, 0, false, 1); // 0.1
+/// Minimum allowed BTC swap fee rate multiplier. Values below this would
+/// propose a rate under the maker's own fee estimate.
+pub const MIN_BTC_SWAP_FEE_RATE_MULTIPLIER: Decimal = Decimal::ONE;
 
-/// Maximum allowed BTC redeem fee multiplier. Values above this are implausible
-/// (10x the estimated fee) and likely indicate a misconfiguration.
-pub const MAX_BTC_REDEEM_FEE_MULTIPLIER: Decimal = Decimal::from_parts(10, 0, 0, false, 0); // 10
+/// Maximum allowed BTC swap fee rate multiplier. Bob rejects proposals above
+/// three times his own estimate (see `swap_machine::common::swap_fee_limits`),
+/// so a higher multiplier would make every swap setup fail.
+pub const MAX_BTC_SWAP_FEE_RATE_MULTIPLIER: Decimal = Decimal::from_parts(3, 0, 0, false, 0); // 3
 
 pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Result<()> {
     if env_config.monero_lock_construction_cooldown.is_zero() {
@@ -383,7 +417,9 @@ pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Resul
         bail!("monero.lock_rebuild_confirmations must be positive");
     }
     if config.monero.trusted_daemon && config.monero.daemon_url.is_none() {
-        bail!("monero.trusted_daemon requires an explicit monero.daemon_url; automatically selected public nodes cannot be trusted");
+        bail!(
+            "monero.trusted_daemon requires an explicit monero.daemon_url; automatically selected public nodes cannot be trusted"
+        );
     }
 
     if config.monero.network != env_config.monero_network {
@@ -412,20 +448,19 @@ pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Resul
         );
     }
 
-    let multiplier = config.maker.btc_redeem_fee_multiplier;
-    if multiplier < MIN_BTC_REDEEM_FEE_MULTIPLIER {
+    let multiplier = config.maker.btc_swap_fee_rate_multiplier;
+    if multiplier < MIN_BTC_SWAP_FEE_RATE_MULTIPLIER {
         bail!(
-            "btc_redeem_fee_multiplier of {multiplier} is below minimum of \
-             {MIN_BTC_REDEEM_FEE_MULTIPLIER}. A multiplier this low scales the \
-             redeem fee down so far that the transaction is unlikely to confirm \
-             (a non-positive multiplier would also fail at runtime in scale_fee)."
+            "btc_swap_fee_rate_multiplier of {multiplier} is below minimum of \
+             {MIN_BTC_SWAP_FEE_RATE_MULTIPLIER}. A multiplier below 1 proposes a fee \
+             rate under the maker's own estimate."
         );
     }
-    if multiplier > MAX_BTC_REDEEM_FEE_MULTIPLIER {
+    if multiplier > MAX_BTC_SWAP_FEE_RATE_MULTIPLIER {
         bail!(
-            "btc_redeem_fee_multiplier of {multiplier} exceeds maximum of \
-             {MAX_BTC_REDEEM_FEE_MULTIPLIER}. Such a high multiplier is implausible \
-             and likely a misconfiguration."
+            "btc_swap_fee_rate_multiplier of {multiplier} exceeds maximum of \
+             {MAX_BTC_SWAP_FEE_RATE_MULTIPLIER}. Takers reject fee rates above three \
+             times their own estimate, so every swap setup would fail."
         );
     }
 
@@ -512,7 +547,9 @@ pub fn query_user_for_initial_config_with_network(
             price_ticker_source_bitfinex_enabled: default_price_ticker_source_enabled(),
             price_ticker_source_kucoin_enabled: default_price_ticker_source_enabled(),
             external_bitcoin_redeem_address: None,
-            btc_redeem_fee_multiplier: default_btc_redeem_fee_multiplier(),
+            btc_swap_fee_rate_multiplier: default_btc_swap_fee_rate_multiplier(),
+            btc_redeem_base_fee_multiplier: default_btc_redeem_base_fee_multiplier(),
+            wallet_snapshot_cache_ttl_secs: default_wallet_snapshot_cache_ttl_secs(),
             developer_tip,
             hermes_funding_amount_piconero: default_hermes_funding_amount_piconero(),
             hermes_enabled: default_hermes_enabled(),

@@ -1,11 +1,13 @@
 use crate::out_event;
 use crate::protocols::swap_setup;
+use crate::protocols::swap_setup::verification::{LockInputVerifier, VerificationError};
 use crate::protocols::swap_setup::{
-    BlockchainNetwork, SpotPriceError, SpotPriceRequest, SpotPriceResponse, protocol,
+    BlockchainNetwork, BobDecision, SpotPriceError, SpotPriceRequest, SpotPriceResponse,
+    SwapPersisted, protocol,
 };
 use anyhow::{Context, Result, anyhow};
-use futures::AsyncWriteExt;
 use futures::FutureExt;
+use futures::SinkExt;
 use futures::StreamExt;
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
@@ -14,29 +16,83 @@ use libp2p::swarm::handler::ConnectionEvent;
 use libp2p::swarm::{ConnectionHandler, ConnectionId};
 use libp2p::swarm::{ConnectionHandlerEvent, NetworkBehaviour, SubstreamProtocol, ToSwarm};
 use libp2p::{Multiaddr, PeerId};
-use tracing::Instrument;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::task::Poll;
 use std::time::Duration;
-use swap_core::bitcoin;
+use swap_core::bitcoin::{self, MAX_TX_LOCK_INPUTS};
 use swap_env::env;
 use swap_feed::LatestRate;
 use swap_machine::alice::{State0, State3};
 use swap_machine::common::{Message0, Message2, Message4};
+use tracing::Instrument;
 use uuid::Uuid;
+
+/// Deadline for a lock input verification job, counted from when it is queued.
+/// A job still queued at the deadline is answered as timed out without
+/// starting; a running job stops retrying Electrum at the deadline.
+pub const LOCK_INPUT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// The lock input check failed, but may pass later: the inputs are used by
+/// another swap that may still be aborted, or we failed to check them.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct LockInputCheckError(pub String);
+
+/// Local request to reserve the inputs of Bob's lock transaction once the
+/// [`LockInputVerifier`] verified them. The ASB rejects inputs used by another swap.
+#[derive(Debug)]
+pub struct LockInputCheck {
+    pub psbt: bitcoin::PartiallySignedTransaction,
+}
+
+/// Keeps the inputs of Bob's lock transaction reserved for one swap setup
+/// until dropped.
+#[derive(Debug)]
+pub struct LockInputReservation {
+    outpoints: Vec<::bitcoin::OutPoint>,
+    release: tokio::sync::mpsc::UnboundedSender<Vec<::bitcoin::OutPoint>>,
+}
+
+impl LockInputReservation {
+    pub fn new(
+        outpoints: Vec<::bitcoin::OutPoint>,
+        release: tokio::sync::mpsc::UnboundedSender<Vec<::bitcoin::OutPoint>>,
+    ) -> Self {
+        Self { outpoints, release }
+    }
+}
+
+impl Drop for LockInputReservation {
+    fn drop(&mut self) {
+        // The receiver is only gone once the event loop holding the reservations is gone
+        let _ = self.release.send(std::mem::take(&mut self.outpoints));
+    }
+}
+
+/// Sent once Bob committed to the swap. The ASB persists and starts the swap;
+/// only then is Bob told that he may publish the lock transaction.
+#[derive(Debug)]
+pub struct RegisterSwap {
+    pub peer_id: PeerId,
+    pub swap_id: Uuid,
+    pub state3: State3,
+    pub lock_input_reservation: LockInputReservation,
+}
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum OutEvent {
     Initiated {
+        /// Span of this swap setup. Work it requests from the event loop is logged under it.
+        span: tracing::Span,
         send_wallet_snapshot:
             bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
-    },
-    Completed {
-        peer_id: PeerId,
-        swap_id: Uuid,
-        state3: State3,
+        check_lock_inputs: bmrng::RequestReceiver<
+            LockInputCheck,
+            Result<LockInputReservation, LockInputCheckError>,
+        >,
+        register_swap: bmrng::RequestReceiver<RegisterSwap, Result<()>>,
     },
     Error {
         peer_id: PeerId,
@@ -54,15 +110,11 @@ pub struct WalletSnapshot {
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
 
-    tx_lock_fee: bitcoin::Amount,
-    redeem_fee: bitcoin::Amount,
-    cancel_fee: bitcoin::Amount,
-    refund_fee: bitcoin::Amount,
-    partial_refund_fee: bitcoin::Amount,
-    reclaim_fee: bitcoin::Amount,
-    mercy_fee: bitcoin::Amount,
-    punish_fee: bitcoin::Amount,
-    withhold_fee: bitcoin::Amount,
+    /// Local estimate including the relay minimum; sets the lock fee floor.
+    estimated_fee_rate: ::bitcoin::FeeRate,
+    fee_rate: bitcoin::SwapFeeRate,
+    redeem_multiplier: bitcoin::RedeemFeeMultiplier,
+    fee_limits: bitcoin::SwapFeeLimits,
 }
 
 impl WalletSnapshot {
@@ -70,30 +122,20 @@ impl WalletSnapshot {
         unlocked_balance: swap_core::monero::Amount,
         redeem_address: bitcoin::Address,
         punish_address: bitcoin::Address,
-        tx_lock_fee: bitcoin::Amount,
-        redeem_fee: bitcoin::Amount,
-        cancel_fee: bitcoin::Amount,
-        refund_fee: bitcoin::Amount,
-        partial_refund_fee: bitcoin::Amount,
-        reclaim_fee: bitcoin::Amount,
-        mercy_fee: bitcoin::Amount,
-        punish_fee: bitcoin::Amount,
-        withhold_fee: bitcoin::Amount,
+        estimated_fee_rate: ::bitcoin::FeeRate,
+        fee_rate: bitcoin::SwapFeeRate,
+        redeem_multiplier: bitcoin::RedeemFeeMultiplier,
+        fee_limits: bitcoin::SwapFeeLimits,
     ) -> Self {
         Self {
             unlocked_balance,
             lock_fee: swap_core::monero::CONSERVATIVE_MONERO_FEE,
             redeem_address,
             punish_address,
-            tx_lock_fee,
-            redeem_fee,
-            cancel_fee,
-            punish_fee,
-            withhold_fee,
-            refund_fee,
-            partial_refund_fee,
-            reclaim_fee,
-            mercy_fee,
+            estimated_fee_rate,
+            fee_rate,
+            redeem_multiplier,
+            fee_limits,
         }
     }
 }
@@ -102,18 +144,15 @@ impl From<OutEvent> for out_event::alice::OutEvent {
     fn from(event: OutEvent) -> Self {
         match event {
             OutEvent::Initiated {
+                span,
                 send_wallet_snapshot,
+                check_lock_inputs,
+                register_swap,
             } => out_event::alice::OutEvent::SwapSetupInitiated {
+                span,
                 send_wallet_snapshot,
-            },
-            OutEvent::Completed {
-                peer_id: bob_peer_id,
-                swap_id,
-                state3,
-            } => out_event::alice::OutEvent::SwapSetupCompleted {
-                peer_id: bob_peer_id,
-                swap_id,
-                state3,
+                check_lock_inputs,
+                register_swap,
             },
             OutEvent::Error { peer_id, error } => out_event::alice::OutEvent::Failure {
                 peer: peer_id,
@@ -132,15 +171,24 @@ pub struct Behaviour<LR> {
 
     latest_rate: LR,
     resume_only: bool,
+    lock_input_verifier: LockInputVerifier,
 }
 
 impl<LR> Behaviour<LR> {
+    pub fn register_verification_metrics(
+        &self,
+        registry: &mut prometheus_client::registry::Registry,
+    ) {
+        self.lock_input_verifier.register_metrics(registry);
+    }
+
     pub fn new(
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         env_config: env::Config,
         latest_rate: LR,
         resume_only: bool,
+        lock_input_verifier: LockInputVerifier,
     ) -> Self {
         Self {
             events: Default::default(),
@@ -149,6 +197,7 @@ impl<LR> Behaviour<LR> {
             env_config,
             latest_rate,
             resume_only,
+            lock_input_verifier,
         }
     }
 }
@@ -178,6 +227,7 @@ where
             self.env_config,
             self.latest_rate.clone(),
             self.resume_only,
+            self.lock_input_verifier.clone(),
         );
 
         Ok(handler)
@@ -201,6 +251,7 @@ where
             self.env_config,
             self.latest_rate.clone(),
             self.resume_only,
+            self.lock_input_verifier.clone(),
         );
 
         Ok(handler)
@@ -216,18 +267,19 @@ where
         // This is done by pushing the event to the [`events`] queue
         // The queue is then polled in the [`poll`] function, and the events are sent to the swarm
         match event {
-            HandlerOutEvent::Initiated(send_wallet_snapshot) => {
-                self.events.push_back(OutEvent::Initiated {
-                    send_wallet_snapshot,
-                })
-            }
-            HandlerOutEvent::Completed(Ok((swap_id, state3))) => {
-                self.events.push_back(OutEvent::Completed {
-                    peer_id,
-                    swap_id,
-                    state3,
-                })
-            }
+            HandlerOutEvent::Initiated {
+                span,
+                send_wallet_snapshot,
+                check_lock_inputs,
+                register_swap,
+            } => self.events.push_back(OutEvent::Initiated {
+                span,
+                send_wallet_snapshot,
+                check_lock_inputs,
+                register_swap,
+            }),
+            // The swap was registered with the ASB through `register_swap`
+            HandlerOutEvent::Completed(Ok(_)) => {}
             HandlerOutEvent::Completed(Err(error)) => {
                 self.events.push_back(OutEvent::Error { peer_id, error })
             }
@@ -249,7 +301,7 @@ where
 }
 
 pub struct Handler<LR> {
-    inbound_streams: FuturesUnordered<BoxFuture<'static, Result<(Uuid, State3)>>>,
+    inbound_streams: FuturesUnordered<BoxFuture<'static, Result<Uuid>>>,
     events: VecDeque<HandlerOutEvent>,
 
     peer_id: PeerId,
@@ -262,8 +314,12 @@ pub struct Handler<LR> {
     latest_rate: LR,
     resume_only: bool,
 
+    lock_input_verifier: LockInputVerifier,
+
     // This is the timeout for the negotiation phase where Alice and Bob exchange messages
     negotiation_timeout: Duration,
+    // This is the timeout for Bob to commit to or abort the negotiated swap
+    decision_timeout: Duration,
 }
 
 impl<LR> Handler<LR> {
@@ -275,6 +331,7 @@ impl<LR> Handler<LR> {
         env_config: env::Config,
         latest_rate: LR,
         resume_only: bool,
+        lock_input_verifier: LockInputVerifier,
     ) -> Self {
         Self {
             inbound_streams: FuturesUnordered::new(),
@@ -286,7 +343,9 @@ impl<LR> Handler<LR> {
             env_config,
             latest_rate,
             resume_only,
+            lock_input_verifier,
             negotiation_timeout: crate::defaults::NEGOTIATION_TIMEOUT,
+            decision_timeout: crate::defaults::SWAP_SETUP_DECISION_TIMEOUT,
         }
     }
 }
@@ -294,8 +353,18 @@ impl<LR> Handler<LR> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum HandlerOutEvent {
-    Initiated(bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>),
-    Completed(Result<(Uuid, State3)>),
+    Initiated {
+        /// Span of this swap setup. Work it requests from the event loop is logged under it.
+        span: tracing::Span,
+        send_wallet_snapshot:
+            bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
+        check_lock_inputs: bmrng::RequestReceiver<
+            LockInputCheck,
+            Result<LockInputReservation, LockInputCheckError>,
+        >,
+        register_swap: bmrng::RequestReceiver<RegisterSwap, Result<()>>,
+    },
+    Completed(Result<Uuid>),
 }
 
 impl<LR> ConnectionHandler for Handler<LR>
@@ -333,18 +402,29 @@ where
                         (WalletSnapshot, bitcoin::Amount, bool),
                     >(1, crate::defaults::SWAP_SETUP_CHANNEL_TIMEOUT);
 
+                let (check_lock_inputs_sender, check_lock_inputs_receiver) = bmrng::channel::<
+                    LockInputCheck,
+                    Result<LockInputReservation, LockInputCheckError>,
+                >(1);
+
+                let (register_swap_sender, register_swap_receiver) =
+                    bmrng::channel::<RegisterSwap, Result<()>>(1);
+
                 let resume_only = self.resume_only;
                 let min_buy = self.min_buy;
                 let max_buy = self.max_buy;
                 let latest_rate = self.latest_rate.latest_rate();
                 let env_config = self.env_config;
 
-                // We wrap the entire handshake in a timeout future
-                let protocol = tokio::time::timeout(
+                // We wrap the handshake in a timeout future
+                let negotiation = tokio::time::timeout(
                     self.negotiation_timeout,
                     run_swap_setup(
                         substream,
                         sender,
+                        check_lock_inputs_sender,
+                        self.lock_input_verifier.clone(),
+                        self.peer_id,
                         resume_only,
                         env_config,
                         min_buy,
@@ -354,40 +434,57 @@ where
                         }),
                     ),
                 );
+                let peer_id = self.peer_id;
+                let decision_timeout = self.decision_timeout;
 
                 // Attach a span so every log emitted during the negotiation is
                 // attributable to the peer and connection it belongs to.
+                // The swap id is recorded once Bob sent it.
                 let span = tracing::info_span!(
                     "swap_setup",
                     peer = %self.peer_id,
                     connection = %self.connection_id,
+                    swap_id = tracing::field::Empty,
                 );
+                let event_span = span.clone();
 
                 let max_seconds = self.negotiation_timeout.as_secs();
                 self.inbound_streams.push(
                     async move {
                         tracing::debug!("Inbound swap setup negotiation started");
 
-                        let result = match protocol.await {
-                            Ok(result) => result,
-                            Err(_elapsed) => {
-                                tracing::warn!(
-                                    timeout_seconds = max_seconds,
-                                    "Swap setup timed out"
-                                );
-                                return Err(anyhow!(
-                                    "Failed to complete execution setup within {}s",
-                                    max_seconds
-                                ));
+                        let Ok(negotiated) = negotiation.await else {
+                            tracing::warn!(timeout_seconds = max_seconds, "Swap setup timed out");
+                            return Err(anyhow!(
+                                "Failed to complete execution setup within {}s",
+                                max_seconds
+                            ));
+                        };
+
+                        let result = match negotiated {
+                            Ok((swap_id, state3, lock_input_reservation, substream)) => {
+                                await_bob_decision(
+                                    substream,
+                                    register_swap_sender,
+                                    RegisterSwap {
+                                        peer_id,
+                                        swap_id,
+                                        state3,
+                                        lock_input_reservation,
+                                    },
+                                    decision_timeout,
+                                )
+                                .await
                             }
+                            Err(error) => Err(error),
                         };
 
                         match &result {
-                            Ok((swap_id, _)) => {
+                            Ok(swap_id) => {
                                 tracing::info!(%swap_id, "Swap setup completed")
                             }
                             Err(error) => {
-                                tracing::warn!(error = ?error, "Swap setup failed")
+                                tracing::warn!(error = %format!("{error:#}"), "Swap setup failed")
                             }
                         }
 
@@ -397,7 +494,12 @@ where
                     .boxed(),
                 );
 
-                self.events.push_back(HandlerOutEvent::Initiated(receiver));
+                self.events.push_back(HandlerOutEvent::Initiated {
+                    span: event_span,
+                    send_wallet_snapshot: receiver,
+                    check_lock_inputs: check_lock_inputs_receiver,
+                    register_swap: register_swap_receiver,
+                });
             }
             ConnectionEvent::DialUpgradeError(..) => {
                 unreachable!("Alice does not dial")
@@ -508,18 +610,26 @@ impl Error {
 }
 
 async fn run_swap_setup(
-    mut substream: libp2p::swarm::Stream,
+    substream: libp2p::swarm::Stream,
     sender: bmrng::RequestSender<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
+    check_lock_inputs: bmrng::RequestSender<
+        LockInputCheck,
+        Result<LockInputReservation, LockInputCheckError>,
+    >,
+    lock_input_verifier: LockInputVerifier,
+    peer_id: PeerId,
     resume_only: bool,
     env_config: env::Config,
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
     latest_rate: Result<swap_feed::Rate, Box<dyn std::error::Error + Send + Sync + 'static>>,
-) -> Result<(Uuid, State3)> {
+) -> Result<(Uuid, State3, LockInputReservation, swap_setup::SetupStream)> {
+    let mut substream = swap_setup::framed(substream);
     let request = swap_setup::read_cbor_message::<SpotPriceRequest>(&mut substream)
         .await
         .context("Failed to read spot price request")?
         .context("Peer sent an error instead of spot price request")?;
+    tracing::debug!(btc = %request.btc, "Received spot price request");
 
     let (wallet_snapshot, btc_amnesty_amount, should_burn_on_refund) = sender
         .send_receive(request.btc)
@@ -606,9 +716,9 @@ async fn run_swap_setup(
         env_config,
         wallet_snapshot.redeem_address,
         wallet_snapshot.punish_address,
-        wallet_snapshot.redeem_fee,
-        wallet_snapshot.punish_fee,
-        wallet_snapshot.withhold_fee,
+        wallet_snapshot.fee_rate,
+        wallet_snapshot.redeem_multiplier,
+        wallet_snapshot.fee_limits,
         should_burn_on_refund,
         &mut rand::thread_rng(),
     );
@@ -618,63 +728,20 @@ async fn run_swap_setup(
         .context("Failed to read message0")?
         .context("Peer sent an error instead of message0")?;
 
-    for (transaction_type, proposed_fee, our_estimate) in [
-        (
-            "TxCancel",
-            message0.tx_cancel_fee,
-            wallet_snapshot.cancel_fee,
-        ),
-        (
-            "TxRefund",
-            message0.tx_refund_fee,
-            wallet_snapshot.refund_fee,
-        ),
-        (
-            "TxPartialRefund",
-            message0.tx_partial_refund_fee,
-            wallet_snapshot.partial_refund_fee,
-        ),
-        (
-            "TxReclaim",
-            message0.tx_reclaim_fee,
-            wallet_snapshot.reclaim_fee,
-        ),
-        ("TxMercy", message0.tx_mercy_fee, wallet_snapshot.mercy_fee),
-    ] {
-        if let Err(sanity_err) =
-            swap_machine::common::sanity_check_transaction_fee(proposed_fee, our_estimate)
-        {
-            if let Err(err) =
-                swap_setup::write_cbor_error(&mut substream, sanity_err.clone().into()).await
+    let (swap_id, state1) = match state0.receive(message0) {
+        Ok(state) => state,
+        Err(error) => {
+            let rejection = swap_setup::SwapSetupError::try_from(error)?;
+            if let Err(write_error) =
+                swap_setup::write_cbor_error(&mut substream, rejection.clone()).await
             {
-                tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
-            };
-            return Err(sanity_err).context(format!(
-                "Transaction fee sanity check failed for {transaction_type}"
-            ));
+                tracing::error!(error = %write_error, "Couldn't send swap setup rejection to Bob");
+            }
+            return Err(rejection).context("Failed to accept swap setup");
         }
-    }
+    };
 
-    if let Err(sanity_err) = swap_machine::common::sanity_check_amnesty_amount(
-        request.btc,
-        btc_amnesty_amount,
-        message0.tx_partial_refund_fee,
-        message0.tx_reclaim_fee,
-        wallet_snapshot.withhold_fee,
-        message0.tx_mercy_fee,
-    ) {
-        if let Err(err) =
-            swap_setup::write_cbor_error(&mut substream, sanity_err.clone().into()).await
-        {
-            tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
-        };
-        return Err(sanity_err).context("Amnesty sanity check failed");
-    }
-
-    let (swap_id, state1) = state0
-        .receive(message0)
-        .context("Failed to transition state0 -> state1 using message0")?;
-
+    tracing::Span::current().record("swap_id", tracing::field::display(swap_id));
     tracing::debug!(%swap_id, "Swap setup transition: State0 -> State1 (received Message0)");
 
     swap_setup::write_cbor_message(
@@ -690,26 +757,115 @@ async fn run_swap_setup(
         .await
         .context("Failed to read message2")?
         .context("Peer sent an error instead of message2")?;
-    let state2 = state1
-        .receive(message2)
-        .context("Failed to transition state1 -> state2 using message2")?;
-
-    tracing::debug!(%swap_id, "Swap setup transition: State1 -> State2 (received Message2)");
-
-    let tx_lock_fee = state2
-        .tx_lock_fee()
-        .context("Failed to read lock transaction fee from PSBT")?;
-    if let Err(sanity_err) = swap_machine::common::sanity_check_transaction_fee_floor(
-        tx_lock_fee,
-        wallet_snapshot.tx_lock_fee,
-    ) {
-        if let Err(err) =
-            swap_setup::write_cbor_error(&mut substream, sanity_err.clone().into()).await
-        {
-            tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
+    let tx_lock_input_count = message2.tx_lock_psbt.unsigned_tx.input.len();
+    tracing::debug!(
+        inputs = tx_lock_input_count,
+        outputs = message2.tx_lock_psbt.unsigned_tx.output.len(),
+        proofs = message2.tx_lock_proofs.len(),
+        "Received lock PSBT"
+    );
+    if tx_lock_input_count > MAX_TX_LOCK_INPUTS {
+        let error = swap_setup::SwapSetupError::TxLockTooManyInputs {
+            actual: u32::try_from(tx_lock_input_count).context("Input count exceeds wire range")?,
+            maximum: u32::try_from(MAX_TX_LOCK_INPUTS).context("Input limit exceeds wire range")?,
         };
-        return Err(sanity_err).context("Lock transaction fee sanity check failed");
+        if let Err(write_error) = swap_setup::write_cbor_error(&mut substream, error.clone()).await
+        {
+            tracing::error!(
+                error = %write_error,
+                "Couldn't send error message to Bob after encountering it, closing connection"
+            );
+        }
+        return Err(error.into());
     }
+
+    let received = async {
+        // Reject malformed PSBTs and drop Bob's extra PSBT fields before queueing.
+        let tx_lock_psbt = bitcoin::canonical_received_psbt(message2.tx_lock_psbt)
+            .context("Malformed lock PSBT")?;
+        anyhow::ensure!(
+            message2.tx_lock_proofs.len() == tx_lock_input_count,
+            "Got {} ownership proofs for {tx_lock_input_count} lock inputs",
+            message2.tx_lock_proofs.len()
+        );
+        let tx_lock_fee = tx_lock_psbt
+            .fee()
+            .context("Invalid TxLock input/output amounts")?;
+        Ok::<_, anyhow::Error>((tx_lock_psbt, tx_lock_fee))
+    }
+    .await;
+    let (tx_lock_psbt, tx_lock_fee) = match received {
+        Ok(received) => received,
+        Err(cause) => return Err(reject_lock_inputs(&mut substream, cause).await),
+    };
+
+    // The fee uses Bob's claimed prevout values, which the verification job below checks.
+    let tx_lock_weight = bitcoin::estimated_signed_lock_weight(&tx_lock_psbt);
+    tracing::debug!(fee = %tx_lock_fee, weight = %tx_lock_weight, "Checking lock fee floor");
+    if let Err(error) = swap_machine::common::sanity_check_transaction_fee_floor(
+        tx_lock_fee,
+        tx_lock_weight,
+        wallet_snapshot.estimated_fee_rate,
+        request.btc,
+    ) {
+        let rejection = swap_setup::SwapSetupError::try_from(error)?;
+        if let Err(write_error) =
+            swap_setup::write_cbor_error(&mut substream, rejection.clone()).await
+        {
+            tracing::error!(error = %write_error, "Couldn't send lock fee rejection to Bob");
+        }
+        return Err(rejection).context("Lock transaction fee sanity check failed");
+    }
+
+    if let Err(cause) = state1.check_tx_lock(&tx_lock_psbt) {
+        return Err(reject_lock_inputs(&mut substream, cause).await);
+    }
+
+    let verification_started = std::time::Instant::now();
+    let verification = async {
+        let challenge = state1.ownership_challenge(&tx_lock_psbt);
+        let verified = lock_input_verifier
+            .verify_lock(
+                peer_id,
+                tx_lock_psbt,
+                message2.tx_lock_proofs,
+                challenge,
+                tokio::time::Instant::now() + LOCK_INPUT_VERIFICATION_TIMEOUT,
+            )
+            .await?;
+        let psbt = verified.psbt().clone();
+        let state2 = state1
+            .receive(verified)
+            .context("Failed to reconstruct lock transaction")?;
+        Ok::<_, anyhow::Error>((state2, psbt))
+    }
+    .await;
+    let (state2, psbt) = match verification {
+        Ok(verified) => verified,
+        Err(cause) => return Err(reject_lock_inputs(&mut substream, cause).await),
+    };
+
+    tracing::debug!(
+        duration_ms = verification_started.elapsed().as_millis(),
+        "Swap setup transition: State1 -> State2 (verified lock inputs)"
+    );
+
+    let lock_input_check = check_lock_inputs
+        .send_receive(LockInputCheck { psbt })
+        .await
+        .unwrap_or_else(|error| {
+            Err(LockInputCheckError(format!(
+                "Failed to receive lock input check result: {error:#}"
+            )))
+        });
+    let lock_input_reservation = match lock_input_check {
+        Ok(reservation) => reservation,
+        Err(cause) => {
+            let cause = anyhow::Error::new(cause).context("Lock input check failed");
+            return Err(reject_lock_inputs(&mut substream, cause).await);
+        }
+    };
+    tracing::debug!("Reserved lock inputs");
 
     swap_setup::write_cbor_message(
         &mut substream,
@@ -728,14 +884,89 @@ async fn run_swap_setup(
 
     tracing::debug!(%swap_id, "Swap setup transition: State2 -> State3 (received Message4)");
 
-    substream
-        .flush()
+    Ok((swap_id, state3, lock_input_reservation, substream))
+}
+
+/// Tells Bob that his lock inputs were rejected and returns the cause.
+async fn reject_lock_inputs(
+    substream: &mut swap_setup::SetupStream,
+    cause: anyhow::Error,
+) -> anyhow::Error {
+    let error = lock_input_verification_error(&cause);
+    tracing::debug!(rejection = ?error, "Rejecting the lock inputs of Bob");
+    if let Err(err) = swap_setup::write_cbor_error(substream, error).await {
+        tracing::error!(error=%err, "Couldn't send lock input verification error to Bob");
+    }
+    cause.context("Lock transaction verification failed")
+}
+
+/// Bob may retry if verification failed on our side or might pass later.
+fn lock_input_verification_error(cause: &anyhow::Error) -> swap_setup::SwapSetupError {
+    let is_transient = cause.downcast_ref::<LockInputCheckError>().is_some()
+        || cause
+            .downcast_ref::<VerificationError>()
+            .is_some_and(VerificationError::is_transient);
+    if is_transient {
+        return swap_setup::SwapSetupError::LockInputVerificationInconclusive;
+    }
+    swap_setup::SwapSetupError::LockInputVerificationFailed
+}
+
+/// Keeps the lock inputs reserved until Bob commits to the swap. The swap is
+/// persisted before Bob is told that he may publish the lock transaction.
+/// If Bob aborts, disconnects or does not decide in time, the reservation is dropped.
+async fn await_bob_decision(
+    mut substream: swap_setup::SetupStream,
+    register_swap: bmrng::RequestSender<RegisterSwap, Result<()>>,
+    registration: RegisterSwap,
+    decision_timeout: Duration,
+) -> Result<Uuid> {
+    let swap_id = registration.swap_id;
+
+    let decision = tokio::time::timeout(
+        decision_timeout,
+        swap_setup::read_cbor_message::<BobDecision>(&mut substream),
+    )
+    .await
+    .with_context(|| format!("Bob did not decide within {}s", decision_timeout.as_secs()))?
+    .context("Failed to read the decision of Bob")?
+    .context("Peer sent an error instead of the decision")?;
+
+    if decision == BobDecision::Abort {
+        anyhow::bail!("Bob aborted the swap before locking the Bitcoin");
+    }
+    tracing::debug!("Bob committed to the swap, persisting it");
+
+    // No timeout here: a timeout could fire after the swap was persisted. The event
+    // loop bounds persisting by `SWAP_SETUP_PERSIST_TIMEOUT` instead and only answers
+    // once it knows whether the swap was persisted.
+    register_swap
+        .send_receive(registration)
         .await
-        .context("Failed to flush substream after all messages were sent")?;
-    substream
-        .close()
+        .context("Failed to register the swap")?
+        .context("Failed to persist the swap")?;
+    tracing::debug!("Persisted the swap, confirming it to Bob");
+
+    // The swap is persisted and runs from here on, so failing to tell Bob is not
+    // a failure of the swap setup. Without the confirmation Bob does not lock.
+    if let Err(error) = confirm_persisted(&mut substream).await {
+        tracing::warn!(
+            %swap_id,
+            ?error,
+            "Bob might not have received the confirmation of the persisted swap"
+        );
+    }
+
+    Ok(swap_id)
+}
+
+async fn confirm_persisted(substream: &mut swap_setup::SetupStream) -> Result<()> {
+    swap_setup::write_cbor_message(&mut *substream, SwapPersisted)
+        .await
+        .context("Failed to confirm the persisted swap")?;
+    SinkExt::close(substream)
         .await
         .context("Failed to close substream after all messages were sent")?;
 
-    Ok((swap_id, state3))
+    Ok(())
 }

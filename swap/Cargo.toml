@@ -1,6 +1,6 @@
 [package]
 name = "swap"
-version = "4.16.1"
+version = "5.0.0"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2024"
 description = "XMR/BTC trustless atomic swaps."
@@ -122,6 +122,7 @@ sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 
 [dev-dependencies]
 bitcoin-harness = { git = "https://github.com/eigenwallet/bitcoin-harness-rs", branch = "master" }
+bitcoin-wallet = { path = "../bitcoin-wallet", features = ["test-support"] }
 data-encoding = { workspace = true }
 mockito = "1.4"
 monero-harness = { path = "../monero-harness" }
@@ -131,6 +132,7 @@ tempfile = "3"
 testcontainers = "0.15"
 tokio = { workspace = true, features = ["test-util"] }
 tracing-ext = { path = "../tracing-ext" }
+utxo-ownership-proof = { path = "../utxo-ownership-proof" }
 
 [build-dependencies]
 anyhow = { workspace = true }

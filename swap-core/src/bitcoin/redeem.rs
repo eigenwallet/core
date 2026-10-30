@@ -23,7 +23,7 @@ use super::extract_ecdsa_sig;
 
 #[derive(Clone, Debug)]
 pub struct TxRedeem {
-    inner: Transaction,
+    pub(super) inner: Transaction,
     digest: Sighash,
     lock_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     watch_script: ScriptBuf,

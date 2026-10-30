@@ -10,6 +10,7 @@ use crate::protocol::bob::common::{
     InfallibleVerifyXmrLockTransaction, InfallibleXmrRedeemable, RecvTransferProof,
     WaitForBtcRedeem, WaitForIncomingXmrLockTransaction, WaitForXmrLockTransactionConfirmation,
     XmrLockTransactionValidity, XmrRedeemable, infallible_wait_for_monero_tx_confirmation,
+    keep_bitcoin_tx_published,
 };
 use crate::protocol::bob::*;
 use crate::protocol::{Database, bob};
@@ -18,20 +19,26 @@ use bitcoin_wallet::Watchable;
 use monero_interface::PublishTransaction;
 use std::sync::Arc;
 use std::time::Duration;
-use swap_core::bitcoin::{
-    ExpiredTimelocks, TxCancel, TxFullRefund, TxMercy, TxPartialRefund, TxPunish, TxReclaim,
-    TxRedeem, TxWithhold,
-};
+use swap_core::bitcoin::ExpiredTimelocks;
 use swap_core::monero::BlockHeight;
 use swap_env::env;
+use time::OffsetDateTime;
 use tokio::select;
 use uuid::Uuid;
 
-const PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS: u64 = 60 * 3;
+const PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS: u64 = 90;
+
+// Alice keeps the swap setup open while the user decides
+const _: () = assert!(
+    PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS < swap_p2p::defaults::SWAP_SETUP_DECISION_TIMEOUT.as_secs()
+);
 
 /// How often we re-publish the Monero redeem transaction while waiting for it to confirm.
 /// The daemon may forget about the transaction (e.g. after a restart) before it is mined.
 const XMR_REDEEM_REPUBLISH_INTERVAL: Duration = Duration::from_secs(60);
+
+/// How often we check that our Bitcoin refund is still in the mempool while waiting for it to confirm.
+const BTC_REFUND_REPUBLISH_INTERVAL: Duration = Duration::from_secs(60);
 
 /// How often we manually check for tx_redeem while also waiting on the wallet subscription.
 const BTC_REDEEM_FORCE_LOOKUP_INTERVAL_SECS: u64 = 120;
@@ -79,6 +86,15 @@ pub async fn run_until(
     mut swap: bob::Swap,
     is_target_state: fn(&BobState) -> bool,
 ) -> Result<BobState> {
+    run_swap_until(&mut swap, is_target_state).await
+}
+
+/// Like [`run_until`], but keeps the swap so the caller can continue with it,
+/// e.g. to decide on the swap setup itself.
+pub async fn run_swap_until(
+    swap: &mut bob::Swap,
+    is_target_state: fn(&BobState) -> bool,
+) -> Result<BobState> {
     let mut current_state = swap.state.clone();
 
     while !is_target_state(&current_state) {
@@ -99,10 +115,11 @@ pub async fn run_until(
             "Persisting latest Bob state",
             || {
                 let db = swap.db.clone();
+                let swap_id = swap.id;
                 let state = next_state.clone();
 
                 async move {
-                    db.insert_latest_state(swap.id, state.into())
+                    db.insert_latest_state(swap_id, state.into())
                         .await
                         .map_err(backoff::Error::transient)
                 }
@@ -119,6 +136,8 @@ pub async fn run_until(
 
         current_state = next_state;
     }
+
+    swap.state = current_state.clone();
 
     Ok(current_state)
 }
@@ -168,35 +187,8 @@ async fn next_state(
             .await
             .context("Monero daemon RPC health check failed; cannot start swap")?;
 
-            let tx_cancel_fee = bitcoin_wallet
-                .estimate_fee(TxCancel::weight(), Some(btc_amount))
-                .await?;
-            let tx_refund_fee = bitcoin_wallet
-                .estimate_fee(TxFullRefund::weight(), Some(btc_amount))
-                .await?;
-
-            // At this point we don't know how high btc_amnesty_amount is.
-            // This means we don't know how large the amount of the partial refund and amnesty transactions will be.
-            // We therefore specify the same upper limit on tx fees as for the other transactions, even though
-            // the maximum fee percentage might be higher due to that.
-            let tx_partial_refund_fee = bitcoin_wallet
-                .estimate_fee(TxPartialRefund::weight(), Some(btc_amount))
-                .await?;
-            let tx_reclaim_fee = bitcoin_wallet
-                .estimate_fee(TxReclaim::weight(), Some(btc_amount))
-                .await?;
-            let tx_mercy_fee = bitcoin_wallet
-                .estimate_fee(TxMercy::weight(), Some(btc_amount))
-                .await?;
-            let tx_redeem_fee = bitcoin_wallet
-                .estimate_fee(TxRedeem::weight(), Some(btc_amount))
-                .await?;
-            let tx_punish_fee = bitcoin_wallet
-                .estimate_fee(TxPunish::weight(), Some(btc_amount))
-                .await?;
-            let tx_withhold_fee = bitcoin_wallet
-                .estimate_fee(TxWithhold::weight(), Some(btc_amount))
-                .await?;
+            let rate = bitcoin::SwapFeeRate::from_estimate(bitcoin_wallet.swap_fee_rate().await?)?;
+            let fee_limits = swap_machine::common::swap_fee_limits(rate, btc_amount)?;
 
             // Emit an event to tauri that we are negotiating with the maker to lock the Bitcoin
             event_emitter.emit_swap_progress_event(
@@ -211,14 +203,7 @@ async fn next_state(
                     swap_id,
                     btc: btc_amount,
                     tx_lock_fee,
-                    tx_refund_fee,
-                    tx_partial_refund_fee,
-                    tx_reclaim_fee,
-                    tx_mercy_fee,
-                    tx_cancel_fee,
-                    tx_redeem_fee,
-                    tx_punish_fee,
-                    tx_withhold_fee,
+                    fee_limits,
                     bitcoin_refund_address: change_address,
                 })
                 .await?;
@@ -228,6 +213,13 @@ async fn next_state(
             BobState::SwapSetupCompleted(state2)
         }
         BobState::SwapSetupCompleted(state2) => {
+            // Alice only persists the swap once we commit to it through the open swap setup.
+            // After a restart the setup is gone, and Alice has released the swap.
+            if !event_loop_handle.has_pending_swap_setup() {
+                tracing::warn!("The swap setup with Alice is no longer open. Aborting the swap.");
+                return Ok(BobState::SafelyAborted);
+            }
+
             // Alice and Bob have exchanged all necessary signatures
             let xmr_receive_amount = state2.xmr;
             let btc_amnesty_amount = state2
@@ -267,6 +259,23 @@ async fn next_state(
 
             match approval_result {
                 Ok(true) => {
+                    // Without the confirmation, Alice might not know the swap
+                    // and could not refund it early. We would then have to wait for the cancel timelock.
+                    if let Err(error) = event_loop_handle.commit_swap_setup().await {
+                        tracing::warn!(
+                            ?error,
+                            "Alice did not confirm the swap. We will not lock the Bitcoin."
+                        );
+                        return Ok(BobState::SafelyAborted);
+                    }
+
+                    // Alice gives up on the swap if the lock transaction is not in the
+                    // mempool within `bitcoin_lock_mempool_timeout` after she persisted it.
+                    // Half of it leaves a margin for propagation and clock differences.
+                    let publish_deadline = (OffsetDateTime::now_utc()
+                        + env_config.bitcoin_lock_mempool_timeout / 2)
+                        .unix_timestamp();
+
                     tracing::debug!(
                         "User approved swap offer. Fetching current Monero blockheight."
                     );
@@ -310,15 +319,23 @@ async fn next_state(
                         monero_wallet_restore_blockheight: BlockHeight {
                             height: monero_wallet_restore_blockheight,
                         },
+                        publish_deadline: Some(publish_deadline),
+                        broadcast_attempted: false,
                     }
                 }
                 Ok(false) => {
                     tracing::warn!("User denied or timed out on swap offer approval");
+                    if let Err(error) = event_loop_handle.abort_swap_setup().await {
+                        tracing::warn!(?error, "Failed to tell Alice that we declined the swap");
+                    }
 
                     BobState::SafelyAborted
                 }
                 Err(err) => {
                     tracing::warn!(%err, "Failed to get user approval for swap offer. Assuming swap was aborted.");
+                    if let Err(error) = event_loop_handle.abort_swap_setup().await {
+                        tracing::warn!(?error, "Failed to tell Alice that we declined the swap");
+                    }
 
                     BobState::SafelyAborted
                 }
@@ -331,6 +348,34 @@ async fn next_state(
             btc_lock_tx_signed,
             state3,
             monero_wallet_restore_blockheight,
+            publish_deadline,
+            broadcast_attempted: false,
+        } => {
+            if publish_deadline
+                .is_some_and(|deadline| OffsetDateTime::now_utc().unix_timestamp() > deadline)
+            {
+                tracing::warn!(
+                    "Too late to publish the Bitcoin lock transaction, Alice no longer waits for it. It was never broadcast, so we abort the swap."
+                );
+                return Ok(BobState::SafelyAborted);
+            }
+
+            // Saved before we broadcast. From then on the lock transaction might be
+            // public, so we can no longer abort the swap.
+            BobState::BtcLockReadyToPublish {
+                btc_lock_tx_signed,
+                state3,
+                monero_wallet_restore_blockheight,
+                publish_deadline,
+                broadcast_attempted: true,
+            }
+        }
+        BobState::BtcLockReadyToPublish {
+            btc_lock_tx_signed,
+            state3,
+            monero_wallet_restore_blockheight,
+            broadcast_attempted: true,
+            ..
         } => {
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcLockPublishInflight);
@@ -1130,11 +1175,13 @@ async fn next_state(
             .expect("we never stop retrying to refund")
         }
         BobState::BtcRefundPublished(state) => {
+            let signed_tx_refund = state.signed_full_refund_transaction()?;
+
             // Emit a Tauri event
             event_emitter.emit_swap_progress_event(
                 swap_id,
                 TauriSwapProgressEvent::BtcRefundPublished {
-                    btc_refund_txid: state.signed_full_refund_transaction()?.compute_txid(),
+                    btc_refund_txid: signed_tx_refund.compute_txid(),
                 },
             );
 
@@ -1156,7 +1203,6 @@ async fn next_state(
             // BtcRefunded state with the txid of the confirmed transaction
             select! {
                 // Wait for the refund transaction to be confirmed
-                // TODO: Publish the tx_refund transaction anyway
                 _ = tx_refund_status.wait_until_final() => {
                     let tx_refund_txid = tx_refund.txid();
 
@@ -1180,6 +1226,7 @@ async fn next_state(
 
                     BobState::BtcEarlyRefunded(state)
                 },
+                infallible = keep_bitcoin_tx_published(&*bitcoin_wallet, swap_id, "full btc refund", signed_tx_refund, BTC_REFUND_REPUBLISH_INTERVAL) => match infallible {},
             }
         }
         BobState::BtcEarlyRefundPublished(state) => {
@@ -1242,6 +1289,7 @@ async fn next_state(
             // 2. Wait for either refund transaction to be confirmed
 
             let tx_partial_refund = state.construct_tx_partial_refund()?;
+            let signed_tx_partial_refund = state.signed_partial_refund_transaction()?;
             let tx_early_refund = state.construct_tx_early_refund();
 
             let (tx_partial_refund_status, tx_early_refund_status) = tokio::join!(
@@ -1258,6 +1306,7 @@ async fn next_state(
                     tracing::info!("TxEarlyRefund has been confirmed");
                     BobState::BtcEarlyRefunded(state)
                 }
+                infallible = keep_bitcoin_tx_published(&*bitcoin_wallet, swap_id, "partial btc refund", signed_tx_partial_refund, BTC_REFUND_REPUBLISH_INTERVAL) => match infallible {},
             }
         }
         BobState::BtcPartiallyRefunded(state) => {

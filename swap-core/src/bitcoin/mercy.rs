@@ -20,7 +20,7 @@ use std::collections::HashMap;
 /// her to request the refund).
 #[derive(Debug, Clone)]
 pub struct TxMercy {
-    inner: Transaction,
+    pub(super) inner: Transaction,
     digest: Sighash,
     burn_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     watch_script: ScriptBuf,
