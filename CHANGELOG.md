@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.1] - 2026-10-30
+
 - ORCHESTRATOR: Update Tor to 0.4.9.9 and ship the logs of the `tor` container to Loki.
 - GUI: Show a warning before you accept an offer during swap setup if the rate of the maker is more than 5% above its quote, its markup is above 5%, or its markup is more than 25%, and more than 0.25 percentage points, above the quoted markup.
 
@@ -1104,7 +1106,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/5.0.0...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/5.0.1...HEAD
+[5.0.1]: https://github.com/eigenwallet/core/compare/5.0.0...5.0.1
 [5.0.0]: https://github.com/eigenwallet/core/compare/4.16.1...5.0.0
 [4.16.1]: https://github.com/eigenwallet/core/compare/4.16.0...4.16.1
 [4.16.0]: https://github.com/eigenwallet/core/compare/4.15.0...4.16.0
