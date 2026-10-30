@@ -449,6 +449,7 @@ mod builder {
         enable_monero_tor: bool,
         tauri_handle: Option<TauriHandle>,
         rendezvous_points: Vec<(PeerId, Vec<Multiaddr>)>,
+        system_socks5: Option<String>,
     }
 
     impl ContextBuilder {
@@ -473,6 +474,7 @@ mod builder {
                 enable_monero_tor: false,
                 tauri_handle: None,
                 rendezvous_points: Vec::new(),
+                system_socks5: None,
             }
         }
 
@@ -532,6 +534,11 @@ mod builder {
             self.rendezvous_points = rendezvous_points;
             self
         }
+        
+        pub fn with_system_socks5(mut self, system_socks5: Option<String>) -> Self {
+            self.system_socks5 = system_socks5;
+            self
+        }
 
         /// Initializes the context by populating it with all configured components.
         ///
@@ -589,9 +596,11 @@ mod builder {
 
             let future_unbootstrapped_tor_client_rpc_pool = {
                 let tauri_handle = self.tauri_handle.clone();
+                let system_socks5 = self.system_socks5.clone();
+                
                 async move {
                     let unbootstrapped_tor_client = if self.tor {
-                        match create_tor_client(&base_data_dir).await.inspect_err(|err| {
+                        match create_tor_client(&base_data_dir, system_socks5.clone()).await.inspect_err(|err| {
                             tracing::warn!(%err, "Failed to create Tor client. We will continue without Tor");
                         }) {
                             Ok(client) => Some(client),
@@ -612,6 +621,7 @@ mod builder {
                                 } else {
                                     None
                                 },
+                                system_socks5, 
                                 match self.is_testnet {
                                     true => monero::Network::Stagenet,
                                     false => monero::Network::Mainnet,

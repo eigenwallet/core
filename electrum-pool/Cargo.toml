@@ -6,6 +6,8 @@ edition = "2024"
 
 [dependencies]
 bdk_electrum = { workspace = true, features = ["use-rustls-ring"] }
+electrum-client = { version = "0.24.1", default-features = false, features = ["proxy"] }
+
 bitcoin = { workspace = true }
 futures = { workspace = true }
 once_cell = { workspace = true }

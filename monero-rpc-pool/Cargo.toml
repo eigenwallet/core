@@ -22,6 +22,7 @@ required-features = ["stress-test"]
 stress-test = ["reqwest", "cuprate-epee-encoding"]
 
 [dependencies]
+tokio-socks = "0.5.2"
 # Core utilities
 anyhow = { workspace = true }
 futures = { workspace = true }
