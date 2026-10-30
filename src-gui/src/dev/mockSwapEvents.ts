@@ -613,7 +613,7 @@ function makeMockSwapInfo(
     tx_refund_fee: 1000,
     tx_lock_fee: 1000,
     btc_refund_address: MOCK_BTC_DEPOSIT_ADDRESS,
-    cancel_timelock: 24,
+    cancel_timelock: 30,
     punish_timelock: 144,
     monero_receive_pool: [
       { address: MOCK_XMR_ADDRESS, percentage: 100, label: "Main" },

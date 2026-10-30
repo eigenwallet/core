@@ -5,15 +5,16 @@ use crate::monero::LabeledMoneroAddress;
 use crate::monero::MoneroAddressPool;
 use crate::monero::TransferProof;
 use crate::protocol::{Database, State};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use sqlx::sqlite::{Sqlite, SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{ConnectOptions, Pool};
+use sqlx::{ConnectOptions, Pool, SqliteExecutor};
 use std::path::Path;
 use std::str::FromStr;
+use std::time::Duration;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -79,23 +80,7 @@ impl SqliteDatabase {
 #[async_trait]
 impl Database for SqliteDatabase {
     async fn insert_peer_id(&self, swap_id: Uuid, peer_id: PeerId) -> Result<()> {
-        let swap_id = swap_id.to_string();
-        let peer_id = peer_id.to_string();
-
-        sqlx::query!(
-            r#"
-        insert into peers (
-            swap_id,
-            peer_id
-            ) values (?, ?);
-        "#,
-            swap_id,
-            peer_id
-        )
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
+        insert_peer_id(&self.pool, swap_id, peer_id).await
     }
 
     async fn get_peer_id(&self, swap_id: Uuid) -> Result<PeerId> {
@@ -313,26 +298,7 @@ impl Database for SqliteDatabase {
     }
 
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()> {
-        let entered_at = OffsetDateTime::now_utc();
-
-        let swap = serde_json::to_string(&Swap::from(state))?;
-        let entered_at = entered_at.to_string();
-        let swap_id_str = swap_id.to_string();
-
-        sqlx::query!(
-            r#"
-            insert into swap_states (
-                swap_id,
-                entered_at,
-                state
-                ) values (?, ?, ?);
-        "#,
-            swap_id_str,
-            entered_at,
-            swap
-        )
-        .execute(&self.pool)
-        .await?;
+        insert_latest_state(&self.pool, swap_id, state).await?;
 
         // Emit event to Tauri, the frontend will then send another request to get the latest state
         // This is why we don't send the state here
@@ -412,10 +378,86 @@ impl Database for SqliteDatabase {
         Ok(result)
     }
 
+    async fn get_alice_swaps_with_pending_tx_lock(
+        &self,
+        updated_since: i64,
+    ) -> Result<Vec<(Uuid, State)>> {
+        // Must match AliceState::pending_tx_lock.
+        let rows = sqlx::query!(
+            r#"
+            -- Find the latest ids on the covering (swap_id, id) index first, so only
+            -- the latest state of each swap is read from the table.
+            WITH latest_ids AS (
+                SELECT max(id) AS id
+                FROM swap_states
+                GROUP BY swap_id
+            ), latest AS (
+                SELECT s.id, s.swap_id, s.state, s.entered_at
+                FROM latest_ids l
+                JOIN swap_states s ON s.id = l.id
+            ), normalized AS (
+                SELECT *, CASE
+                    WHEN entered_at NOT GLOB '* +00:00:00' THEN NULL
+                    WHEN substr(entered_at, 13, 1) = ':'
+                        THEN substr(entered_at, 1, 11) || '0' || substr(entered_at, 12, length(entered_at) - 21)
+                    ELSE substr(entered_at, 1, length(entered_at) - 10)
+                END AS utc_time
+                FROM latest
+            )
+            SELECT s.swap_id, s.state, s.entered_at,
+                   CAST(strftime('%s', s.utc_time) AS INTEGER) AS "entered_at_unix?: i64"
+            FROM normalized s
+            -- CASE skips JSON parsing entirely for old rows. Rows with an invalid
+            -- timestamp or malformed recent JSON are returned, so that they are logged
+            -- and skipped below instead of failing the whole query.
+            WHERE CASE
+                WHEN strftime('%s', s.utc_time) IS NULL THEN 1
+                WHEN CAST(strftime('%s', s.utc_time) AS INTEGER) < ? THEN 0
+                WHEN json_valid(s.state) = 0 THEN 1
+                ELSE json_extract(s.state, '$.Alice.Started') IS NOT NULL
+                  OR json_extract(s.state, '$.Alice.BtcLockTransactionSeen') IS NOT NULL
+            END
+        "#,
+            updated_since,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        // Log and skip unreadable rows instead of failing the whole call.
+        let result = rows
+            .iter()
+            .filter_map(|row| {
+                if row.entered_at_unix.is_none() {
+                    tracing::error!(swap_id = %row.swap_id, entered_at = %row.entered_at, "Skipping swap state with an invalid UTC timestamp");
+                    return None;
+                }
+                let swap_id = match Uuid::from_str(&row.swap_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Skipping swap state with an invalid swap id");
+                        return None;
+                    }
+                };
+                let state = match serde_json::from_str::<Swap>(&row.state) {
+                    Ok(state) => State::from(state),
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Skipping swap state that does not deserialize");
+                        return None;
+                    }
+                };
+
+                Some((swap_id, state))
+            })
+            .collect();
+
+        Ok(result)
+    }
+
     /// Same as [`all`] except paginated, and returns both the first and last
-    /// recorded state per swap. Swaps that never progressed past
-    /// `SafelyAborted` are filtered out. `limit` and `offset` must each fit
-    /// into `i32`.
+    /// recorded state per swap. `Alice::Started` is ignored when picking the
+    /// first state, so swaps whose lock transaction was never seen are
+    /// filtered out, as are swaps that never progressed past `SafelyAborted`.
+    /// `limit` and `offset` must each fit into `i32`.
     async fn all_paginated(
         &self,
         limit: u32,
@@ -435,7 +477,13 @@ impl Database for SqliteDatabase {
                 newest.state       AS "last_state!: String",
                 oldest.entered_at  AS start_date
             FROM (SELECT swap_id, state, entered_at, MIN(id) AS id
-                  FROM swap_states GROUP BY swap_id) oldest
+                  FROM swap_states
+                  -- Unreadable rows must not fail the whole listing
+                  WHERE CASE
+                      WHEN json_valid(state) THEN json_extract(state, '$.Alice.Started') IS NULL
+                      ELSE 1
+                  END
+                  GROUP BY swap_id) oldest
             JOIN (SELECT swap_id, state, MAX(id) AS id
                   FROM swap_states GROUP BY swap_id) newest
                 ON newest.swap_id = oldest.swap_id
@@ -575,74 +623,201 @@ impl Database for SqliteDatabase {
     }
 
     async fn has_swap(&self, swap_id: Uuid) -> Result<bool> {
-        let swap_id = swap_id.to_string();
+        has_swap(&self.pool, swap_id).await
+    }
 
-        let row = sqlx::query!(
-            r#"
-            SELECT 1 as found
+    async fn insert_new_swap(
+        &self,
+        swap_id: Uuid,
+        peer_id: PeerId,
+        state: State,
+        timeout: Duration,
+    ) -> Result<()> {
+        // Everything up to the commit is bounded. Dropping the transaction rolls it back.
+        let transaction = tokio::time::timeout(timeout, async {
+            let mut transaction = self.pool.begin().await?;
+
+            // Writing first takes the write lock right away. Reading first would take a
+            // read lock that can fail to upgrade when another connection writes.
+            insert_peer_id(&mut *transaction, swap_id, peer_id)
+                .await
+                .context("Failed to save peer-id in database")?;
+            if has_swap(&mut *transaction, swap_id).await? {
+                bail!("UUID is already in use");
+            }
+            insert_latest_state(&mut *transaction, swap_id, state)
+                .await
+                .context("Failed to save the initial swap state in database")?;
+
+            Ok(transaction)
+        })
+        .await
+        .context("Persisting the new swap timed out")??;
+
+        // Not bounded by the timeout, because we must know whether it happened. On a busy
+        // database SQLite gives up after its busy timeout and rolls the transaction back.
+        transaction
+            .commit()
+            .await
+            .context("Failed to commit the new swap")?;
+
+        self.tauri_handle.emit_swap_state_change_event(swap_id);
+
+        Ok(())
+    }
+}
+
+async fn insert_peer_id<'e>(
+    executor: impl SqliteExecutor<'e>,
+    swap_id: Uuid,
+    peer_id: PeerId,
+) -> Result<()> {
+    let swap_id = swap_id.to_string();
+    let peer_id = peer_id.to_string();
+
+    sqlx::query!(
+        r#"
+        insert into peers (
+            swap_id,
+            peer_id
+            ) values (?, ?);
+        "#,
+        swap_id,
+        peer_id
+    )
+    .execute(executor)
+    .await?;
+
+    Ok(())
+}
+
+async fn insert_latest_state<'e>(
+    executor: impl SqliteExecutor<'e>,
+    swap_id: Uuid,
+    state: State,
+) -> Result<()> {
+    let entered_at = OffsetDateTime::now_utc();
+
+    let swap = serde_json::to_string(&Swap::from(state))?;
+    let entered_at = entered_at.to_string();
+    let swap_id_str = swap_id.to_string();
+
+    sqlx::query!(
+        r#"
+            insert into swap_states (
+                swap_id,
+                entered_at,
+                state
+                ) values (?, ?, ?);
+        "#,
+        swap_id_str,
+        entered_at,
+        swap
+    )
+    .execute(executor)
+    .await?;
+
+    Ok(())
+}
+
+async fn has_swap<'e>(executor: impl SqliteExecutor<'e>, swap_id: Uuid) -> Result<bool> {
+    let swap_id = swap_id.to_string();
+
+    let row = sqlx::query!(
+        r#"
+            SELECT 1 as "found!: i64"
             FROM swap_states
             WHERE swap_id = ?
             LIMIT 1
             "#,
-            swap_id
-        )
-        .fetch_optional(&self.pool)
-        .await?;
+        swap_id
+    )
+    .fetch_optional(executor)
+    .await?;
 
-        Ok(row.is_some())
-    }
+    Ok(row.is_some())
 }
 
 impl SqliteDatabase {
     /// Like [`Database::all`] but only returns swaps whose latest state
     /// update happened within the last `freshness_hours`.
     ///
-    /// `entered_at` is stored as a Rust-formatted string
-    /// (`YYYY-MM-DD HH:MM:SS.fff +00:00:00`). SQLite's date functions don't
-    /// accept the offset trailer, so we `substr` down to the first 19
-    /// characters before parsing with `strftime('%s', ...)`. All writes use
-    /// `OffsetDateTime::now_utc()`, so dropping the offset is safe.
+    /// Normalize the UTC timestamps written by `OffsetDateTime::to_string()` in
+    /// SQL (including single-digit hours) before filtering or decoding state JSON.
     pub async fn all_fresh(&self, freshness_hours: u64) -> Result<Vec<(PeerId, Uuid, State)>> {
-        let freshness_seconds = (freshness_hours as i64).saturating_mul(3600);
+        let seconds = i64::try_from(freshness_hours)?
+            .checked_mul(3600)
+            .context("Freshness interval overflow")?;
+        let cutoff = OffsetDateTime::now_utc()
+            .unix_timestamp()
+            .checked_sub(seconds)
+            .context("Freshness cutoff overflow")?;
+        self.all_fresh_since(cutoff).await
+    }
 
+    async fn all_fresh_since(&self, cutoff: i64) -> Result<Vec<(PeerId, Uuid, State)>> {
         let rows = sqlx::query!(
             r#"
-            SELECT s.swap_id, s.state, p.peer_id
-            FROM (
-                SELECT max(id) as id, swap_id, state, entered_at
+            -- Find the latest ids on the covering (swap_id, id) index first, so only
+            -- the latest state of each swap is read from the table.
+            WITH latest_ids AS (
+                SELECT max(id) AS id
                 FROM swap_states
                 GROUP BY swap_id
-            ) s
+            ), latest AS (
+                SELECT s.id, s.swap_id, s.state, s.entered_at
+                FROM latest_ids l
+                JOIN swap_states s ON s.id = l.id
+            ), normalized AS (
+                SELECT *, CASE
+                    WHEN entered_at NOT GLOB '* +00:00:00' THEN NULL
+                    WHEN substr(entered_at, 13, 1) = ':'
+                        THEN substr(entered_at, 1, 11) || '0' || substr(entered_at, 12, length(entered_at) - 21)
+                    ELSE substr(entered_at, 1, length(entered_at) - 10)
+                END AS utc_time
+                FROM latest
+            )
+            -- Parse the entire normalized timestamp so malformed fractional
+            -- seconds cannot be hidden by truncation. Epoch seconds discard
+            -- the fractional part only after the timestamp has been parsed.
+            SELECT s.swap_id, s.state, p.peer_id, s.entered_at,
+                   CAST(strftime('%s', s.utc_time) AS INTEGER) AS "entered_at_unix?: i64"
+            FROM normalized s
             INNER JOIN peers p ON s.swap_id = p.swap_id
-            WHERE CAST(strftime('%s', substr(s.entered_at, 1, 19)) AS INTEGER)
-                  >= CAST(strftime('%s', 'now') AS INTEGER) - ?
+            WHERE strftime('%s', s.utc_time) IS NULL
+               OR CAST(strftime('%s', s.utc_time) AS INTEGER) >= ?
             "#,
-            freshness_seconds,
+            cutoff,
         )
         .fetch_all(&self.pool)
         .await?;
 
+        // Log and skip unreadable rows instead of failing the whole call.
         let result = rows
             .iter()
             .filter_map(|row| {
+                if row.entered_at_unix.is_none() {
+                    tracing::error!(swap_id = %row.swap_id, entered_at = %row.entered_at, "Skipping swap state with an invalid UTC timestamp");
+                    return None;
+                }
                 let swap_id = match Uuid::from_str(&row.swap_id) {
                     Ok(id) => id,
                     Err(e) => {
-                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Failed to parse UUID");
+                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Skipping swap state with an invalid swap id");
                         return None;
                     }
                 };
                 let peer_id = match PeerId::from_str(&row.peer_id) {
                     Ok(id) => id,
                     Err(e) => {
-                        tracing::error!(%swap_id, error = ?e, "Failed to parse PeerId");
+                        tracing::error!(%swap_id, error = ?e, "Skipping swap with an invalid peer id");
                         return None;
                     }
                 };
                 let state = match serde_json::from_str::<Swap>(&row.state) {
-                    Ok(a) => State::from(a),
+                    Ok(state) => State::from(state),
                     Err(e) => {
-                        tracing::error!(%swap_id, error = ?e, "Failed to deserialize state");
+                        tracing::error!(%swap_id, error = ?e, "Skipping swap state that does not deserialize");
                         return None;
                     }
                 };
@@ -749,7 +924,7 @@ impl crate::network::wormhole::WormholeStore for SqliteDatabase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::alice::AliceState;
+    use crate::protocol::alice::{AliceState, test_state3};
     use crate::protocol::bob::BobState;
     use std::fs::File;
     use tempfile::{TempDir, tempdir};
@@ -914,6 +1089,273 @@ mod tests {
         assert!(loaded_multiaddr.contains(&multiaddr2));
         assert_eq!(loaded_multiaddr.len(), 2);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fresh_swaps_normalize_hours_and_filter_before_decoding() -> Result<()> {
+        let db = setup_test_db().await?;
+        // Test midnight, single-digit and two-digit hours with fractional seconds.
+        for hour in [0, 1, 9, 10, 23] {
+            sqlx::query("DELETE FROM swap_states")
+                .execute(&db.pool)
+                .await?;
+            sqlx::query("DELETE FROM peers").execute(&db.pool).await?;
+            let cutoff = OffsetDateTime::from_unix_timestamp(1_735_689_600 + hour * 3600)?;
+            let mut expected = Vec::new();
+            for offset in [-1, 0, 1] {
+                let id = Uuid::new_v4();
+                db.insert_peer_id(id, PeerId::random()).await?;
+                let timestamp =
+                    (cutoff + time::Duration::seconds(offset) + time::Duration::milliseconds(123))
+                        .to_string();
+                let state = if offset < 0 {
+                    "this stale JSON must never be decoded"
+                } else {
+                    r#"{"Alice":{"Done":"SafelyAborted"}}"#
+                };
+                sqlx::query(
+                    "INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)",
+                )
+                .bind(id.to_string())
+                .bind(timestamp)
+                .bind(state)
+                .execute(&db.pool)
+                .await?;
+                if offset >= 0 {
+                    expected.push(id);
+                }
+            }
+            let fresh = db.all_fresh_since(cutoff.unix_timestamp()).await?;
+            assert_eq!(fresh.len(), expected.len());
+            assert!(fresh.iter().all(|(_, id, _)| expected.contains(id)));
+            // A newer row supersedes a fresh one even if its timestamp is older.
+            sqlx::query("INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)")
+                .bind(expected[0].to_string())
+                .bind((cutoff - time::Duration::seconds(1)).to_string())
+                .bind("stale JSON")
+                .execute(&db.pool)
+                .await?;
+            assert_eq!(db.all_fresh_since(cutoff.unix_timestamp()).await?.len(), 1);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_lock_checks_filter_timestamps_before_reading_json() -> Result<()> {
+        let db = setup_test_db().await?;
+        for hour in [0, 1, 9, 10, 23] {
+            let cutoff = OffsetDateTime::from_unix_timestamp(1_735_689_600 + hour * 3600)?;
+            for variant in ["Started", "BtcLockTransactionSeen"] {
+                for offset in [-1, 0, 1] {
+                    sqlx::query("DELETE FROM swap_states")
+                        .execute(&db.pool)
+                        .await?;
+                    let id = Uuid::new_v4();
+                    let timestamp = cutoff
+                        + time::Duration::seconds(offset)
+                        + time::Duration::milliseconds(123);
+                    // Recent pending states must reach deserialization (and are skipped
+                    // because state3 is missing); stale states must not even reach SQL's
+                    // JSON parser. Neither query requires a peers-table record.
+                    let state = if offset < 0 {
+                        "this stale JSON must never be parsed".to_owned()
+                    } else {
+                        format!(r#"{{"Alice":{{"{variant}":{{}}}}}}"#)
+                    };
+                    sqlx::query(
+                        "INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)",
+                    )
+                    .bind(id.to_string())
+                    .bind(timestamp.to_string())
+                    .bind(state)
+                    .execute(&db.pool)
+                    .await?;
+                    assert!(
+                        db.get_alice_swaps_with_pending_tx_lock(cutoff.unix_timestamp())
+                            .await?
+                            .is_empty()
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_lock_checks_skip_recent_malformed_json() -> Result<()> {
+        let db = setup_test_db().await?;
+        sqlx::query("INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)")
+            .bind(Uuid::new_v4().to_string())
+            .bind(OffsetDateTime::now_utc().to_string())
+            .bind("this recent JSON is malformed")
+            .execute(&db.pool)
+            .await?;
+        let cutoff = OffsetDateTime::now_utc() - time::Duration::hours(1);
+        assert!(
+            db.get_alice_swaps_with_pending_tx_lock(cutoff.unix_timestamp())
+                .await?
+                .is_empty()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_lock_checks_do_not_resurrect_older_states() -> Result<()> {
+        let db = setup_test_db().await?;
+        let cutoff = OffsetDateTime::from_unix_timestamp(1_735_689_600)?;
+        for (latest_timestamp, latest_state) in [
+            (cutoff, r#"{"Alice":{"Done":"SafelyAborted"}}"#),
+            (cutoff - time::Duration::seconds(1), "stale JSON"),
+        ] {
+            let id = Uuid::new_v4();
+            for (timestamp, state) in [
+                (cutoff, r#"{"Alice":{"BtcLockTransactionSeen":{}}}"#),
+                (latest_timestamp, latest_state),
+            ] {
+                sqlx::query(
+                    "INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)",
+                )
+                .bind(id.to_string())
+                .bind(timestamp.to_string())
+                .bind(state)
+                .execute(&db.pool)
+                .await?;
+            }
+            assert!(
+                db.get_alice_swaps_with_pending_tx_lock(cutoff.unix_timestamp())
+                    .await?
+                    .is_empty()
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_lock_checks_return_valid_pending_swaps() -> Result<()> {
+        let db = setup_test_db().await?;
+        let wallet = bitcoin_wallet::TestWalletBuilder::new(1_000_000)
+            .build()
+            .await;
+        let cutoff = OffsetDateTime::now_utc() - time::Duration::hours(1);
+
+        let started = State::Alice(AliceState::Started {
+            state3: Box::new(test_state3(&wallet).await?),
+        });
+        let seen = State::Alice(AliceState::BtcLockTransactionSeen {
+            state3: Box::new(test_state3(&wallet).await?),
+        });
+        let (started_id, seen_id) = (Uuid::new_v4(), Uuid::new_v4());
+        db.insert_latest_state(started_id, started.clone()).await?;
+        db.insert_latest_state(seen_id, seen.clone()).await?;
+
+        // Recorded before the cutoff.
+        let stale = State::Alice(AliceState::Started {
+            state3: Box::new(test_state3(&wallet).await?),
+        });
+        sqlx::query("INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)")
+            .bind(Uuid::new_v4().to_string())
+            .bind((cutoff - time::Duration::seconds(1)).to_string())
+            .bind(serde_json::to_string(&Swap::from(stale))?)
+            .execute(&db.pool)
+            .await?;
+
+        let mut pending = db
+            .get_alice_swaps_with_pending_tx_lock(cutoff.unix_timestamp())
+            .await?;
+        pending.sort_by_key(|(id, _)| *id != started_id);
+        assert_eq!(pending, vec![(started_id, started), (seen_id, seen)]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn paginated_swaps_are_listed_once_their_lock_transaction_was_seen() -> Result<()> {
+        let db = setup_test_db().await?;
+        let wallet = bitcoin_wallet::TestWalletBuilder::new(1_000_000)
+            .build()
+            .await;
+        let state3 = Box::new(test_state3(&wallet).await?);
+        let started = State::Alice(AliceState::Started {
+            state3: state3.clone(),
+        });
+        let seen = State::Alice(AliceState::BtcLockTransactionSeen {
+            state3: state3.clone(),
+        });
+        let locked = State::Alice(AliceState::BtcLocked { state3 });
+        let aborted = State::Alice(AliceState::SafelyAborted);
+
+        let (legacy, locked_id, pending, never_locked, unreadable) = (
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        );
+        for (id, states) in [
+            // Created before Alice persisted swaps at registration
+            (legacy, vec![&seen, &locked]),
+            (locked_id, vec![&started, &seen, &locked]),
+            (pending, vec![&started]),
+            (never_locked, vec![&started, &aborted]),
+            (unreadable, vec![&started, &seen]),
+        ] {
+            db.insert_peer_id(id, PeerId::random()).await?;
+            for state in states {
+                db.insert_latest_state(id, state.clone()).await?;
+            }
+        }
+        // An unreadable row between readable ones must not fail the listing
+        sqlx::query("INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)")
+            .bind(unreadable.to_string())
+            .bind(OffsetDateTime::now_utc().to_string())
+            .bind("{not json")
+            .execute(&db.pool)
+            .await?;
+        db.insert_latest_state(unreadable, locked.clone()).await?;
+
+        let listed: Vec<_> = db
+            .all_paginated(10, 0)
+            .await?
+            .into_iter()
+            .map(|(_, id, first, last)| (id, first, last))
+            .collect();
+        assert_eq!(
+            listed,
+            vec![
+                (legacy, seen.clone(), locked.clone()),
+                (locked_id, seen.clone(), locked.clone()),
+                (unreadable, seen, locked),
+            ]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fresh_swaps_skip_malformed_timestamps() -> Result<()> {
+        let db = setup_test_db().await?;
+        let id = Uuid::new_v4();
+        db.insert_peer_id(id, PeerId::random()).await?;
+        for timestamp in [
+            "not a timestamp",
+            "2025-01-01 4:30:00 +01:00:00",
+            "2025-99-01 4:30:00 +00:00:00",
+            "2025-01-01 4:30:00.garbage +00:00:00",
+            "2025-01-01 4:30:00.123 invalid +00:00:00",
+        ] {
+            sqlx::query("INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)")
+                .bind(id.to_string())
+                .bind(timestamp)
+                .bind(r#"{"Alice":{"Done":"SafelyAborted"}}"#)
+                .execute(&db.pool)
+                .await?;
+            assert!(db.all_fresh(24).await?.is_empty());
+            assert!(
+                db.get_alice_swaps_with_pending_tx_lock(OffsetDateTime::now_utc().unix_timestamp())
+                    .await?
+                    .is_empty()
+            );
+        }
+        assert!(db.all_fresh(u64::MAX).await.is_err());
         Ok(())
     }
 

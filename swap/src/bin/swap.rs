@@ -53,6 +53,31 @@ mod tests {
     const SWAP_ID: &str = "ea030832-3be9-454f-bb98-5ea9a788406b";
 
     #[tokio::test]
+    async fn swap_fee_excludes_funds_outside_the_input_limit() {
+        let mut quotes = quote_with_max(0.1).borrow().clone();
+        quotes[0].quote.min_quantity = Amount::from_sat(100_000);
+        let (_sender, receiver) = tokio::sync::watch::channel(quotes);
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            determine_btc_to_swap(
+                receiver,
+                get_dummy_address(),
+                || async { Ok(Amount::from_sat(2_600_000)) },
+                || async { Ok((Amount::from_sat(2_498_766), Amount::from_sat(1_234))) },
+                || async { Ok(()) },
+                None,
+                SWAP_ID.parse().unwrap(),
+                approval_always,
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(result.3, Amount::from_sat(2_498_766));
+        assert_eq!(result.4, Amount::from_sat(1_234));
+    }
+
+    #[tokio::test]
     async fn given_no_balance_and_transfers_less_than_max_swaps_max_giveable() {
         let writer = capture_logs(LevelFilter::INFO);
         let givable = MaxGiveable::new(vec![

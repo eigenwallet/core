@@ -1113,7 +1113,7 @@ pub async fn buy_xmr(
                 let wallet = Arc::clone(&bitcoin_wallet_for_closures);
                 move || {
                     let w = wallet.clone();
-                    async move { w.max_giveable(address_len).await }
+                    async move { w.max_giveable(address_len, Some(bitcoin::MAX_TX_LOCK_INPUTS)).await }
                 }
             },
             {
@@ -1497,7 +1497,7 @@ pub async fn refresh_wallet_task<FMG, TMG, FB, TB, FS, TS>(
     sync_fn: FS,
 ) -> Result<(
     tokio::task::JoinHandle<()>,
-    ::tokio::sync::watch::Receiver<(bitcoin::Amount, bitcoin::Amount)>,
+    ::tokio::sync::watch::Receiver<(bitcoin::Amount, bitcoin::Amount, bitcoin::Amount)>,
 )>
 where
     TMG: Future<Output = Result<(bitcoin::Amount, bitcoin::Amount)>> + Send + 'static,
@@ -1507,7 +1507,11 @@ where
     TS: Future<Output = Result<()>> + Send + 'static,
     FS: Fn() -> TS + Send + 'static,
 {
-    let (tx, rx) = ::tokio::sync::watch::channel((bitcoin::Amount::ZERO, bitcoin::Amount::ZERO));
+    let (tx, rx) = ::tokio::sync::watch::channel((
+        bitcoin::Amount::ZERO,
+        bitcoin::Amount::ZERO,
+        bitcoin::Amount::ZERO,
+    ));
 
     let handle = tokio::task::spawn(async move {
         loop {
@@ -1519,8 +1523,8 @@ where
             let max_giveable_result = max_giveable_fn().await;
 
             match (&balance_result, &max_giveable_result) {
-                (Ok(balance), Ok((max_giveable, _fee))) => {
-                    let _ = tx.send((*balance, *max_giveable));
+                (Ok(balance), Ok((max_giveable, fee))) => {
+                    let _ = tx.send((*balance, *max_giveable, *fee));
                 }
                 (Err(e), _) => {
                     tracing::warn!(?e, "Failed to fetch Bitcoin balance in refresh_wallet_task");
@@ -1566,7 +1570,7 @@ where
     // Start background tasks with watch channels
     let (wallet_refresh_handle, mut balance_rx): (
         _,
-        ::tokio::sync::watch::Receiver<(bitcoin::Amount, bitcoin::Amount)>,
+        ::tokio::sync::watch::Receiver<(bitcoin::Amount, bitcoin::Amount, bitcoin::Amount)>,
     ) = refresh_wallet_task(max_giveable_fn, balance, sync).await?;
 
     // Get the abort handles to kill the background tasks when we exit the function
@@ -1579,7 +1583,7 @@ where
     loop {
         // Get the latest quotes, balance and max_giveable
         let quotes = quotes_rx.borrow().clone();
-        let (balance, max_giveable) = *balance_rx.borrow();
+        let (_balance, max_giveable, tx_lock_fee) = *balance_rx.borrow();
 
         // Emit a Tauri event
         event_emitter.emit_swap_progress_event(
@@ -1587,7 +1591,7 @@ where
             TauriSwapProgressEvent::WaitingForBtcDeposit {
                 deposit_address: deposit_address.clone(),
                 max_giveable: max_giveable,
-                min_bitcoin_lock_tx_fee: balance - max_giveable,
+                min_bitcoin_lock_tx_fee: tx_lock_fee,
                 known_quotes: quotes.clone(),
             },
         );
@@ -1600,7 +1604,6 @@ where
 
                 if quote.min_quantity <= max_giveable && quote.max_quantity > bitcoin::Amount::ZERO
                 {
-                    let tx_lock_fee = balance - max_giveable;
                     let tx_lock_amount = std::cmp::min(max_giveable, quote.max_quantity);
 
                     Some((quote_with_address.clone(), tx_lock_amount, tx_lock_fee))

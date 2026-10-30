@@ -23,6 +23,7 @@ use swap::database::{AccessMode, SqliteDatabase};
 use swap::monero::wallet::no_listener;
 use swap::monero::{MoneroAddressPool, Wallets};
 use swap::network::rendezvous::XmrBtcNamespace;
+use swap::network::swap_setup::verification::LockInputVerifier;
 use swap::network::swarm;
 use swap::protocol::alice::{AliceState, HermesFundingPolicy, Swap, TipConfig};
 use swap::protocol::bob::BobState;
@@ -48,9 +49,56 @@ use uuid::Uuid;
 /// If use_subaddress is true, we will use a subaddress for the developer tip. We do this
 /// because using a subaddress changes things about the tx keys involved
 pub async fn setup_test<T, F, C>(
+    config: C,
+    developer_tip_ratio: Option<(Decimal, bool)>,
+    refund_policy: Option<RefundPolicy>,
+    testfn: T,
+) where
+    T: Fn(TestContext) -> F,
+    F: Future<Output = Result<()>>,
+    C: GetConfig,
+{
+    setup_test_with_bob_funding(
+        config,
+        developer_tip_ratio,
+        refund_policy,
+        BobBitcoinFunding::OnChain,
+        testfn,
+    )
+    .await;
+}
+
+pub async fn setup_test_with_fake_bob_bitcoin_utxo<T, F, C>(
+    config: C,
+    developer_tip_ratio: Option<(Decimal, bool)>,
+    refund_policy: Option<RefundPolicy>,
+    testfn: T,
+) where
+    T: Fn(TestContext) -> F,
+    F: Future<Output = Result<()>>,
+    C: GetConfig,
+{
+    setup_test_with_bob_funding(
+        config,
+        developer_tip_ratio,
+        refund_policy,
+        BobBitcoinFunding::Fake,
+        testfn,
+    )
+    .await;
+}
+
+#[derive(Clone, Copy)]
+enum BobBitcoinFunding {
+    OnChain,
+    Fake,
+}
+
+async fn setup_test_with_bob_funding<T, F, C>(
     _config: C,
     developer_tip_ratio: Option<(Decimal, bool)>,
     refund_policy: Option<RefundPolicy>,
+    bob_bitcoin_funding: BobBitcoinFunding,
     testfn: T,
 ) where
     T: Fn(TestContext) -> F,
@@ -220,18 +268,29 @@ ask_spread = "0"
     let bob_seed = Seed::random().unwrap();
     let bob_starting_balances = StartingBalances::new(btc_amount * 10, monero::Amount::ZERO, None);
     let bob_monero_dir = TempDir::new().unwrap().path().join("bob-monero-wallets");
+    let mut bob_wallet_starting_balances = bob_starting_balances.clone();
+    if matches!(bob_bitcoin_funding, BobBitcoinFunding::Fake) {
+        bob_wallet_starting_balances.btc = bitcoin::Amount::ZERO;
+    }
+
     let (bob_bitcoin_wallet, bob_monero_wallet) = init_test_wallets(
         MONERO_WALLET_NAME_BOB,
         containers.bitcoind_url.clone(),
         &monero,
         &containers._monerod_container,
         bob_monero_dir,
-        bob_starting_balances.clone(),
+        bob_wallet_starting_balances,
         electrs_rpc_port,
         &bob_seed,
         env_config,
     )
     .await;
+
+    if matches!(bob_bitcoin_funding, BobBitcoinFunding::Fake) {
+        bob_bitcoin_wallet
+            .insert_fake_utxo(bob_starting_balances.btc)
+            .await;
+    }
 
     let bob_donation_seed = Seed::random().unwrap();
     let bob_donation_starting_balances =
@@ -422,6 +481,7 @@ async fn start_alice(
         latest_rate,
         resume_only,
         env_config,
+        LockInputVerifier::spawn(bitcoin_wallet.clone()),
         XmrBtcNamespace::Testnet,
         &[],
         None,
@@ -449,7 +509,9 @@ async fn start_alice(
         min_buy,
         max_buy,
         None,
-        swap_env::config::default_btc_redeem_fee_multiplier(),
+        swap_env::config::default_btc_swap_fee_rate_multiplier(),
+        swap_core::bitcoin::RedeemFeeMultiplier::default(),
+        Duration::from_secs(swap_env::config::default_wallet_snapshot_cache_ttl_secs()),
         developer_tip,
         hermes_funding_policy,
         refund_policy,
@@ -929,6 +991,50 @@ impl TestContext {
         self.alice_handle = alice_handle;
         self.alice_swap_handle = alice_swap_handle;
         self.alice_rpc_server_handle = alice_rpc_server_handle;
+    }
+
+    /// Stops Alice, records `swap_id` in her database and restarts her. She then
+    /// fails to persist a new swap with that id.
+    pub async fn make_alice_fail_to_persist_swap(&mut self, swap_id: Uuid) {
+        self.alice_handle.abort();
+        self.alice_rpc_server_handle.abort();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        {
+            let db = SqliteDatabase::open(self.alice_db_path.as_path(), AccessMode::ReadWrite)
+                .await
+                .unwrap();
+            db.insert_peer_id(swap_id, PeerId::random()).await.unwrap();
+        }
+
+        self.restart_alice().await;
+    }
+
+    /// Holds the write lock on Alice's database until the returned connection is dropped.
+    pub async fn lock_alice_database(&self) -> sqlx::SqliteConnection {
+        use sqlx::ConnectOptions;
+
+        let mut connection = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&self.alice_db_path)
+            .connect()
+            .await
+            .unwrap();
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+
+        connection
+    }
+
+    pub async fn assert_bob_did_not_lock_btc(&self) {
+        assert_eventual_balance(
+            self.bob_bitcoin_wallet.as_ref(),
+            Ordering::Equal,
+            self.bob_starting_balances.btc,
+        )
+        .await
+        .unwrap();
     }
 
     /// Stops Alice, mutates her persisted state for `swap_id`, writes it back, and
@@ -1715,6 +1821,14 @@ pub mod alice_run_until {
 pub mod bob_run_until {
     use swap::protocol::bob::BobState;
 
+    pub fn is_swap_setup_completed(state: &BobState) -> bool {
+        matches!(state, BobState::SwapSetupCompleted(..))
+    }
+
+    pub fn is_btc_lock_ready_to_publish(state: &BobState) -> bool {
+        matches!(state, BobState::BtcLockReadyToPublish { .. })
+    }
+
     pub fn is_btc_locked(state: &BobState) -> bool {
         matches!(state, BobState::BtcLocked { .. })
     }
@@ -1802,7 +1916,7 @@ pub struct FastCancelConfig;
 impl GetConfig for FastCancelConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             ..env::Regtest::get_config()
         }
     }
@@ -1813,7 +1927,7 @@ pub struct FastPunishConfig;
 impl GetConfig for FastPunishConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             bitcoin_punish_timelock: PunishTimelock::new(10).into(),
             ..env::Regtest::get_config()
         }
@@ -1825,7 +1939,7 @@ pub struct FastAmnestyConfig;
 impl GetConfig for FastAmnestyConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             bitcoin_remaining_refund_timelock: 3,
             ..env::Regtest::get_config()
         }
@@ -1840,7 +1954,7 @@ pub struct SlowAmnestyConfig;
 impl GetConfig for SlowAmnestyConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             // Much longer timelock to give Alice time to:
             // 1. Wait for 10 Monero confirmations on the lock tx
             // 2. Sweep the XMR to her wallet

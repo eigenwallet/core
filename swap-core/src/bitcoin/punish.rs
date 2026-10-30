@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct TxPunish {
-    inner: Transaction,
+    pub(super) inner: Transaction,
     digest: Sighash,
     cancel_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     watch_script: ScriptBuf,

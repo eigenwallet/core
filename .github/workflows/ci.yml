@@ -133,11 +133,18 @@ jobs:
       - name: Run library tests
         run: cargo test  --lib
 
+      # The other tests of the swap binary are outdated
+      - name: Run swap binary fee test
+        run: cargo test --package swap --bin swap swap_fee_excludes_funds_outside_the_input_limit
+
       - name: Run Monero conflict tests
         run: cargo test --package monero-tests --test double_spend
 
       - name: Run Monero construction throttle tests
         run: cargo test --manifest-path monero-wallet/Cargo.toml --test construction_throttle
+
+      - name: Run maker fee config tests
+        run: cargo test --package swap-env --test maker_fee_config
 
   docker_tests:
     strategy:
@@ -170,6 +177,8 @@ jobs:
             test_name: alice_and_bob_refund_using_cancel_and_refund_command
           - package: swap
             test_name: alice_and_bob_refund_using_cancel_then_refund_command
+          - package: swap
+            test_name: refund_requires_confirmed_cancel
           - package: swap
             test_name: alice_and_bob_refund_using_cancel_and_refund_command_timelock_not_expired
           - package: swap
@@ -224,6 +233,20 @@ jobs:
             test_name: partial_refund_alice_grants_final_amnesty
           - package: swap
             test_name: swap_rejected_deposit_too_small
+          - package: swap
+            test_name: swap_rejected_invalid_bitcoin_lock_input
+          - package: swap
+            test_name: bob_abandons_swap_setup_before_committing
+          - package: swap
+            test_name: bob_declines_swap_setup
+          - package: swap
+            test_name: bob_does_not_lock_when_alice_fails_to_persist_swap
+          - package: swap
+            test_name: bob_does_not_lock_when_alice_database_is_locked
+          - package: swap
+            test_name: bob_does_not_publish_btc_lock_after_deadline
+          - package: swap
+            test_name: swap_rejected_low_bitcoin_lock_fee
           - package: swap
             test_name: partial_refund_bob_restart_detects_withhold
           - package: swap

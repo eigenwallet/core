@@ -16,6 +16,8 @@ use crate::protocols::{
 #[derive(Debug)]
 pub enum OutEvent {
     SwapSetupInitiated {
+        // Span of this swap setup. Work it requests from us is logged under it.
+        span: tracing::Span,
         // run_swap_setup in connection handler sends us the amount of
         // Bitcoin Bob wants to send.
         // We respond with a snapshot of our wallets and how much of that
@@ -24,11 +26,15 @@ pub enum OutEvent {
             bitcoin::Amount,
             (swap_setup::alice::WalletSnapshot, bitcoin::Amount, bool),
         >,
-    },
-    SwapSetupCompleted {
-        peer_id: PeerId,
-        swap_id: Uuid,
-        state3: swap_machine::alice::State3,
+        // run_swap_setup sends us Bob's TxLock PSBT once received.
+        // We verify its inputs against the chain and respond with the result.
+        check_lock_inputs: bmrng::RequestReceiver<
+            swap_setup::alice::LockInputCheck,
+            Result<swap_setup::alice::LockInputReservation, swap_setup::alice::LockInputCheckError>,
+        >,
+        // run_swap_setup sends us the swap once Bob committed to it.
+        // We persist and start the swap, then respond so Bob may lock his Bitcoin.
+        register_swap: bmrng::RequestReceiver<swap_setup::alice::RegisterSwap, anyhow::Result<()>>,
     },
     SwapDeclined {
         peer: PeerId,

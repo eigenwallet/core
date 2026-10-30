@@ -19,6 +19,10 @@ pub enum Bob {
         btc_lock_tx_signed: bitcoin::Transaction,
         state3: bob::State3,
         monero_wallet_restore_blockheight: BlockHeight,
+        #[serde(default)]
+        publish_deadline: Option<i64>,
+        #[serde(default)]
+        broadcast_attempted: bool,
     },
     BtcLocked {
         state3: bob::State3,
@@ -112,10 +116,14 @@ impl From<BobState> for Bob {
                 btc_lock_tx_signed,
                 state3,
                 monero_wallet_restore_blockheight,
+                publish_deadline,
+                broadcast_attempted,
             } => Bob::BtcLockReadyToPublish {
                 btc_lock_tx_signed,
                 state3,
                 monero_wallet_restore_blockheight,
+                publish_deadline,
+                broadcast_attempted,
             },
             BobState::BtcLocked {
                 state3,
@@ -231,10 +239,14 @@ impl From<Bob> for BobState {
                 btc_lock_tx_signed,
                 state3,
                 monero_wallet_restore_blockheight,
+                publish_deadline,
+                broadcast_attempted,
             } => BobState::BtcLockReadyToPublish {
                 btc_lock_tx_signed,
                 state3,
                 monero_wallet_restore_blockheight,
+                publish_deadline,
+                broadcast_attempted,
             },
             Bob::BtcLocked {
                 state3,
