@@ -609,7 +609,7 @@ fn print_promtail_instructions(promtail: &PromtailConfig) {
     println!("  - Instance label (host): {}", promtail.instance);
     println!("  - Loki push URL:         {}", promtail.loki_push_url);
     println!("  - Config written to:     {}", PROMTAIL_CONFIG_FILE);
-    println!("  - Ships: asb tracing logs + bitcoind/monerod/electrs container logs");
+    println!("  - Ships: asb tracing logs + bitcoind/monerod/electrs/tor container logs");
     println!("  - Verify after `docker compose up -d`:");
     println!("      docker compose logs --tail 50 promtail");
     println!(
