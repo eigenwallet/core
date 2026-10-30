@@ -14,7 +14,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d122413f284cf2d62fb1b7db97e02edb8cda96d769b16e443a4f6195e35662b0"
 dependencies = [
- "crypto-common",
+ "crypto-common 0.1.7",
  "generic-array",
 ]
 
@@ -25,8 +25,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b169f7a6d4742236a0a00c541b845991d0ac43e546831af1249753ab4c3aa3a0"
 dependencies = [
  "cfg-if",
- "cipher",
+ "cipher 0.4.4",
  "cpufeatures 0.2.17",
+]
+
+[[package]]
+name = "aes"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35f0f96ce78e38c3dc6d8948aa8163d06385be74000f3c7a95bf1eef35d3ea32"
+dependencies = [
+ "cipher 0.5.2",
+ "cpubits",
+ "cpufeatures 0.3.0",
  "zeroize",
 ]
 
@@ -37,9 +48,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "831010a0f742e1209b3bcea8fab6a8e149051ba6099432c8cb2cc117dec3ead1"
 dependencies = [
  "aead",
- "aes",
- "cipher",
- "ctr",
+ "aes 0.8.4",
+ "cipher 0.4.4",
+ "ctr 0.9.2",
  "ghash",
  "subtle",
 ]
@@ -264,8 +275,8 @@ dependencies = [
 
 [[package]]
 name = "arti-client"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -1181,6 +1192,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "block-buffer"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
+dependencies = [
+ "hybrid-array",
+ "zeroize",
+]
+
+[[package]]
 name = "block2"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1393,8 +1414,8 @@ dependencies = [
 
 [[package]]
 name = "caret"
-version = "0.9.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.11.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 
 [[package]]
 name = "cargo-platform"
@@ -1496,7 +1517,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3613f74bd2eac03dad61bd53dbe620703d4371614fe0bc3b9f04dd36fe4e818"
 dependencies = [
  "cfg-if",
- "cipher",
+ "cipher 0.4.4",
  "cpufeatures 0.2.17",
 ]
 
@@ -1519,7 +1540,7 @@ checksum = "10cd79432192d1c0f4e1a0fef9527696cc039165d729fb41b3f4f4f354c2dc35"
 dependencies = [
  "aead",
  "chacha20 0.9.1",
- "cipher",
+ "cipher 0.4.4",
  "poly1305",
  "zeroize",
 ]
@@ -1544,8 +1565,20 @@ version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
 dependencies = [
- "crypto-common",
- "inout",
+ "crypto-common 0.1.7",
+ "inout 0.1.4",
+ "zeroize",
+]
+
+[[package]]
+name = "cipher"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8cf2a2c93cd704877c0858356ed03480ff301ee950b43f1cbe4573b088bfa6c"
+dependencies = [
+ "block-buffer 0.12.1",
+ "crypto-common 0.2.2",
+ "inout 0.2.5",
  "zeroize",
 ]
 
@@ -1621,6 +1654,12 @@ checksum = "c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678"
 dependencies = [
  "cc",
 ]
+
+[[package]]
+name = "cmov"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "coarsetime"
@@ -1881,6 +1920,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cpubits"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15b85f9c39137c3a891689859392b1bd49812121d0d61c9caf00d46ed5ce06ae"
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2030,6 +2075,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto-common"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
 name = "cssparser"
 version = "0.29.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2085,7 +2139,25 @@ version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0369ee1ad671834580515889b80f2ea915f23b8be8d0daa4bbaf2ac5c7590835"
 dependencies = [
- "cipher",
+ "cipher 0.4.4",
+]
+
+[[package]]
+name = "ctr"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baaca1c4b237092596f64d571e9db6ce4109c4ef9742e27590f1709594461f21"
+dependencies = [
+ "cipher 0.5.2",
+]
+
+[[package]]
+name = "ctutils"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2376ffd6f96d8a9db59875b4b6b0237d6900b5baf64279714e05493ce64828a"
+dependencies = [
+ "cmov",
 ]
 
 [[package]]
@@ -2420,7 +2492,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -2474,34 +2546,33 @@ version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 dependencies = [
- "powerfmt",
  "serde_core",
 ]
 
 [[package]]
 name = "derive-deftly"
-version = "1.11.3"
+version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bc153c91ebf221a2e7feb166aee259acf8a00ecf35c83df8b79fe8f5c3861d7"
+checksum = "e64c6955def7f25b8c3becad9e1762ff6abc3ea62704b0883284c771149b45a6"
 dependencies = [
  "derive-deftly-macros",
- "heck 0.5.0",
+ "heck 0.4.1",
 ]
 
 [[package]]
 name = "derive-deftly-macros"
-version = "1.11.3"
+version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1747ed5fb4ab3a9f8253da3401efe7ca8f8e5ec373b2e700ff55c3304d84e31f"
+checksum = "36e10ac4bd47bf8d24a4852f001df23b7acbbca6e59d0adec0c2e2c4409dfe5b"
 dependencies = [
- "heck 0.5.0",
- "indexmap 2.13.0",
- "itertools",
- "proc-macro-crate 3.5.0",
+ "heck 0.4.1",
+ "indexmap 1.9.3",
+ "itertools 0.14.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "sha3",
- "strum 0.28.0",
+ "strum 0.26.3",
  "syn 2.0.117",
  "unicode-ident",
  "void",
@@ -2655,7 +2726,7 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer 0.10.4",
  "const-oid",
- "crypto-common",
+ "crypto-common 0.1.7",
  "subtle",
 ]
 
@@ -2849,14 +2920,14 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "dynasm"
-version = "5.0.0"
+version = "5.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df4bf11ba8aecc00489b7ec4e8963cd3860651c3ea2a114394f8ba7e92a0e94a"
+checksum = "fd358e74d2f8d71a11b7a2c51c67ad5df3de06003b0596875e47bc09126c894e"
 dependencies = [
  "bitflags 2.11.0",
  "byteorder",
  "lazy_static",
- "proc-macro-error2",
+ "proc-macro-error3",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -2864,9 +2935,9 @@ dependencies = [
 
 [[package]]
 name = "dynasmrt"
-version = "5.0.0"
+version = "5.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b38e5331d851567729d892ed28d898d22f49a96940b29e23b5c3e681bd30ffb3"
+checksum = "6efe03f6bd356ae85eeea7ee14c2bf54e664a949d089d238364b5a99afbc4116"
 dependencies = [
  "byteorder",
  "dynasm",
@@ -3147,8 +3218,8 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "equix"
-version = "0.6.2"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.8.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "arrayvec",
  "hashx",
@@ -3214,6 +3285,17 @@ checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
 dependencies = [
  "event-listener",
  "pin-project-lite",
+]
+
+[[package]]
+name = "extend"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "311a6d2f1f9d60bff73d2c78a0af97ed27f79672f15c238192a5bbb64db56d00"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -3441,11 +3523,12 @@ dependencies = [
 
 [[package]]
 name = "fs-mistrust"
-version = "0.14.2"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.16.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "derive_builder_fork_arti",
  "dirs",
+ "extend",
  "libc",
  "pwd-grp",
  "serde",
@@ -3472,8 +3555,8 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "fslock-guard"
-version = "0.7.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.9.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "libc",
  "thiserror 2.0.18",
@@ -3849,7 +3932,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0d8a4362ccb29cb0b265253fb0a2728f592895ee6854fd9bc13f2ffda266ff1"
 dependencies = [
  "opaque-debug",
- "polyval",
+ "polyval 0.6.2",
 ]
 
 [[package]]
@@ -4148,8 +4231,8 @@ dependencies = [
 
 [[package]]
 name = "hashx"
-version = "0.8.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.10.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "arrayvec",
  "blake2",
@@ -4414,6 +4497,16 @@ checksum = "57a3db5ea5923d99402c94e9feb261dc5ee9b4efa158b0315f788cf549cc200c"
 dependencies = [
  "humantime",
  "serde",
+]
+
+[[package]]
+name = "hybrid-array"
+version = "0.4.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3944cf8cf766b40e2a1a333ee5e9b563f854d5fa49d6a8ca2764e97c6eddb214"
+dependencies = [
+ "typenum",
+ "zeroize",
 ]
 
 [[package]]
@@ -4806,6 +4899,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inout"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b5cf4372d022092674a83b8febf5865f7a573cc0c5baec5e49c879b6a20978f"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
 name = "instant"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4843,6 +4945,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "iprange"
+version = "0.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37209be0ad225457e63814401415e748e2453a5297f9b637338f5fb8afa4ec00"
+dependencies = [
+ "ipnet",
 ]
 
 [[package]]
@@ -4885,6 +4996,15 @@ name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
 dependencies = [
  "either",
 ]
@@ -5261,9 +5381,9 @@ checksum = "2c4a545a15244c7d945065b5d392b2d2d7f21526fba56ce51467b06ed445e8f7"
 
 [[package]]
 name = "libc"
-version = "0.2.183"
+version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
+checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "libgit2-sys"
@@ -6890,9 +7010,9 @@ dependencies = [
 
 [[package]]
 name = "num-conv"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6673768db2d862beb9b39a78fdcb1a69439615d5794a1be50caa9bc92c81967"
+checksum = "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441"
 
 [[package]]
 name = "num-integer"
@@ -6950,7 +7070,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 3.5.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -7135,8 +7255,8 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "oneshot-fused-workaround"
-version = "0.6.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.8.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "futures",
 ]
@@ -7527,6 +7647,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "phf"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "010378780309880b08997fae13be7834dba947d36393bd372f2b1556deb2a2f6"
+dependencies = [
+ "phf_macros 0.14.0",
+ "phf_shared 0.14.0",
+ "serde",
+]
+
+[[package]]
 name = "phf_codegen"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7597,6 +7728,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "phf_generator"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aeb62e0959d5a1bebc965f4d15d9e2b7cea002b6b0f5ba8cde6cc26738467100"
+dependencies = [
+ "fastrand",
+ "phf_shared 0.14.0",
+]
+
+[[package]]
 name = "phf_macros"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7637,6 +7778,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "phf_macros"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fa8d0ca26d424d27630da600c6624696e7dec8bf7b3b492b383c5dc49e5e085"
+dependencies = [
+ "phf_generator 0.14.0",
+ "phf_shared 0.14.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "phf_shared"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7668,6 +7822,15 @@ name = "phf_shared"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
+dependencies = [
+ "siphasher 1.0.2",
+]
+
+[[package]]
+name = "phf_shared"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6fd9027e2d9319be6349febd1db4e8d02aa544921200c9b777720ac34a3aa89"
 dependencies = [
  "siphasher 1.0.2",
 ]
@@ -7809,7 +7972,7 @@ checksum = "8159bd90725d2df49889a078b54f4f79e87f1f8a8444194cdca81d38f5393abf"
 dependencies = [
  "cpufeatures 0.2.17",
  "opaque-debug",
- "universal-hash",
+ "universal-hash 0.5.1",
 ]
 
 [[package]]
@@ -7821,7 +7984,18 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "opaque-debug",
- "universal-hash",
+ "universal-hash 0.5.1",
+]
+
+[[package]]
+name = "polyval"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0fa31d631f2b2cb2a544d0aa321ce847a94764d701ca2becc411138b93d49cd"
+dependencies = [
+ "cpubits",
+ "cpufeatures 0.3.0",
+ "universal-hash 0.6.1",
 ]
 
 [[package]]
@@ -7975,6 +8149,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro-error-attr3"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e564d14133360e1ae169ffde5da25881b5fa47261665b8e5713c212c27799da"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
 name = "proc-macro-error2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7984,6 +8168,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "proc-macro-error3"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f0d4471b3436c22106b21913b1dda531558918ae9b7ec55d58aa84b43552233"
+dependencies = [
+ "proc-macro-error-attr3",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -8394,6 +8590,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rangemap"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a611d15b50743feb4c76b7d03edcb0e64f399c26961e4efe6975bc398be6aa3d"
+
+[[package]]
 name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8413,11 +8615,12 @@ dependencies = [
 
 [[package]]
 name = "rdrand"
-version = "0.8.3"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d92195228612ac8eed47adbc2ed0f04e513a4ccb98175b6f2bd04d963b533655"
+checksum = "84448986e59427c795b929d8dbe12d176275c7d0887ee48098c35b7206f51bae"
 dependencies = [
- "rand_core 0.6.4",
+ "libc",
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -8684,8 +8887,8 @@ checksum = "1e061d1b48cb8d38042de4ae0a7a6401009d6143dc80d2e2d6f31f0bdd6470c7"
 
 [[package]]
 name = "retry-error"
-version = "0.12.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.14.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "humantime",
  "web-time",
@@ -9122,8 +9325,8 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "safelog"
-version = "0.8.2"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.10.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "derive_more 2.1.1",
  "educe",
@@ -9152,9 +9355,11 @@ dependencies = [
 
 [[package]]
 name = "saturating-time"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b63583a1dd0647d1484228529ab4ecaa874048d2956f117362aa5f5826456230"
+version = "0.5.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
+dependencies = [
+ "web-time-compat",
+]
 
 [[package]]
 name = "schannel"
@@ -9912,14 +10117,13 @@ dependencies = [
 
 [[package]]
 name = "slotmap-careful"
-version = "0.7.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.9.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "paste",
  "serde",
  "slotmap",
  "thiserror 2.0.18",
- "void",
 ]
 
 [[package]]
@@ -10280,7 +10484,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "125c5795103fc93fced42d123c8044180afc55469caa1ab56487c3c5543c898d"
 dependencies = [
- "cipher",
+ "cipher 0.4.4",
  "ssh-encoding-fork-arti",
 ]
 
@@ -10903,6 +11107,16 @@ checksum = "e665b8803e7b1d2a727f4023456bbbbe74da67099c585258af0ad9c5013b9b99"
 dependencies = [
  "proc-macro2",
  "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "syn"
+version = "3.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b"
+dependencies = [
+ "proc-macro2",
  "unicode-ident",
 ]
 
@@ -11618,12 +11832,11 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.47"
+version = "0.3.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "743bd48c283afc0388f9b8827b976905fb217ad9e647fae3a379a9283c4def2c"
+checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
- "itoa",
  "libc",
  "num-conv",
  "num_threads",
@@ -11635,15 +11848,15 @@ dependencies = [
 
 [[package]]
 name = "time-core"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
+checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
 
 [[package]]
 name = "time-macros"
-version = "0.2.27"
+version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e70e4c5a0e0a8a4823ad65dfe1a6930e4f4d756dcd9dd7939022b5e8c501215"
+checksum = "7e689342a48d2ea927c87ea50cabf8594854bf940e9310208848d680d668ed85"
 dependencies = [
  "num-conv",
  "time-core",
@@ -11912,28 +12125,41 @@ checksum = "d282ade6016312faf3e41e57ebbba0c073e4056dab1232ab1cb624199648f8ed"
 
 [[package]]
 name = "tor-async-utils"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
+ "cfg-if",
  "derive-deftly",
  "educe",
+ "extend",
  "futures",
  "oneshot-fused-workaround",
  "pin-project",
  "postage",
+ "slotmap-careful",
+ "sync_wrapper 1.0.2",
  "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tor-basic-utils",
+ "tor-rtcompat",
+ "tracing",
  "void",
+ "web-time-compat",
 ]
 
 [[package]]
 name = "tor-basic-utils"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
+ "derive-deftly",
  "derive_more 2.1.1",
+ "educe",
+ "extend",
  "getrandom 0.4.2",
  "hex",
- "itertools",
+ "itertools 0.15.0",
  "libc",
  "paste",
  "rand 0.10.1",
@@ -11942,14 +12168,15 @@ dependencies = [
  "slab",
  "smallvec",
  "thiserror 2.0.18",
+ "tracing",
  "weak-table",
  "web-time-compat",
 ]
 
 [[package]]
 name = "tor-bytes"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "bytes",
  "derive-deftly",
@@ -11965,8 +12192,8 @@ dependencies = [
 
 [[package]]
 name = "tor-cell"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "amplify",
  "bitflags 2.11.0",
@@ -11975,7 +12202,7 @@ dependencies = [
  "derive-deftly",
  "derive_more 2.1.1",
  "educe",
- "itertools",
+ "itertools 0.15.0",
  "paste",
  "rand 0.10.1",
  "smallvec",
@@ -11995,8 +12222,8 @@ dependencies = [
 
 [[package]]
 name = "tor-cert"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "caret",
  "derive_builder_fork_arti",
@@ -12012,8 +12239,8 @@ dependencies = [
 
 [[package]]
 name = "tor-chanmgr"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "async-trait",
  "base64ct",
@@ -12054,10 +12281,11 @@ dependencies = [
 
 [[package]]
 name = "tor-checkable"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "humantime",
+ "itertools 0.15.0",
  "signature",
  "thiserror 2.0.18",
  "tor-llcrypto",
@@ -12066,8 +12294,8 @@ dependencies = [
 
 [[package]]
 name = "tor-circmgr"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "amplify",
  "async-trait",
@@ -12080,7 +12308,7 @@ dependencies = [
  "educe",
  "futures",
  "humantime-serde",
- "itertools",
+ "itertools 0.15.0",
  "once_cell",
  "oneshot-fused-workaround",
  "pin-project",
@@ -12115,8 +12343,8 @@ dependencies = [
 
 [[package]]
 name = "tor-config"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "amplify",
  "cfg-if",
@@ -12124,11 +12352,12 @@ dependencies = [
  "derive_builder_fork_arti",
  "educe",
  "either",
+ "extend",
  "figment",
  "fs-mistrust",
  "futures",
  "humantime-serde",
- "itertools",
+ "itertools 0.15.0",
  "notify",
  "paste",
  "postage",
@@ -12148,8 +12377,8 @@ dependencies = [
 
 [[package]]
 name = "tor-config-path"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "directories",
  "serde",
@@ -12161,8 +12390,8 @@ dependencies = [
 
 [[package]]
 name = "tor-consdiff"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "derive_more 2.1.1",
  "digest 0.10.7",
@@ -12177,8 +12406,8 @@ dependencies = [
 
 [[package]]
 name = "tor-dirclient"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "async-compression",
  "base64ct",
@@ -12188,8 +12417,7 @@ dependencies = [
  "http 1.4.0",
  "httparse",
  "httpdate",
- "itertools",
- "memchr",
+ "itertools 0.15.0",
  "thiserror 2.0.18",
  "tor-circmgr",
  "tor-error",
@@ -12205,8 +12433,8 @@ dependencies = [
 
 [[package]]
 name = "tor-dircommon"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "base64ct",
  "derive-deftly",
@@ -12225,8 +12453,8 @@ dependencies = [
 
 [[package]]
 name = "tor-dirmgr"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "async-trait",
  "base64ct",
@@ -12241,7 +12469,7 @@ dependencies = [
  "hex",
  "humantime",
  "humantime-serde",
- "itertools",
+ "itertools 0.15.0",
  "memmap2",
  "oneshot-fused-workaround",
  "paste",
@@ -12281,8 +12509,8 @@ dependencies = [
 
 [[package]]
 name = "tor-error"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "derive_more 2.1.1",
  "futures",
@@ -12298,8 +12526,8 @@ dependencies = [
 
 [[package]]
 name = "tor-general-addr"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "derive_more 2.1.1",
  "thiserror 2.0.18",
@@ -12308,8 +12536,8 @@ dependencies = [
 
 [[package]]
 name = "tor-guardmgr"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "amplify",
  "base64ct",
@@ -12321,7 +12549,7 @@ dependencies = [
  "futures",
  "humantime",
  "humantime-serde",
- "itertools",
+ "itertools 0.15.0",
  "num_enum",
  "oneshot-fused-workaround",
  "pin-project",
@@ -12351,16 +12579,17 @@ dependencies = [
 
 [[package]]
 name = "tor-hsclient"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "async-trait",
+ "cfg-if",
  "derive-deftly",
  "derive_more 2.1.1",
  "educe",
  "either",
  "futures",
- "itertools",
+ "itertools 0.15.0",
  "oneshot-fused-workaround",
  "postage",
  "rand 0.10.1",
@@ -12395,12 +12624,12 @@ dependencies = [
 
 [[package]]
 name = "tor-hscrypto"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "arrayvec",
  "blake2",
- "cipher",
+ "cipher 0.5.2",
  "data-encoding",
  "derive-deftly",
  "derive_more 2.1.1",
@@ -12408,7 +12637,7 @@ dependencies = [
  "equix",
  "hex",
  "humantime",
- "itertools",
+ "itertools 0.15.0",
  "paste",
  "rand 0.10.1",
  "safelog",
@@ -12430,8 +12659,8 @@ dependencies = [
 
 [[package]]
 name = "tor-hsservice"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "amplify",
  "arrayvec",
@@ -12449,7 +12678,7 @@ dependencies = [
  "growable-bloom-filter",
  "hex",
  "humantime",
- "itertools",
+ "itertools 0.15.0",
  "k12",
  "num-traits",
  "once_cell",
@@ -12492,8 +12721,8 @@ dependencies = [
 
 [[package]]
 name = "tor-key-forge"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "derive-deftly",
  "derive_more 2.1.1",
@@ -12513,12 +12742,13 @@ dependencies = [
 
 [[package]]
 name = "tor-keymgr"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "amplify",
  "arrayvec",
  "cfg-if",
+ "data-encoding",
  "derive-deftly",
  "derive_builder_fork_arti",
  "derive_more 2.1.1",
@@ -12528,7 +12758,7 @@ dependencies = [
  "glob-match",
  "humantime",
  "inventory",
- "itertools",
+ "itertools 0.15.0",
  "rand 0.10.1",
  "safelog",
  "serde",
@@ -12553,8 +12783,8 @@ dependencies = [
 
 [[package]]
 name = "tor-linkspec"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "base64ct",
  "by_address",
@@ -12563,7 +12793,7 @@ dependencies = [
  "derive_builder_fork_arti",
  "derive_more 2.1.1",
  "hex",
- "itertools",
+ "itertools 0.15.0",
  "safelog",
  "serde",
  "serde_with 3.18.0",
@@ -12579,12 +12809,12 @@ dependencies = [
 
 [[package]]
 name = "tor-llcrypto"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
- "aes",
+ "aes 0.9.3",
  "base64ct",
- "ctr",
+ "ctr 0.10.1",
  "curve25519-dalek",
  "der-parser 10.0.0",
  "derive-deftly",
@@ -12621,8 +12851,8 @@ dependencies = [
 
 [[package]]
 name = "tor-log-ratelim"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "futures",
  "humantime",
@@ -12636,16 +12866,17 @@ dependencies = [
 
 [[package]]
 name = "tor-memquota"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "cfg-if",
  "derive-deftly",
  "derive_more 2.1.1",
  "dyn-clone",
  "educe",
+ "extend",
  "futures",
- "itertools",
+ "itertools 0.15.0",
  "paste",
  "pin-project",
  "serde",
@@ -12666,19 +12897,19 @@ dependencies = [
 
 [[package]]
 name = "tor-memquota-cost"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "derive-deftly",
- "itertools",
+ "itertools 0.15.0",
  "paste",
  "void",
 ]
 
 [[package]]
 name = "tor-netdir"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "async-trait",
  "bitflags 2.11.0",
@@ -12687,7 +12918,7 @@ dependencies = [
  "futures",
  "hex",
  "humantime",
- "itertools",
+ "itertools 0.15.0",
  "num_enum",
  "rand 0.10.1",
  "serde",
@@ -12709,26 +12940,30 @@ dependencies = [
 
 [[package]]
 name = "tor-netdoc"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "amplify",
  "base64ct",
- "cipher",
+ "cipher 0.5.2",
  "derive-deftly",
  "derive_builder_fork_arti",
  "derive_more 2.1.1",
  "digest 0.10.7",
  "educe",
  "enumset",
+ "extend",
  "hex",
  "hostname-validator",
  "humantime",
- "itertools",
+ "ipnet",
+ "iprange",
+ "itertools 0.15.0",
  "memchr",
  "paste",
- "phf 0.13.1",
+ "phf 0.14.0",
  "rand 0.10.1",
+ "rangemap",
  "saturating-time",
  "serde",
  "serde_with 3.18.0",
@@ -12757,17 +12992,18 @@ dependencies = [
 
 [[package]]
 name = "tor-persist"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "amplify",
  "derive-deftly",
  "derive_more 2.1.1",
+ "extend",
  "filetime",
  "fs-mistrust",
  "fslock-guard",
  "futures",
- "itertools",
+ "itertools 0.15.0",
  "oneshot-fused-workaround",
  "paste",
  "sanitize-filename",
@@ -12775,7 +13011,6 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "time",
- "tor-async-utils",
  "tor-basic-utils",
  "tor-error",
  "tracing",
@@ -12785,9 +13020,10 @@ dependencies = [
 
 [[package]]
 name = "tor-proto"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
+ "aes 0.9.3",
  "amplify",
  "async-trait",
  "asynchronous-codec",
@@ -12795,8 +13031,9 @@ dependencies = [
  "bytes",
  "caret",
  "cfg-if",
- "cipher",
+ "cipher 0.5.2",
  "coarsetime",
+ "ctr 0.10.1",
  "derive-deftly",
  "derive_builder_fork_arti",
  "derive_more 2.1.1",
@@ -12807,10 +13044,11 @@ dependencies = [
  "futures-util",
  "hkdf",
  "hmac",
- "itertools",
+ "itertools 0.15.0",
  "nonany",
  "oneshot-fused-workaround",
  "pin-project",
+ "polyval 0.7.3",
  "postage",
  "rand 0.10.1",
  "rand_core 0.10.1",
@@ -12820,7 +13058,6 @@ dependencies = [
  "static_assertions",
  "strum 0.28.0",
  "subtle",
- "sync_wrapper 1.0.2",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -12851,10 +13088,11 @@ dependencies = [
 
 [[package]]
 name = "tor-protover"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "caret",
+ "derive-deftly",
  "paste",
  "serde_with 3.18.0",
  "thiserror 2.0.18",
@@ -12864,8 +13102,8 @@ dependencies = [
 
 [[package]]
 name = "tor-relay-selection"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "rand 0.10.1",
  "serde",
@@ -12877,8 +13115,8 @@ dependencies = [
 
 [[package]]
 name = "tor-rtcompat"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "amplify",
  "async-trait",
@@ -12913,8 +13151,8 @@ dependencies = [
 
 [[package]]
 name = "tor-rtmock"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "amplify",
  "assert_matches",
@@ -12924,7 +13162,7 @@ dependencies = [
  "educe",
  "futures",
  "humantime",
- "itertools",
+ "itertools 0.15.0",
  "oneshot-fused-workaround",
  "pin-project",
  "priority-queue",
@@ -12942,10 +13180,9 @@ dependencies = [
 
 [[package]]
 name = "tor-socksproto"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
- "amplify",
  "caret",
  "derive-deftly",
  "educe",
@@ -12958,8 +13195,8 @@ dependencies = [
 
 [[package]]
 name = "tor-units"
-version = "0.43.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.47.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "derive-deftly",
  "derive_more 2.1.1",
@@ -13386,8 +13623,18 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc1de2c688dc15305988b563c3854064043356019f97a4b46276fe734c4f07ea"
 dependencies = [
- "crypto-common",
+ "crypto-common 0.1.7",
  "subtle",
+]
+
+[[package]]
+name = "universal-hash"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4987bdc12753382e0bec4a65c50738ffaabc998b9cdd1f952fb5f39b0048a96"
+dependencies = [
+ "crypto-common 0.2.2",
+ "ctutils",
 ]
 
 [[package]]
@@ -13922,9 +14169,13 @@ dependencies = [
 
 [[package]]
 name = "weak-table"
-version = "0.3.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "323f4da9523e9a669e1eaf9c6e763892769b1d38c623913647bfdc1532fe4549"
+checksum = "5eba2ec791141b0bf4db542f6b038a8f9310cee33e076cb181245780b09a24ff"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.16.1",
+]
 
 [[package]]
 name = "web-sys"
@@ -13948,8 +14199,8 @@ dependencies = [
 
 [[package]]
 name = "web-time-compat"
-version = "0.1.0"
-source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_4_0#e168e83f48ef87674cc1cd73f5e8ecad4fcb2654"
+version = "0.3.0"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_2_7_0#efc49e45a5968f65f117f38db8312ecdc925bb3d"
 dependencies = [
  "web-time",
 ]
@@ -15169,18 +15420,18 @@ dependencies = [
 
 [[package]]
 name = "zeroize"
-version = "1.8.2"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b97154e67e32c85465826e8bcc1c59429aaaf107c1e4a9e53c8d8ccd5eff88d0"
+checksum = "e13084392c5e4bc371903e2935a5eaeed24905a7511356b883835e18a78f6879"
 dependencies = [
  "zeroize_derive",
 ]
 
 [[package]]
 name = "zeroize_derive"
-version = "1.4.3"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85a5b4158499876c763cb03bc4e49185d3cccbabb15b33c627f7884f43db852e"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -15227,7 +15478,7 @@ version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
 dependencies = [
- "aes",
+ "aes 0.8.4",
  "arbitrary",
  "bzip2",
  "constant_time_eq",
