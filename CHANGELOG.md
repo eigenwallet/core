@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- ORCHESTRATOR: Update Tor to 0.4.9.9.
+- ORCHESTRATOR: Update Tor to 0.4.9.9 and ship the logs of the `tor` container to Loki.
 
 ## [5.0.0] - 2026-10-28
 
