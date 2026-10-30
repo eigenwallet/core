@@ -29,6 +29,10 @@ struct Cli {
     #[structopt(long, default_value = "8888")]
     port: u16,
 
+    /// Port used for listening on websocket (put a TLS-terminating reverse proxy in front for wss)
+    #[structopt(long, default_value = "8889")]
+    ws_port: u16,
+
     /// Enable listening on Tor onion service
     #[structopt(long)]
     no_onion: bool,
@@ -74,6 +78,17 @@ async fn main() -> Result<()> {
                 .expect("static string is valid MultiAddress"),
         )
         .context("Failed to initialize listener")?;
+
+    // The transport stack tries the websocket transport before plain TCP, but only for
+    // addresses carrying a /ws suffix — without a dedicated listener here, inbound wss
+    // (e.g. through a TLS-terminating reverse proxy) never gets accepted.
+    swarm
+        .listen_on(
+            format!("/ip4/0.0.0.0/tcp/{}/ws", cli.ws_port)
+                .parse()
+                .expect("static string is valid MultiAddress"),
+        )
+        .context("Failed to initialize websocket listener")?;
 
     loop {
         match swarm.select_next_some().await {
