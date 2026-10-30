@@ -82,7 +82,7 @@ use tor_hsservice::{
     HsId, OnionServiceConfig, RunningOnionService, StreamRequest, status::OnionServiceStatus,
 };
 #[cfg(feature = "listen-onion-service")]
-use tor_proto::client::stream::IncomingStreamRequest;
+use tor_proto::stream::IncomingStreamRequest;
 
 mod address;
 mod dial_limiter;
