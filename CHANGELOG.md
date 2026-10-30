@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- GUI + CLI + ASB: Update Arti to 2.7.0, which includes several security fixes.
+- GUI + CLI + ASB: Update Arti to 2.7.0, which includes several reliability improvements.
 
 ## [5.0.1] - 2026-10-30
 
