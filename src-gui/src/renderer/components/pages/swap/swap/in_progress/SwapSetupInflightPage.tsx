@@ -12,7 +12,7 @@ import {
   useAppSelector,
 } from "store/hooks";
 import { getExchangeRate, getMarkup, satsToBtc } from "utils/conversionUtils";
-import { shouldWarnAboutSwapSetupRate } from "utils/swapSetupMarkup";
+import { getSwapSetupRateWarning } from "utils/swapSetupMarkup";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import CircularProgressWithSubtitle from "../components/CircularProgressWithSubtitle";
 import CheckIcon from "@mui/icons-material/Check";
@@ -38,11 +38,9 @@ export default function SwapSetupInflightPage({
   // Get market rate for markup calculation (must be called unconditionally)
   const xmrBtcRate = useAppSelector((state) => state.rates.xmrBtcRate);
   const quote = useAppSelector((state) => state.swap.state?.quote ?? null);
-  // The id of the approval request for which the markup warning is open.
-  // The warning closes when the request is resolved or expires.
-  const [markupWarningRequestId, setMarkupWarningRequestId] = useState<
-    string | null
-  >(null);
+  // The id of the approval request whose markup warning the user acknowledged.
+  const [acknowledgedWarningRequestId, setAcknowledgedWarningRequestId] =
+    useState<string | null>(null);
 
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const expirationTs =
@@ -111,7 +109,7 @@ export default function SwapSetupInflightPage({
     btc_lock_amount,
     Number(xmr_receive_amount) + 1,
   );
-  const shouldWarnAboutRate = shouldWarnAboutSwapSetupRate({
+  const rateWarning = getSwapSetupRateWarning({
     quotedRate,
     offeredRate: rateForWarning,
     marketRate: xmrBtcRate,
@@ -311,11 +309,7 @@ export default function SwapSetupInflightPage({
             variant="contained"
             color="primary"
             size="large"
-            onInvoke={
-              shouldWarnAboutRate
-                ? async () => setMarkupWarningRequestId(request.request_id)
-                : accept
-            }
+            onInvoke={accept}
             displayErrorSnackbar
             endIcon={<CheckIcon />}
           >
@@ -333,15 +327,17 @@ export default function SwapSetupInflightPage({
         </Typography>
       </Box>
 
-      <SwapSetupMarkupWarningDialog
-        open={markupWarningRequestId === request.request_id}
-        onClose={() => setMarkupWarningRequestId(null)}
-        onAccept={accept}
-        onDeny={deny}
-        quotedRate={quotedRate}
-        offeredRate={makerRate}
-        timeLeft={timeLeft}
-      />
+      {rateWarning != null && (
+        <SwapSetupMarkupWarningDialog
+          open={acknowledgedWarningRequestId !== request.request_id}
+          warning={rateWarning}
+          onAccept={() => setAcknowledgedWarningRequestId(request.request_id)}
+          onDeny={deny}
+          quotedRate={quotedRate}
+          offeredRate={makerRate}
+          timeLeft={timeLeft}
+        />
+      )}
     </Box>
   );
 }
