@@ -10,6 +10,11 @@ export const MAX_PRICE_INCREASE_OVER_QUOTE_PERCENT = 5;
 /// quoted markup, that causes a warning.
 export const MAX_MARKUP_INCREASE_FRACTION = 0.25;
 
+/// The smallest increase of the markup from the quote to the offer, in
+/// percentage points, that causes a warning. A low quoted markup would otherwise
+/// cause a warning for a tiny movement of the market.
+export const MIN_MARKUP_INCREASE_PERCENTAGE_POINTS = 0.25;
+
 export type SwapSetupRateWarning =
   | { type: "MarkupHigh" | "MarkupHighAndRaised"; offeredMarkupPercent: number }
   | { type: "MarkupRaised" | "RateRaised" | "NoQuote" };
@@ -17,8 +22,9 @@ export type SwapSetupRateWarning =
 /// Returns the warning for an offer, or null if there is nothing to warn about.
 ///
 /// The markup is high if the offered markup is more than 5%. It is raised if
-/// the offered markup is more than 25% above the quoted markup, or the offered
-/// rate is more than 5% above the quoted rate.
+/// the offered markup is more than 25%, and more than 0.25 percentage points,
+/// above the quoted markup, or the offered rate is more than 5% above the quoted
+/// rate.
 ///
 /// | Offered markup | Not raised | Raised                |
 /// |----------------|------------|-----------------------|
@@ -59,7 +65,10 @@ export function getSwapSetupRateWarning({
   const markupRaised =
     rateRaised ||
     offeredMarkup - quotedMarkup >
-      MAX_MARKUP_INCREASE_FRACTION * Math.abs(quotedMarkup);
+      Math.max(
+        MAX_MARKUP_INCREASE_FRACTION * Math.abs(quotedMarkup),
+        MIN_MARKUP_INCREASE_PERCENTAGE_POINTS,
+      );
 
   if (markupHigh) {
     return {

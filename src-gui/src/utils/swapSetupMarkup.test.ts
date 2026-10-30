@@ -70,6 +70,39 @@ describe("getSwapSetupRateWarning", () => {
     ).toBe("MarkupHighAndRaised");
   });
 
+  it("accepts a small increase of a low quoted markup", () => {
+    // Quoted markup 0.1%, offered markup 0.3%.
+    expect(
+      getSwapSetupRateWarning({
+        quotedRate: 0.006006,
+        offeredRate: 0.006018,
+        marketRate: MARKET,
+      }),
+    ).toBeNull();
+  });
+
+  it("warns if a low quoted markup increases by more than 0.25 percentage points", () => {
+    // Quoted markup 0.1%, offered markup 0.4%.
+    expect(
+      getSwapSetupRateWarning({
+        quotedRate: 0.006006,
+        offeredRate: 0.006024,
+        marketRate: MARKET,
+      })?.type,
+    ).toBe("MarkupRaised");
+  });
+
+  it("accepts a small increase of a negative quoted markup", () => {
+    // Quoted markup -1%, offered markup -0.8%.
+    expect(
+      getSwapSetupRateWarning({
+        quotedRate: 0.00594,
+        offeredRate: 0.005952,
+        marketRate: MARKET,
+      }),
+    ).toBeNull();
+  });
+
   it("accepts an unchanged rate with a negative quoted markup", () => {
     // Quoted and offered markup -1%.
     expect(
