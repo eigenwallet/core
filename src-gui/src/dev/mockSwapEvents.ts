@@ -670,7 +670,7 @@ export function getMockLockBitcoinApproval(
       state: "Pending",
       content: {
         // The same timeout as PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS in swap/src/protocol/bob/swap.rs
-        expiration_ts: Math.floor(Date.now() / 1000) + 180,
+        expiration_ts: Math.floor(Date.now() / 1000) + 90,
       },
     },
   };
