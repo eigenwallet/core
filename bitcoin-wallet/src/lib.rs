@@ -88,6 +88,34 @@ pub trait BitcoinWallet: Send + Sync {
         max_inputs: Option<usize>,
     ) -> Result<bitcoin::psbt::Psbt>;
 
+    /// Builds the lock transaction.
+    ///
+    /// Output `0` pays `amount` to `address`. Output `1` pays `tx_apollo_fee` to `apollo_address`.
+    /// The change output, if any, is last.
+    #[allow(clippy::too_many_arguments)]
+    async fn send_to_address_with_apollo_output(
+        &self,
+        address: Address,
+        amount: Amount,
+        apollo_address: Address,
+        tx_apollo_fee: Amount,
+        spending_fee: Amount,
+        change_override: Option<Address>,
+        max_inputs: Option<usize>,
+    ) -> Result<Psbt>;
+
+    /// Whether the wallet knows the transaction, but a conflicting transaction is canonical,
+    /// so the transaction cannot confirm any more.
+    /// The conflicting transaction needs `min_confirmations`, because unconfirmed ones can lose.
+    async fn is_transaction_conflicted(&self, txid: Txid, min_confirmations: u32) -> Result<bool>;
+
+    /// Reserves outputs. Transactions that this wallet builds after this call never spend them.
+    fn reserve_outpoints(&self, outpoints: Vec<bitcoin::OutPoint>);
+
+    fn release_outpoint(&self, outpoint: &bitcoin::OutPoint);
+
+    async fn wallet_spending_transactions(&self) -> Vec<std::sync::Arc<bitcoin::Transaction>>;
+
     async fn sweep_balance_to_address_dynamic_fee(
         &self,
         address: Address,
@@ -109,6 +137,20 @@ pub trait BitcoinWallet: Send + Sync {
         kind: &str,
     ) -> Result<(Txid, Subscription)>;
 
+    /// Broadcasts the transaction even if a server reports it as known.
+    async fn broadcast(
+        &self,
+        transaction: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)>;
+
+    /// Like [`Self::broadcast`], but does not watch the transaction.
+    async fn broadcast_without_subscription(
+        &self,
+        transaction: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<Txid>;
+
     async fn sync(&self) -> Result<()>;
 
     async fn health_check(&self) -> Result<()>;
@@ -122,14 +164,34 @@ pub trait BitcoinWallet: Send + Sync {
         txid: Txid,
     ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>>;
 
+    /// Same as [`Self::max_giveable_with_optional_apollo`] with `None`.
     async fn max_giveable(
         &self,
         locking_script_size: usize,
         max_inputs: Option<usize>,
+    ) -> Result<(Amount, Amount)> {
+        self.max_giveable_with_optional_apollo(locking_script_size, max_inputs, None)
+            .await
+    }
+
+    /// Maximum giveable amount and spending fee.
+    ///
+    /// `None` is a plain drain to one output.
+    /// `Some(shape)` excludes `shape.amount` from the giveable amount
+    /// and prices the fee for the Apollo output and a possible change output.
+    async fn max_giveable_with_optional_apollo(
+        &self,
+        locking_script_size: usize,
+        max_inputs: Option<usize>,
+        apollo: Option<ApolloOutputShape>,
     ) -> Result<(Amount, Amount)>;
 
     async fn estimate_fee(&self, weight: Weight, transfer_amount: Option<Amount>)
     -> Result<Amount>;
+
+    /// Total fee for a transaction of `weight` to confirm within `target_block` blocks.
+    /// The configured target is not used.
+    async fn estimate_fee_for_target(&self, weight: Weight, target_block: u32) -> Result<Amount>;
 
     /// Uncapped rate for presigned swap transactions.
     async fn swap_fee_rate(&self) -> Result<bitcoin::FeeRate>;
