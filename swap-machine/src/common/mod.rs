@@ -1,7 +1,7 @@
 use crate::alice::AliceState;
 use crate::alice::is_complete as alice_is_complete;
-use crate::bob::BobState;
-use crate::bob::is_complete as bob_is_complete;
+use crate::bob::is_swap_complete as bob_is_complete;
+use crate::bob::{ApolloProgress, BobState};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
@@ -259,8 +259,31 @@ impl TryInto<AliceState> for State {
     }
 }
 
+/// Recovery data for insertion into the database.
+#[derive(Clone, Debug)]
+pub struct RecoveredSwap {
+    pub swap_id: Uuid,
+    pub alice_peer_id: PeerId,
+    pub monero_receive_pool: MoneroAddressPool,
+    pub state: BobState,
+    /// The Apollo transaction that holds the swap backup, as found on chain.
+    pub apollo: ApolloProgress,
+}
+
+/// Pending progress rows from [`Database::pending_apollo_progress`], split into rows that decode and rows that do not.
+#[derive(Debug, Default)]
+pub struct PendingApollo {
+    pub ready: Vec<(Uuid, ApolloProgress)>,
+    /// The stored swap ID and the reason the progress row cannot be decoded.
+    pub corrupt: Vec<(String, anyhow::Error)>,
+}
+
 #[async_trait]
 pub trait Database {
+    /// Restores a missing swap and its first progress row in one atomic write.
+    /// Returns false and changes nothing if a state already exists. A failed write must leave no partial data.
+    async fn insert_recovered_swap(&self, recovered: RecoveredSwap) -> Result<bool>;
+
     async fn insert_peer_id(&self, swap_id: Uuid, peer_id: PeerId) -> Result<()>;
     async fn get_peer_id(&self, swap_id: Uuid) -> Result<PeerId>;
     async fn insert_monero_address_pool(
@@ -276,6 +299,18 @@ pub trait Database {
     async fn get_swap_start_date(&self, swap_id: Uuid) -> Result<String>;
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()>;
     async fn get_state(&self, swap_id: Uuid) -> Result<State>;
+    /// Returns the latest progress row of a swap, or `None` if the swap has no progress row.
+    async fn get_apollo_progress(&self, swap_id: Uuid) -> Result<Option<ApolloProgress>>;
+    /// Saves `progress` as the first progress row of a swap, only if the swap has no progress row.
+    /// Returns whether it saved the row. The check and the write are atomic.
+    async fn insert_apollo_if_absent(&self, swap_id: Uuid, progress: ApolloProgress)
+    -> Result<bool>;
+    /// Appends `progress` as a new progress row of a swap, without a check.
+    /// After `insert_apollo_if_absent`, only the publisher calls this function.
+    async fn append_apollo_progress(&self, swap_id: Uuid, progress: ApolloProgress) -> Result<()>;
+    /// Returns the latest progress row of each swap whose Apollo transaction is neither confirmed nor abandoned.
+    /// Rows that cannot be decoded are returned separately in `corrupt`, so one corrupt row does not hide the others.
+    async fn pending_apollo_progress(&self) -> Result<PendingApollo>;
     async fn get_states(&self, swap_id: Uuid) -> Result<Vec<State>>;
     async fn all(&self) -> Result<Vec<(PeerId, Uuid, State)>>;
     /// Returns the Alice swaps whose latest state is `Started` or

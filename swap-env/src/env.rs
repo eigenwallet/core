@@ -9,6 +9,8 @@ pub struct Config {
     pub bitcoin_lock_mempool_timeout: Duration,
     pub bitcoin_lock_confirmed_timeout: Duration,
     pub bitcoin_finality_confirmations: u32,
+    /// How often the publisher sends the Apollo transaction again until it confirms.
+    pub bitcoin_apollo_rebroadcast_interval: Duration,
     /// The upper bound for the number of blocks that will be mined before our
     /// Bitcoin transaction is included in a block
     pub bitcoin_blocks_till_confirmed_upper_bound_assumption: u32,
@@ -63,6 +65,7 @@ impl GetConfig for Mainnet {
             bitcoin_lock_mempool_timeout: 10.std_minutes(),
             bitcoin_lock_confirmed_timeout: 2.std_hours(),
             bitcoin_finality_confirmations: 1,
+            bitcoin_apollo_rebroadcast_interval: 60.std_seconds(),
             // We assume that a transaction that was constructed to be confirmed within one block
             // will be confirmed within at most 12 blocks
             bitcoin_blocks_till_confirmed_upper_bound_assumption: 12,
@@ -91,6 +94,7 @@ impl GetConfig for Testnet {
             bitcoin_lock_mempool_timeout: 10.std_minutes(),
             bitcoin_lock_confirmed_timeout: 1.std_hours(),
             bitcoin_finality_confirmations: 1,
+            bitcoin_apollo_rebroadcast_interval: 60.std_seconds(),
             bitcoin_blocks_till_confirmed_upper_bound_assumption: 12,
             bitcoin_avg_block_time: 10.std_minutes(),
             bitcoin_cancel_timelock: 12 * 3 + 6,
@@ -115,6 +119,7 @@ impl GetConfig for Regtest {
             bitcoin_lock_mempool_timeout: 30.std_seconds(),
             bitcoin_lock_confirmed_timeout: 5.std_minutes(),
             bitcoin_finality_confirmations: 1,
+            bitcoin_apollo_rebroadcast_interval: 5.std_seconds(),
             bitcoin_blocks_till_confirmed_upper_bound_assumption: 12,
             bitcoin_avg_block_time: 5.std_seconds(),
             bitcoin_cancel_timelock: 106,

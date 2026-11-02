@@ -5,6 +5,7 @@ use crate::cli::api::request::{
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
 use crate::protocol::bob::HermesProgress;
+use crate::protocol::bob::apollo::ApolloStatus;
 use crate::{monero, network::quote::BidQuote};
 use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
@@ -40,6 +41,7 @@ pub enum TauriEvent {
     Approval(ApprovalRequest),
     BackgroundProgress(TauriBackgroundProgressWrapper),
     PoolStatusUpdate(PoolStatus),
+    ApolloStatusUpdate(ApolloStatus),
     MoneroWalletUpdate(MoneroWalletUpdate),
     P2P(TauriP2PEvent),
 }
@@ -102,6 +104,11 @@ pub struct LockBitcoinDetails {
     pub btc_amnesty_amount: bitcoin::Amount,
     /// Whether we can guarantee we'll get the full refund
     pub has_full_refund_signature: bool,
+    /// The Apollo transaction fee.
+    /// The user pays it on top of the lock amount and the network fee.
+    /// `None` means no Apollo for the swap.
+    #[typeshare(serialized_as = "Option<number>")]
+    pub btc_apollo_fee: Option<bitcoin::Amount>,
 }
 
 #[typeshare]
@@ -639,10 +646,8 @@ pub trait TauriEmitter {
         }));
     }
 
-    fn emit_balance_update_event(&self, new_balance: bitcoin::Amount) {
-        self.emit_unified_event(TauriEvent::BalanceChange(BalanceResponse {
-            balance: new_balance,
-        }));
+    fn emit_balance_update_event(&self, new_balance: bitcoin_wallet::BalanceSplit) {
+        self.emit_unified_event(TauriEvent::BalanceChange(new_balance.into()));
     }
 
     fn emit_background_progress(&self, id: Uuid, event: TauriBackgroundProgress) {
@@ -653,6 +658,10 @@ pub trait TauriEmitter {
 
     fn emit_pool_status_update(&self, status: PoolStatus) {
         self.emit_unified_event(TauriEvent::PoolStatusUpdate(status));
+    }
+
+    fn emit_apollo_status_update(&self, status: ApolloStatus) {
+        self.emit_unified_event(TauriEvent::ApolloStatusUpdate(status));
     }
 
     fn emit_peer_connection_change(&self, peer_id: PeerId, change: observe::ConnectionChange) {
@@ -1072,9 +1081,16 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "string")]
         deposit_address: bitcoin::Address,
         #[typeshare(serialized_as = "number")]
+        balance: bitcoin::Amount,
+        /// The balance without the fees below
+        #[typeshare(serialized_as = "number")]
         max_giveable: bitcoin::Amount,
         #[typeshare(serialized_as = "number")]
         min_bitcoin_lock_tx_fee: bitcoin::Amount,
+        /// The Apollo transaction fee.
+        /// `None` means no Apollo for the swap.
+        #[typeshare(serialized_as = "Option<number>")]
+        apollo_fee: Option<bitcoin::Amount>,
         known_quotes: Vec<QuoteWithAddress>,
     },
     SwapSetupInflight {

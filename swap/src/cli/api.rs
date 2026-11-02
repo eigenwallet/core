@@ -9,6 +9,9 @@ use crate::common::tracing_util::Format;
 use crate::database::{AccessMode, open_db};
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
+use crate::protocol::bob::apollo::{
+    ApolloManagerConfig, ApolloManagerHandle, spawn_apollo_manager, spawn_apollo_recovery,
+};
 use crate::seed::Seed;
 use crate::{common, monero};
 use anyhow::{Context as AnyContext, Error, Result, bail};
@@ -47,6 +50,24 @@ mod config {
     }
 
     impl Config {
+        pub fn apollo_encryption_key(
+            &self,
+        ) -> Result<crate::protocol::bob::apollo::ApolloEncryptionKey> {
+            Ok(self
+                .seed
+                .as_ref()
+                .context("Seed is required to derive the Apollo encryption key")?
+                .derive_apollo_encryption_key())
+        }
+
+        pub fn swap_secret_keys(&self, swap_id: Uuid) -> Result<swap_machine::bob::SwapSecretKeys> {
+            Ok(self
+                .seed
+                .as_ref()
+                .context("Seed is required to derive swap secrets")?
+                .derive_swap_secret_keys(swap_id))
+        }
+
         pub fn for_harness(seed: Seed, env_config: EnvConfig) -> Self {
             let data_dir =
                 super::data::data_dir_from(None, false).expect("Could not find data directory");
@@ -247,6 +268,8 @@ mod context {
         #[allow(dead_code)]
         pub(super) monero_rpc_pool_handle: Arc<RwLock<Option<Arc<monero_rpc_pool::PoolHandle>>>>,
         pub(super) event_loop_state: Arc<RwLock<Option<EventLoopState>>>,
+        /// The Apollo manager. Only the GUI starts it.
+        pub apollo: Arc<RwLock<Option<ApolloManagerHandle>>>,
     }
 
     impl Context {
@@ -271,6 +294,7 @@ mod context {
                 tor_client: Arc::new(RwLock::new(None)),
                 monero_rpc_pool_handle: Arc::new(RwLock::new(None)),
                 event_loop_state: Arc::new(RwLock::new(None)),
+                apollo: Arc::new(RwLock::new(None)),
             }
         }
 
@@ -361,10 +385,18 @@ mod context {
                 tor_client: Arc::new(RwLock::new(None)),
                 monero_rpc_pool_handle: Arc::new(RwLock::new(None)),
                 event_loop_state: Arc::new(RwLock::new(None)),
+                apollo: Arc::new(RwLock::new(None)),
             }
         }
 
         pub fn cleanup(&self) -> Result<()> {
+            // Stops the Apollo manager. Its task ends on its own, and unfinished Apollo transactions resume on the next start.
+            if let Ok(apollo) = self.apollo.try_read()
+                && let Some(apollo) = apollo.as_ref()
+            {
+                apollo.shutdown();
+            }
+
             // TODO: close all monero wallets
             // call store(..) on all wallets
 
@@ -802,6 +834,22 @@ mod builder {
 
                         bitcoin_progress_handle.finish();
 
+                        // Withdrawals and other swaps must not spend the outputs that unconfirmed
+                        // Apollo transactions need. Reserve them before anyone else uses the wallet.
+                        // An Apollo error must not stop the startup. Log invalid progress rows only.
+                        if let Err(error) =
+                            crate::protocol::bob::apollo::reserve_pending_apollo_outpoints(
+                                db.as_ref(),
+                                |outpoints| wallet.reserve_outpoints(outpoints),
+                            )
+                            .await
+                        {
+                            tracing::error!(
+                                error = format!("{error:#}"),
+                                "Failed to reserve the outputs of some Apollo transactions"
+                            );
+                        }
+
                         Some(Arc::new(wallet))
                     }
                     None => None,
@@ -812,6 +860,41 @@ mod builder {
                 Ok::<_, Error>(wallet)
             }
             .await?;
+
+            // The Apollo manager and recovery run only in the GUI.
+            // Recovery runs detached, so its errors never block startup or other swaps.
+            if let Some(wallet) = &bitcoin_wallet
+                && self.tauri_handle.is_some()
+            {
+                let (apollo, manager_task) = spawn_apollo_manager(
+                    wallet.clone(),
+                    db.clone(),
+                    ApolloManagerConfig::new(env_config.bitcoin_apollo_rebroadcast_interval),
+                );
+                context.tasks.spawn(manager_task).await;
+                *context.apollo.write().await = Some(apollo.clone());
+
+                // Forward the Apollo status to the frontend, starting with the current value
+                let apollo_tauri_handle = self.tauri_handle.clone();
+                let mut apollo_status = apollo.status();
+                tokio::spawn(async move {
+                    loop {
+                        let status = apollo_status.borrow_and_update().clone();
+                        apollo_tauri_handle.emit_apollo_status_update(status);
+                        if apollo_status.changed().await.is_err() {
+                            return;
+                        }
+                    }
+                });
+
+                spawn_apollo_recovery(
+                    wallet.clone(),
+                    seed.clone(),
+                    db.clone(),
+                    self.tauri_handle.clone(),
+                    apollo,
+                );
+            }
 
             // If we have a bitcoin wallet and a tauri handle, we start a background task
             if let Some(wallet) = bitcoin_wallet.clone() {

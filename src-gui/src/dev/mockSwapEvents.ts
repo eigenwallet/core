@@ -166,8 +166,10 @@ const baseScenario: TauriSwapProgressEvent[] = [
     type: "WaitingForBtcDeposit",
     content: {
       deposit_address: MOCK_BTC_DEPOSIT_ADDRESS,
+      balance: 0,
       max_giveable: 0,
       min_bitcoin_lock_tx_fee: 1000,
+      apollo_fee: 1500,
       known_quotes: MOCK_KNOWN_QUOTES,
     },
   },
@@ -549,6 +551,7 @@ export type MockScenario = keyof typeof scenarios;
 const MOCK_LOCK_BITCOIN_DETAILS_PARTIAL: LockBitcoinDetails = {
   btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
   btc_network_fee: 5000,
+  btc_apollo_fee: 1500,
   xmr_receive_amount: MOCK_XMR_RECEIVE_AMOUNT,
   monero_receive_pool: MOCK_RECEIVE_POOL,
   swap_id: MOCK_SWAP_ID,
@@ -560,6 +563,7 @@ const MOCK_LOCK_BITCOIN_DETAILS_PARTIAL: LockBitcoinDetails = {
 const MOCK_LOCK_BITCOIN_DETAILS_FULL: LockBitcoinDetails = {
   btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
   btc_network_fee: 5000,
+  btc_apollo_fee: 1500,
   xmr_receive_amount: MOCK_XMR_RECEIVE_AMOUNT,
   monero_receive_pool: MOCK_RECEIVE_POOL,
   swap_id: MOCK_SWAP_ID,

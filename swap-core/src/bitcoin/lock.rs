@@ -93,9 +93,18 @@ pub fn estimated_signed_lock_weight(psbt: &PartiallySignedTransaction) -> Weight
 pub struct TxLock {
     inner: PartiallySignedTransaction,
     pub(in crate::bitcoin) output_descriptor: Descriptor<::bitcoin::PublicKey>,
+    /// Script of the output that funds the Apollo transaction.
+    /// Alice does not know it.
+    #[serde(default)]
+    apollo_output_script: Option<ScriptBuf>,
 }
 
 impl TxLock {
+    /// Builds Bob's lock transaction.
+    ///
+    /// With `apollo` (address, fee), the lock transaction pays the fee to the address.
+    /// The Apollo transaction burns this output as its fee.
+    /// The change output, if any, pays to `change`.
     pub async fn new(
         wallet: &dyn bitcoin_wallet::BitcoinWallet,
         amount: Amount,
@@ -103,16 +112,38 @@ impl TxLock {
         A: PublicKey,
         B: PublicKey,
         change: bitcoin::Address,
+        apollo: Option<(bitcoin::Address, Amount)>,
     ) -> Result<Self> {
         let lock_output_descriptor = build_shared_output_descriptor(A.0, B.0)?;
         let address = lock_output_descriptor
             .address(wallet.network())
             .expect("can derive address from descriptor");
 
+        let Some((apollo_address, tx_apollo_fee)) = apollo else {
+            let psbt = wallet
+                .send_to_address(
+                    address,
+                    amount,
+                    spending_fee,
+                    Some(change),
+                    Some(super::MAX_TX_LOCK_INPUTS),
+                )
+                .await?;
+
+            return Ok(Self {
+                inner: psbt,
+                output_descriptor: lock_output_descriptor,
+                apollo_output_script: None,
+            });
+        };
+        let apollo_output_script = apollo_address.script_pubkey();
+
         let psbt = wallet
-            .send_to_address(
+            .send_to_address_with_apollo_output(
                 address,
                 amount,
+                apollo_address,
+                tx_apollo_fee,
                 spending_fee,
                 Some(change),
                 Some(super::MAX_TX_LOCK_INPUTS),
@@ -122,7 +153,94 @@ impl TxLock {
         Ok(Self {
             inner: psbt,
             output_descriptor: lock_output_descriptor,
+            apollo_output_script: Some(apollo_output_script),
         })
+    }
+
+    /// Reconstructs Bob's `TxLock` from the published transaction.
+    ///
+    /// `prevouts` are the outputs spent by the inputs of `transaction`, in input order.
+    pub fn from_published_transaction(
+        transaction: Transaction,
+        prevouts: Vec<TxOut>,
+        A: PublicKey,
+        B: PublicKey,
+        apollo_output_vout: u32,
+    ) -> Result<Self> {
+        if prevouts.len() != transaction.input.len() {
+            bail!(
+                "Got {} prevouts for {} inputs",
+                prevouts.len(),
+                transaction.input.len()
+            );
+        }
+
+        let apollo_output_script = transaction
+            .output
+            .get(apollo_output_vout as usize)
+            .context("Lock transaction has no Apollo output")?
+            .script_pubkey
+            .clone();
+
+        let mut unsigned_tx = transaction;
+        for input in &mut unsigned_tx.input {
+            input.script_sig = ScriptBuf::new();
+            input.witness.clear();
+        }
+
+        let mut psbt = PartiallySignedTransaction::from_unsigned_tx(unsigned_tx)
+            .context("Failed to create PSBT from lock transaction")?;
+        for (psbt_input, prevout) in psbt.inputs.iter_mut().zip(prevouts) {
+            psbt_input.witness_utxo = Some(prevout);
+        }
+
+        let descriptor = build_shared_output_descriptor(A.0, B.0)?;
+        let shared_output_count = psbt
+            .unsigned_tx
+            .output
+            .iter()
+            .filter(|output| output.script_pubkey == descriptor.script_pubkey())
+            .count();
+        if shared_output_count != 1 {
+            bail!(
+                "Lock transaction must have exactly one shared output, found {}",
+                shared_output_count
+            );
+        }
+
+        Ok(Self {
+            inner: psbt,
+            output_descriptor: descriptor,
+            apollo_output_script: Some(apollo_output_script),
+        })
+    }
+
+    pub fn has_apollo_output(&self) -> bool {
+        self.apollo_output_script.is_some()
+    }
+
+    pub fn apollo_output_vout(&self) -> Result<u32> {
+        let script = self
+            .apollo_output_script
+            .as_ref()
+            .context("Lock transaction has no Apollo output")?;
+
+        let vout = self
+            .inner
+            .unsigned_tx
+            .output
+            .iter()
+            .position(|output| &output.script_pubkey == script)
+            .context("Lock transaction does not contain the Apollo output")?;
+
+        Ok(u32::try_from(vout)?)
+    }
+
+    /// The value of the Apollo output. The Apollo transaction burns it as its fee.
+    pub fn tx_apollo_fee(&self) -> Result<Amount> {
+        let vout = self.apollo_output_vout()?;
+
+        Ok(self.inner.unsigned_tx.output[vout as usize].value)
     }
 
     /// Creates an instance of `TxLock` from a PSBT, the public keys of the
@@ -184,6 +302,7 @@ impl TxLock {
         Ok(TxLock {
             inner: psbt,
             output_descriptor: descriptor,
+            apollo_output_script: None,
         })
     }
 
@@ -321,19 +440,49 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bob_can_fund_without_a_change_output() {
-        let (A, B, _) = setup().await;
-        let amount = 10_000;
-        let agreed_amount = Amount::from_sat(amount);
-        let spending_fee = Amount::from_sat(300);
-        let wallet = TestWalletBuilder::new(amount + 300).build().await;
+    async fn given_txlock_when_built_then_apollo_output_follows_the_locked_output() {
+        let (A, B, wallet) = setup().await;
+        let apollo_address = wallet.new_address().await.unwrap();
+        let tx_apollo_fee = Amount::from_sat(2_000);
 
-        let psbt = bob_make_psbt(A, B, &wallet, agreed_amount, spending_fee).await;
-        assert_eq!(
-            psbt.unsigned_tx.output.len(),
-            1,
-            "Expected no change output"
-        );
+        let txlock = TxLock::new(
+            &wallet,
+            Amount::from_sat(10_000),
+            Amount::from_sat(1000),
+            A,
+            B,
+            wallet.new_address().await.unwrap(),
+            Some((apollo_address.clone(), tx_apollo_fee)),
+        )
+        .await
+        .unwrap();
+
+        let vout = txlock.apollo_output_vout().unwrap();
+        let output = &txlock.as_psbt().unsigned_tx.output[vout as usize];
+        assert_eq!(vout, 1);
+        assert_eq!(output.script_pubkey, apollo_address.script_pubkey());
+        assert_eq!(output.value, tx_apollo_fee);
+        // The Apollo output is not part of the lock fee
+        assert_eq!(txlock.fee().unwrap(), Amount::from_sat(1000));
+    }
+
+    #[tokio::test]
+    async fn given_funds_below_lock_and_apollo_output_when_building_txlock_then_fails() {
+        let (A, B, _) = setup().await;
+        let wallet = TestWalletBuilder::new(10_500).build().await;
+
+        let result = TxLock::new(
+            &wallet,
+            Amount::from_sat(10_000),
+            Amount::from_sat(300),
+            A,
+            B,
+            wallet.new_address().await.unwrap(),
+            Some((wallet.new_address().await.unwrap(), Amount::from_sat(2_000))),
+        )
+        .await;
+
+        result.expect_err("TxLock that cannot pay the Apollo output must be rejected");
     }
 
     #[tokio::test]
@@ -416,8 +565,10 @@ mod tests {
                 .with_num_utxos(u8::try_from(inputs).unwrap())
                 .build()
                 .await;
-            // Spend every UTXO without change.
-            let amount = Amount::from_sat(utxo_sats * inputs as u64) - spending_fee;
+            // Spend every UTXO without change, after the fee and the Apollo output.
+            let amount = Amount::from_sat(utxo_sats * inputs as u64)
+                - spending_fee
+                - Amount::from_sat(1_000);
             let psbt = bob_make_psbt(A, B, &wallet, amount, spending_fee).await;
             assert_eq!(psbt.unsigned_tx.input.len(), inputs);
 
@@ -708,10 +859,19 @@ mod tests {
         spending_fee: Amount,
     ) -> Psbt {
         let change = wallet.new_address().await.unwrap();
-        TxLock::new(wallet, amount, spending_fee, A, B, change)
-            .await
-            .unwrap()
-            .into()
+        let apollo_address = wallet.new_address().await.unwrap();
+        TxLock::new(
+            wallet,
+            amount,
+            spending_fee,
+            A,
+            B,
+            change,
+            Some((apollo_address, Amount::from_sat(1_000))),
+        )
+        .await
+        .unwrap()
+        .into()
     }
 
     fn alice_and_bob() -> (PublicKey, PublicKey) {

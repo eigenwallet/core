@@ -22,3 +22,4 @@ workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+swap-machine = { path = "../swap-machine", features = ["test-support"] }

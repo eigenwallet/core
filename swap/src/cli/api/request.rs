@@ -36,7 +36,6 @@ use tokio_util::task::AbortOnDropHandle;
 use tracing::Instrument;
 use tracing::Span;
 use tracing::debug_span;
-use tracing::error;
 use typeshare::typeshare;
 use url::Url;
 use uuid::Uuid;
@@ -63,6 +62,8 @@ pub struct BuyXmrArgs {
     #[typeshare(serialized_as = "Option<string>")]
     pub bitcoin_change_address: Option<bitcoin::Address<NetworkUnchecked>>,
     pub monero_receive_pool: MoneroAddressPool,
+    /// Whether to back up the swap on the Bitcoin chain with Apollo. A swap keeps this value after it starts.
+    pub enable_apollo: bool,
 }
 
 impl Request for BuyXmrArgs {
@@ -242,6 +243,18 @@ pub struct BalanceArgs {
 pub struct BalanceResponse {
     #[typeshare(serialized_as = "number")]
     pub balance: bitcoin::Amount,
+    /// The part of `balance` that withdrawals and swaps can spend.
+    #[typeshare(serialized_as = "number")]
+    pub spendable: bitcoin::Amount,
+}
+
+impl From<bitcoin_wallet::BalanceSplit> for BalanceResponse {
+    fn from(split: bitcoin_wallet::BalanceSplit) -> Self {
+        Self {
+            balance: split.total,
+            spendable: split.spendable,
+        }
+    }
 }
 
 impl Request for BalanceArgs {
@@ -960,34 +973,40 @@ pub async fn get_swap_info(
         .await?
         .iter()
         .find_map(|state| {
-            let State::Bob(BobState::SwapSetupCompleted(state2)) = state else {
-                return None;
-            };
-
-            let xmr_amount = state2.xmr;
-            let btc_amount = state2.tx_lock.lock_amount();
-            let tx_cancel_fee = state2.tx_cancel_fee;
-            let tx_refund_fee = state2.tx_refund_fee;
-            let tx_lock_id = state2.tx_lock.txid();
-            let btc_refund_address = state2.refund_address.to_string();
-
-            let Ok(tx_lock_fee) = state2.tx_lock.fee() else {
-                return None;
-            };
-
-            Some((
-                xmr_amount,
-                btc_amount,
-                tx_lock_id,
-                tx_cancel_fee,
-                tx_refund_fee,
-                tx_lock_fee,
-                btc_refund_address,
-                state2.cancel_timelock,
-                state2.punish_timelock,
-            ))
+            // A swap restored by recovery has no `SwapSetupCompleted` state. Its first state is `BtcLocked`.
+            match state {
+                State::Bob(BobState::SwapSetupCompleted(state2)) => {
+                    Some((
+                        state2.xmr,
+                        state2.tx_lock.lock_amount(),
+                        state2.tx_lock.txid(),
+                        state2.tx_cancel_fee,
+                        state2.tx_refund_fee,
+                        state2.tx_lock.fee(),
+                        state2.refund_address.to_string(),
+                        state2.cancel_timelock,
+                        state2.punish_timelock,
+                    ))
+                }
+                State::Bob(BobState::BtcLocked { state3, .. }) => {
+                    Some((
+                        state3.xmr_amount(),
+                        state3.tx_lock.lock_amount(),
+                        state3.tx_lock.txid(),
+                        state3.tx_cancel_fee(),
+                        state3.tx_refund_fee(),
+                        state3.tx_lock.fee(),
+                        state3.refund_address().to_string(),
+                        state3.cancel_timelock,
+                        state3.punish_timelock(),
+                    ))
+                }
+                _ => None,
+            }
         })
-        .with_context(|| "Did not find SwapSetupCompleted state for swap")?;
+        .with_context(|| "Did not find SwapSetupCompleted or BtcLocked state for swap")?;
+
+    let tx_lock_fee = tx_lock_fee.context("Failed to compute the lock transaction fee")?;
 
     let monero_receive_pool = db.get_monero_address_pool(args.swap_id).await?;
 
@@ -1043,13 +1062,19 @@ pub async fn buy_xmr(
     let BuyXmrArgs {
         bitcoin_change_address,
         monero_receive_pool,
+        enable_apollo,
     } = buy_xmr;
 
     let config = context.try_get_config().await?;
     let db = context.try_get_db().await?;
 
+    if db.has_swap(swap_id).await? {
+        bail!("Swap ID {swap_id} already exists, resume the existing swap instead");
+    }
+
     monero_receive_pool.assert_network(config.env_config.monero_network)?;
     monero_receive_pool.assert_sum_to_one()?;
+    bob::apollo::assert_monero_receive_pool_fits(&monero_receive_pool)?;
 
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
 
@@ -1082,12 +1107,21 @@ pub async fn buy_xmr(
 
     // Wait for the user to approve a seller and to deposit coins
     // Calling determine_btc_to_swap
-    let address_len = bitcoin_wallet.new_address().await?.script_pubkey().len();
+    // The lock transaction pays an output worth the Apollo transaction fee.
+    // The refresh task estimates it once and retries on failure, so a slow fee service
+    // neither delays the deposit page nor aborts the request. The swap reuses the value.
+    let apollo_script_size = match enable_apollo {
+        true => Some(bitcoin_wallet.new_address().await?.script_pubkey().len()),
+        false => None,
+    };
+    let (apollo_fee_tx, apollo_fee_rx) = ::tokio::sync::watch::channel(None::<bitcoin::Amount>);
 
     let bitcoin_wallet_for_closures = Arc::clone(&bitcoin_wallet);
 
     // Clone variables before moving them into closures
     let bitcoin_change_address_for_spawn = bitcoin_change_address.clone();
+    let apollo_encryption_key = config.apollo_encryption_key()?;
+    let secret_keys = config.swap_secret_keys(swap_id)?;
 
     // Clone tauri_handle for different closures
     let tauri_handle_for_determine = tauri_handle.clone();
@@ -1111,9 +1145,40 @@ pub async fn buy_xmr(
             },
             {
                 let wallet = Arc::clone(&bitcoin_wallet_for_closures);
+                let apollo_fee_tx = apollo_fee_tx.clone();
                 move || {
                     let w = wallet.clone();
-                    async move { w.max_giveable(address_len, Some(bitcoin::MAX_TX_LOCK_INPUTS)).await }
+                    let apollo_fee_tx = apollo_fee_tx.clone();
+                    async move {
+                        let apollo_output_shape = match apollo_script_size {
+                            None => None,
+                            Some(script_size) => {
+                                let known_fee = *apollo_fee_tx.borrow();
+                                let amount = match known_fee {
+                                    Some(amount) => amount,
+                                    None => {
+                                        let amount =
+                                            bob::apollo::estimate_tx_apollo_fee(w.as_ref()).await?;
+                                        apollo_fee_tx.send_replace(Some(amount));
+                                        amount
+                                    }
+                                };
+                                Some(bitcoin_wallet::ApolloOutputShape {
+                                    script_size,
+                                    amount,
+                                    change_script_size: bitcoin::TxLock::script_size(),
+                                })
+                            }
+                        };
+                        // The Apollo output comes on top of the locked amount.
+                        // The lock fee covers the whole lock transaction.
+                        w.max_giveable_with_optional_apollo(
+                            bitcoin::TxLock::script_size(),
+                            Some(bitcoin::MAX_TX_LOCK_INPUTS),
+                            apollo_output_shape,
+                        )
+                        .await
+                    }
                 }
             },
             {
@@ -1125,6 +1190,7 @@ pub async fn buy_xmr(
             },
             tauri_handle_for_determine,
             swap_id,
+            enable_apollo.then(|| apollo_fee_rx.clone()),
             |quote_with_address| {
                 let tauri_handle_clone = tauri_handle_for_selection.clone();
                 Box::new(async move {
@@ -1157,6 +1223,13 @@ pub async fn buy_xmr(
         return Ok(());
     };
 
+    let tx_apollo_fee = match enable_apollo {
+        true => Some(
+            (*apollo_fee_rx.borrow()).context("Apollo fee is unknown after the offer was chosen")?,
+        ),
+        false => None,
+    };
+
     // Insert the peer_id into the database
     db.insert_peer_id(swap_id, seller_peer_id).await?;
 
@@ -1177,6 +1250,8 @@ pub async fn buy_xmr(
     );
 
     tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::ReceivedQuote(quote));
+
+    let apollo = context.apollo.read().await.clone();
 
     context.tasks.clone().spawn(async move {
         tokio::select! {
@@ -1200,10 +1275,15 @@ pub async fn buy_xmr(
                     env_config,
                     swap_event_loop_handle,
                     monero_receive_pool.clone(),
+                    apollo_encryption_key,
+                    secret_keys,
                     bitcoin_change_address_for_spawn,
                     tx_lock_amount,
-                    tx_lock_fee
-                ).with_event_emitter(tauri_handle.clone());
+                    tx_lock_fee,
+                    tx_apollo_fee,
+                )
+                .with_event_emitter(tauri_handle.clone())
+                .with_apollo(apollo);
 
                 bob::run(swap).await
             } => {
@@ -1263,6 +1343,7 @@ pub async fn resume_swap(
     let swap_event_loop_handle = event_loop_handle
         .swap_handle(seller_peer_id, swap_id)
         .await?;
+
     let swap = Swap::from_db(
         db.clone(),
         swap_id,
@@ -1271,9 +1352,12 @@ pub async fn resume_swap(
         config.env_config,
         swap_event_loop_handle,
         monero_receive_pool,
+        config.apollo_encryption_key()?,
+        config.swap_secret_keys(swap_id)?,
     )
     .await?
-    .with_event_emitter(tauri_handle.clone());
+    .with_event_emitter(tauri_handle.clone())
+    .with_apollo(context.apollo.read().await.clone());
 
     context.swap_lock.acquire_swap_lock(swap_id).await?;
 
@@ -1413,23 +1497,21 @@ pub async fn get_balance(balance: BalanceArgs, context: Arc<Context>) -> Result<
         bitcoin_wallet.sync().await?;
     }
 
-    let bitcoin_balance = bitcoin_wallet.balance().await?;
+    let bitcoin_balance = bitcoin_wallet.balance_split().await?;
 
     if force_refresh {
         tracing::info!(
-            balance = %bitcoin_balance,
+            balance = ?bitcoin_balance,
             "Checked Bitcoin balance",
         );
     } else {
         tracing::debug!(
-            balance = %bitcoin_balance,
+            balance = ?bitcoin_balance,
             "Current Bitcoin balance as of last sync",
         );
     }
 
-    Ok(BalanceResponse {
-        balance: bitcoin_balance,
-    })
+    Ok(bitcoin_balance.into())
 }
 
 #[tracing::instrument(fields(method = "export_bitcoin_wallet"), skip(context))]
@@ -1551,6 +1633,8 @@ pub async fn determine_btc_to_swap<FB, TB, FMG, TMG, FS, TS>(
     sync: FS,
     event_emitter: Option<TauriHandle>,
     swap_id: Uuid,
+    // `None` when Apollo is off. The value is `None` until the fee estimate succeeded.
+    apollo_fee: Option<::tokio::sync::watch::Receiver<Option<bitcoin::Amount>>>,
     request_approval: impl Fn(QuoteWithAddress) -> Box<dyn Future<Output = Result<bool>> + Send>,
 ) -> Result<(
     Multiaddr,
@@ -1583,15 +1667,20 @@ where
     loop {
         // Get the latest quotes, balance and max_giveable
         let quotes = quotes_rx.borrow().clone();
-        let (_balance, max_giveable, tx_lock_fee) = *balance_rx.borrow();
+        let (balance, max_giveable, tx_lock_fee) = *balance_rx.borrow();
+        let tx_apollo_fee = apollo_fee.as_ref().and_then(|rx| *rx.borrow());
+        // Offers stay unselectable until the Apollo fee is known, because the lock amount depends on it.
+        let apollo_fee_pending = apollo_fee.is_some() && tx_apollo_fee.is_none();
 
         // Emit a Tauri event
         event_emitter.emit_swap_progress_event(
             swap_id,
             TauriSwapProgressEvent::WaitingForBtcDeposit {
                 deposit_address: deposit_address.clone(),
-                max_giveable: max_giveable,
+                balance,
+                max_giveable,
                 min_bitcoin_lock_tx_fee: tx_lock_fee,
+                apollo_fee: tx_apollo_fee,
                 known_quotes: quotes.clone(),
             },
         );
@@ -1599,6 +1688,7 @@ where
         // Iterate through quotes and find ones that match the balance and max_giveable
         let matching_quotes = quotes
             .iter()
+            .filter(|_| !apollo_fee_pending)
             .filter_map(|quote_with_address| {
                 let quote = &quote_with_address.quote;
 

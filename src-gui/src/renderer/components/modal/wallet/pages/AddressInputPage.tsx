@@ -14,7 +14,7 @@ export default function AddressInputPage({
     <>
       <DialogContentText>
         To withdraw the Bitcoin inside the internal wallet, please enter an
-        address. All funds (the entire balance) will be sent to that address.
+        address. All funds (the entire spendable balance) will be sent to that address.
       </DialogContentText>
 
       <BitcoinAddressTextField

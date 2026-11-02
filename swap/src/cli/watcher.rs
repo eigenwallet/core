@@ -1,4 +1,5 @@
 use super::advance_refund;
+use super::cancel_and_refund::AliceAlreadyRedeemed;
 use super::api::SwapLock;
 use super::api::tauri_bindings::{BackgroundRefundProgress, TauriBackgroundProgress, TauriEmitter};
 use crate::cli::api::tauri_bindings::TauriHandle;
@@ -6,7 +7,7 @@ use crate::protocol::bob::BobState;
 use crate::protocol::{Database, State};
 use anyhow::{Context, Result};
 use bitcoin_wallet::Wallet;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::ExpiredTimelocks;
@@ -21,6 +22,9 @@ pub struct Watcher {
     swap_lock: Arc<SwapLock>,
     /// This saves for every running swap the last known timelock status
     cached_timelocks: HashMap<Uuid, Option<ExpiredTimelocks>>,
+    /// Swaps whose Bitcoin Alice has redeemed.
+    /// The watcher cannot cancel or refund them. The user must resume them to claim the Monero.
+    alice_redeemed: HashSet<Uuid>,
 }
 
 impl Watcher {
@@ -38,6 +42,7 @@ impl Watcher {
             wallet,
             database,
             cached_timelocks: HashMap::new(),
+            alice_redeemed: HashSet::new(),
             tauri,
             swap_lock,
         }
@@ -66,7 +71,7 @@ impl Watcher {
         // Fetch the current Bitcoin balance
         let new_balance = self
             .wallet
-            .balance()
+            .balance_split()
             .await
             .context("Failed to fetch Bitcoin balance, retrying later")?;
 
@@ -129,6 +134,10 @@ impl Watcher {
                     continue;
                 }
 
+                if self.alice_redeemed.contains(&swap_id) {
+                    continue;
+                }
+
                 // If the swap is already running, we can skip the refund
                 // The refund will be handled by the state machine
                 if let Some(current_swap_id) = self.swap_lock.get_current_swap_id().await {
@@ -160,6 +169,13 @@ impl Watcher {
 
                 // Takes one step only: the next one follows on a later pass
                 match advance_refund(swap_id, self.wallet.clone(), self.database.clone()).await {
+                    Err(e)
+                        if e.downcast_ref::<AliceAlreadyRedeemed>()
+                            .is_some() =>
+                    {
+                        tracing::info!(%swap_id, "Alice redeemed the Bitcoin of this swap, the watcher does not refund it. Resume the swap to claim the Monero");
+                        self.alice_redeemed.insert(swap_id);
+                    }
                     Err(e) => {
                         tracing::error!(%e, %swap_id, "Watcher failed to refund a swap in the background");
 
