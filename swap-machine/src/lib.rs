@@ -93,18 +93,20 @@ mod tests {
             &mut OsRng,
         );
 
+        let swap_id = Uuid::new_v4();
         let bob_state0 = bob::State0::new(
-            Uuid::new_v4(),
+            swap_id,
             &mut OsRng,
+            bob::SwapSecretKeys::derive(rand::random(), swap_id),
             btc_amount,
             xmr_amount,
             CancelTimelock::new(config.bitcoin_cancel_timelock),
             PunishTimelock::new(config.bitcoin_punish_timelock),
             RemainingRefundTimelock::new(config.bitcoin_remaining_refund_timelock),
             bob_wallet.new_address().await.unwrap(),
-            config.monero_finality_confirmations,
             common::swap_fee_limits(SwapFeeRate(5000), btc_amount).unwrap(),
             tx_lock_fee,
+            Some(spending_fee),
         );
 
         let message0 = bob_state0.next_message().unwrap();
@@ -261,6 +263,10 @@ mod tests {
         let alice_state3 = alice_state2.receive(bob_message4).unwrap();
 
         let (bob_state3, _tx_lock) = bob_state2.lock_btc().await.unwrap();
+        bob_state3.verify_alice_signatures().unwrap();
+        let lock_view_keys = bob_state3.xmr_view_keys();
+        let bob_state6_from_state3 =
+            bob_state3.cancel(swap_core::monero::BlockHeight { height: 0 });
         let bob_state4 = bob_state3.xmr_locked(
             swap_core::monero::BlockHeight { height: 0 },
             // We use bogus values here, because they're irrelevant to this test
@@ -280,6 +286,12 @@ mod tests {
             .signed_redeem_transaction(encrypted_signature)
             .unwrap();
         let refund_transaction = bob_state6.construct_best_bitcoin_refund_tx().unwrap().0;
+
+        // A `State6` created from `State3` recovers the Monero lock keys from Alice's `TxRedeem`.
+        let s_a = bob_state6_from_state3
+            .recover_s_a(std::sync::Arc::new(redeem_transaction.clone()))
+            .unwrap();
+        assert_eq!(bob_state6_from_state3.xmr_view_keys(&s_a), lock_view_keys);
 
         assert_eq!(
             cancel_transaction.version,
@@ -352,6 +364,22 @@ mod tests {
         let restored_bob: bob::State6 = serde_json::from_value(saved_bob.clone()).unwrap();
         assert_eq!(
             restored_bob.construct_best_bitcoin_refund_tx().unwrap().0,
+            refund_transaction
+        );
+
+        // Records saved before the redeem lookup fields existed still load. They have no such fields.
+        let mut without_redeem_fields = saved_bob.clone();
+        for field in ["S_a_bitcoin", "redeem_address", "tx_redeem_fee"] {
+            assert!(!saved_bob[field].is_null(), "{field} is stored");
+            without_redeem_fields.as_object_mut().unwrap().remove(field);
+        }
+        let old_bob: bob::State6 = serde_json::from_value(without_redeem_fields).unwrap();
+        let old_bob_json = serde_json::to_value(&old_bob).unwrap();
+        for field in ["S_a_bitcoin", "redeem_address", "tx_redeem_fee"] {
+            assert!(old_bob_json[field].is_null(), "{field} is None");
+        }
+        assert_eq!(
+            old_bob.construct_best_bitcoin_refund_tx().unwrap().0,
             refund_transaction
         );
 
@@ -459,18 +487,20 @@ mod tests {
             &mut OsRng,
         );
 
+        let swap_id = Uuid::new_v4();
         let bob_state0 = bob::State0::new(
-            Uuid::new_v4(),
+            swap_id,
             &mut OsRng,
+            bob::SwapSecretKeys::derive(rand::random(), swap_id),
             btc_amount,
             xmr_amount,
             CancelTimelock::new(config.bitcoin_cancel_timelock),
             PunishTimelock::new(config.bitcoin_punish_timelock),
             RemainingRefundTimelock::new(config.bitcoin_remaining_refund_timelock),
             bob_wallet.new_address().await.unwrap(),
-            config.monero_finality_confirmations,
             common::swap_fee_limits(SwapFeeRate(5000), btc_amount).unwrap(),
             spending_fee,
+            Some(spending_fee),
         );
 
         // Complete the state machine up to State3

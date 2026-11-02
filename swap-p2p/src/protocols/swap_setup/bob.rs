@@ -24,7 +24,7 @@ use std::task::Poll;
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
-use swap_machine::bob::{State0, State2};
+use swap_machine::bob::{State0, State2, SwapSecretKeys};
 use swap_machine::common::{Message1, Message3};
 use tracing::Instrument;
 use uuid::Uuid;
@@ -357,9 +357,12 @@ impl Handler {
 #[derive(Debug, Clone)]
 pub struct NewSwap {
     pub swap_id: Uuid,
+    pub secret_keys: SwapSecretKeys,
     pub btc: bitcoin::Amount,
     pub tx_lock_fee: bitcoin::Amount,
     pub fee_limits: bitcoin::SwapFeeLimits,
+    /// `None` means the swap has no Apollo.
+    pub tx_apollo_fee: Option<bitcoin::Amount>,
     pub bitcoin_refund_address: bitcoin::Address,
 }
 
@@ -713,15 +716,16 @@ async fn run_swap_setup(
     let state0 = State0::new(
         new_swap_request.swap_id,
         &mut rand::thread_rng(),
+        new_swap_request.secret_keys,
         new_swap_request.btc,
         xmr,
         env_config.bitcoin_cancel_timelock.into(),
         env_config.bitcoin_punish_timelock.into(),
         env_config.bitcoin_remaining_refund_timelock.into(),
         new_swap_request.bitcoin_refund_address.clone(),
-        env_config.monero_finality_confirmations,
         new_swap_request.fee_limits,
         new_swap_request.tx_lock_fee,
+        new_swap_request.tx_apollo_fee,
     );
 
     tracing::trace!(

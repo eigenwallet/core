@@ -4,7 +4,7 @@ use crate::database::Swap;
 use crate::monero::LabeledMoneroAddress;
 use crate::monero::MoneroAddressPool;
 use crate::monero::TransferProof;
-use crate::protocol::{Database, State};
+use crate::protocol::{Database, PendingApollo, RecoveredSwap, State};
 use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
@@ -15,6 +15,7 @@ use sqlx::{ConnectOptions, Pool, SqliteExecutor};
 use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
+use swap_machine::bob::ApolloProgress;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -79,6 +80,89 @@ impl SqliteDatabase {
 
 #[async_trait]
 impl Database for SqliteDatabase {
+    async fn insert_recovered_swap(&self, recovered: RecoveredSwap) -> Result<bool> {
+        let swap_id = recovered.swap_id;
+        let id = swap_id.to_string();
+        let peer_id = recovered.alice_peer_id.to_string();
+        let state = serde_json::to_string(&Swap::from(State::Bob(recovered.state)))?;
+        let addresses = recovered
+            .monero_receive_pool
+            .iter()
+            .map(|entry| {
+                Ok((
+                    entry.address().map(|address| address.to_string()),
+                    entry
+                        .percentage()
+                        .to_f64()
+                        .context("Invalid recovered payout percentage")?,
+                    entry.label().to_owned(),
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let apollo = serde_json::to_string(&recovered.apollo)?;
+        let entered_at = OffsetDateTime::now_utc().to_string();
+
+        // All steps run in one transaction, so a failure leaves nothing behind.
+        // The transaction inserts, in this order:
+        // 1. Which peer we did the swap with. This write comes first, so concurrent recoveries run one after the other.
+        // 2. The Monero receive pool of the swap.
+        // 3. The swap state.
+        // 4. The Apollo progress.
+        // If the swap has a state already, the transaction rolls back and inserts nothing.
+        let mut transaction = self.pool.begin().await?;
+        // 1. Peer id
+        sqlx::query(
+            "INSERT INTO peers (swap_id, peer_id) VALUES (?, ?) ON CONFLICT(swap_id) DO NOTHING",
+        )
+        .bind(&id)
+        .bind(&peer_id)
+        .execute(&mut *transaction)
+        .await?;
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM swap_states WHERE swap_id = ?)")
+                .bind(&id)
+                .fetch_one(&mut *transaction)
+                .await?;
+        if exists {
+            transaction.rollback().await?;
+            return Ok(false);
+        }
+
+        // 2. Monero receive pool. Replace only orphaned metadata, left by an interrupted older recovery.
+        sqlx::query("UPDATE peers SET peer_id = ? WHERE swap_id = ?")
+            .bind(peer_id)
+            .bind(&id)
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query("DELETE FROM monero_addresses WHERE swap_id = ?")
+            .bind(&id)
+            .execute(&mut *transaction)
+            .await?;
+        for (address, percentage, label) in addresses {
+            sqlx::query("INSERT INTO monero_addresses (swap_id, address, percentage, label) VALUES (?, ?, ?, ?)")
+                .bind(&id).bind(address).bind(percentage).bind(label)
+                .execute(&mut *transaction).await?;
+        }
+        // 3. State
+        sqlx::query("INSERT INTO swap_states (swap_id, entered_at, state) VALUES (?, ?, ?)")
+            .bind(&id)
+            .bind(&entered_at)
+            .bind(state)
+            .execute(&mut *transaction)
+            .await?;
+        // 4. Apollo progress
+        sqlx::query(
+            "INSERT INTO apollo_progress (swap_id, progress, created_at) VALUES (?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(apollo)
+        .bind(&entered_at)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(true)
+    }
+
     async fn insert_peer_id(&self, swap_id: Uuid, peer_id: PeerId) -> Result<()> {
         insert_peer_id(&self.pool, swap_id, peer_id).await
     }
@@ -305,6 +389,88 @@ impl Database for SqliteDatabase {
         self.tauri_handle.emit_swap_state_change_event(swap_id);
 
         Ok(())
+    }
+
+    async fn get_apollo_progress(&self, swap_id: Uuid) -> Result<Option<ApolloProgress>> {
+        let progress: Option<String> = sqlx::query_scalar(
+            "SELECT progress FROM apollo_progress WHERE swap_id = ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind(swap_id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        progress
+            .map(|progress| serde_json::from_str(&progress))
+            .transpose()
+            .context("Failed to decode the Apollo progress")
+    }
+
+    async fn insert_apollo_if_absent(
+        &self,
+        swap_id: Uuid,
+        progress: ApolloProgress,
+    ) -> Result<bool> {
+        // One statement, so no other writer can slip in between the check and the write
+        let result = sqlx::query(
+            "INSERT INTO apollo_progress (swap_id, progress, created_at)
+             SELECT ?1, ?2, ?3
+             WHERE NOT EXISTS (SELECT 1 FROM apollo_progress WHERE swap_id = ?1)",
+        )
+        .bind(swap_id.to_string())
+        .bind(serde_json::to_string(&progress)?)
+        .bind(OffsetDateTime::now_utc().to_string())
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Ok(false);
+        }
+
+        self.tauri_handle.emit_swap_state_change_event(swap_id);
+
+        Ok(true)
+    }
+
+    async fn append_apollo_progress(
+        &self,
+        swap_id: Uuid,
+        progress: ApolloProgress,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO apollo_progress (swap_id, progress, created_at) VALUES (?, ?, ?)",
+        )
+        .bind(swap_id.to_string())
+        .bind(serde_json::to_string(&progress)?)
+        .bind(OffsetDateTime::now_utc().to_string())
+        .execute(&self.pool)
+        .await?;
+
+        self.tauri_handle.emit_swap_state_change_event(swap_id);
+
+        Ok(())
+    }
+
+    async fn pending_apollo_progress(&self) -> Result<PendingApollo> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT swap_id, progress FROM apollo_progress
+             WHERE id IN (SELECT MAX(id) FROM apollo_progress GROUP BY swap_id)",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut pending = PendingApollo::default();
+        for (swap_id, progress) in rows {
+            let decoded = Uuid::from_str(&swap_id)
+                .map_err(anyhow::Error::from)
+                .and_then(|id| Ok((id, serde_json::from_str::<ApolloProgress>(&progress)?)));
+            match decoded {
+                Ok((_, progress)) if progress.is_complete() => {}
+                Ok((id, progress)) => pending.ready.push((id, progress)),
+                Err(error) => pending.corrupt.push((swap_id, error)),
+            }
+        }
+
+        Ok(pending)
     }
 
     async fn get_state(&self, swap_id: Uuid) -> Result<State> {
@@ -928,6 +1094,323 @@ mod tests {
     use crate::protocol::bob::BobState;
     use std::fs::File;
     use tempfile::{TempDir, tempdir};
+
+    fn recovered_swap(swap_id: Uuid) -> Result<RecoveredSwap> {
+        Ok(RecoveredSwap {
+            swap_id,
+            alice_peer_id: PeerId::random(),
+            monero_receive_pool: MoneroAddressPool::new(vec![
+                LabeledMoneroAddress::with_internal_address(Decimal::ONE, String::new())?,
+            ]),
+            state: BobState::SafelyAborted,
+            apollo: ApolloProgress::Published(empty_tx()),
+        })
+    }
+
+    fn empty_tx() -> bitcoin::Transaction {
+        bitcoin::Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: vec![],
+            output: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn recovery_rolls_back_all_records_and_can_retry() -> Result<()> {
+        let db = setup_test_db().await?;
+        let recovered = recovered_swap(Uuid::new_v4())?;
+        sqlx::query("CREATE TRIGGER fail_recovery BEFORE INSERT ON swap_states BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
+            .execute(&db.pool).await?;
+        assert!(db.insert_recovered_swap(recovered.clone()).await.is_err());
+        assert!(!db.has_swap(recovered.swap_id).await?);
+        for table in [
+            "peers",
+            "monero_addresses",
+            "swap_states",
+            "apollo_progress",
+        ] {
+            let count: i64 =
+                sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table} WHERE swap_id = ?"))
+                    .bind(recovered.swap_id.to_string())
+                    .fetch_one(&db.pool)
+                    .await?;
+            assert_eq!(count, 0, "partial recovery left rows in {table}");
+        }
+        sqlx::query("DROP TRIGGER fail_recovery")
+            .execute(&db.pool)
+            .await?;
+        assert!(db.insert_recovered_swap(recovered.clone()).await?);
+        assert_eq!(
+            db.get_peer_id(recovered.swap_id).await?,
+            recovered.alice_peer_id
+        );
+        assert_eq!(
+            db.get_monero_address_pool(recovered.swap_id).await?,
+            recovered.monero_receive_pool
+        );
+        assert_eq!(
+            db.get_state(recovered.swap_id).await?,
+            State::Bob(recovered.state)
+        );
+        assert_eq!(
+            db.get_apollo_progress(recovered.swap_id).await?,
+            Some(recovered.apollo)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recovery_rolls_back_the_state_if_the_apollo_row_fails() -> Result<()> {
+        let db = setup_test_db().await?;
+        let recovered = recovered_swap(Uuid::new_v4())?;
+        sqlx::query("CREATE TRIGGER fail_apollo BEFORE INSERT ON apollo_progress BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
+            .execute(&db.pool).await?;
+        assert!(db.insert_recovered_swap(recovered.clone()).await.is_err());
+        assert!(!db.has_swap(recovered.swap_id).await?);
+        assert_eq!(db.get_apollo_progress(recovered.swap_id).await?, None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recovery_replaces_orphaned_metadata_but_preserves_existing_swaps() -> Result<()> {
+        let db = setup_test_db().await?;
+        let recovered = recovered_swap(Uuid::new_v4())?;
+        db.insert_peer_id(recovered.swap_id, PeerId::random())
+            .await?;
+        db.insert_monero_address_pool(recovered.swap_id, recovered.monero_receive_pool.clone())
+            .await?;
+        db.insert_monero_address_pool(recovered.swap_id, recovered.monero_receive_pool.clone())
+            .await?;
+        assert!(db.insert_recovered_swap(recovered.clone()).await?);
+        assert_eq!(
+            db.get_peer_id(recovered.swap_id).await?,
+            recovered.alice_peer_id
+        );
+        assert_eq!(
+            db.get_monero_address_pool(recovered.swap_id)
+                .await?
+                .iter()
+                .count(),
+            1
+        );
+        let mut duplicate = recovered.clone();
+        duplicate.alice_peer_id = PeerId::random();
+        assert!(!db.insert_recovered_swap(duplicate).await?);
+        assert_eq!(
+            db.get_peer_id(recovered.swap_id).await?,
+            recovered.alice_peer_id
+        );
+        assert_eq!(db.get_states(recovered.swap_id).await?.len(), 1);
+        assert_eq!(
+            db.get_apollo_progress(recovered.swap_id).await?,
+            Some(recovered.apollo)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn concurrent_recovery_inserts_once() -> Result<()> {
+        let db = setup_test_db().await?;
+        let recovered = recovered_swap(Uuid::new_v4())?;
+        let id = recovered.swap_id;
+        let (left, right) = tokio::join!(
+            db.insert_recovered_swap(recovered.clone()),
+            db.insert_recovered_swap(recovered)
+        );
+        assert_ne!(left?, right?);
+        assert_eq!(db.get_states(id).await?.len(), 1);
+        assert_eq!(db.get_monero_address_pool(id).await?.iter().count(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn insert_apollo_if_absent_inserts_only_if_absent() -> Result<()> {
+        let db = setup_test_db().await?;
+        let id = Uuid::new_v4();
+        let constructed = ApolloProgress::Constructed(empty_tx());
+
+        assert_eq!(db.get_apollo_progress(id).await?, None);
+        assert!(
+            db.insert_apollo_if_absent(id, constructed.clone())
+                .await?
+        );
+        assert_eq!(db.get_apollo_progress(id).await?, Some(constructed.clone()));
+
+        // A second insert-if-absent changes nothing
+        let published = ApolloProgress::Published(empty_tx());
+        assert!(!db.insert_apollo_if_absent(id, published).await?);
+        assert_eq!(db.get_apollo_progress(id).await?, Some(constructed));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn append_apollo_progress_appends_a_row_per_transition() -> Result<()> {
+        let db = setup_test_db().await?;
+        let id = Uuid::new_v4();
+        let constructed = ApolloProgress::Constructed(empty_tx());
+        let published = ApolloProgress::Published(empty_tx());
+        let confirmed = ApolloProgress::Confirmed(empty_tx());
+
+        assert!(db.insert_apollo_if_absent(id, constructed).await?);
+        db.append_apollo_progress(id, published).await?;
+        db.append_apollo_progress(id, confirmed.clone()).await?;
+
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM apollo_progress WHERE swap_id = ?")
+                .bind(id.to_string())
+                .fetch_one(&db.pool)
+                .await?;
+        assert_eq!(count, 3);
+        assert_eq!(db.get_apollo_progress(id).await?, Some(confirmed));
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_apollo_inserts_have_exactly_one_winner() -> Result<()> {
+        let db = std::sync::Arc::new(setup_test_db().await?);
+        let id = Uuid::new_v4();
+
+        let writers = (0..16).map(|i| {
+            let db = db.clone();
+            let progress = if i % 2 == 0 {
+                ApolloProgress::Published(empty_tx())
+            } else {
+                ApolloProgress::Abandoned(empty_tx())
+            };
+            tokio::spawn(async move { db.insert_apollo_if_absent(id, progress).await })
+        });
+        // All writers are spawned before any is awaited, so that they overlap
+        let writers: Vec<_> = writers.collect();
+        let mut winners = 0;
+        for writer in writers {
+            winners += usize::from(writer.await??);
+        }
+
+        assert_eq!(winners, 1);
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM apollo_progress WHERE swap_id = ?")
+                .bind(id.to_string())
+                .fetch_one(&db.pool)
+                .await?;
+        assert_eq!(count, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_apollo_progress_skips_complete_rows_and_reports_undecodable_ones() -> Result<()>
+    {
+        let db = setup_test_db().await?;
+        let constructed = (Uuid::new_v4(), ApolloProgress::Constructed(empty_tx()));
+        let published = (Uuid::new_v4(), ApolloProgress::Published(empty_tx()));
+        let confirmed = (Uuid::new_v4(), ApolloProgress::Confirmed(empty_tx()));
+        let abandoned = (Uuid::new_v4(), ApolloProgress::Abandoned(empty_tx()));
+        for (id, progress) in [&constructed, &published, &confirmed, &abandoned] {
+            db.insert_apollo_if_absent(*id, progress.clone()).await?;
+        }
+        sqlx::query(
+            "INSERT INTO apollo_progress (swap_id, progress, created_at) VALUES (?, 'garbage', '')",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .execute(&db.pool)
+        .await?;
+
+        let PendingApollo {
+            ready: mut pending,
+            corrupt,
+        } = db.pending_apollo_progress().await?;
+        pending.sort_by_key(|(id, _)| *id);
+        let mut expected = vec![constructed, published];
+        expected.sort_by_key(|(id, _)| *id);
+
+        assert_eq!(pending, expected);
+        assert_eq!(corrupt.len(), 1);
+        Ok(())
+    }
+
+    fn tx_spending(vout: u32, inputs: usize) -> bitcoin::Transaction {
+        bitcoin::Transaction {
+            input: (0..inputs)
+                .map(|_| bitcoin::TxIn {
+                    previous_output: bitcoin::OutPoint::new(
+                        bitcoin::Txid::from_raw_hash(bitcoin::hashes::Hash::all_zeros()),
+                        vout,
+                    ),
+                    ..Default::default()
+                })
+                .collect(),
+            ..empty_tx()
+        }
+    }
+
+    #[tokio::test]
+    async fn persisting_apollo_before_the_broadcast_accepts_the_same_tx_only() -> Result<()> {
+        use crate::protocol::bob::apollo::persist_constructed_apollo;
+        let db = setup_test_db().await?;
+        let id = Uuid::new_v4();
+        let tx = tx_spending(1, 1);
+
+        persist_constructed_apollo(&db, id, &tx).await?;
+        assert_eq!(
+            db.get_apollo_progress(id).await?,
+            Some(ApolloProgress::Constructed(tx.clone()))
+        );
+
+        // A resumed swap saves the first row again
+        persist_constructed_apollo(&db, id, &tx).await?;
+
+        // The same call after the publisher appended a row must not undo that row
+        let published = ApolloProgress::Published(tx.clone());
+        db.append_apollo_progress(id, published.clone()).await?;
+        persist_constructed_apollo(&db, id, &tx).await?;
+        assert_eq!(db.get_apollo_progress(id).await?, Some(published.clone()));
+
+        let error = persist_constructed_apollo(&db, id, &tx_spending(2, 1))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("different Apollo"), "{error:#}");
+        assert_eq!(db.get_apollo_progress(id).await?, Some(published));
+        Ok(())
+    }
+
+    /// Startup handles pending rows with the same iteration, whatever the swap state is.
+    /// The test uses a swap with no state, a finished swap and an unfinished swap.
+    #[tokio::test]
+    async fn pending_apollo_outpoints_are_reserved_for_good_rows_before_failing_on_bad_ones()
+    -> Result<()> {
+        use crate::protocol::bob::apollo::reserve_pending_apollo_outpoints;
+        let db = setup_test_db().await?;
+        let (no_state, aborted, locked) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        db.insert_latest_state(aborted, State::Bob(BobState::SafelyAborted))
+            .await?;
+        for (vout, id) in [(1, no_state), (2, aborted), (3, locked)] {
+            db.insert_apollo_if_absent(id, ApolloProgress::Published(tx_spending(vout, 1)))
+                .await?;
+        }
+        let two_inputs = Uuid::new_v4();
+        db.insert_apollo_if_absent(two_inputs, ApolloProgress::Constructed(tx_spending(4, 2)))
+        .await?;
+        let confirmed = Uuid::new_v4();
+        db.insert_apollo_if_absent(confirmed, ApolloProgress::Confirmed(tx_spending(5, 1)))
+        .await?;
+        sqlx::query("INSERT INTO apollo_progress (swap_id, progress, created_at) VALUES ('corrupt-id', 'garbage', '')")
+            .execute(&db.pool)
+            .await?;
+
+        let mut reserved = Vec::new();
+        let error = reserve_pending_apollo_outpoints(&db, |outpoints| reserved = outpoints)
+            .await
+            .unwrap_err();
+
+        let mut vouts: Vec<u32> = reserved.iter().map(|outpoint| outpoint.vout).collect();
+        vouts.sort();
+        assert_eq!(vouts, vec![1, 2, 3]);
+        let message = format!("{error:#}");
+        assert!(message.contains("corrupt-id"), "{message}");
+        assert!(message.contains(&two_inputs.to_string()), "{message}");
+        assert!(!message.contains(&confirmed.to_string()), "{message}");
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_insert_and_load_state() {
