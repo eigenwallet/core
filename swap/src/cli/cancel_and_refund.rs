@@ -9,6 +9,8 @@ use swap_core::bitcoin::ExpiredTimelocks;
 use swap_machine::bob::{RefundType, State6};
 use uuid::Uuid;
 
+const REDEEM_LOOKUP_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub async fn cancel_and_refund(
     swap_id: Uuid,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
@@ -24,9 +26,7 @@ pub async fn cancel_and_refund(
         }
     }
 
-    let state = refund(swap_id, bitcoin_wallet, db).await?;
-
-    Ok(state)
+    refund(swap_id, bitcoin_wallet, db).await
 }
 
 async fn wait_for_cancel_tx_confirmation(
@@ -43,15 +43,70 @@ async fn wait_for_cancel_tx_confirmation(
     let txid = tx_cancel.txid();
     tracing::info!(%txid, "Waiting for cancel transaction to be confirmed");
 
-    bitcoin_wallet
-        .subscribe_to(Box::new(tx_cancel))
-        .await
-        .wait_until_final()
-        .await
-        .context("Failed waiting for TxCancel confirmation")?;
+    // Alice's redeem conflicts with `TxCancel`, so `TxCancel` never confirms after a redeem.
+    // A redeem in the mempool is enough. This future only ends if it finds the redeem.
+    let alice_redeemed = bail_once_alice_redeem_available(swap_id, &state6, bitcoin_wallet.as_ref());
+
+    tokio::select! {
+        result = async {
+            bitcoin_wallet
+                .subscribe_to(Box::new(tx_cancel))
+                .await
+                .wait_until_final()
+                .await
+                .context("Failed waiting for TxCancel confirmation")
+        } => result?,
+        result = alice_redeemed => result?,
+    }
 
     db.insert_latest_state(swap_id, BobState::BtcCancelled(state6).into())
         .await?;
+
+    Ok(())
+}
+
+/// Waits until Alice's redeem is seen, then fails with [`AliceAlreadyRedeemed`] once its transaction is available.
+///
+/// Never returns `Ok`: without a redeem the caller's other branch decides.
+async fn bail_once_alice_redeem_available(
+    swap_id: Uuid,
+    state6: &State6,
+    bitcoin_wallet: &dyn BitcoinWallet,
+) -> Result<()> {
+    state6.wait_until_redeem_seen(bitcoin_wallet).await?;
+    loop {
+        bail_if_alice_redeemed(swap_id, state6, bitcoin_wallet).await?;
+        // The redeem was seen but its raw transaction is not available yet, so retry the lookup.
+        tokio::time::sleep(REDEEM_LOOKUP_RETRY_INTERVAL).await;
+    }
+}
+
+/// Alice has redeemed the Bitcoin of the swap, so it cannot be cancelled or refunded.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "Alice has already redeemed the Bitcoin of swap {swap_id}, so it cannot be cancelled or refunded. Resume the swap to claim the Monero"
+)]
+pub struct AliceAlreadyRedeemed {
+    pub swap_id: Uuid,
+}
+
+/// Fails with [`AliceAlreadyRedeemed`] if Alice has redeemed the Bitcoin.
+///
+/// The redeem spends the lock, so `TxCancel` and `TxRefund` never confirm and waiting for them blocks forever.
+/// Resume the swap to claim the Monero.
+async fn bail_if_alice_redeemed(
+    swap_id: Uuid,
+    state6: &State6,
+    bitcoin_wallet: &dyn BitcoinWallet,
+) -> Result<()> {
+    let redeemed = state6
+        .check_for_tx_redeem(bitcoin_wallet)
+        .await
+        .context("Failed to check whether Alice redeemed the Bitcoin")?;
+
+    if redeemed.is_some() {
+        return Err(AliceAlreadyRedeemed { swap_id }.into());
+    }
 
     Ok(())
 }
@@ -137,6 +192,8 @@ pub async fn cancel(
 ) -> Result<(Txid, BobState)> {
     let state = db.get_state(swap_id).await?.try_into()?;
     let state6 = state_to_cancel(swap_id, state).await?;
+
+    bail_if_alice_redeemed(swap_id, &state6, bitcoin_wallet.as_ref()).await?;
 
     tracing::info!(%swap_id, "Attempting to manually cancel swap");
 
@@ -283,6 +340,22 @@ pub async fn advance_refund(
 
     let state6 = state_to_cancel(swap_id, state).await?;
 
+    // Alice's early refund spends the lock, so cancel can never be published. A recovered
+    // swap is restored as `BtcLocked`, so record the finished refund here instead of retrying forever.
+    // This re-implements parts of the swap state machine, which is a sign that the watcher
+    // should be abandoned at some point.
+    if bitcoin_wallet
+        .status_of_script(&state6.construct_tx_early_refund())
+        .await
+        .context("Failed to check whether Alice refunded the Bitcoin early")?
+        .is_confirmed_with(finality)
+    {
+        let state = BobState::BtcEarlyRefunded(state6);
+        db.insert_latest_state(swap_id, state.clone().into())
+            .await?;
+        return Ok(state);
+    }
+
     let tx_cancel_status = bitcoin_wallet
         .status_of_script(&state6.construct_tx_cancel()?)
         .await?;
@@ -391,6 +464,8 @@ async fn publish_refund(
             state
         ),
     };
+
+    bail_if_alice_redeemed(swap_id, &state6, bitcoin_wallet.as_ref()).await?;
 
     tracing::info!(%swap_id, "Checking timelocks before attempting to manually refund swap");
 
