@@ -1,4 +1,5 @@
 import { SwapState } from "models/storeModel";
+import { useActiveSwapId, usePendingLockBitcoinApproval } from "store/hooks";
 import { TauriSwapProgressEventType } from "models/tauriModelExt";
 import CircularProgressWithSubtitle from "./components/CircularProgressWithSubtitle";
 import BitcoinPunishedPage from "./done/BitcoinPunishedPage";
@@ -38,8 +39,22 @@ import InitPage from "./init/InitPage";
 import InflightEncSigPage from "./in_progress/InflightEncSigPage";
 
 export default function SwapStatePage({ state }: { state: SwapState | null }) {
+  const activeSwapId = useActiveSwapId();
+  const lockApproval = usePendingLockBitcoinApproval().find(
+    (r) => r.request.content.swap_id === activeSwapId,
+  );
+
   if (state === null) {
     return <InitPage />;
+  }
+
+  // The GUI shows a pending lock approval before the progress state.
+  if (lockApproval != null) {
+    return (
+      <SwapSetupInflightPage
+        btc_lock_amount={lockApproval.request.content.btc_lock_amount}
+      />
+    );
   }
 
   const type: TauriSwapProgressEventType = state.curr.type;

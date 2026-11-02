@@ -130,26 +130,42 @@ async function invokeNoArgs<RESPONSE>(command: string): Promise<RESPONSE> {
   return invokeUnsafe(command) as Promise<RESPONSE>;
 }
 
+function isSyncingBitcoinWallet(): boolean {
+  return Object.values(store.getState().rpc?.state.background ?? {}).some(
+    (progress) =>
+      progress.componentName === "SyncingBitcoinWallet" &&
+      progress.progress.type === "Pending",
+  );
+}
+
+async function fetchBitcoinBalance(forceRefresh: boolean) {
+  const response = await invoke<BalanceArgs, BalanceResponse>("get_balance", {
+    force_refresh: forceRefresh,
+  });
+
+  store.dispatch(setBitcoinBalance(response));
+}
+
 export async function checkBitcoinBalance() {
-  // If we are already syncing, don't start a new sync
-  if (
-    Object.values(store.getState().rpc?.state.background ?? {}).some(
-      (progress) =>
-        progress.componentName === "SyncingBitcoinWallet" &&
-        progress.progress.type === "Pending",
-    )
-  ) {
-    console.log(
-      "checkBitcoinBalance() was called but we are already syncing Bitcoin, skipping",
-    );
+  if (!isSyncingBitcoinWallet()) {
+    await fetchBitcoinBalance(true);
     return;
   }
 
-  const response = await invoke<BalanceArgs, BalanceResponse>("get_balance", {
-    force_refresh: true,
+  // A sync is already running, for example the Apollo recovery sync.
+  // Show the cached balance now and read it again when the sync ends.
+  // Callers never wait for the sync, because startup and swap updates await this function.
+  const unsubscribe = store.subscribe(() => {
+    if (isSyncingBitcoinWallet()) {
+      return;
+    }
+    unsubscribe();
+    fetchBitcoinBalance(false).catch((error) =>
+      logger.error("Failed to fetch the Bitcoin balance after a sync", error),
+    );
   });
 
-  store.dispatch(setBitcoinBalance(response.balance));
+  await fetchBitcoinBalance(false);
 }
 
 export async function buyXmr() {
@@ -212,6 +228,7 @@ export async function buyXmr() {
     // We convert null to undefined because typescript
     // expects undefined if the field is optional and does not accept null here
     bitcoin_change_address: bitcoinChangeAddress ?? undefined,
+    enable_apollo: state.settings.enableApollo,
   });
 }
 
@@ -300,7 +317,7 @@ export async function cheapCheckBitcoinBalance() {
     force_refresh: false,
   });
 
-  store.dispatch(setBitcoinBalance(response.balance));
+  store.dispatch(setBitcoinBalance(response));
 }
 
 export async function getBitcoinAddress() {

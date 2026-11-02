@@ -31,7 +31,9 @@ function FiatBitcoinAmount({ amount }: { amount: number | null }) {
   );
 }
 
-export default function WalletOverview({ balance }: WalletOverviewProps) {
+export default function WalletOverview({
+  balance,
+}: WalletOverviewProps) {
   const btcBalance = balance == null ? null : satsToBtc(balance);
 
   return (

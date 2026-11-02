@@ -17,6 +17,7 @@ import MakerOfferItem from "./MakerOfferItem";
 import MakerDiscoveryStatus from "./MakerDiscoveryStatus";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { SatsAmount } from "renderer/components/other/Units";
+import OnChainStorageFeeLabel from "renderer/components/other/OnChainStorageFeeLabel";
 import { useEffect, useState } from "react";
 import { OfferSortMode } from "utils/sortUtils";
 import { useCachedMakerOffers } from "./useCachedMakerOffers";
@@ -29,7 +30,10 @@ const SORT_OPTIONS: { value: OfferSortMode; label: string }[] = [
 
 export default function DepositAndChooseOfferPage({
   deposit_address,
+  balance,
   max_giveable,
+  min_bitcoin_lock_tx_fee,
+  apollo_fee,
   known_quotes,
 }: TauriSwapProgressEventContent<"WaitingForBtcDeposit">) {
   const [currentPage, setCurrentPage] = useState(1);
@@ -79,8 +83,21 @@ export default function DepositAndChooseOfferPage({
         <Box sx={{ flexGrow: 1, flexShrink: 0, minWidth: "12em" }}>
           <Typography variant="body1">Bitcoin Balance</Typography>
           <Typography variant="h5">
-            <SatsAmount amount={max_giveable} />
+            <SatsAmount amount={balance} />
           </Typography>
+          <Box sx={{ mt: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              Network fee: <SatsAmount amount={min_bitcoin_lock_tx_fee} />
+            </Typography>
+            {apollo_fee != null && (
+              <Typography variant="body2" color="text.secondary">
+                <OnChainStorageFeeLabel />: <SatsAmount amount={apollo_fee} />
+              </Typography>
+            )}
+            <Typography variant="body2">
+              Available to swap: <SatsAmount amount={max_giveable} />
+            </Typography>
+          </Box>
         </Box>
 
         <Divider

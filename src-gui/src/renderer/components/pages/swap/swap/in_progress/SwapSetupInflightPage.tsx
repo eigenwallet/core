@@ -18,6 +18,7 @@ import CircularProgressWithSubtitle from "../components/CircularProgressWithSubt
 import CheckIcon from "@mui/icons-material/Check";
 import ArrowRightAltIcon from "@mui/icons-material/ArrowRightAlt";
 import TruncatedText from "renderer/components/other/TruncatedText";
+import OnChainStorageFeeLabel from "renderer/components/other/OnChainStorageFeeLabel";
 import SwapSetupMarkupWarningDialog from "./SwapSetupMarkupWarningDialog";
 
 /// A hook that returns the LockBitcoin confirmation request for the active swap
@@ -90,6 +91,7 @@ export default function SwapSetupInflightPage({
 
   const {
     btc_network_fee,
+    btc_apollo_fee,
     monero_receive_pool,
     xmr_receive_amount,
     btc_amnesty_amount,
@@ -152,6 +154,7 @@ export default function SwapSetupInflightPage({
           <BitcoinMainBox
             btc_lock_amount={btc_lock_amount}
             btc_network_fee={btc_network_fee}
+            btc_apollo_fee={btc_apollo_fee}
           />
         </Box>
 
@@ -353,11 +356,13 @@ export default function SwapSetupInflightPage({
 interface BitcoinSendSectionProps {
   btc_lock_amount: number;
   btc_network_fee: number;
+  btc_apollo_fee?: number;
 }
 
 function BitcoinMainBox({
   btc_lock_amount,
   btc_network_fee,
+  btc_apollo_fee,
 }: BitcoinSendSectionProps) {
   return (
     <Box
@@ -421,6 +426,25 @@ function BitcoinMainBox({
       >
         Network fee: <SatsAmount amount={btc_network_fee} />
       </Box>
+
+      {/* Box for the Apollo transaction fee */}
+      {btc_apollo_fee != null && (
+        <Box
+          sx={{
+            padding: "0.25rem 0.75rem",
+            backgroundColor: (theme) => theme.palette.warning.main,
+            color: (theme) => theme.palette.warning.contrastText,
+            borderRadius: "4px",
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+            whiteSpace: "nowrap",
+            zIndex: 1,
+          }}
+        >
+          <OnChainStorageFeeLabel />: <SatsAmount amount={btc_apollo_fee} />
+        </Box>
+      )}
     </Box>
   );
 }

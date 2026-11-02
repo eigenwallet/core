@@ -10,7 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [5.0.2] - 2026-10-31
 
 - GUI + CLI + ASB: Update Arti to 2.7.0, which includes several reliability improvements.
-
+- Add Apollo, an encrypted on-chain backup that lets you recover swaps started after you enable it from your wallet seed if you lose your local swap data.
+  It is off by default and can be enabled with "Backup data on chain" in the settings; the setting only applies to new swaps.
+  Each backup requires an additional Bitcoin transaction fee.
+  Swaps set up before Apollo continue without a backup.
+  There is no downgrade support: once Apollo has run, the database cannot be opened by older versions.
 ## [5.0.1] - 2026-10-30
 
 - ORCHESTRATOR: Update Tor to 0.4.9.9 and ship the logs of the `tor` container to Loki.

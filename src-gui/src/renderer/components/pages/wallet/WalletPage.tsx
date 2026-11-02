@@ -5,7 +5,9 @@ import WalletActionButtons from "./components/WalletActionButtons";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 
 export default function WalletPage() {
-  const walletBalance = useAppSelector((state) => state.bitcoinWallet.balance);
+  const spendableBalance = useAppSelector(
+    (state) => state.bitcoinWallet.spendableBalance,
+  );
   const bitcoinAddress = useAppSelector((state) => state.bitcoinWallet.address);
 
   return (
@@ -19,7 +21,7 @@ export default function WalletPage() {
         pb: 2,
       }}
     >
-      <WalletOverview balance={walletBalance} />
+      <WalletOverview balance={spendableBalance} />
       {bitcoinAddress && (
         <ActionableMonospaceTextBox
           content={bitcoinAddress}
