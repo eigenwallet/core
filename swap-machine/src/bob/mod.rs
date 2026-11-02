@@ -94,7 +94,7 @@ pub enum ApolloProgress {
     Published(Transaction),
     Confirmed(Transaction),
     /// The publisher cannot send the Apollo transaction any more.
-    /// A conflicting transaction replaced the lock transaction, or the swap stopped before the lock transaction was published.
+    /// A conflicting transaction replaced the lock transaction, or the transactions do not fit together.
     Abandoned(Transaction),
 }
 

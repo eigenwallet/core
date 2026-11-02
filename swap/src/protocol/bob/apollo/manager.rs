@@ -395,10 +395,7 @@ impl Publisher {
                 return Ok(());
             }
 
-            match self
-                .pass(&progress, required_confirmations)
-                .await
-            {
+            match self.pass(&progress, required_confirmations).await {
                 Ok(Pass::Done) => return Ok(()),
                 // The next pass loads the new row
                 Ok(Pass::Advanced) => continue,
@@ -414,11 +411,7 @@ impl Publisher {
 
     /// One attempt to move the Apollo transaction forward.
     /// Every step comes from the chain state, so the caller can drop this future at any time.
-    async fn pass(
-        &self,
-        progress: &ApolloProgress,
-        required_confirmations: u32,
-    ) -> Result<Pass> {
+    async fn pass(&self, progress: &ApolloProgress, required_confirmations: u32) -> Result<Pass> {
         let swap_id = self.swap_id;
         let tx = progress.tx();
         let txid = tx.compute_txid();
@@ -532,4 +525,963 @@ enum Pass {
     Advanced,
     /// Nothing to do until the rebroadcast interval passed.
     Wait,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::{AccessMode, SqliteDatabase};
+    use crate::protocol::State;
+    use anyhow::{anyhow, bail};
+    use bdk_wallet::Balance;
+    use bdk_wallet::export::FullyNodedExport;
+    use bitcoin::absolute::LockTime;
+    use bitcoin::transaction::Version;
+    use bitcoin::{Address, Amount, FeeRate, Network, Psbt, ScriptBuf, TxIn, TxOut, Txid, Weight};
+    use bitcoin_wallet::primitives::Confirmed;
+    use bitcoin_wallet::{ApolloOutputShape, Subscription, Watchable};
+    use std::sync::{Mutex, MutexGuard};
+    use swap_machine::bob::BobState;
+    use utxo_ownership_proof::{Challenge, OwnershipProof};
+
+    const REQUIRED_CONFIRMATIONS: u32 = TX_APOLLO_MIN_CONFIRMATIONS;
+    const APOLLO_VOUT: u32 = 1;
+    const NO_POLL: Duration = Duration::from_secs(3600);
+
+    /// What the network looks like to the publisher.
+    #[derive(Default)]
+    struct FakeChain {
+        transactions: HashMap<Txid, Arc<Transaction>>,
+        statuses: HashMap<Txid, ScriptStatus>,
+        conflicted: bool,
+        rejects_broadcasts: bool,
+        broadcasts: Vec<Txid>,
+        released: Vec<OutPoint>,
+        conflict_checks: usize,
+    }
+
+    impl FakeChain {
+        fn knows(&mut self, tx: &Transaction) {
+            self.transactions
+                .insert(tx.compute_txid(), Arc::new(tx.clone()));
+        }
+
+        fn sees(&mut self, tx: &Transaction, status: ScriptStatus) {
+            self.knows(tx);
+            self.statuses.insert(tx.compute_txid(), status);
+        }
+    }
+
+    /// Implements only what the publisher calls.
+    #[derive(Default)]
+    struct FakeWallet(Mutex<FakeChain>);
+
+    impl FakeWallet {
+        fn chain(&self) -> MutexGuard<'_, FakeChain> {
+            self.0.lock().unwrap()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl BitcoinWallet for FakeWallet {
+        async fn is_transaction_conflicted(
+            &self,
+            _txid: Txid,
+            _min_confirmations: u32,
+        ) -> Result<bool> {
+            let mut chain = self.chain();
+            chain.conflict_checks += 1;
+            Ok(chain.conflicted)
+        }
+
+        fn release_outpoint(&self, outpoint: &OutPoint) {
+            self.chain().released.push(*outpoint);
+        }
+
+        async fn broadcast_without_subscription(
+            &self,
+            transaction: Transaction,
+            _kind: &str,
+        ) -> Result<Txid> {
+            let mut chain = self.chain();
+            if chain.rejects_broadcasts {
+                bail!("The server rejected the transaction");
+            }
+            let txid = transaction.compute_txid();
+            chain.broadcasts.push(txid);
+            Ok(txid)
+        }
+
+        async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
+            let chain = self.chain();
+            Ok(chain
+                .statuses
+                .get(&tx.id())
+                .copied()
+                .unwrap_or(ScriptStatus::Unseen))
+        }
+
+        async fn get_raw_transaction(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
+            Ok(self.chain().transactions.get(&txid).cloned())
+        }
+
+        fn finality_confirmations(&self) -> u32 {
+            1
+        }
+
+        async fn balance(&self) -> Result<Amount> {
+            unimplemented!()
+        }
+
+        async fn balance_info(&self) -> Result<Balance> {
+            unimplemented!()
+        }
+
+        async fn new_address(&self) -> Result<Address> {
+            unimplemented!()
+        }
+
+        async fn send_to_address(
+            &self,
+            _address: Address,
+            _amount: Amount,
+            _spending_fee: Amount,
+            _change_override: Option<Address>,
+            _max_inputs: Option<usize>,
+        ) -> Result<Psbt> {
+            unimplemented!()
+        }
+
+        async fn send_to_address_dynamic_fee(
+            &self,
+            _address: Address,
+            _amount: Amount,
+            _change_override: Option<Address>,
+            _max_inputs: Option<usize>,
+        ) -> Result<Psbt> {
+            unimplemented!()
+        }
+
+        async fn send_to_address_with_apollo_output(
+            &self,
+            _address: Address,
+            _amount: Amount,
+            _apollo_address: Address,
+            _tx_apollo_fee: Amount,
+            _spending_fee: Amount,
+            _change_override: Option<Address>,
+            _max_inputs: Option<usize>,
+        ) -> Result<Psbt> {
+            unimplemented!()
+        }
+
+        fn reserve_outpoints(&self, _outpoints: Vec<OutPoint>) {
+            unimplemented!()
+        }
+
+        async fn wallet_spending_transactions(&self) -> Vec<Arc<Transaction>> {
+            unimplemented!()
+        }
+
+        async fn sweep_balance_to_address_dynamic_fee(&self, _address: Address) -> Result<Psbt> {
+            unimplemented!()
+        }
+
+        async fn sign_and_finalize(&self, _psbt: Psbt) -> Result<Transaction> {
+            unimplemented!()
+        }
+
+        fn prove_utxo_ownership(
+            &self,
+            _psbt: &Psbt,
+            _challenge: Challenge,
+        ) -> Result<Vec<OwnershipProof>> {
+            unimplemented!()
+        }
+
+        async fn ensure_broadcasted(
+            &self,
+            _transaction: Transaction,
+            _kind: &str,
+        ) -> Result<(Txid, Subscription)> {
+            unimplemented!()
+        }
+
+        async fn broadcast(
+            &self,
+            _transaction: Transaction,
+            _kind: &str,
+        ) -> Result<(Txid, Subscription)> {
+            unimplemented!()
+        }
+
+        async fn sync(&self) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn health_check(&self) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn subscribe_to(&self, _tx: Box<dyn Watchable>) -> Subscription {
+            unimplemented!()
+        }
+
+        async fn max_giveable_with_optional_apollo(
+            &self,
+            _locking_script_size: usize,
+            _max_inputs: Option<usize>,
+            _apollo: Option<ApolloOutputShape>,
+        ) -> Result<(Amount, Amount)> {
+            unimplemented!()
+        }
+
+        async fn estimate_fee(
+            &self,
+            _weight: Weight,
+            _transfer_amount: Option<Amount>,
+        ) -> Result<Amount> {
+            unimplemented!()
+        }
+
+        async fn estimate_fee_for_target(
+            &self,
+            _weight: Weight,
+            _target_block: u32,
+        ) -> Result<Amount> {
+            unimplemented!()
+        }
+
+        async fn swap_fee_rate(&self) -> Result<FeeRate> {
+            unimplemented!()
+        }
+
+        fn network(&self) -> Network {
+            unimplemented!()
+        }
+
+        async fn wallet_export(&self, _role: &str) -> Result<FullyNodedExport> {
+            unimplemented!()
+        }
+    }
+
+    async fn test_db() -> Arc<dyn Database + Send + Sync> {
+        let path = tempfile::tempdir().unwrap().keep().join("tempdb");
+        std::fs::File::create(&path).unwrap();
+
+        Arc::new(
+            SqliteDatabase::open(path, AccessMode::ReadWrite)
+                .await
+                .unwrap(),
+        )
+    }
+
+    /// `seed` makes the transactions of different swaps differ.
+    fn lock_tx(seed: u32) -> Transaction {
+        Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::from_consensus(seed),
+            input: vec![],
+            output: vec![
+                TxOut {
+                    value: Amount::from_sat(100_000),
+                    script_pubkey: ScriptBuf::from_bytes(vec![0x51]),
+                },
+                TxOut {
+                    value: Amount::from_sat(2_000),
+                    script_pubkey: ScriptBuf::from_bytes(vec![0x52]),
+                },
+            ],
+        }
+    }
+
+    fn apollo_tx(lock: &Transaction, vout: u32, inputs: usize) -> Transaction {
+        let input = TxIn {
+            previous_output: OutPoint::new(lock.compute_txid(), vout),
+            ..Default::default()
+        };
+
+        Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![input; inputs],
+            output: vec![TxOut {
+                value: Amount::ZERO,
+                script_pubkey: ScriptBuf::new_op_return([1, 2, 3]),
+            }],
+        }
+    }
+
+    fn confirmed(confirmations: u32) -> ScriptStatus {
+        ScriptStatus::Confirmed(Confirmed::new(confirmations - 1))
+    }
+
+    /// One publisher that the test drives pass by pass.
+    struct PublisherTest {
+        swap_id: Uuid,
+        wallet: Arc<FakeWallet>,
+        db: Arc<dyn Database + Send + Sync>,
+        lock: Transaction,
+        apollo: Transaction,
+        events: mpsc::Receiver<Event>,
+        publisher: Publisher,
+    }
+
+    impl PublisherTest {
+        async fn new(progress: fn(Transaction) -> ApolloProgress) -> Self {
+            let lock = lock_tx(0);
+            Self::with_apollo(progress, lock.clone(), apollo_tx(&lock, APOLLO_VOUT, 1)).await
+        }
+
+        async fn with_apollo(
+            progress: fn(Transaction) -> ApolloProgress,
+            lock: Transaction,
+            apollo: Transaction,
+        ) -> Self {
+            let swap_id = Uuid::new_v4();
+            let wallet = Arc::new(FakeWallet::default());
+            let db = test_db().await;
+            db.insert_apollo_if_absent(swap_id, progress(apollo.clone()))
+                .await
+                .unwrap();
+            let (events_tx, events) = mpsc::channel(EVENT_QUEUE_SIZE);
+            let publisher = Publisher {
+                swap_id,
+                bitcoin_wallet: wallet.clone(),
+                db: db.clone(),
+                events_tx,
+                rebroadcast_interval: Duration::from_millis(1),
+            };
+
+            Self {
+                swap_id,
+                wallet,
+                db,
+                lock,
+                apollo,
+                events,
+                publisher,
+            }
+        }
+
+        fn see_lock(&self) {
+            self.wallet
+                .chain()
+                .sees(&self.lock, ScriptStatus::InMempool);
+        }
+
+        async fn pass(&self) -> Result<Pass> {
+            let progress = self.progress().await;
+            self.publisher.pass(&progress, REQUIRED_CONFIRMATIONS).await
+        }
+
+        async fn progress(&self) -> ApolloProgress {
+            self.db
+                .get_apollo_progress(self.swap_id)
+                .await
+                .unwrap()
+                .unwrap()
+        }
+
+        fn assert_nothing_left_the_wallet(&self) {
+            let chain = self.wallet.chain();
+            assert!(chain.broadcasts.is_empty());
+            assert!(chain.released.is_empty());
+        }
+
+        fn assert_outpoints_released(&self) {
+            let expected: Vec<OutPoint> = self
+                .apollo
+                .input
+                .iter()
+                .map(|input| input.previous_output)
+                .collect();
+            assert_eq!(self.wallet.chain().released, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn unseen_lock_of_a_finished_swap_keeps_apollo_pending() {
+        let mut test = PublisherTest::new(ApolloProgress::Published).await;
+        let tx_lock_id = test.lock.compute_txid();
+        test.db
+            .insert_latest_state(
+                test.swap_id,
+                State::Bob(BobState::XmrRedeemed { tx_lock_id }),
+            )
+            .await
+            .unwrap();
+
+        for _ in 0..3 {
+            assert!(matches!(test.pass().await.unwrap(), Pass::Wait));
+            assert!(matches!(test.events.try_recv(), Ok(Event::Transient(_))));
+        }
+
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Published(test.apollo.clone())
+        );
+        test.assert_nothing_left_the_wallet();
+    }
+
+    #[tokio::test]
+    async fn lock_missing_from_the_script_history_keeps_apollo_pending() {
+        let mut test = PublisherTest::new(ApolloProgress::Constructed).await;
+        // The transaction lookup finds the lock, but the script history lags behind
+        test.wallet.chain().knows(&test.lock);
+
+        assert!(matches!(test.pass().await.unwrap(), Pass::Wait));
+
+        assert!(matches!(test.events.try_recv(), Ok(Event::Transient(_))));
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Constructed(test.apollo.clone())
+        );
+        test.assert_nothing_left_the_wallet();
+    }
+
+    #[tokio::test]
+    async fn replaced_lock_abandons_constructed_apollo_and_releases_its_input() {
+        let mut test = PublisherTest::new(ApolloProgress::Constructed).await;
+        test.wallet.chain().conflicted = true;
+
+        assert!(matches!(test.pass().await.unwrap(), Pass::Done));
+
+        assert!(matches!(test.events.try_recv(), Ok(Event::Abandoned(_))));
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Abandoned(test.apollo.clone())
+        );
+        test.assert_outpoints_released();
+        assert!(test.wallet.chain().broadcasts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn replaced_lock_abandons_published_apollo() {
+        let test = PublisherTest::new(ApolloProgress::Published).await;
+        test.wallet.chain().conflicted = true;
+
+        assert!(matches!(test.pass().await.unwrap(), Pass::Done));
+
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Abandoned(test.apollo.clone())
+        );
+    }
+
+    #[tokio::test]
+    async fn lock_without_the_apollo_output_abandons_apollo() {
+        let lock = lock_tx(0);
+        let apollo = apollo_tx(&lock, 7, 1);
+        let mut test = PublisherTest::with_apollo(ApolloProgress::Constructed, lock, apollo).await;
+        test.see_lock();
+
+        assert!(matches!(test.pass().await.unwrap(), Pass::Done));
+
+        assert!(matches!(test.events.try_recv(), Ok(Event::Failed(_))));
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Abandoned(test.apollo.clone())
+        );
+        test.assert_outpoints_released();
+    }
+
+    #[tokio::test]
+    async fn apollo_with_two_inputs_is_abandoned() {
+        let lock = lock_tx(0);
+        let apollo = apollo_tx(&lock, APOLLO_VOUT, 2);
+        let mut test = PublisherTest::with_apollo(ApolloProgress::Constructed, lock, apollo).await;
+
+        assert!(matches!(test.pass().await.unwrap(), Pass::Done));
+
+        assert!(matches!(test.events.try_recv(), Ok(Event::Failed(_))));
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Abandoned(test.apollo.clone())
+        );
+        test.assert_outpoints_released();
+    }
+
+    #[tokio::test]
+    async fn substituted_lock_fails_the_pass_and_keeps_apollo_pending() {
+        let test = PublisherTest::new(ApolloProgress::Constructed).await;
+        test.wallet
+            .chain()
+            .transactions
+            .insert(test.lock.compute_txid(), Arc::new(lock_tx(1)));
+
+        assert!(test.pass().await.is_err());
+
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Constructed(test.apollo.clone())
+        );
+        test.assert_nothing_left_the_wallet();
+    }
+
+    #[tokio::test]
+    async fn seen_lock_publishes_constructed_apollo() {
+        let mut test = PublisherTest::new(ApolloProgress::Constructed).await;
+        test.see_lock();
+
+        assert!(matches!(test.pass().await.unwrap(), Pass::Advanced));
+
+        assert!(matches!(test.events.try_recv(), Ok(Event::Published(_))));
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Published(test.apollo.clone())
+        );
+        assert_eq!(
+            test.wallet.chain().broadcasts,
+            vec![test.apollo.compute_txid()]
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_broadcast_of_an_unseen_apollo_keeps_it_constructed() {
+        let test = PublisherTest::new(ApolloProgress::Constructed).await;
+        test.see_lock();
+        test.wallet.chain().rejects_broadcasts = true;
+
+        assert!(test.pass().await.is_err());
+
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Constructed(test.apollo.clone())
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_rebroadcast_of_a_known_apollo_is_ignored() {
+        let test = PublisherTest::new(ApolloProgress::Published).await;
+        test.see_lock();
+        {
+            let mut chain = test.wallet.chain();
+            chain.sees(&test.apollo, ScriptStatus::InMempool);
+            chain.rejects_broadcasts = true;
+        }
+
+        assert!(matches!(test.pass().await.unwrap(), Pass::Wait));
+
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Published(test.apollo.clone())
+        );
+    }
+
+    #[tokio::test]
+    async fn apollo_confirms_only_at_the_required_depth() {
+        let mut test = PublisherTest::new(ApolloProgress::Published).await;
+        test.see_lock();
+        test.wallet
+            .chain()
+            .sees(&test.apollo, confirmed(REQUIRED_CONFIRMATIONS - 1));
+
+        assert!(matches!(test.pass().await.unwrap(), Pass::Wait));
+        assert!(matches!(test.events.try_recv(), Ok(Event::Published(_))));
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Published(test.apollo.clone())
+        );
+        assert_eq!(test.wallet.chain().broadcasts.len(), 1);
+
+        test.wallet
+            .chain()
+            .sees(&test.apollo, confirmed(REQUIRED_CONFIRMATIONS));
+
+        assert!(matches!(test.pass().await.unwrap(), Pass::Done));
+        assert!(matches!(test.events.try_recv(), Ok(Event::Confirmed(_))));
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Confirmed(test.apollo.clone())
+        );
+        assert_eq!(test.wallet.chain().broadcasts.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn claimed_depth_without_the_transaction_does_not_confirm_apollo() {
+        let test = PublisherTest::new(ApolloProgress::Published).await;
+        test.see_lock();
+        let txid = test.apollo.compute_txid();
+        test.wallet
+            .chain()
+            .statuses
+            .insert(txid, confirmed(REQUIRED_CONFIRMATIONS));
+
+        assert!(test.pass().await.is_err());
+
+        assert_eq!(
+            test.progress().await,
+            ApolloProgress::Published(test.apollo.clone())
+        );
+    }
+
+    fn test_config(poll_interval: Duration, max_concurrent: usize) -> ApolloManagerConfig {
+        ApolloManagerConfig {
+            poll_interval,
+            rebroadcast_interval: Duration::from_millis(1),
+            max_concurrent,
+        }
+    }
+
+    /// Saves a swap with a constructed Apollo. Nothing of it is on the chain yet.
+    async fn insert_swap(
+        db: &Arc<dyn Database + Send + Sync>,
+        seed: u32,
+    ) -> (Uuid, Transaction, Transaction) {
+        let swap_id = Uuid::new_v4();
+        let lock = lock_tx(seed);
+        let apollo = apollo_tx(&lock, APOLLO_VOUT, 1);
+        db.insert_apollo_if_absent(swap_id, ApolloProgress::Constructed(apollo.clone()))
+            .await
+            .unwrap();
+
+        (swap_id, lock, apollo)
+    }
+
+    fn confirm_on_chain(wallet: &FakeWallet, lock: &Transaction, apollo: &Transaction) {
+        let mut chain = wallet.chain();
+        chain.sees(lock, ScriptStatus::InMempool);
+        chain.sees(apollo, confirmed(REQUIRED_CONFIRMATIONS));
+    }
+
+    async fn wait_for_status(
+        handle: &ApolloManagerHandle,
+        mut done: impl FnMut(&ApolloStatus) -> bool,
+    ) {
+        let mut status = handle.status();
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            status.wait_for(|status| done(status)),
+        )
+        .await
+        .expect("The Apollo status did not reach the expected value")
+        .expect("The Apollo manager stopped");
+    }
+
+    async fn wait_for_state(handle: &ApolloManagerHandle, swap_id: Uuid, state: ApolloSwapState) {
+        wait_for_status(handle, |status| {
+            status
+                .swaps
+                .iter()
+                .any(|swap| swap.swap_id == swap_id && swap.state == state)
+        })
+        .await;
+    }
+
+    async fn latest_progress(
+        db: &Arc<dyn Database + Send + Sync>,
+        swap_id: Uuid,
+    ) -> ApolloProgress {
+        db.get_apollo_progress(swap_id).await.unwrap().unwrap()
+    }
+
+    #[tokio::test]
+    async fn manager_confirms_a_pending_apollo_at_the_start() {
+        let wallet = Arc::new(FakeWallet::default());
+        let db = test_db().await;
+        let (swap_id, lock, apollo) = insert_swap(&db, 0).await;
+        confirm_on_chain(&wallet, &lock, &apollo);
+
+        let (handle, join) = spawn_apollo_manager(wallet, db.clone(), test_config(NO_POLL, 16));
+
+        wait_for_state(&handle, swap_id, ApolloSwapState::Confirmed).await;
+        assert_eq!(
+            latest_progress(&db, swap_id).await,
+            ApolloProgress::Confirmed(apollo)
+        );
+
+        handle.shutdown();
+        join.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn wake_finds_a_row_written_after_the_start() {
+        let wallet = Arc::new(FakeWallet::default());
+        let db = test_db().await;
+        // The lock of this swap stays unseen, so its publisher never ends and starts no new pass
+        let (first_swap_id, _, _) = insert_swap(&db, 0).await;
+        let (handle, _join) =
+            spawn_apollo_manager(wallet.clone(), db.clone(), test_config(NO_POLL, 16));
+        wait_for_state(&handle, first_swap_id, ApolloSwapState::Retrying).await;
+
+        let (swap_id, lock, apollo) = insert_swap(&db, 1).await;
+        confirm_on_chain(&wallet, &lock, &apollo);
+        handle.wake();
+
+        wait_for_state(&handle, swap_id, ApolloSwapState::Confirmed).await;
+    }
+
+    #[tokio::test]
+    async fn poll_finds_a_row_without_a_wake() {
+        let wallet = Arc::new(FakeWallet::default());
+        let db = test_db().await;
+        let (handle, _join) = spawn_apollo_manager(
+            wallet.clone(),
+            db.clone(),
+            test_config(Duration::from_millis(5), 16),
+        );
+
+        let (swap_id, lock, apollo) = insert_swap(&db, 0).await;
+        confirm_on_chain(&wallet, &lock, &apollo);
+
+        wait_for_state(&handle, swap_id, ApolloSwapState::Confirmed).await;
+    }
+
+    #[tokio::test]
+    async fn publishers_stay_below_the_limit_and_a_free_slot_starts_the_next_one() {
+        let wallet = Arc::new(FakeWallet::default());
+        let db = test_db().await;
+        let mut swaps = Vec::new();
+        for seed in 0..3 {
+            swaps.push(insert_swap(&db, seed).await);
+        }
+
+        let (handle, _join) =
+            spawn_apollo_manager(wallet.clone(), db.clone(), test_config(NO_POLL, 1));
+
+        wait_for_status(&handle, |status| status.swaps.len() == 3).await;
+        let waiting = handle
+            .status()
+            .borrow()
+            .swaps
+            .iter()
+            .filter(|swap| swap.state == ApolloSwapState::Waiting)
+            .count();
+        assert_eq!(waiting, 2);
+
+        for (_, lock, apollo) in &swaps {
+            confirm_on_chain(&wallet, lock, apollo);
+        }
+
+        for (swap_id, _, _) in &swaps {
+            wait_for_state(&handle, *swap_id, ApolloSwapState::Confirmed).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_broadcast_is_retried_until_it_works() {
+        let wallet = Arc::new(FakeWallet::default());
+        let db = test_db().await;
+        let (swap_id, lock, apollo) = insert_swap(&db, 0).await;
+        {
+            let mut chain = wallet.chain();
+            chain.sees(&lock, ScriptStatus::InMempool);
+            chain.rejects_broadcasts = true;
+        }
+
+        let (handle, _join) =
+            spawn_apollo_manager(wallet.clone(), db.clone(), test_config(NO_POLL, 16));
+
+        wait_for_state(&handle, swap_id, ApolloSwapState::Retrying).await;
+        assert_eq!(
+            latest_progress(&db, swap_id).await,
+            ApolloProgress::Constructed(apollo.clone())
+        );
+
+        {
+            let mut chain = wallet.chain();
+            chain.rejects_broadcasts = false;
+            chain.sees(&apollo, confirmed(REQUIRED_CONFIRMATIONS));
+        }
+
+        wait_for_state(&handle, swap_id, ApolloSwapState::Confirmed).await;
+    }
+
+    #[tokio::test]
+    async fn abandoned_apollo_gets_no_new_publisher() {
+        let wallet = Arc::new(FakeWallet::default());
+        let db = test_db().await;
+        let (swap_id, _, apollo) = insert_swap(&db, 0).await;
+        wallet.chain().conflicted = true;
+
+        let (handle, _join) = spawn_apollo_manager(
+            wallet.clone(),
+            db.clone(),
+            test_config(Duration::from_millis(5), 16),
+        );
+
+        wait_for_state(&handle, swap_id, ApolloSwapState::Abandoned).await;
+        // Many poll ticks pass here
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert_eq!(wallet.chain().conflict_checks, 1);
+        assert_eq!(
+            latest_progress(&db, swap_id).await,
+            ApolloProgress::Abandoned(apollo)
+        );
+    }
+
+    #[tokio::test]
+    async fn shutdown_keeps_the_row_and_the_next_manager_resumes_it() {
+        let wallet = Arc::new(FakeWallet::default());
+        let db = test_db().await;
+        let (swap_id, lock, apollo) = insert_swap(&db, 0).await;
+
+        let (handle, join) =
+            spawn_apollo_manager(wallet.clone(), db.clone(), test_config(NO_POLL, 16));
+        wait_for_state(&handle, swap_id, ApolloSwapState::Retrying).await;
+
+        handle.shutdown();
+        join.await.unwrap();
+        // A wake after the shutdown must neither block nor panic
+        handle.wake();
+
+        assert_eq!(
+            latest_progress(&db, swap_id).await,
+            ApolloProgress::Constructed(apollo.clone())
+        );
+
+        confirm_on_chain(&wallet, &lock, &apollo);
+        let (handle, _join) = spawn_apollo_manager(wallet, db, test_config(NO_POLL, 16));
+
+        wait_for_state(&handle, swap_id, ApolloSwapState::Confirmed).await;
+    }
+
+    #[tokio::test]
+    async fn wakes_never_block_on_a_full_queue() {
+        let wallet = Arc::new(FakeWallet::default());
+        let db = test_db().await;
+        let (handle, _join) =
+            spawn_apollo_manager(wallet.clone(), db.clone(), test_config(NO_POLL, 16));
+
+        // The test runs on one thread, so the manager cannot empty the queue in between
+        for _ in 0..COMMAND_QUEUE_SIZE * 10 {
+            handle.wake();
+        }
+
+        let (swap_id, lock, apollo) = insert_swap(&db, 0).await;
+        confirm_on_chain(&wallet, &lock, &apollo);
+        handle.wake();
+
+        wait_for_state(&handle, swap_id, ApolloSwapState::Confirmed).await;
+    }
+
+    /// A manager that does not run, so a test can call its handlers one at a time.
+    struct IdleManager {
+        manager: Manager,
+        _events: mpsc::Receiver<Event>,
+        _status: watch::Receiver<ApolloStatus>,
+    }
+
+    fn idle_manager(wallet: Arc<FakeWallet>, db: Arc<dyn Database + Send + Sync>) -> IdleManager {
+        let (events_tx, events) = mpsc::channel(EVENT_QUEUE_SIZE);
+        let (status_tx, status) = watch::channel(ApolloStatus::default());
+
+        IdleManager {
+            manager: Manager {
+                bitcoin_wallet: wallet,
+                db,
+                config: test_config(NO_POLL, 16),
+                events_tx,
+                status_tx,
+                tasks: JoinSet::new(),
+                running: HashMap::new(),
+                backoff: HashMap::new(),
+                poisoned: HashSet::new(),
+                reported_corrupt: HashSet::new(),
+                states: BTreeMap::new(),
+            },
+            _events: events,
+            _status: status,
+        }
+    }
+
+    #[tokio::test]
+    async fn panicking_publisher_restarts_after_a_growing_backoff() {
+        let db = test_db().await;
+        let (swap_id, _, _) = insert_swap(&db, 0).await;
+        let mut idle = idle_manager(Arc::new(FakeWallet::default()), db);
+        let manager = &mut idle.manager;
+
+        for seconds in [10, 20, 40, 80, 160, 300, 300] {
+            let abort = manager
+                .tasks
+                .spawn(async move { panic!("publisher panics") });
+            manager.running.insert(swap_id, abort);
+            let joined = manager.tasks.join_next().await.unwrap();
+
+            manager.on_task_end(joined);
+
+            assert!(manager.running.is_empty());
+            assert_eq!(manager.backoff[&swap_id].1, Duration::from_secs(seconds));
+            assert_eq!(manager.states[&swap_id], ApolloSwapState::Retrying);
+        }
+
+        manager.reconcile().await;
+        assert!(manager.running.is_empty());
+        assert_eq!(manager.states[&swap_id], ApolloSwapState::Retrying);
+
+        let (_, delay) = manager.backoff[&swap_id];
+        manager.backoff.insert(swap_id, (Instant::now(), delay));
+        manager.reconcile().await;
+        assert!(manager.running.contains_key(&swap_id));
+    }
+
+    #[tokio::test]
+    async fn failed_publisher_restarts_but_an_undecodable_row_does_not() {
+        let db = test_db().await;
+        let (failed, _, _) = insert_swap(&db, 0).await;
+        let (undecodable, _, _) = insert_swap(&db, 1).await;
+        let mut idle = idle_manager(Arc::new(FakeWallet::default()), db);
+        let manager = &mut idle.manager;
+
+        manager.on_task_end(Ok((failed, Err(anyhow!("The publisher stopped")))));
+        let decode_error = serde_json::from_str::<u32>("not a number").unwrap_err();
+        manager.on_task_end(Ok((
+            undecodable,
+            Err(anyhow::Error::new(decode_error).context("Failed to load the row")),
+        )));
+
+        assert!(manager.backoff.contains_key(&failed));
+        assert!(!manager.poisoned.contains(&failed));
+        assert!(manager.poisoned.contains(&undecodable));
+        assert!(!manager.backoff.contains_key(&undecodable));
+
+        manager
+            .backoff
+            .insert(failed, (Instant::now(), MIN_RESTART_BACKOFF));
+        manager.reconcile().await;
+
+        assert!(manager.running.contains_key(&failed));
+        assert!(!manager.running.contains_key(&undecodable));
+    }
+
+    #[tokio::test]
+    async fn only_progress_resets_the_restart_backoff() {
+        let db = test_db().await;
+        let mut idle = idle_manager(Arc::new(FakeWallet::default()), db);
+        let manager = &mut idle.manager;
+        let swap_id = Uuid::new_v4();
+        manager
+            .backoff
+            .insert(swap_id, (Instant::now(), MAX_RESTART_BACKOFF));
+
+        manager.on_event(Event::Transient(swap_id));
+        assert!(manager.backoff.contains_key(&swap_id));
+        assert_eq!(manager.states[&swap_id], ApolloSwapState::Retrying);
+
+        manager.on_event(Event::Published(swap_id));
+        assert!(!manager.backoff.contains_key(&swap_id));
+        assert_eq!(manager.states[&swap_id], ApolloSwapState::Published);
+    }
+
+    #[tokio::test]
+    async fn status_keeps_final_states_and_drops_rows_that_are_gone() {
+        let db = test_db().await;
+        let mut idle = idle_manager(Arc::new(FakeWallet::default()), db);
+        let manager = &mut idle.manager;
+        let confirmed = Uuid::new_v4();
+        let abandoned = Uuid::new_v4();
+        let gone = Uuid::new_v4();
+        manager.on_event(Event::Confirmed(confirmed));
+        manager.on_event(Event::Failed(abandoned));
+        manager.on_event(Event::Transient(gone));
+
+        manager.reconcile().await;
+
+        assert_eq!(manager.states[&confirmed], ApolloSwapState::Confirmed);
+        assert_eq!(manager.states[&abandoned], ApolloSwapState::Abandoned);
+        assert!(!manager.states.contains_key(&gone));
+    }
 }
