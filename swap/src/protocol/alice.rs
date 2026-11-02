@@ -90,18 +90,20 @@ pub(crate) async fn test_state3(wallet: &dyn BitcoinWallet) -> anyhow::Result<St
         false,
         &mut rng,
     );
+    let swap_id = Uuid::new_v4();
     let bob = bob::State0::new(
-        Uuid::new_v4(),
+        swap_id,
         &mut rng,
+        bob::SwapSecretKeys::derive([7; 32], swap_id),
         btc,
         xmr,
         CancelTimelock::new(env_config.bitcoin_cancel_timelock),
         PunishTimelock::new(env_config.bitcoin_punish_timelock),
         RemainingRefundTimelock::new(env_config.bitcoin_remaining_refund_timelock),
         wallet.new_address().await?,
-        env_config.monero_finality_confirmations,
         fee_limits,
         Amount::from_sat(1_000),
+        Some(Amount::from_sat(1_000)),
     );
 
     let (_, alice) = alice.receive(bob.next_message()?)?;

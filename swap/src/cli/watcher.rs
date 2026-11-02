@@ -66,7 +66,7 @@ impl Watcher {
         // Fetch the current Bitcoin balance
         let new_balance = self
             .wallet
-            .balance()
+            .balance_split()
             .await
             .context("Failed to fetch Bitcoin balance, retrying later")?;
 

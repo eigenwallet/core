@@ -6,6 +6,7 @@ use crate::monero;
 use crate::monero::MoneroAddressPool;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
 use crate::network::swap_setup::bob::NewSwap;
+use crate::protocol::bob::apollo::{self, Apollo, ApolloEncryptionKey, ApolloManagerHandle};
 use crate::protocol::bob::common::{
     InfallibleVerifyXmrLockTransaction, InfallibleXmrRedeemable, RecvTransferProof,
     WaitForBtcRedeem, WaitForIncomingXmrLockTransaction, WaitForXmrLockTransactionConfirmation,
@@ -28,9 +29,14 @@ use uuid::Uuid;
 
 const PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS: u64 = 90;
 
-// Alice keeps the swap setup open while the user decides
+/// Budget for fetching the Monero height and building the Apollo transaction before the approval.
+const PRE_BTC_LOCK_PREPARATION_TIMEOUT: Duration = Duration::from_secs(60);
+
+// Alice keeps the swap setup open while we prepare and the user decides.
+// The remainder is left for committing the setup.
 const _: () = assert!(
-    PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS < swap_p2p::defaults::SWAP_SETUP_DECISION_TIMEOUT.as_secs()
+    PRE_BTC_LOCK_PREPARATION_TIMEOUT.as_secs() + PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS + 30
+        <= swap_p2p::defaults::SWAP_SETUP_DECISION_TIMEOUT.as_secs()
 );
 
 /// How often we re-publish the Monero redeem transaction while waiting for it to confirm.
@@ -42,6 +48,61 @@ const BTC_REFUND_REPUBLISH_INTERVAL: Duration = Duration::from_secs(60);
 
 /// How often we manually check for tx_redeem while also waiting on the wallet subscription.
 const BTC_REDEEM_FORCE_LOOKUP_INTERVAL_SECS: u64 = 120;
+
+/// Checks whether Alice redeemed the Bitcoin and, if so, finds the Monero lock transaction.
+///
+/// A swap recovered from an Apollo transaction has no transfer proof.
+/// This function scans for the lock transaction with the keys that `TxRedeem` reveals.
+///
+/// Returns `None` if `TxRedeem` is not on chain or `state` cannot construct it.
+async fn check_for_tx_redeem_and_xmr_lock(
+    state: &bob::State6,
+    bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
+    monero_wallet: &monero::Wallets,
+) -> Result<Option<bob::State5>> {
+    let Some(s_a) = state.check_for_tx_redeem(bitcoin_wallet).await? else {
+        return Ok(None);
+    };
+
+    tracing::info!("Alice redeemed the Bitcoin, scanning for the Monero lock transaction");
+
+    let (public_spend_key, private_view_key) = state.xmr_view_keys(&s_a);
+    let lock_tx_hash = monero_wallet
+        .wait_for_incoming_transfer(
+            public_spend_key,
+            private_view_key,
+            state.xmr,
+            state.monero_wallet_restore_blockheight,
+        )
+        .await
+        .context("Failed to find the Monero lock transaction after Alice redeemed the Bitcoin")?;
+
+    Ok(Some(state.redeemed(
+        s_a,
+        monero::TransferProofMaybeWithTxKey::new_without_tx_key(lock_tx_hash),
+    )))
+}
+
+/// Polls until Alice's redeem is on chain, then returns the result of [`check_for_tx_redeem_and_xmr_lock`].
+/// Logs errors and retries on the next poll.
+/// Checks once right away, so a redeem that is already on chain is found without delay.
+async fn wait_for_tx_redeem_and_xmr_lock(
+    state: &bob::State6,
+    bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
+    monero_wallet: &monero::Wallets,
+) -> bob::State5 {
+    loop {
+        match check_for_tx_redeem_and_xmr_lock(state, bitcoin_wallet, monero_wallet).await {
+            Ok(Some(state5)) => return state5,
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(%error, "Failed to check for tx_redeem, will retry");
+            }
+        }
+
+        tokio::time::sleep(Duration::from_secs(BTC_REDEEM_FORCE_LOOKUP_INTERVAL_SECS)).await;
+    }
+}
 
 /// Identifies states that have already processed the transfer proof.
 /// This is used to be able to acknowledge the transfer proof multiple times (if it was already processed).
@@ -79,7 +140,7 @@ pub fn is_run_at_most_once(state: &BobState) -> bool {
 
 #[allow(clippy::too_many_arguments)]
 pub async fn run(swap: bob::Swap) -> Result<BobState> {
-    run_until(swap, is_complete).await
+    run_until(swap, is_swap_complete).await
 }
 
 pub async fn run_until(
@@ -97,8 +158,10 @@ pub async fn run_swap_until(
 ) -> Result<BobState> {
     let mut current_state = swap.state.clone();
 
-    while !is_target_state(&current_state) {
-        let next_state = next_state(
+    // A finished swap stays in its final state. Without the completion check,
+    // the loop never ends for a target state that the swap already passed.
+    while !is_target_state(&current_state) && !is_swap_complete(&current_state) {
+        let next_state = advance_state(
             swap.id,
             current_state.clone(),
             &mut swap.event_loop_handle,
@@ -106,6 +169,9 @@ pub async fn run_swap_until(
             swap.bitcoin_wallet.clone(),
             swap.monero_wallet.clone(),
             swap.monero_receive_pool.clone(),
+            &swap.apollo_encryption_key,
+            &swap.secret_keys,
+            swap.apollo.as_ref(),
             swap.event_emitter.clone(),
             swap.env_config,
         )
@@ -145,7 +211,7 @@ pub async fn run_swap_until(
 // TODO: We have a lot of nested retry logic here which is not very nice.
 // We retry inside the EventLoop and we also retry inside the state machine.
 #[allow(clippy::too_many_arguments)]
-async fn next_state(
+async fn advance_state(
     swap_id: Uuid,
     state: BobState,
     event_loop_handle: &mut SwapEventLoopHandle,
@@ -153,6 +219,9 @@ async fn next_state(
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
     monero_receive_pool: MoneroAddressPool,
+    apollo_encryption_key: &ApolloEncryptionKey,
+    secret_keys: &swap_machine::bob::SwapSecretKeys,
+    apollo: Option<&ApolloManagerHandle>,
     event_emitter: Option<TauriHandle>,
     env_config: env::Config,
 ) -> Result<BobState> {
@@ -167,6 +236,7 @@ async fn next_state(
             btc_amount,
             change_address,
             tx_lock_fee,
+            tx_apollo_fee,
         } => {
             // Verify the Monero daemon RPC is reachable before starting the swap.
             event_emitter.emit_swap_progress_event(
@@ -189,7 +259,6 @@ async fn next_state(
 
             let rate = bitcoin::SwapFeeRate::from_estimate(bitcoin_wallet.swap_fee_rate().await?)?;
             let fee_limits = swap_machine::common::swap_fee_limits(rate, btc_amount)?;
-
             // Emit an event to tauri that we are negotiating with the maker to lock the Bitcoin
             event_emitter.emit_swap_progress_event(
                 swap_id,
@@ -201,9 +270,11 @@ async fn next_state(
             let state2 = event_loop_handle
                 .setup_swap(NewSwap {
                     swap_id,
+                    secret_keys: secret_keys.clone(),
                     btc: btc_amount,
                     tx_lock_fee,
                     fee_limits,
+                    tx_apollo_fee,
                     bitcoin_refund_address: change_address,
                 })
                 .await?;
@@ -240,14 +311,96 @@ async fn next_state(
                 .context("Failed to get lock amount")?
                 .value;
 
+            let apollo_enabled = state3.tx_lock.has_apollo_output();
             let details = LockBitcoinDetails {
                 btc_lock_amount,
                 btc_network_fee,
                 btc_amnesty_amount,
                 xmr_receive_amount,
-                monero_receive_pool,
+                monero_receive_pool: monero_receive_pool.clone(),
                 swap_id,
                 has_full_refund_signature: state3.refund_signatures.has_full_refund_encsig(),
+                btc_apollo_fee: apollo_enabled
+                    .then(|| state3.tx_lock.tx_apollo_fee())
+                    .transpose()?,
+            };
+
+            // Prepare the Apollo transaction before the approval and before we commit to Alice.
+            // Alice learns about the swap only when we can also lock. The signed lock transaction exists here.
+            let prepared = tokio::time::timeout(PRE_BTC_LOCK_PREPARATION_TIMEOUT, async {
+                // Record the current monero wallet block height so we don't have to scan from
+                // block 0 once we create the redeem wallet.
+                // This has to be done **before** the Bitcoin is locked in order to ensure that
+                // if Bob goes offline the recorded wallet-height is correct.
+                // If we only record this later, it can happen that Bob publishes the Bitcoin
+                // transaction, goes offline, while offline Alice publishes Monero.
+                // If the Monero transaction gets confirmed before Bob comes online again then
+                // Bob would record a wallet-height that is past the lock transaction height,
+                // which can lead to the wallet not detect the transaction.
+                let monero_wallet_restore_blockheight = retry(
+                    "Fetch current Monero blockheight",
+                    || async {
+                        monero_wallet
+                            .direct_rpc_block_height()
+                            .await
+                            .map_err(backoff::Error::transient)
+                    },
+                    PRE_BTC_LOCK_PREPARATION_TIMEOUT,
+                    None,
+                )
+                .await
+                .context("Failed to fetch current Monero blockheight")?;
+
+                tracing::debug!(
+                    %monero_wallet_restore_blockheight,
+                    "Recording monero wallet restore blockheight",
+                );
+
+                let monero_wallet_restore_blockheight = BlockHeight {
+                    height: monero_wallet_restore_blockheight,
+                };
+                if !apollo_enabled {
+                    return Ok((monero_wallet_restore_blockheight, None));
+                }
+                let payload = Apollo::new(
+                    swap_id,
+                    db.get_peer_id(swap_id).await?,
+                    monero_wallet_restore_blockheight,
+                    monero_receive_pool,
+                    &state3,
+                    secret_keys,
+                )?
+                .encrypt(apollo_encryption_key)
+                .context("Failed to prepare Apollo before locking Bitcoin")?;
+
+                // The wallet does not know the lock transaction yet.
+                // A failure to build the Apollo transaction leaves no unconfirmed transaction behind.
+                let apollo_vout = state3.tx_lock.apollo_output_vout()?;
+                let apollo_tx = apollo::build_tx_apollo(
+                    bitcoin_wallet.as_ref(),
+                    &signed_tx,
+                    apollo_vout,
+                    payload,
+                )
+                .await
+                .context("Failed to construct Apollo before locking Bitcoin")?;
+
+                Ok::<_, anyhow::Error>((monero_wallet_restore_blockheight, Some(apollo_tx)))
+            })
+            .await
+            .context("Timed out preparing the swap before the approval")
+            .and_then(|prepared| prepared);
+            let (monero_wallet_restore_blockheight, apollo_tx) = match prepared {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    if let Err(abort_error) = event_loop_handle.abort_swap_setup().await {
+                        tracing::warn!(
+                            ?abort_error,
+                            "Failed to tell Alice that we cannot continue the swap"
+                        );
+                    }
+                    return Err(error);
+                }
             };
 
             // We request approval before publishing the Bitcoin lock transaction,
@@ -259,6 +412,13 @@ async fn next_state(
 
             match approval_result {
                 Ok(true) => {
+                    // Emit this event only after the approval. The GUI shows the approval
+                    // on the setup page, so the page must not change while the approval is pending.
+                    event_emitter.emit_swap_progress_event(
+                        swap_id,
+                        TauriSwapProgressEvent::RetrievingMoneroBlockheight,
+                    );
+
                     // Without the confirmation, Alice might not know the swap
                     // and could not refund it early. We would then have to wait for the cancel timelock.
                     if let Err(error) = event_loop_handle.commit_swap_setup().await {
@@ -276,49 +436,11 @@ async fn next_state(
                         + env_config.bitcoin_lock_mempool_timeout / 2)
                         .unix_timestamp();
 
-                    tracing::debug!(
-                        "User approved swap offer. Fetching current Monero blockheight."
-                    );
-
-                    // Record the current monero wallet block height so we don't have to scan from
-                    // block 0 once we create the redeem wallet.
-                    // This has to be done **before** the Bitcoin is locked in order to ensure that
-                    // if Bob goes offline the recorded wallet-height is correct.
-                    // If we only record this later, it can happen that Bob publishes the Bitcoin
-                    // transaction, goes offline, while offline Alice publishes Monero.
-                    // If the Monero transaction gets confirmed before Bob comes online again then
-                    // Bob would record a wallet-height that is past the lock transaction height,
-                    // which can lead to the wallet not detect the transaction.
-                    event_emitter.emit_swap_progress_event(
-                        swap_id,
-                        TauriSwapProgressEvent::RetrievingMoneroBlockheight,
-                    );
-
-                    let monero_wallet_restore_blockheight = retry(
-                        "Fetch current Monero blockheight",
-                        || async {
-                            monero_wallet
-                                .direct_rpc_block_height()
-                                .await
-                                .map_err(backoff::Error::transient)
-                        },
-                        Duration::from_secs(120),
-                        None,
-                    )
-                    .await
-                    .context("Failed to fetch current Monero blockheight")?;
-
-                    tracing::debug!(
-                        %monero_wallet_restore_blockheight,
-                        "Recording monero wallet restore blockheight",
-                    );
-
                     BobState::BtcLockReadyToPublish {
                         btc_lock_tx_signed: signed_tx,
+                        apollo_tx,
                         state3,
-                        monero_wallet_restore_blockheight: BlockHeight {
-                            height: monero_wallet_restore_blockheight,
-                        },
+                        monero_wallet_restore_blockheight,
                         publish_deadline: Some(publish_deadline),
                         broadcast_attempted: false,
                     }
@@ -346,6 +468,7 @@ async fn next_state(
         // Monero restore height has been recorded
         BobState::BtcLockReadyToPublish {
             btc_lock_tx_signed,
+            apollo_tx,
             state3,
             monero_wallet_restore_blockheight,
             publish_deadline,
@@ -364,6 +487,7 @@ async fn next_state(
             // public, so we can no longer abort the swap.
             BobState::BtcLockReadyToPublish {
                 btc_lock_tx_signed,
+                apollo_tx,
                 state3,
                 monero_wallet_restore_blockheight,
                 publish_deadline,
@@ -372,6 +496,7 @@ async fn next_state(
         }
         BobState::BtcLockReadyToPublish {
             btc_lock_tx_signed,
+            apollo_tx,
             state3,
             monero_wallet_restore_blockheight,
             broadcast_attempted: true,
@@ -379,6 +504,15 @@ async fn next_state(
         } => {
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcLockPublishInflight);
+
+            // Save the progress row before the lock transaction can become public.
+            // A resumed swap finds the progress row that it saved before the crash.
+            // If `apollo_tx` is `None`, the swap has no Apollo and proceeds without a backup.
+            if let Some(apollo_tx) = &apollo_tx {
+                apollo::persist_constructed_apollo(db.as_ref(), swap_id, apollo_tx).await?;
+                // Nothing else may spend the Apollo output. Otherwise the Apollo transaction becomes invalid.
+                bitcoin_wallet.reserve_outpoints(vec![apollo_tx.input[0].previous_output]);
+            }
 
             retry(
                 "Publish Bitcoin lock transaction",
@@ -395,6 +529,12 @@ async fn next_state(
             )
             .await
             .context("Failed to publish Bitcoin lock transaction")?;
+
+            // Wake the manager after the broadcast, so its first pass finds the lock transaction.
+            // If the broadcast failed but still reached the network, the next poll finds the row.
+            if let Some(apollo) = apollo {
+                apollo.wake();
+            }
 
             BobState::BtcLocked {
                 state3,
@@ -483,12 +623,23 @@ async fn next_state(
                     monero_wallet_restore_blockheight,
                 );
 
+            // Alice can redeem while we have lost the state of a swap recovered from an Apollo transaction.
+            // In that case we claim the Monero at once and do not wait for the cancel timelock.
+            // This runs as a branch, so a failing lookup never blocks the other branches.
+            let state6 = state3.cancel(monero_wallet_restore_blockheight);
+            let wait_for_tx_redeem =
+                wait_for_tx_redeem_and_xmr_lock(&state6, &*bitcoin_wallet, &monero_wallet);
+
             // Wait until any of these things happens:
+            // - Alice redeems the Bitcoin
             // - We see the early refund transaction published by Alice
             // - Alice sends us the XMR transfer proof
             // - We detect the incoming Monero lock transaction on the view only wallet
             // - Cancel timelock expires
             select! {
+                state5 = wait_for_tx_redeem => {
+                    BobState::BtcRedeemed(state5)
+                },
                 // Wait for Alice to publish the early refund transaction
                 _ = tx_early_refund_status.wait_until_seen() => {
                     BobState::BtcEarlyRefundPublished(state3.cancel(monero_wallet_restore_blockheight))
@@ -902,7 +1053,7 @@ async fn next_state(
                 },
             );
 
-            retry(
+            let already_swept = retry(
                 "Publishing Monero redeem transaction",
                 || async {
                     let is_present = monero_wallet
@@ -913,23 +1064,62 @@ async fn next_state(
 
                     if is_present {
                         tracing::info!(%swap_id, %xmr_redeem_tx_hash, "Monero redeem transaction is already present on chain, skipping publish");
-                        return Ok(());
+                        return Ok(false);
                     }
 
-                    monero_wallet
+                    let Err(publish_error) = monero_wallet
                         .rpc_client()
                         .await
                         .map_err(backoff::Error::transient)?
                         .publish_transaction(&xmr_redeem_tx)
                         .await
-                        .context("Failed to publish Monero redeem transaction")
-                        .map_err(backoff::Error::transient)
+                    else {
+                        return Ok(false);
+                    };
+
+                    // The daemon returns no typed double-spend error, so we check the chain.
+                    // A different confirmed transaction that spent the lock output means
+                    // the Monero is already swept, for example by an earlier run of this swap.
+                    if monero_wallet
+                        .has_confirmed_double_spent(
+                            &xmr_redeem_tx,
+                            state.monero_wallet_restore_blockheight,
+                            env_config.monero_finality_confirmations,
+                        )
+                        .await
+                        .context("Failed to check whether the Monero lock output was already swept")
+                        .map_err(backoff::Error::transient)?
+                    {
+                        return Ok(true);
+                    }
+
+                    Err(backoff::Error::transient(
+                        anyhow::Error::from(publish_error)
+                            .context("Failed to publish Monero redeem transaction"),
+                    ))
                 },
                 None,
                 None,
             )
             .await
             .context("Failed to publish Monero redeem transaction")?;
+
+            if already_swept {
+                tracing::warn!(%swap_id, "Monero lock output was already swept by a confirmed transaction, treating swap as redeemed");
+
+                // The sweeping transaction is not ours, so no transaction IDs exist to show.
+                event_emitter.emit_swap_progress_event(
+                    swap_id,
+                    TauriSwapProgressEvent::XmrRedeemed {
+                        xmr_redeem_txids: vec![],
+                        xmr_receive_pool: monero_receive_pool.clone(),
+                    },
+                );
+
+                return Ok(BobState::XmrRedeemed {
+                    tx_lock_id: state.tx_lock_id(),
+                });
+            }
 
             tracing::info!(%swap_id, %xmr_redeem_tx_hash, "Published Monero redeem transaction");
 
@@ -1012,24 +1202,24 @@ async fn next_state(
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::CancelTimelockExpired);
 
             let bitcoin_wallet_for_retry = bitcoin_wallet.clone();
+            let monero_wallet_for_retry = monero_wallet.clone();
             let state6_for_retry = state6.clone();
             retry(
-                "Check for tx_early_refund and tx_cancel then publish tx_cancel if necessary",
+                "Check for tx_redeem, tx_early_refund and tx_cancel then publish tx_cancel if necessary",
                 || {
                     let bitcoin_wallet = bitcoin_wallet_for_retry.clone();
+                    let monero_wallet = monero_wallet_for_retry.clone();
                     let state6 = state6_for_retry.clone();
                     async move {
 
-                    // TODO: Uncomment this once we have the required data in State6
                     // First we check if tx_redeem is present on the chain
-                    // 
-                    // We may have sent the enc sig close to the timelock expiration,
-                    // never received the confirmation and now the cancel timelock has expired.
                     //
-                    // Alice may still have received the enc sig even if we are in this state
-                    // if state6.check_for_tx_redeem(&*bitcoin_wallet).await.map_err(backoff::Error::transient)?.is_some() {
-                    //     return Ok(BobState::BtcRedeemed(state6));
-                    // }
+                    // Alice can redeem a swap recovered from an Apollo transaction while we have lost our state.
+                    // A state saved before the redeem fields existed cannot construct `TxRedeem`.
+                    // See `State6::check_for_tx_redeem`.
+                    if let Some(state5) = check_for_tx_redeem_and_xmr_lock(&state6, &*bitcoin_wallet, &monero_wallet).await.context("Failed to check for existence of tx_redeem before cancelling").map_err(backoff::Error::transient)? {
+                        return Ok(BobState::BtcRedeemed(state5));
+                    }
 
                     // TODO: Do these in parallel to speed up
 
@@ -1056,6 +1246,33 @@ async fn next_state(
             .expect("we never stop retrying to check for tx_redeem, tx_early_refund and tx_cancel then publishing tx_cancel if necessary")
         }
         BobState::BtcCancelPublished(state) => {
+            // Alice can redeem before we publish `tx_cancel`, for example in a swap recovered from an Apollo transaction.
+            let bitcoin_wallet_for_retry = bitcoin_wallet.clone();
+            let monero_wallet_for_retry = monero_wallet.clone();
+            let state_for_retry = state.clone();
+            let redeem_state = retry(
+                "Checking for Bitcoin redeem transaction after tx_cancel was published",
+                || {
+                    let bitcoin_wallet = bitcoin_wallet_for_retry.clone();
+                    let monero_wallet = monero_wallet_for_retry.clone();
+                    let state = state_for_retry.clone();
+
+                    async move {
+                        check_for_tx_redeem_and_xmr_lock(&state, &*bitcoin_wallet, &monero_wallet)
+                            .await
+                            .context("Failed to check for existence of tx_redeem after tx_cancel was published")
+                            .map_err(backoff::Error::transient)
+                    }
+                },
+                None,
+                None,
+            )
+            .await?;
+
+            if let Some(state5) = redeem_state {
+                return Ok(BobState::BtcRedeemed(state5));
+            }
+
             let btc_cancel_txid = state.construct_tx_cancel()?.txid();
             let tx_early_refund = state.construct_tx_early_refund();
             let tx_early_refund_txid = tx_early_refund.txid();
@@ -1109,6 +1326,10 @@ async fn next_state(
                     tracing::info!(%tx_early_refund_txid, "Alice refunded us our Bitcoin early while waiting for TxCancel confirmation");
 
                     BobState::BtcEarlyRefunded(state)
+                },
+                // Alice can redeem after the check above, when `tx_cancel` and `tx_redeem` race.
+                state5 = wait_for_tx_redeem_and_xmr_lock(&state, &*bitcoin_wallet, &monero_wallet) => {
+                    BobState::BtcRedeemed(state5)
                 },
             }
         }

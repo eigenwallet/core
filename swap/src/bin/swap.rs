@@ -67,6 +67,7 @@ mod tests {
                 || async { Ok(()) },
                 None,
                 SWAP_ID.parse().unwrap(),
+                None,
                 approval_always,
             ),
         )
@@ -93,6 +94,7 @@ mod tests {
             || async { Ok(()) },
             None,
             SWAP_ID.parse().unwrap(),
+            None,
             approval_always,
         )
         .await
@@ -128,6 +130,7 @@ mod tests {
             || async { Ok(()) },
             None,
             SWAP_ID.parse().unwrap(),
+            None,
             approval_always,
         )
         .await
@@ -163,6 +166,7 @@ mod tests {
             || async { Ok(()) },
             None,
             SWAP_ID.parse().unwrap(),
+            None,
             approval_always,
         )
         .await
@@ -194,6 +198,7 @@ mod tests {
             || async { Ok(()) },
             None,
             SWAP_ID.parse().unwrap(),
+            None,
             approval_always,
         )
         .await
@@ -225,6 +230,7 @@ mod tests {
             || async { Ok(()) },
             None,
             SWAP_ID.parse().unwrap(),
+            None,
             approval_always,
         )
         .await
@@ -260,6 +266,7 @@ mod tests {
             || async { Ok(()) },
             None,
             SWAP_ID.parse().unwrap(),
+            None,
             approval_always,
         )
         .await
@@ -300,6 +307,7 @@ mod tests {
                 || async { Ok(()) },
                 None,
                 SWAP_ID.parse().unwrap(),
+                None,
                 approval_always,
             ),
         )
@@ -346,6 +354,7 @@ mod tests {
                 || async { Ok(()) },
                 None,
                 SWAP_ID.parse().unwrap(),
+                None,
                 approval_always,
             ),
         )
@@ -378,6 +387,7 @@ mod tests {
             || async { Ok(()) },
             None,
             SWAP_ID.parse().unwrap(),
+            None,
             approval_always,
         )
         .await
