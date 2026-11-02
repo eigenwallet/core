@@ -85,6 +85,7 @@ impl IntoIterator for BitcoindArgs {
             format!("-rpcport={}", RPC_PORT),
             format!("-port={}", PORT),
             "-rest".to_string(),
+            "-datacarriersize=10000".to_string(),
         ];
 
         args.into_iter()
