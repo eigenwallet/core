@@ -1436,7 +1436,7 @@ impl State6 {
 
     /// Looks for Alice's `TxRedeem` on chain and returns the Monero key share `s_a` that it reveals.
     ///
-    /// Returns `None` if `TxRedeem` is not on chain.
+    /// Returns `None` if `TxRedeem` is not on chain or the transaction reveals no key.
     /// Also returns `None`, without a chain query, if this state lacks the data
     /// to construct `TxRedeem` (states saved before these fields existed).
     pub async fn check_for_tx_redeem(
@@ -1459,7 +1459,16 @@ impl State6 {
             return Ok(None);
         };
 
-        self.recover_s_a(tx_redeem_candidate).map(Some)
+        Ok(self.s_a_from_redeem_candidate(tx_redeem_candidate))
+    }
+
+    fn s_a_from_redeem_candidate(
+        &self,
+        tx_redeem_candidate: Arc<Transaction>,
+    ) -> Option<monero_oxide_ext::PrivateKey> {
+        self.recover_s_a(tx_redeem_candidate)
+            .inspect_err(|error| tracing::warn!(?error, "Skipping a TxRedeem candidate"))
+            .ok()
     }
 
     /// Resolves when Alice's `TxRedeem` is on chain.

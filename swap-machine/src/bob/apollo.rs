@@ -396,6 +396,23 @@ mod tests {
     use crate::bob::BobState;
     use swap_core::monero::BlockHeight;
 
+    #[test]
+    fn redeem_candidate_that_reveals_no_key_is_skipped() {
+        let state = test_support::state3().cancel(BlockHeight { height: 7 });
+        let candidate = Transaction {
+            version: ::bitcoin::transaction::Version::TWO,
+            lock_time: ::bitcoin::absolute::LockTime::ZERO,
+            input: vec![],
+            output: vec![],
+        };
+
+        assert!(
+            state
+                .s_a_from_redeem_candidate(std::sync::Arc::new(candidate))
+                .is_none()
+        );
+    }
+
     /// Rows of the released version lack `apollo_tx`, `publish_deadline` and `broadcast_attempted`.
     #[test]
     fn released_btc_lock_ready_to_publish_row_still_decodes() {
