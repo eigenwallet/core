@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+- Add optional `bitcoind` RPC backend for the Bitcoin wallet (bounty #747). Users can now sync directly from their own full node instead of relying on Electrum servers. Configure via `WalletConfig::rpc_backend`.
 ## [Unreleased]
 
 - Add Apollo, an encrypted on-chain backup that lets you recover swaps started after you enable it from your wallet seed if you lose your local swap data.
