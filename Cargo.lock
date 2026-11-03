@@ -6534,6 +6534,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "swap-serde",
+ "tempfile",
  "tokio",
  "tokio-rustls 0.26.4",
  "tor-rtcompat",
