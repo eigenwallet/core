@@ -1,6 +1,6 @@
 [package]
 name = "swap"
-version = "4.16.1"
+version = "5.0.2"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2024"
 description = "XMR/BTC trustless atomic swaps."
@@ -39,6 +39,7 @@ bincode = "1"
 thiserror = { workspace = true }
 
 # Crypto / Decoding / Encoding
+chacha20poly1305 = "0.10"
 curve25519-dalek = { workspace = true, features = ["rand_core"] }
 data-encoding = { workspace = true }
 ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
@@ -122,15 +123,18 @@ sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 
 [dev-dependencies]
 bitcoin-harness = { git = "https://github.com/eigenwallet/bitcoin-harness-rs", branch = "master" }
+bitcoin-wallet = { path = "../bitcoin-wallet", features = ["test-support"] }
 data-encoding = { workspace = true }
 mockito = "1.4"
 monero-harness = { path = "../monero-harness" }
 proptest = "1"
+swap-machine = { path = "../swap-machine", features = ["test-support"] }
 swap-p2p = { path = "../swap-p2p", features = ["test-support"] }
 tempfile = "3"
 testcontainers = "0.15"
 tokio = { workspace = true, features = ["test-util"] }
 tracing-ext = { path = "../tracing-ext" }
+utxo-ownership-proof = { path = "../utxo-ownership-proof" }
 
 [build-dependencies]
 anyhow = { workspace = true }

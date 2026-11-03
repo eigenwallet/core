@@ -1,6 +1,11 @@
 import { Box, SxProps, Tooltip, Typography } from "@mui/material";
 import { useAppSelector, useSettings } from "store/hooks";
-import { getMarkup, piconerosToXmr, satsToBtc } from "utils/conversionUtils";
+import {
+  getExchangeRate,
+  getMarkup,
+  piconerosToXmr,
+  satsToBtc,
+} from "utils/conversionUtils";
 
 type Amount = number | null | undefined;
 
@@ -165,7 +170,7 @@ export function MoneroBitcoinExchangeRateFromAmounts({
   piconeroAmount: number;
   displayMarkup?: boolean;
 }) {
-  const rate = satsToBtc(satsAmount) / piconerosToXmr(piconeroAmount);
+  const rate = getExchangeRate(satsAmount, piconeroAmount);
 
   return (
     <MoneroBitcoinExchangeRate rate={rate} displayMarkup={displayMarkup} />

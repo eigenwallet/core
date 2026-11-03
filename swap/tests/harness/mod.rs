@@ -23,9 +23,11 @@ use swap::database::{AccessMode, SqliteDatabase};
 use swap::monero::wallet::no_listener;
 use swap::monero::{MoneroAddressPool, Wallets};
 use swap::network::rendezvous::XmrBtcNamespace;
+use swap::network::swap_setup::verification::LockInputVerifier;
 use swap::network::swarm;
 use swap::protocol::alice::{AliceState, HermesFundingPolicy, Swap, TipConfig};
 use swap::protocol::bob::BobState;
+use swap::protocol::bob::apollo::{ApolloManagerConfig, ApolloManagerHandle, spawn_apollo_manager};
 use swap::protocol::{Database, State, alice, bob};
 use swap::seed::Seed;
 use swap::{asb, cli, monero};
@@ -48,9 +50,56 @@ use uuid::Uuid;
 /// If use_subaddress is true, we will use a subaddress for the developer tip. We do this
 /// because using a subaddress changes things about the tx keys involved
 pub async fn setup_test<T, F, C>(
+    config: C,
+    developer_tip_ratio: Option<(Decimal, bool)>,
+    refund_policy: Option<RefundPolicy>,
+    testfn: T,
+) where
+    T: Fn(TestContext) -> F,
+    F: Future<Output = Result<()>>,
+    C: GetConfig,
+{
+    setup_test_with_bob_funding(
+        config,
+        developer_tip_ratio,
+        refund_policy,
+        BobBitcoinFunding::OnChain,
+        testfn,
+    )
+    .await;
+}
+
+pub async fn setup_test_with_fake_bob_bitcoin_utxo<T, F, C>(
+    config: C,
+    developer_tip_ratio: Option<(Decimal, bool)>,
+    refund_policy: Option<RefundPolicy>,
+    testfn: T,
+) where
+    T: Fn(TestContext) -> F,
+    F: Future<Output = Result<()>>,
+    C: GetConfig,
+{
+    setup_test_with_bob_funding(
+        config,
+        developer_tip_ratio,
+        refund_policy,
+        BobBitcoinFunding::Fake,
+        testfn,
+    )
+    .await;
+}
+
+#[derive(Clone, Copy)]
+enum BobBitcoinFunding {
+    OnChain,
+    Fake,
+}
+
+async fn setup_test_with_bob_funding<T, F, C>(
     _config: C,
     developer_tip_ratio: Option<(Decimal, bool)>,
     refund_policy: Option<RefundPolicy>,
+    bob_bitcoin_funding: BobBitcoinFunding,
     testfn: T,
 ) where
     T: Fn(TestContext) -> F,
@@ -220,18 +269,29 @@ ask_spread = "0"
     let bob_seed = Seed::random().unwrap();
     let bob_starting_balances = StartingBalances::new(btc_amount * 10, monero::Amount::ZERO, None);
     let bob_monero_dir = TempDir::new().unwrap().path().join("bob-monero-wallets");
+    let mut bob_wallet_starting_balances = bob_starting_balances.clone();
+    if matches!(bob_bitcoin_funding, BobBitcoinFunding::Fake) {
+        bob_wallet_starting_balances.btc = bitcoin::Amount::ZERO;
+    }
+
     let (bob_bitcoin_wallet, bob_monero_wallet) = init_test_wallets(
         MONERO_WALLET_NAME_BOB,
         containers.bitcoind_url.clone(),
         &monero,
         &containers._monerod_container,
         bob_monero_dir,
-        bob_starting_balances.clone(),
+        bob_wallet_starting_balances,
         electrs_rpc_port,
         &bob_seed,
         env_config,
     )
     .await;
+
+    if matches!(bob_bitcoin_funding, BobBitcoinFunding::Fake) {
+        bob_bitcoin_wallet
+            .insert_fake_utxo(bob_starting_balances.btc)
+            .await;
+    }
 
     let bob_donation_seed = Seed::random().unwrap();
     let bob_donation_starting_balances =
@@ -254,13 +314,15 @@ ask_spread = "0"
     .await;
 
     let bob_params = BobParams {
-        seed: Seed::random().unwrap(),
+        seed: bob_seed.clone(),
+        electrum_rpc_port: electrs_rpc_port,
         db_path: NamedTempFile::new().unwrap().path().to_path_buf(),
         bitcoin_wallet: bob_bitcoin_wallet.clone(),
         monero_wallet: bob_monero_wallet.clone(),
         alice_address: alice_listen_address.clone(),
         alice_peer_id: alice_handle.peer_id,
         env_config,
+        apollo: tokio::sync::Mutex::new(None),
     };
 
     monero.start_miner().await.unwrap();
@@ -422,6 +484,7 @@ async fn start_alice(
         latest_rate,
         resume_only,
         env_config,
+        LockInputVerifier::spawn(bitcoin_wallet.clone()),
         XmrBtcNamespace::Testnet,
         &[],
         None,
@@ -449,7 +512,9 @@ async fn start_alice(
         min_buy,
         max_buy,
         None,
-        swap_env::config::default_btc_redeem_fee_multiplier(),
+        swap_env::config::default_btc_swap_fee_rate_multiplier(),
+        swap_core::bitcoin::RedeemFeeMultiplier::default(),
+        Duration::from_secs(swap_env::config::default_wallet_snapshot_cache_ttl_secs()),
         developer_tip,
         hermes_funding_policy,
         refund_policy,
@@ -649,12 +714,15 @@ impl StartingBalances {
 
 pub struct BobParams {
     seed: Seed,
+    electrum_rpc_port: u16,
     db_path: PathBuf,
     bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     alice_address: Multiaddr,
     alice_peer_id: PeerId,
     env_config: Config,
+    /// Started on first use, like the GUI starts its manager once per session
+    apollo: tokio::sync::Mutex<Option<ApolloManagerHandle>>,
 }
 
 impl BobParams {
@@ -678,6 +746,87 @@ impl BobParams {
                 .await
                 .unwrap(),
         )
+    }
+
+    /// Deletes the database and replaces the Bitcoin wallet with a new wallet restored from the seed.
+    /// Then it runs recovery and returns the IDs of the recovered swaps.
+    pub async fn delete_database_and_recover_swaps_from_apollo(&mut self) -> Result<Vec<Uuid>> {
+        for suffix in ["", "-wal", "-shm"] {
+            let path = PathBuf::from(format!("{}{}", self.db_path.display(), suffix));
+            if path.exists() {
+                tokio::fs::remove_file(&path).await?;
+            }
+        }
+        tokio::fs::File::create(&self.db_path).await?;
+        let db: Arc<dyn swap::protocol::Database + Send + Sync> =
+            Arc::new(SqliteDatabase::open(&self.db_path, AccessMode::ReadWrite).await?);
+
+        let electrum_rpc_url = Url::parse(&format!("tcp://@localhost:{}", self.electrum_rpc_port))?
+            .as_str()
+            .to_string();
+        let bitcoin_wallet = bitcoin_wallet::WalletBuilder::<Seed>::default()
+            .seed(self.seed.clone())
+            .network(self.env_config.bitcoin_network)
+            .electrum_rpc_urls(vec![electrum_rpc_url])
+            .persister(bitcoin_wallet::PersisterConfig::InMemorySqlite)
+            .finality_confirmations(1_u32)
+            .target_block(1_u32)
+            .sync_interval(Duration::from_secs(3))
+            .use_mempool_space_fee_estimation(false)
+            .build()
+            .await?;
+        self.bitcoin_wallet = Arc::new(bitcoin_wallet);
+
+        // The startup path of the GUI: reserve the outputs of pending Apollo
+        // transactions, start the manager and run recovery
+        swap::protocol::bob::apollo::reserve_pending_apollo_outpoints(db.as_ref(), |outpoints| {
+            self.bitcoin_wallet.reserve_outpoints(outpoints)
+        })
+        .await?;
+        // The old manager works with the old wallet and database
+        if let Some(old) = self.apollo.get_mut().take() {
+            old.shutdown();
+        }
+        let apollo = self.start_apollo(db.clone());
+        swap::protocol::bob::apollo::recover_after_sync(
+            self.bitcoin_wallet.clone(),
+            &self.seed,
+            db.clone(),
+            None,
+            &apollo,
+        )
+        .await;
+        *self.apollo.get_mut() = Some(apollo);
+
+        Ok(db
+            .all()
+            .await?
+            .into_iter()
+            .map(|(_, swap_id, _)| swap_id)
+            .collect())
+    }
+
+    fn start_apollo(
+        &self,
+        db: Arc<dyn swap::protocol::Database + Send + Sync>,
+    ) -> ApolloManagerHandle {
+        let (apollo, _join) = spawn_apollo_manager(
+            self.bitcoin_wallet.clone(),
+            db,
+            ApolloManagerConfig::new(self.env_config.bitcoin_apollo_rebroadcast_interval),
+        );
+        apollo
+    }
+
+    async fn apollo(
+        &self,
+        db: Arc<dyn swap::protocol::Database + Send + Sync>,
+    ) -> ApolloManagerHandle {
+        self.apollo
+            .lock()
+            .await
+            .get_or_insert_with(|| self.start_apollo(db))
+            .clone()
     }
 
     pub async fn new_swap_from_db(&self, swap_id: Uuid) -> Result<(bob::Swap, cli::EventLoop)> {
@@ -707,9 +856,12 @@ impl BobParams {
                 .await
                 .unwrap()
                 .into(),
+            self.seed.derive_apollo_encryption_key(),
+            self.seed.derive_swap_secret_keys(swap_id),
         )
         .await
-        .unwrap();
+        .unwrap()
+        .with_apollo(Some(self.apollo(db).await));
 
         Ok((swap, event_loop))
     }
@@ -750,6 +902,7 @@ impl BobParams {
 
         let swap_handle = handle.swap_handle(self.alice_peer_id, swap_id).await?;
 
+        let apollo = self.apollo(db.clone()).await;
         let swap = bob::Swap::new(
             db,
             swap_id,
@@ -758,12 +911,19 @@ impl BobParams {
             self.env_config,
             swap_handle,
             monero_receive_pool,
+            self.seed.derive_apollo_encryption_key(),
+            self.seed.derive_swap_secret_keys(swap_id),
             self.bitcoin_wallet.new_address().await?,
             btc_amount,
             self.bitcoin_wallet
                 .estimate_fee(swap_core::bitcoin::TxLock::weight(), Some(btc_amount))
                 .await?,
-        );
+            Some(
+                swap::protocol::bob::apollo::estimate_tx_apollo_fee(self.bitcoin_wallet.as_ref())
+                    .await?,
+            ),
+        )
+        .with_apollo(Some(apollo));
 
         Ok((swap, event_loop))
     }
@@ -931,6 +1091,50 @@ impl TestContext {
         self.alice_rpc_server_handle = alice_rpc_server_handle;
     }
 
+    /// Stops Alice, records `swap_id` in her database and restarts her. She then
+    /// fails to persist a new swap with that id.
+    pub async fn make_alice_fail_to_persist_swap(&mut self, swap_id: Uuid) {
+        self.alice_handle.abort();
+        self.alice_rpc_server_handle.abort();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        {
+            let db = SqliteDatabase::open(self.alice_db_path.as_path(), AccessMode::ReadWrite)
+                .await
+                .unwrap();
+            db.insert_peer_id(swap_id, PeerId::random()).await.unwrap();
+        }
+
+        self.restart_alice().await;
+    }
+
+    /// Holds the write lock on Alice's database until the returned connection is dropped.
+    pub async fn lock_alice_database(&self) -> sqlx::SqliteConnection {
+        use sqlx::ConnectOptions;
+
+        let mut connection = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&self.alice_db_path)
+            .connect()
+            .await
+            .unwrap();
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+
+        connection
+    }
+
+    pub async fn assert_bob_did_not_lock_btc(&self) {
+        assert_eventual_balance(
+            self.bob_bitcoin_wallet.as_ref(),
+            Ordering::Equal,
+            self.bob_starting_balances.btc,
+        )
+        .await
+        .unwrap();
+    }
+
     /// Stops Alice, mutates her persisted state for `swap_id`, writes it back, and
     /// restarts her. Used to simulate a corrupted/malicious swap from Alice's point of view.
     pub async fn corrupt_alice_state(
@@ -1006,6 +1210,29 @@ impl TestContext {
         swap_id: Uuid,
     ) -> (bob::Swap, BobApplicationHandle) {
         join_handle.abort();
+
+        let (swap, event_loop) = self.bob_params.new_swap_from_db(swap_id).await.unwrap();
+
+        let join_handle = tokio::spawn(event_loop.run());
+
+        (swap, BobApplicationHandle(join_handle))
+    }
+
+    /// Stops Bob and deletes his database. Then it restores a new Bitcoin wallet from the
+    /// seed and runs recovery of the swap.
+    pub async fn stop_bob_delete_database_and_recover_from_apollo(
+        &mut self,
+        join_handle: BobApplicationHandle,
+        swap_id: Uuid,
+    ) -> (bob::Swap, BobApplicationHandle) {
+        join_handle.abort();
+
+        let recovered_swaps = self
+            .bob_params
+            .delete_database_and_recover_swaps_from_apollo()
+            .await
+            .unwrap();
+        assert_eq!(recovered_swaps, vec![swap_id]);
 
         let (swap, event_loop) = self.bob_params.new_swap_from_db(swap_id).await.unwrap();
 
@@ -1179,7 +1406,8 @@ impl TestContext {
             .bob_bitcoin_wallet
             .transaction_fee(lock_tx_id)
             .await
-            .unwrap();
+            .unwrap()
+            + self.bob_apollo_tx_fee(lock_tx_id).await.unwrap();
 
         let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
 
@@ -1231,7 +1459,8 @@ impl TestContext {
             .bob_bitcoin_wallet
             .transaction_fee(lock_tx_id)
             .await
-            .unwrap();
+            .unwrap()
+            + self.bob_apollo_tx_fee(lock_tx_id).await.unwrap();
 
         let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
         let expected_balance = self.bob_starting_balances.btc
@@ -1259,7 +1488,8 @@ impl TestContext {
             .bob_bitcoin_wallet
             .transaction_fee(lock_tx_id)
             .await
-            .unwrap();
+            .unwrap()
+            + self.bob_apollo_tx_fee(lock_tx_id).await.unwrap();
 
         let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
         // Bob gets full amount back minus all the fees
@@ -1288,7 +1518,8 @@ impl TestContext {
             .bob_bitcoin_wallet
             .transaction_fee(lock_tx_id)
             .await
-            .unwrap();
+            .unwrap()
+            + self.bob_apollo_tx_fee(lock_tx_id).await.unwrap();
 
         let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
         // Bob lost the amnesty amount (it was withheld)
@@ -1317,7 +1548,8 @@ impl TestContext {
             .bob_bitcoin_wallet
             .transaction_fee(lock_tx_id)
             .await
-            .unwrap();
+            .unwrap()
+            + self.bob_apollo_tx_fee(lock_tx_id).await.unwrap();
 
         let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
         // Bob gets full amount back via mercy
@@ -1357,18 +1589,53 @@ impl TestContext {
         self.bob_starting_balances.xmr
     }
 
+    /// Fee of the Apollo transaction that spends the Apollo output of `lock_tx_id`.
+    ///
+    /// The publisher runs detached from the swap and can still be broadcasting the
+    /// Apollo transaction. The function waits until Bob's wallet knows that transaction,
+    /// so the expected balance does not depend on that race.
+    async fn bob_apollo_tx_fee(&self, lock_tx_id: bitcoin::Txid) -> Result<bitcoin::Amount> {
+        let txid = tokio::time::timeout(Duration::from_secs(120), async {
+            loop {
+                self.bob_bitcoin_wallet.sync().await?;
+                let apollo_tx = self
+                    .bob_bitcoin_wallet
+                    .wallet_spending_transactions()
+                    .await
+                    .into_iter()
+                    .find(|tx| {
+                        tx.input
+                            .iter()
+                            .any(|input| input.previous_output.txid == lock_tx_id)
+                            && tx.output.iter().any(|o| o.script_pubkey.is_op_return())
+                    });
+                if let Some(tx) = apollo_tx {
+                    return anyhow::Ok(tx.compute_txid());
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        })
+        .await
+        .with_context(|| {
+            format!("Apollo transaction of lock {lock_tx_id} was never broadcast")
+        })??;
+
+        self.bob_bitcoin_wallet.transaction_fee(txid).await
+    }
+
     async fn bob_redeemed_btc_balance(&self, state: BobState) -> Result<bitcoin::Amount> {
         self.bob_bitcoin_wallet.sync().await?;
 
-        let lock_tx_id = if let BobState::XmrRedeemed { tx_lock_id } = state {
+        let lock_tx_id = if let BobState::XmrRedeemed { tx_lock_id, .. } = state {
             tx_lock_id
         } else {
             bail!("Bob in not in xmr redeemed state: {:?}", state);
         };
 
         let lock_tx_bitcoin_fee = self.bob_bitcoin_wallet.transaction_fee(lock_tx_id).await?;
+        let apollo_tx_fee = self.bob_apollo_tx_fee(lock_tx_id).await?;
 
-        Ok(self.bob_starting_balances.btc - self.btc_amount - lock_tx_bitcoin_fee)
+        Ok(self.bob_starting_balances.btc - self.btc_amount - lock_tx_bitcoin_fee - apollo_tx_fee)
     }
 
     fn alice_refunded_xmr_balance(&self) -> monero::Amount {
@@ -1428,8 +1695,9 @@ impl TestContext {
         };
 
         let lock_tx_bitcoin_fee = self.bob_bitcoin_wallet.transaction_fee(lock_tx_id).await?;
+        let apollo_tx_fee = self.bob_apollo_tx_fee(lock_tx_id).await?;
 
-        Ok(self.bob_starting_balances.btc - self.btc_amount - lock_tx_bitcoin_fee)
+        Ok(self.bob_starting_balances.btc - self.btc_amount - lock_tx_bitcoin_fee - apollo_tx_fee)
     }
 
     pub async fn stop_alice_monero_wallet_rpc(&self) {
@@ -1715,6 +1983,14 @@ pub mod alice_run_until {
 pub mod bob_run_until {
     use swap::protocol::bob::BobState;
 
+    pub fn is_swap_setup_completed(state: &BobState) -> bool {
+        matches!(state, BobState::SwapSetupCompleted(..))
+    }
+
+    pub fn is_btc_lock_ready_to_publish(state: &BobState) -> bool {
+        matches!(state, BobState::BtcLockReadyToPublish { .. })
+    }
+
     pub fn is_btc_locked(state: &BobState) -> bool {
         matches!(state, BobState::BtcLocked { .. })
     }
@@ -1802,7 +2078,7 @@ pub struct FastCancelConfig;
 impl GetConfig for FastCancelConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             ..env::Regtest::get_config()
         }
     }
@@ -1813,7 +2089,7 @@ pub struct FastPunishConfig;
 impl GetConfig for FastPunishConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             bitcoin_punish_timelock: PunishTimelock::new(10).into(),
             ..env::Regtest::get_config()
         }
@@ -1825,7 +2101,7 @@ pub struct FastAmnestyConfig;
 impl GetConfig for FastAmnestyConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             bitcoin_remaining_refund_timelock: 3,
             ..env::Regtest::get_config()
         }
@@ -1840,7 +2116,7 @@ pub struct SlowAmnestyConfig;
 impl GetConfig for SlowAmnestyConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_cancel_timelock: CancelTimelock::new(16).into(),
             // Much longer timelock to give Alice time to:
             // 1. Wait for 10 Monero confirmations on the lock tx
             // 2. Sweep the XMR to her wallet

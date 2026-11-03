@@ -23,7 +23,7 @@ use super::extract_ecdsa_sig;
 
 #[derive(Clone, Debug)]
 pub struct TxRedeem {
-    inner: Transaction,
+    pub(super) inner: Transaction,
     digest: Sighash,
     lock_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     watch_script: ScriptBuf,
@@ -124,6 +124,15 @@ impl TxRedeem {
         candidate_transaction: Arc<Transaction>,
         B: PublicKey,
     ) -> Result<Signature> {
+        // A malicious Electrum server can return another transaction. Check that the txid matches.
+        let candidate_txid = candidate_transaction.compute_txid();
+        if candidate_txid != self.txid() {
+            bail!(
+                "Expected TxRedeem {} but the candidate is transaction {candidate_txid}",
+                self.txid()
+            );
+        }
+
         let input = match candidate_transaction.input.as_slice() {
             [input] => input,
             [] => bail!(NoInputs),

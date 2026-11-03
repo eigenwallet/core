@@ -2,7 +2,11 @@
 
 mod cancel;
 mod early_refund;
+mod fees;
 mod full_refund;
+pub use fees::{
+    RedeemFeeMultiplier, SwapFeeError, SwapFeeInputs, SwapFeeLimits, SwapFeeRate, SwapFees,
+};
 mod lock;
 mod mercy;
 mod partial_refund;
@@ -12,10 +16,12 @@ mod redeem;
 mod timelocks;
 mod withhold;
 
-pub use crate::bitcoin::cancel::TxCancel;
+pub use crate::bitcoin::cancel::{CancelRefundVersion, TxCancel};
 pub use crate::bitcoin::early_refund::TxEarlyRefund;
 pub use crate::bitcoin::full_refund::TxFullRefund;
-pub use crate::bitcoin::lock::TxLock;
+pub use crate::bitcoin::lock::{
+    TxLock, canonical_received_psbt, estimated_signed_lock_weight, find_conflicting_psbt_input,
+};
 pub use crate::bitcoin::mercy::TxMercy;
 pub use crate::bitcoin::partial_refund::TxPartialRefund;
 pub use crate::bitcoin::punish::TxPunish;
@@ -35,7 +41,7 @@ pub use ecdsa_fun::fun::Scalar;
 use ::bitcoin::hashes::Hash;
 use ::bitcoin::secp256k1::ecdsa;
 use ::bitcoin::sighash::SegwitV0Sighash as Sighash;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use bdk_wallet::miniscript::descriptor::Wsh;
 use bdk_wallet::miniscript::{Descriptor, Segwitv0};
 use ecdsa_fun::ECDSA;
@@ -46,6 +52,9 @@ use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::str::FromStr;
+
+/// Shared setup limit used by Bob's funding policy and Alice's validation.
+pub const MAX_TX_LOCK_INPUTS: usize = 25;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct SecretKey {
@@ -243,6 +252,12 @@ pub fn recover(S: PublicKey, sig: Signature, encsig: EncryptedSignature) -> Resu
         .recover_decryption_key(&S.0, &sig, &encsig)
         .map(SecretKey::from)
         .context("Failed to recover secret from adaptor signature")?;
+
+    // The recovered secret must match the trusted public key `S`.
+    ensure!(
+        s.public() == S,
+        "Recovered secret does not match the expected public key"
+    );
 
     Ok(s)
 }
@@ -543,7 +558,10 @@ mod tests {
     #[tokio::test]
     async fn given_no_balance_returns_amount_0() {
         let wallet = TestWalletBuilder::new(0).with_fees(1, 1).build().await;
-        let (amount, _fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
+        let (amount, _fee) = wallet
+            .max_giveable(TxLock::script_size(), None)
+            .await
+            .unwrap();
 
         assert_eq!(amount, Amount::ZERO);
     }
@@ -551,7 +569,10 @@ mod tests {
     #[tokio::test]
     async fn given_balance_below_min_relay_fee_returns_amount_0() {
         let wallet = TestWalletBuilder::new(1000).with_fees(1, 1).build().await;
-        let (amount, _fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
+        let (amount, _fee) = wallet
+            .max_giveable(TxLock::script_size(), None)
+            .await
+            .unwrap();
 
         // The wallet can still create a transaction even if the balance is below the min relay fee
         // because BDK's transaction builder will use whatever fee rate is possible
@@ -563,7 +584,10 @@ mod tests {
     #[tokio::test]
     async fn given_balance_above_relay_fee_returns_amount_greater_0() {
         let wallet = TestWalletBuilder::new(10_000).build().await;
-        let (amount, _fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
+        let (amount, _fee) = wallet
+            .max_giveable(TxLock::script_size(), None)
+            .await
+            .unwrap();
 
         assert!(amount.to_sat() > 0);
     }
@@ -571,7 +595,10 @@ mod tests {
     #[tokio::test]
     async fn given_balance_below_dust_returns_amount_0_but_with_sensible_fee() {
         let wallet = TestWalletBuilder::new(0).build().await;
-        let (amount, fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
+        let (amount, fee) = wallet
+            .max_giveable(TxLock::script_size(), None)
+            .await
+            .unwrap();
 
         assert_eq!(amount, Amount::ZERO);
         assert!(fee.to_sat() > 0);
@@ -589,6 +616,7 @@ mod tests {
         // iterations relatively low because these tests are expensive.
         let above_dust = 547;
         let balance = 2000;
+        let spending_fee = Amount::from_sat(300); // Use a fixed fee for testing
 
         // We don't care about fees in this test, thus use a zero fee rate
         let wallet = TestWalletBuilder::new(balance)
@@ -596,12 +624,13 @@ mod tests {
             .build()
             .await;
 
-        // sorting is only relevant for amounts that have a change output
-        // if the change output is below dust it will be dropped by the BDK
-        for amount in above_dust..(balance - (above_dust - 1)) {
+        let tx_apollo_fee = Amount::from_sat(600);
+        // Sorting matters only for amounts that leave a change output of at least `above_dust`.
+        // The Apollo output is paid out of the balance, too.
+        for amount in above_dust..=(balance - spending_fee.to_sat() - tx_apollo_fee.to_sat() - above_dust) {
             let (A, B) = (PublicKey::random(), PublicKey::random());
             let change = wallet.new_address().await.unwrap();
-            let spending_fee = Amount::from_sat(300); // Use a fixed fee for testing
+            let apollo_address = wallet.new_address().await.unwrap();
             let txlock = TxLock::new(
                 &wallet,
                 bitcoin::Amount::from_sat(amount),
@@ -609,6 +638,7 @@ mod tests {
                 A,
                 B,
                 change,
+                Some((apollo_address, tx_apollo_fee)),
             )
             .await
             .unwrap();
@@ -640,6 +670,7 @@ mod tests {
                 Amount::from_sat(10_000),
                 spending_fee,
                 Some(custom_change.clone()),
+                None,
             )
             .await
             .unwrap();
@@ -714,8 +745,18 @@ TRACE bitcoin_wallet::wallet: Bitcoin transaction status changed txid=0000000000
                     .build()
                     .await;
 
-                let (amount, spending_fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
-                let psbt: PartiallySignedTransaction = TxLock::new(&wallet, amount, spending_fee, PublicKey::from(alice), PublicKey::from(bob), wallet.new_address().await.unwrap()).await.unwrap().into();
+                let apollo_address = wallet.new_address().await.unwrap();
+                let tx_apollo_fee = Amount::from_sat(1000);
+                let shape = bitcoin_wallet::ApolloOutputShape {
+                    script_size: apollo_address.script_pubkey().len(),
+                    amount: tx_apollo_fee,
+                    change_script_size: TxLock::script_size(),
+                };
+                let (amount, spending_fee) = wallet.max_giveable_with_optional_apollo(TxLock::script_size(), None, Some(shape)).await.unwrap();
+                if amount < Amount::from_sat(1000) {
+                    return;
+                }
+                let psbt: PartiallySignedTransaction = TxLock::new(&wallet, amount, spending_fee, PublicKey::from(alice), PublicKey::from(bob), wallet.new_address().await.unwrap(), Some((apollo_address, tx_apollo_fee))).await.unwrap().into();
                 let result = wallet.sign_and_finalize(psbt).await;
 
                 result.expect("transaction to be signed");

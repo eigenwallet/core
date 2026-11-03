@@ -11,14 +11,24 @@ pub enum Bob {
         #[serde(with = "swap_serde::bitcoin::address_serde")]
         change_address: bitcoin::Address,
         tx_lock_fee: bitcoin::Amount,
+        /// `None` means the swap has no Apollo transaction, also for rows written before Apollo.
+        #[serde(default)]
+        tx_apollo_fee: Option<bitcoin::Amount>,
     },
     ExecutionSetupDone {
         state2: bob::State2,
     },
     BtcLockReadyToPublish {
         btc_lock_tx_signed: bitcoin::Transaction,
+        /// Absent in rows written before Apollo existed.
+        #[serde(default)]
+        apollo_tx: Option<bitcoin::Transaction>,
         state3: bob::State3,
         monero_wallet_restore_blockheight: BlockHeight,
+        #[serde(default)]
+        publish_deadline: Option<i64>,
+        #[serde(default)]
+        broadcast_attempted: bool,
     },
     BtcLocked {
         state3: bob::State3,
@@ -102,20 +112,28 @@ impl From<BobState> for Bob {
                 btc_amount,
                 change_address,
                 tx_lock_fee,
+                tx_apollo_fee,
             } => Bob::Started {
                 btc_amount,
                 change_address,
                 tx_lock_fee,
+                tx_apollo_fee,
             },
             BobState::SwapSetupCompleted(state2) => Bob::ExecutionSetupDone { state2 },
             BobState::BtcLockReadyToPublish {
                 btc_lock_tx_signed,
+                apollo_tx,
                 state3,
                 monero_wallet_restore_blockheight,
+                publish_deadline,
+                broadcast_attempted,
             } => Bob::BtcLockReadyToPublish {
                 btc_lock_tx_signed,
+                apollo_tx,
                 state3,
                 monero_wallet_restore_blockheight,
+                publish_deadline,
+                broadcast_attempted,
             },
             BobState::BtcLocked {
                 state3,
@@ -221,20 +239,28 @@ impl From<Bob> for BobState {
                 btc_amount,
                 change_address,
                 tx_lock_fee,
+                tx_apollo_fee,
             } => BobState::Started {
                 btc_amount,
                 change_address,
                 tx_lock_fee,
+                tx_apollo_fee,
             },
             Bob::ExecutionSetupDone { state2 } => BobState::SwapSetupCompleted(state2),
             Bob::BtcLockReadyToPublish {
                 btc_lock_tx_signed,
+                apollo_tx,
                 state3,
                 monero_wallet_restore_blockheight,
+                publish_deadline,
+                broadcast_attempted,
             } => BobState::BtcLockReadyToPublish {
                 btc_lock_tx_signed,
+                apollo_tx,
                 state3,
                 monero_wallet_restore_blockheight,
+                publish_deadline,
+                broadcast_attempted,
             },
             Bob::BtcLocked {
                 state3,
@@ -369,5 +395,79 @@ impl fmt::Display for Bob {
             Bob::BtcWithheld { .. } => f.write_str("Bitcoin withheld"),
             Bob::BtcMercyPublished { .. } => f.write_str("Bitcoin mercy published"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ADDRESS: &str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+
+    #[test]
+    fn started_row_without_tx_apollo_fee_still_deserializes() {
+        let old_row = format!(
+            r#"{{"Started":{{"btc_amount":100000,"change_address":"{ADDRESS}","tx_lock_fee":500}}}}"#
+        );
+        let Bob::Started {
+            btc_amount,
+            tx_lock_fee,
+            tx_apollo_fee,
+            ..
+        } = serde_json::from_str(&old_row).unwrap()
+        else {
+            panic!("expected Bob::Started");
+        };
+        assert_eq!(btc_amount, bitcoin::Amount::from_sat(100_000));
+        assert_eq!(tx_lock_fee, bitcoin::Amount::from_sat(500));
+        assert_eq!(tx_apollo_fee, None);
+
+        let new_row = old_row.replace(
+            r#""tx_lock_fee":500"#,
+            r#""tx_lock_fee":500,"tx_apollo_fee":700"#,
+        );
+        let Bob::Started { tx_apollo_fee, .. } = serde_json::from_str(&new_row).unwrap() else {
+            panic!("expected Bob::Started");
+        };
+        assert_eq!(tx_apollo_fee, Some(bitcoin::Amount::from_sat(700)));
+    }
+
+    #[test]
+    fn xmr_redeemed_row_with_the_old_apollo_field_still_deserializes() {
+        let txid = "0000000000000000000000000000000000000000000000000000000000000001";
+        let old_row =
+            format!(r#"{{"Done":{{"XmrRedeemed":{{"tx_lock_id":"{txid}","apollo":"None"}}}}}}"#);
+        let Bob::Done(BobEndState::XmrRedeemed { tx_lock_id }) =
+            serde_json::from_str(&old_row).unwrap()
+        else {
+            panic!("expected Bob::Done(XmrRedeemed)");
+        };
+        assert_eq!(tx_lock_id.to_string(), txid);
+    }
+
+    /// Rows of the released version have none of `apollo_tx`, `publish_deadline` and
+    /// `broadcast_attempted`.
+    #[test]
+    fn released_btc_lock_ready_to_publish_row_still_decodes() {
+        let state = Bob::BtcLockReadyToPublish {
+            btc_lock_tx_signed: bitcoin::Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::absolute::LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            },
+            apollo_tx: None,
+            state3: bob::apollo_test_support::state3(),
+            monero_wallet_restore_blockheight: BlockHeight { height: 7 },
+            publish_deadline: None,
+            broadcast_attempted: false,
+        };
+        let mut row = serde_json::to_value(&state).unwrap();
+        let fields = row["BtcLockReadyToPublish"].as_object_mut().unwrap();
+        for field in ["apollo_tx", "publish_deadline", "broadcast_attempted"] {
+            fields.remove(field).unwrap();
+        }
+
+        assert_eq!(serde_json::from_value::<Bob>(row).unwrap(), state);
     }
 }

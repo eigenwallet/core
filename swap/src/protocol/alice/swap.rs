@@ -72,6 +72,9 @@ where
         )
         .await
         .expect("we never stop retrying to persist the latest Alice state");
+
+        // The conflict check now finds the TxLock inputs in the database
+        drop(swap.lock_input_reservation.take());
     }
 
     Ok(current_state)

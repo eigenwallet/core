@@ -1,8 +1,12 @@
+use crate::coin_selection;
 use crate::primitives::{Confirmed, EstimateFeeRate, ScriptStatus, Subscription, Watchable};
-use crate::{BitcoinWallet, BlockHeight, RpcErrorCode, bitcoin_address, parse_rpc_error_code};
-use anyhow::{Context, Result, anyhow, bail};
-use bdk_chain::CheckPoint;
+use crate::{
+    BitcoinWallet, BlockHeight, PsbtPrevoutVerificationError, RpcErrorCode, VerifyPsbtPrevouts,
+    bitcoin_address, parse_rpc_error_code,
+};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use bdk_chain::spk_client::{SyncRequest, SyncRequestBuilder};
+use bdk_chain::{ChainPosition, CheckPoint};
 use bdk_electrum::electrum_client::{ElectrumApi, GetHistoryRes};
 
 use bdk_wallet::KeychainKind;
@@ -14,6 +18,7 @@ use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::template::{Bip84, DescriptorTemplate};
 use bdk_wallet::{Balance, PersistedWallet};
 use bitcoin::bip32::Xpriv;
+use bitcoin::transaction::{InputWeightPrediction, predict_weight};
 use bitcoin::{Address, Amount, Transaction, Txid, psbt::Psbt as PartiallySignedTransaction};
 use bitcoin::{Psbt, ScriptBuf, Weight};
 use derive_builder::Builder;
@@ -23,11 +28,13 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex as SyncMutex;
+use std::sync::PoisonError;
 use std::time::Duration;
 use std::time::Instant;
 use sync_ext::{CumulativeProgressHandle, InnerSyncCallback, SyncCallbackExt};
@@ -87,6 +94,71 @@ pub const MIN_ABSOLUTE_TX_FEE_SATS: u64 = 1000;
 pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(MIN_ABSOLUTE_TX_FEE_SATS);
 pub const DUST_AMOUNT: Amount = Amount::from_sat(546);
 
+/// Builds a transaction that spends output `vout` of `parent`.
+/// The full input value pays the fee.
+/// The only output contains `data` in an `OP_RETURN` script.
+///
+/// The signing wallet does not need to contain `parent`.
+pub fn burn_output_to_op_return(
+    parent: &Transaction,
+    vout: u32,
+    data: Vec<u8>,
+) -> Result<PartiallySignedTransaction> {
+    let prevout = parent
+        .output
+        .get(vout as usize)
+        .with_context(|| format!("Transaction has no output {vout}"))?
+        .clone();
+    let data = bitcoin::script::PushBytesBuf::try_from(data)
+        .context("OP_RETURN data is too large for a single push")?;
+
+    let transaction = Transaction {
+        version: bitcoin::transaction::Version::TWO,
+        lock_time: bitcoin::absolute::LockTime::ZERO,
+        input: vec![bitcoin::TxIn {
+            previous_output: bitcoin::OutPoint::new(parent.compute_txid(), vout),
+            script_sig: ScriptBuf::new(),
+            sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: bitcoin::Witness::new(),
+        }],
+        output: vec![bitcoin::TxOut {
+            value: Amount::ZERO,
+            script_pubkey: ScriptBuf::new_op_return(&data),
+        }],
+    };
+
+    let mut psbt = PartiallySignedTransaction::from_unsigned_tx(transaction)
+        .context("Failed to create PSBT for the Apollo transaction")?;
+    // The signing wallet has not registered `parent`, so it needs the full transaction.
+    psbt.inputs[0].witness_utxo = Some(prevout);
+    psbt.inputs[0].non_witness_utxo = Some(parent.clone());
+
+    Ok(psbt)
+}
+
+/// The wallet balance, split by whether new transactions can spend it.
+/// `total` is `spendable + reserved`.
+#[derive(Debug, Clone, Copy)]
+pub struct BalanceSplit {
+    pub total: Amount,
+    /// The balance without the reserved outputs.
+    pub spendable: Amount,
+    /// The unspent outputs that are reserved for transactions that exist already.
+    /// These are the Apollo outputs of swaps with a pending Apollo transaction.
+    pub reserved: Amount,
+}
+
+/// The lock transaction outputs other than the locked output.
+#[derive(Debug, Clone, Copy)]
+pub struct ApolloOutputShape {
+    /// Size of the Apollo output script in bytes.
+    pub script_size: usize,
+    /// The Apollo transaction burns this value as its fee.
+    pub amount: Amount,
+    /// Size in bytes of the change output script. The lock transaction can have no change output.
+    pub change_script_size: usize,
+}
+
 /// This is our wrapper around a bdk wallet and a corresponding
 /// bdk electrum client.
 /// It unifies all the functionality we need when interacting
@@ -116,8 +188,14 @@ pub struct Wallet<Persister = Connection, C = Client> {
     /// We want our transactions to be confirmed after this many blocks
     /// (used for fee estimation).
     target_block: u32,
+    /// The root extended private key the wallet descriptors derive from.
+    xprivkey: Xpriv,
     /// The Tauri handle
     tauri_handle: TauriHandle,
+    /// Outputs that no transaction built by this wallet spends. All clones share them.
+    ///
+    /// They belong to transactions that exist already and must stay valid, for example an Apollo transaction.
+    unspendable: Arc<SyncMutex<HashSet<bitcoin::OutPoint>>>,
 }
 
 /// This is our wrapper around a bdk electrum client.
@@ -620,6 +698,8 @@ impl Wallet {
             network,
             finality_confirmations,
             target_block,
+            xprivkey,
+            unspendable: Arc::default(),
         })
     }
 
@@ -679,6 +759,8 @@ impl Wallet {
             network,
             finality_confirmations,
             target_block,
+            xprivkey,
+            unspendable: Arc::default(),
         };
 
         Ok(wallet)
@@ -694,15 +776,28 @@ impl Wallet {
         transaction: Transaction,
         kind: &str,
     ) -> Result<(Txid, Subscription)> {
-        let txid = transaction.compute_txid();
-
         // to watch for confirmations, watching a single output is enough
         let subscription = self
             .subscribe_to(Box::new((
-                txid,
+                transaction.compute_txid(),
                 transaction.output[0].script_pubkey.clone(),
             )))
             .await;
+        let txid = self
+            .broadcast_without_subscription(transaction, kind)
+            .await?;
+
+        Ok((txid, subscription))
+    }
+
+    /// Like [`Self::broadcast`], but does not watch the transaction.
+    /// Use it when the first output is not worth watching, for example an `OP_RETURN`.
+    pub async fn broadcast_without_subscription(
+        &self,
+        transaction: Transaction,
+        kind: &str,
+    ) -> Result<Txid> {
+        let txid = transaction.compute_txid();
 
         let broadcast_results = self
             .electrum_client
@@ -743,26 +838,9 @@ impl Wallet {
             successful_count, total_count
         );
 
-        // The transaction was accepted by the mempool
-        // We know this because otherwise Electrum would have rejected it
-        //
+        self.register_unconfirmed_transaction(transaction).await?;
 
-        // Mark the transaction as unconfirmed in the mempool
-        // This ensures it is used to calculate the balance from here on
-        // out
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("time went backwards")
-            .as_secs();
-
-        {
-            let mut wallet = self.wallet.lock().await;
-            let mut persister = self.persister.lock().await;
-            wallet.apply_unconfirmed_txs(vec![(transaction, timestamp)]);
-            wallet.persist(&mut persister)?;
-        }
-
-        Ok((txid, subscription))
+        Ok(txid)
     }
 
     /// Broadcast a transaction, but only if it's not already in the mempool/blockchain.
@@ -788,6 +866,170 @@ impl Wallet {
         self.get_tx(txid)
             .await
             .with_context(|| format!("Could not get raw tx with id: {}", txid))
+    }
+
+    /// Verify that every input of the PSBT references an existing unspent
+    /// output (confirmed or in mempool) whose script and value match the
+    /// claimed `witness_utxo`.
+    pub async fn verify_psbt_prevouts(
+        &self,
+        psbt: &Psbt,
+        cancel: &watch::Receiver<bool>,
+    ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
+        if psbt.inputs.len() != psbt.unsigned_tx.input.len() {
+            return Err(PsbtPrevoutVerificationError::InputMapCountMismatch {
+                transaction_inputs: psbt.unsigned_tx.input.len(),
+                input_maps: psbt.inputs.len(),
+            });
+        }
+
+        let mut claims: HashMap<ScriptBuf, Vec<(bitcoin::OutPoint, Amount)>> = HashMap::new();
+        for (index, (input, tx_input)) in
+            psbt.inputs.iter().zip(&psbt.unsigned_tx.input).enumerate()
+        {
+            let Some(witness_utxo) = input.witness_utxo.as_ref() else {
+                return Err(PsbtPrevoutVerificationError::MissingWitnessUtxo {
+                    input_index: index,
+                });
+            };
+
+            claims
+                .entry(witness_utxo.script_pubkey.clone())
+                .or_default()
+                .push((tx_input.previous_output, witness_utxo.value));
+        }
+
+        if is_cancelled(cancel) {
+            return Err(PsbtPrevoutVerificationError::Cancelled);
+        }
+        let (scripts, claims): (Vec<_>, Vec<_>) = claims.into_iter().unzip();
+        let unspent = self.list_unspent(scripts, cancel).await?;
+
+        for (outpoints, utxos) in claims.into_iter().zip(unspent) {
+            for (outpoint, claimed_value) in outpoints {
+                let Some(utxo) = utxos.iter().find(|utxo| {
+                    utxo.tx_hash == outpoint.txid && utxo.tx_pos == outpoint.vout as usize
+                }) else {
+                    return Err(PsbtPrevoutVerificationError::PrevoutNotFound { outpoint });
+                };
+
+                let actual_value = Amount::from_sat(utxo.value);
+                if actual_value != claimed_value {
+                    return Err(PsbtPrevoutVerificationError::ValueMismatch {
+                        outpoint,
+                        actual: actual_value,
+                        claimed: claimed_value,
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Query each script separately on every server, then drain all started calls.
+    /// Returned groups have the same order as `scripts`.
+    ///
+    /// A UTXO reported by any single server is accepted as existing; the
+    /// responses of all servers are merged.
+    /// Scripts are not batched: a server refusing one script (e.g. one with too
+    /// many UTXOs) would fail the whole batch, and we could not tell it apart
+    /// from a server problem.
+    ///
+    /// Once `cancel` fires, each server stops before its next script.
+    async fn list_unspent(
+        &self,
+        scripts: Vec<ScriptBuf>,
+        cancel: &watch::Receiver<bool>,
+    ) -> Result<Vec<Vec<bdk_electrum::electrum_client::ListUnspentRes>>, PsbtPrevoutVerificationError>
+    {
+        let query_scripts = scripts.clone();
+        let query_cancel = cancel.clone();
+        let results = self
+            .electrum_client
+            .inner
+            .join_quorum_and_drain("script_list_unspent", move |client| {
+                query_scripts
+                    .iter()
+                    .map(|script| {
+                        if is_cancelled(&query_cancel) {
+                            return Err(bdk_electrum::electrum_client::Error::Message(
+                                "Lock input check was cancelled".to_owned(),
+                            ));
+                        }
+                        match client.inner.script_list_unspent(script) {
+                            Ok(utxos) => Ok(Ok(utxos)),
+                            // The server answered with an error for this script only
+                            Err(bdk_electrum::electrum_client::Error::Protocol(refusal)) => {
+                                Ok(Err(refusal))
+                            }
+                            Err(error) => Err(error),
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .await
+            .context("Failed to query Electrum servers for unspent outputs")
+            .map_err(PsbtPrevoutVerificationError::Electrum)?;
+        if is_cancelled(cancel) {
+            return Err(PsbtPrevoutVerificationError::Cancelled);
+        }
+
+        let mut answers = Vec::new();
+        let mut errors = Vec::new();
+        for result in results {
+            match result {
+                Ok(groups) => answers.push(groups),
+                Err(error) => {
+                    tracing::debug!(%error, "Electrum server failed to list unspent outputs");
+                    errors.push(error);
+                }
+            }
+        }
+        tracing::debug!(
+            scripts = scripts.len(),
+            answered = answers.len(),
+            failed = errors.len(),
+            "Listed unspent outputs of PSBT input scripts"
+        );
+
+        if answers.is_empty() {
+            return Err(PsbtPrevoutVerificationError::Electrum(
+                electrum_pool::MultiError::new(
+                    errors,
+                    "No Electrum server returned unspent outputs for scripts".to_owned(),
+                )
+                .into(),
+            ));
+        }
+
+        let mut per_script = vec![Vec::new(); scripts.len()];
+        for groups in answers {
+            for (script_answers, answer) in per_script.iter_mut().zip(groups) {
+                script_answers.push(answer);
+            }
+        }
+
+        scripts
+            .into_iter()
+            .zip(per_script)
+            .map(|(script, answers)| {
+                let (listed, refused): (Vec<_>, Vec<_>) =
+                    answers.into_iter().partition(Result::is_ok);
+                if !refused.is_empty() {
+                    tracing::debug!(%script, refused = refused.len(), listed = listed.len(), "Electrum servers refused to list a script");
+                }
+                if listed.is_empty()
+                    && let Some(Err(refusal)) = refused.into_iter().next()
+                {
+                    return Err(PsbtPrevoutVerificationError::ScriptRefused {
+                        script,
+                        refusal: refusal.to_string(),
+                    });
+                }
+                Ok(listed.into_iter().flatten().flatten().collect())
+            })
+            .collect()
     }
 
     // Returns the TxId of the last published Bitcoin transaction
@@ -1170,6 +1412,49 @@ impl<T, C> Wallet<T, C> {
     pub fn target_block(&self) -> u32 {
         self.target_block
     }
+
+    /// Insert a wallet-owned UTXO without publishing it to the backing chain.
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn insert_fake_utxo(&self, amount: Amount) -> bitcoin::OutPoint {
+        let mut wallet = self.wallet.lock().await;
+        bdk_wallet::test_utils::receive_output_in_latest_block(&mut wallet, amount)
+    }
+
+    /// Prove control of the keys behind every input of a PSBT built by this
+    /// wallet, using the BIP-32 derivation entries bdk records per input.
+    pub fn prove_utxo_ownership(
+        &self,
+        psbt: &Psbt,
+        challenge: utxo_ownership_proof::Challenge,
+    ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>> {
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        let root_fingerprint = self.xprivkey.fingerprint(&secp);
+
+        psbt.inputs
+            .iter()
+            .enumerate()
+            .map(|(index, input)| {
+                let (public_key, (_, path)) = input
+                    .bip32_derivation
+                    .iter()
+                    .find(|(_, (fingerprint, _))| *fingerprint == root_fingerprint)
+                    .with_context(|| {
+                        format!("Input {index} has no derivation entry for our wallet root")
+                    })?;
+
+                let derived = self
+                    .xprivkey
+                    .derive_priv(&secp, path)
+                    .with_context(|| format!("Failed to derive key for input {index}"))?;
+
+                if derived.private_key.public_key(&secp) != *public_key {
+                    bail!("Derived key for input {index} does not match its derivation entry");
+                }
+
+                Ok(utxo_ownership_proof::sign(&derived.private_key, challenge))
+            })
+            .collect()
+    }
 }
 
 impl<Persister, C> Wallet<Persister, C>
@@ -1185,13 +1470,18 @@ where
     /// If either of the clients fail but the other is successful, we use the successful one.
     /// If both clients fail, we return an error
     async fn combined_fee_rate(&self) -> Result<FeeRate> {
+        self.combined_fee_rate_for_target(self.target_block).await
+    }
+
+    /// Like [`Self::combined_fee_rate`], but for a given confirmation target instead of the configured one.
+    async fn combined_fee_rate_for_target(&self, target_block: u32) -> Result<FeeRate> {
         let electrum_future = self
             .cached_electrum_fee_estimator
-            .estimate_feerate(self.target_block);
+            .estimate_feerate(target_block);
         let mempool_future = async {
             match self.cached_mempool_fee_estimator.as_ref() {
                 Some(mempool_client) => mempool_client
-                    .estimate_feerate(self.target_block)
+                    .estimate_feerate(target_block)
                     .await
                     .map(Some),
                 None => Ok(None),
@@ -1315,6 +1605,33 @@ where
         }
     }
 
+    /// Reserves outputs for transactions that exist already.
+    /// Transactions that this wallet builds after this call never spend them.
+    pub fn reserve_outpoints(&self, outpoints: impl IntoIterator<Item = bitcoin::OutPoint>) {
+        self.unspendable
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(outpoints);
+    }
+
+    pub fn release_outpoint(&self, outpoint: &bitcoin::OutPoint) {
+        self.unspendable
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(outpoint);
+    }
+
+    fn exclude_reserved_outpoints<Cs>(&self, tx_builder: &mut bdk_wallet::TxBuilder<'_, Cs>) {
+        for outpoint in self
+            .unspendable
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+        {
+            tx_builder.add_unspendable(*outpoint);
+        }
+    }
+
     pub async fn sign_and_finalize(&self, mut psbt: Psbt) -> Result<Transaction> {
         // Acquire the wallet lock once here for efficiency within the non-finalized block
         let wallet_guard = self.wallet.lock().await;
@@ -1342,6 +1659,35 @@ where
         Ok(self.wallet.lock().await.balance())
     }
 
+    /// Splits the total balance into the part transactions can spend and the part
+    /// reserved for transactions that were already constructed.
+    ///
+    /// Callers that offer to spend "all funds" must use the spendable part, because
+    /// the builders never select reserved outputs.
+    pub async fn balance_split(&self) -> Result<BalanceSplit> {
+        let wallet = self.wallet.lock().await;
+        let total = wallet.balance().total();
+        let reserved_outpoints = self
+            .unspendable
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let reserved = wallet
+            .list_unspent()
+            .filter(|utxo| reserved_outpoints.contains(&utxo.outpoint))
+            .map(|utxo| utxo.txout.value)
+            .sum();
+        let spendable = total
+            .checked_sub(reserved)
+            .context("Reserved outputs exceed the wallet balance")?;
+
+        Ok(BalanceSplit {
+            total,
+            spendable,
+            reserved,
+        })
+    }
+
     /// Reveals the next address from the wallet.
     pub async fn new_address(&self) -> Result<Address> {
         let mut wallet = self.wallet.lock().await;
@@ -1367,6 +1713,7 @@ where
         address: Address,
         amount: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<PartiallySignedTransaction> {
         // Check address and change address for network equality.
         let address = bitcoin_address::revalidate_network(address, self.network)?;
@@ -1385,18 +1732,21 @@ where
             // Build the transaction with a dummy fee rate
             // just to figure out the final weight of the transaction
             // send_to_address(...) takes an absolute fee
-            let mut tx_builder = wallet.build_tx();
+            let mut tx_builder = coin_selection::build_tx(&mut wallet, max_inputs, false)?;
+            self.exclude_reserved_outpoints(&mut tx_builder);
 
             tx_builder.add_recipient(script.clone(), amount);
             tx_builder.fee_absolute(Amount::ZERO);
 
-            tx_builder.finish()?
+            tx_builder
+                .finish()
+                .context("Failed to select transaction inputs")?
         };
 
-        let weight = psbt.unsigned_tx.weight();
+        let weight = estimated_signed_wallet_weight(&psbt)?;
         let fee = self.estimate_fee(weight, Some(amount)).await?;
 
-        self.send_to_address(address, amount, fee, change_override)
+        self.send_to_address(address, amount, fee, change_override, max_inputs)
             .await
     }
 
@@ -1409,9 +1759,12 @@ where
         &self,
         address: Address,
     ) -> Result<PartiallySignedTransaction> {
-        let (max_giveable, fee) = self.max_giveable(address.script_pubkey().len()).await?;
+        let (max_giveable, fee) = self
+            .max_giveable(address.script_pubkey().len(), None)
+            .await?;
 
-        self.send_to_address(address, max_giveable, fee, None).await
+        self.send_to_address(address, max_giveable, fee, None, None)
+            .await
     }
 
     /// Builds a partially signed transaction that sends
@@ -1426,6 +1779,7 @@ where
         amount: Amount,
         spending_fee: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<PartiallySignedTransaction> {
         // Check address and change address for network equality.
         let address = bitcoin_address::revalidate_network(address, self.network)?;
@@ -1440,11 +1794,14 @@ where
         let script = address.script_pubkey();
 
         // Build the transaction with a manual fee
-        let mut tx_builder = wallet.build_tx();
+        let mut tx_builder = coin_selection::build_tx(&mut wallet, max_inputs, false)?;
+        self.exclude_reserved_outpoints(&mut tx_builder);
         tx_builder.add_recipient(script.clone(), amount);
         tx_builder.fee_absolute(spending_fee);
 
-        let mut psbt = tx_builder.finish()?;
+        let mut psbt = tx_builder
+            .finish()
+            .context("Failed to select transaction inputs")?;
 
         match psbt.unsigned_tx.output.as_mut_slice() {
             // our primary output is the 2nd one? reverse the vectors
@@ -1476,24 +1833,179 @@ where
         Ok(psbt)
     }
 
+    /// Saves a broadcast transaction as unconfirmed, so the wallet knows it before the next sync.
+    pub async fn register_unconfirmed_transaction(&self, transaction: Transaction) -> Result<()> {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_secs();
+
+        {
+            let mut wallet = self.wallet.lock().await;
+            let mut persister = self.persister.lock().await;
+            wallet.apply_unconfirmed_txs(vec![(transaction, timestamp)]);
+            wallet.persist(&mut persister)?;
+        }
+
+        Ok(())
+    }
+
+    /// Builds the lock transaction.
+    ///
+    /// Output `0` pays `amount` to `address`. Output `1` pays `tx_apollo_fee` to `apollo_address`
+    /// and funds the Apollo transaction. The change output, if any, is last.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_to_address_with_apollo_output(
+        &self,
+        address: Address,
+        amount: Amount,
+        apollo_address: Address,
+        tx_apollo_fee: Amount,
+        spending_fee: Amount,
+        change_override: Option<Address>,
+        max_inputs: Option<usize>,
+    ) -> Result<PartiallySignedTransaction> {
+        let address = bitcoin_address::revalidate_network(address, self.network)?;
+        let apollo_address = bitcoin_address::revalidate_network(apollo_address, self.network)?;
+        let change_override = change_override
+            .map(|a| bitcoin_address::revalidate_network(a, self.network))
+            .transpose()
+            .context("Change address is not on the correct network")?;
+
+        let script = address.script_pubkey();
+        let apollo_script = apollo_address.script_pubkey();
+
+        let mut wallet = self.wallet.lock().await;
+        let mut tx_builder = coin_selection::build_tx(&mut wallet, max_inputs, false)?;
+        self.exclude_reserved_outpoints(&mut tx_builder);
+        // The output order is fixed: the lock output is `0` and the Apollo output is `1`.
+        tx_builder.ordering(bdk_wallet::TxOrdering::Untouched);
+        tx_builder.add_recipient(script.clone(), amount);
+        tx_builder.add_recipient(apollo_script.clone(), tx_apollo_fee);
+        tx_builder.fee_absolute(spending_fee);
+
+        let mut psbt = tx_builder
+            .finish()
+            .context("Failed to select transaction inputs")?;
+
+        let outputs = &mut psbt.unsigned_tx.output;
+        ensure!(
+            matches!(outputs.len(), 2 | 3)
+                && outputs[0].script_pubkey == script
+                && outputs[0].value == amount
+                && outputs[1].script_pubkey == apollo_script
+                && outputs[1].value == tx_apollo_fee,
+            "Unexpected transaction layout"
+        );
+
+        if let (Some(change), Some(change_override)) = (outputs.get_mut(2), change_override) {
+            tracing::info!(change_override = ?change_override, "Overwriting change address");
+            change.script_pubkey = change_override.script_pubkey();
+            // The derivation path belongs to the replaced change address.
+            psbt.outputs[2].bip32_derivation.clear();
+        }
+
+        Ok(psbt)
+    }
+
+    /// Whether the wallet knows the transaction, but a conflicting transaction is canonical,
+    /// so the transaction cannot confirm any more.
+    ///
+    /// The conflicting transaction must have `min_confirmations`. BDK also prefers unconfirmed
+    /// transactions by `last_seen`, so an unconfirmed or shallow replacement can still lose.
+    pub async fn is_transaction_conflicted(
+        &self,
+        txid: Txid,
+        min_confirmations: u32,
+    ) -> Result<bool> {
+        let wallet = self.wallet.lock().await;
+        let graph = wallet.tx_graph();
+        let Some(tx) = graph.get_tx(txid) else {
+            return Ok(false);
+        };
+        if wallet.get_tx(txid).is_some() {
+            return Ok(false);
+        }
+
+        let tip_height = wallet.local_chain().tip().height();
+        Ok(graph
+            .direct_conflicts(&tx)
+            .filter_map(|(_, conflicting_txid)| wallet.get_tx(conflicting_txid))
+            .any(|conflicting| match conflicting.chain_position {
+                ChainPosition::Confirmed { anchor, .. } => {
+                    tip_height.saturating_sub(anchor.block_id.height) + 1 >= min_confirmations
+                }
+                ChainPosition::Unconfirmed { .. } => false,
+            }))
+    }
+
+    /// All known transactions that spend at least one output of the wallet.
+    pub async fn wallet_spending_transactions(&self) -> Vec<Arc<Transaction>> {
+        let wallet = self.wallet.lock().await;
+
+        wallet
+            .transactions()
+            .map(|wallet_tx| wallet_tx.tx_node.tx)
+            .filter(|tx| wallet.sent_and_received(tx).0 > Amount::ZERO)
+            .collect()
+    }
+
     /// Calculates the maximum "giveable" amount of this wallet.
     ///
     /// We define this as the maximum amount we can pay to a single output,
     /// already accounting for the fees we need to spend to get the
     /// transaction confirmed.
     ///
+    /// With a limit, estimates a drain of the largest spendable outputs within
+    /// that limit. Unselected wallet funds are excluded from the amount, not fees.
     /// Returns a tuple of (max_giveable_amount, spending_fee).
-    pub async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
+    pub async fn max_giveable(
+        &self,
+        locking_script_size: usize,
+        max_inputs: Option<usize>,
+    ) -> Result<(Amount, Amount)> {
+        self.max_giveable_with_optional_apollo(locking_script_size, max_inputs, None)
+            .await
+    }
+
+    /// The one path for [`BitcoinWallet::max_giveable_with_optional_apollo`] and [`Self::max_giveable`].
+    ///
+    /// With `apollo: None` it estimates a plain drain to one output.
+    /// With `Some(shape)` it excludes `shape.amount` from the giveable amount.
+    /// It then prices the fee for the Apollo output and a possible change output.
+    pub async fn max_giveable_with_optional_apollo(
+        &self,
+        locking_script_size: usize,
+        max_inputs: Option<usize>,
+        apollo: Option<ApolloOutputShape>,
+    ) -> Result<(Amount, Amount)> {
         let mut wallet = self.wallet.lock().await;
 
         // Construct a dummy drain transaction
         let dummy_script = ScriptBuf::from(vec![0u8; locking_script_size]);
+        // The content differs from the drain script, so the drain output stays identifiable.
+        let apollo_dummy_script = apollo.map(|shape| ScriptBuf::from(vec![1u8; shape.script_size]));
+        // A drain has no change output, but the real transaction can have one.
+        // Add its weight to the fee estimate.
+        let change_weight = apollo
+            .map(|shape| {
+                bitcoin::TxOut {
+                    value: Amount::ZERO,
+                    script_pubkey: ScriptBuf::from(vec![0u8; shape.change_script_size]),
+                }
+                .weight()
+            })
+            .unwrap_or(Weight::ZERO);
 
-        let mut tx_builder = wallet.build_tx();
+        let mut tx_builder = coin_selection::build_tx(&mut wallet, max_inputs, true)?;
+        self.exclude_reserved_outpoints(&mut tx_builder);
 
         tx_builder.drain_to(dummy_script.clone());
         tx_builder.fee_absolute(Amount::ZERO);
         tx_builder.drain_wallet();
+        if let (Some(shape), Some(script)) = (apollo, &apollo_dummy_script) {
+            tx_builder.add_recipient(script.clone(), shape.amount);
+        }
 
         // The weight WILL NOT change, even if we change the fee
         // because we are draining the wallet (using all inputs) and
@@ -1505,14 +2017,33 @@ where
         // The inputs are constant, so only the output amount changes.
         let (dummy_max_giveable, dummy_weight) = match tx_builder.finish() {
             Ok(psbt) => {
-                if psbt.unsigned_tx.output.len() != 1 {
-                    bail!("Expected a single output in the dummy transaction");
+                let drain_output = psbt
+                    .unsigned_tx
+                    .output
+                    .iter()
+                    .find(|output| output.script_pubkey == dummy_script);
+                let expected_outputs =
+                    usize::from(apollo.is_some()) + usize::from(drain_output.is_some());
+                if psbt.unsigned_tx.output.len() != expected_outputs {
+                    bail!("Expected {expected_outputs} outputs in the dummy transaction");
                 }
 
-                let max_giveable = psbt.unsigned_tx.output.first().expect("Expected a single output in the dummy transaction").value;
-                let weight = psbt.unsigned_tx.weight();
-
-                Ok((Some(max_giveable), weight))
+                let weight = estimated_signed_wallet_weight(&psbt)? + change_weight;
+                match drain_output {
+                    Some(output) => Ok((Some(output.value), weight)),
+                    // With another recipient, BDK drops a drain output below dust instead of failing.
+                    // Nothing is giveable then, but the fee must cover the real transaction,
+                    // which has an output for the locked amount.
+                    None if apollo.is_some() => {
+                        let drain_weight = bitcoin::TxOut {
+                            value: Amount::ZERO,
+                            script_pubkey: dummy_script.clone(),
+                        }
+                        .weight();
+                        Ok((None, weight + drain_weight))
+                    }
+                    None => bail!("Dummy transaction has no drain output"),
+                }
             },
             Err(bdk_wallet::error::CreateTxError::CoinSelection(_)) => {
                 // We don't have enough funds to create a transaction (below dust limit)
@@ -1534,7 +2065,7 @@ where
                     // The exact deposit amount does not matter
                     // because we only care about the weight of the transaction
                     // which does not depend on the amount of the input
-                    value: DUST_AMOUNT * 5,
+                    value: DUST_AMOUNT * 5 + apollo.map_or(Amount::ZERO, |shape| shape.amount),
                     script_pubkey: fake_deposit_script,
                 };
                 let fake_deposit_tx = bitcoin::Transaction {
@@ -1560,26 +2091,32 @@ where
                     vout: 0,
                 };
 
-                // Worst-case witness weight for our script type.
-                const DUMMY_SATISFACTION_WEIGHT: Weight = Weight::from_wu(107 * 10);
+                let satisfaction_weight = wallet
+                    .public_descriptor(KeychainKind::External)
+                    .max_weight_to_satisfy()
+                    .context("Failed to compute the satisfaction weight of our descriptor")?;
 
-                let mut tx_builder = wallet.build_tx();
+                let mut tx_builder = coin_selection::build_tx(&mut wallet, max_inputs, true)?;
+                self.exclude_reserved_outpoints(&mut tx_builder);
 
                 tx_builder.drain_to(dummy_script.clone());
                 tx_builder.fee_absolute(Amount::ZERO);
                 tx_builder.drain_wallet();
+                if let (Some(shape), Some(script)) = (apollo, &apollo_dummy_script) {
+                    tx_builder.add_recipient(script.clone(), shape.amount);
+                }
 
                 tx_builder
                     .add_foreign_utxo(
                         fake_deposit_outpoint,
                         fake_deposit_input,
-                        DUMMY_SATISFACTION_WEIGHT,
+                        satisfaction_weight,
                     ).context("Failed to add dummy foreign utxo to calculate fee for max_giveable if we had one more utxo")?;
 
                 // Try building the dummy drain transaction with the new fake UTXO
                 // If we fail now, we propagate the error to the caller
                 let psbt = tx_builder.finish()?;
-                let weight = psbt.unsigned_tx.weight();
+                let weight = estimated_signed_wallet_weight(&psbt)? + change_weight;
 
                 tracing::trace!(
                     weight = weight.to_wu(),
@@ -1620,6 +2157,14 @@ where
         })
     }
 
+    /// Return an uncapped rate for swap setup, including the current relay minimum.
+    pub async fn swap_fee_rate(&self) -> Result<FeeRate> {
+        Ok(self
+            .combined_fee_rate()
+            .await?
+            .max(self.combined_min_relay_fee().await?))
+    }
+
     /// Estimate total tx fee for a pre-defined target block based on the
     /// transaction weight. The max fee cannot be more than MAX_PERCENTAGE_FEE
     /// of amount
@@ -1642,6 +2187,19 @@ where
         let min_relay_fee = self.combined_min_relay_fee().await?;
 
         estimate_fee(weight, transfer_amount, fee_rate, min_relay_fee)
+    }
+
+    /// Estimates the total fee for a transaction of the given weight to confirm within
+    /// `target_block` blocks. The configured target is not used.
+    pub async fn estimate_fee_for_target(
+        &self,
+        weight: Weight,
+        target_block: u32,
+    ) -> Result<bitcoin::Amount> {
+        let fee_rate = self.combined_fee_rate_for_target(target_block).await?;
+        let min_relay_fee = self.combined_min_relay_fee().await?;
+
+        estimate_fee(weight, None, fee_rate, min_relay_fee)
     }
 }
 
@@ -1973,7 +2531,9 @@ impl Client {
         if let Some(tx) = results
             .iter()
             .filter_map(|result| result.as_ref().ok())
-            .find_map(|response| response.as_ref())
+            .filter_map(|response| response.as_ref())
+            // The txid does not commit to the witness, so a server can return a different transaction. Skip it.
+            .find(|tx| tx.compute_txid() == txid)
         {
             let tx = Arc::new(tx.clone());
             // Note: Perhaps it is better to only populate caches of the Electrum nodes
@@ -2155,6 +2715,11 @@ impl Client {
     }
 }
 
+/// Whether the lock input check was cancelled, or its canceller is gone.
+fn is_cancelled(cancel: &watch::Receiver<bool>) -> bool {
+    *cancel.borrow() || cancel.has_changed().is_err()
+}
+
 /// Returns true if the error is a server response indicating that the
 /// requested transaction does not exist (as opposed to the server failing
 /// to answer the query).
@@ -2190,6 +2755,17 @@ impl SyncRequestBuilderFactory {
 }
 
 #[async_trait::async_trait]
+impl VerifyPsbtPrevouts for Wallet {
+    async fn verify_psbt_prevouts(
+        &self,
+        psbt: &Psbt,
+        cancel: &watch::Receiver<bool>,
+    ) -> std::result::Result<(), PsbtPrevoutVerificationError> {
+        Wallet::verify_psbt_prevouts(self, psbt, cancel).await
+    }
+}
+
+#[async_trait::async_trait]
 impl BitcoinWallet for Wallet {
     async fn balance(&self) -> Result<Amount> {
         Wallet::balance(self).await
@@ -2209,8 +2785,17 @@ impl BitcoinWallet for Wallet {
         amount: Amount,
         spending_fee: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<Psbt> {
-        Wallet::send_to_address(self, address, amount, spending_fee, change_override).await
+        Wallet::send_to_address(
+            self,
+            address,
+            amount,
+            spending_fee,
+            change_override,
+            max_inputs,
+        )
+        .await
     }
 
     async fn send_to_address_dynamic_fee(
@@ -2218,8 +2803,49 @@ impl BitcoinWallet for Wallet {
         address: Address,
         amount: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<Psbt> {
-        Wallet::send_to_address_dynamic_fee(self, address, amount, change_override).await
+        Wallet::send_to_address_dynamic_fee(self, address, amount, change_override, max_inputs)
+            .await
+    }
+
+    async fn send_to_address_with_apollo_output(
+        &self,
+        address: Address,
+        amount: Amount,
+        apollo_address: Address,
+        tx_apollo_fee: Amount,
+        spending_fee: Amount,
+        change_override: Option<Address>,
+        max_inputs: Option<usize>,
+    ) -> Result<Psbt> {
+        Wallet::send_to_address_with_apollo_output(
+            self,
+            address,
+            amount,
+            apollo_address,
+            tx_apollo_fee,
+            spending_fee,
+            change_override,
+            max_inputs,
+        )
+        .await
+    }
+
+    async fn is_transaction_conflicted(&self, txid: Txid, min_confirmations: u32) -> Result<bool> {
+        Wallet::is_transaction_conflicted(self, txid, min_confirmations).await
+    }
+
+    fn reserve_outpoints(&self, outpoints: Vec<bitcoin::OutPoint>) {
+        Wallet::reserve_outpoints(self, outpoints)
+    }
+
+    fn release_outpoint(&self, outpoint: &bitcoin::OutPoint) {
+        Wallet::release_outpoint(self, outpoint)
+    }
+
+    async fn wallet_spending_transactions(&self) -> Vec<Arc<bitcoin::Transaction>> {
+        Wallet::wallet_spending_transactions(self).await
     }
 
     async fn sweep_balance_to_address_dynamic_fee(&self, address: Address) -> Result<Psbt> {
@@ -2230,12 +2856,36 @@ impl BitcoinWallet for Wallet {
         Wallet::sign_and_finalize(self, psbt).await
     }
 
+    fn prove_utxo_ownership(
+        &self,
+        psbt: &Psbt,
+        challenge: utxo_ownership_proof::Challenge,
+    ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>> {
+        Wallet::prove_utxo_ownership(self, psbt, challenge)
+    }
+
     async fn ensure_broadcasted(
         &self,
         tx: bitcoin::Transaction,
         kind: &str,
     ) -> Result<(Txid, Subscription)> {
         Wallet::ensure_broadcasted(self, tx, kind).await
+    }
+
+    async fn broadcast(
+        &self,
+        tx: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        Wallet::broadcast(self, tx, kind).await
+    }
+
+    async fn broadcast_without_subscription(
+        &self,
+        tx: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<Txid> {
+        Wallet::broadcast_without_subscription(self, tx, kind).await
     }
 
     async fn sync(&self) -> Result<()> {
@@ -2258,8 +2908,14 @@ impl BitcoinWallet for Wallet {
         Wallet::get_raw_transaction(self, txid).await
     }
 
-    async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
-        Wallet::max_giveable(self, locking_script_size).await
+    async fn max_giveable_with_optional_apollo(
+        &self,
+        locking_script_size: usize,
+        max_inputs: Option<usize>,
+        apollo: Option<ApolloOutputShape>,
+    ) -> Result<(Amount, Amount)> {
+        Wallet::max_giveable_with_optional_apollo(self, locking_script_size, max_inputs, apollo)
+            .await
     }
 
     async fn estimate_fee(
@@ -2268,6 +2924,14 @@ impl BitcoinWallet for Wallet {
         transfer_amount: Option<Amount>,
     ) -> Result<Amount> {
         Wallet::estimate_fee(self, weight, transfer_amount).await
+    }
+
+    async fn estimate_fee_for_target(&self, weight: Weight, target_block: u32) -> Result<Amount> {
+        Wallet::estimate_fee_for_target(self, weight, target_block).await
+    }
+
+    async fn swap_fee_rate(&self) -> Result<FeeRate> {
+        Wallet::swap_fee_rate(self).await
     }
 
     fn network(&self) -> Network {
@@ -2521,6 +3185,32 @@ pub fn trace_status_change(
     }
 
     new
+}
+
+/// Upper bound on the weight of `tx` once signed, rounded up to whole virtual
+/// bytes. Assumes every input spends a P2WPKH output and is signed with a
+/// maximum-size signature.
+pub fn estimated_signed_p2wpkh_weight(tx: &Transaction) -> Weight {
+    let weight = predict_weight(
+        tx.input.iter().map(|_| InputWeightPrediction::P2WPKH_MAX),
+        tx.script_pubkey_lens(),
+    );
+    Weight::from_vb_unchecked(weight.to_vbytes_ceil())
+}
+
+/// Weight of a transaction built by our wallet once we sign every input.
+fn estimated_signed_wallet_weight(psbt: &Psbt) -> Result<Weight> {
+    for input in &psbt.inputs {
+        let utxo = input
+            .witness_utxo
+            .as_ref()
+            .context("Wallet transaction input has no witness UTXO")?;
+        anyhow::ensure!(
+            utxo.script_pubkey.is_p2wpkh(),
+            "Wallet transaction input does not spend a P2WPKH output"
+        );
+    }
+    Ok(estimated_signed_p2wpkh_weight(&psbt.unsigned_tx))
 }
 
 /// Estimate the absolute fee for a transaction.
@@ -2968,6 +3658,8 @@ impl TestWalletBuilder {
             network: Network::Regtest,
             finality_confirmations: 1,
             target_block: 1,
+            xprivkey: self.key,
+            unspendable: Arc::default(),
         };
 
         let mut locked_wallet = wallet.wallet.try_lock().unwrap();
@@ -3013,6 +3705,22 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         unimplemented!("stub method called erroneously")
     }
 
+    async fn broadcast(
+        &self,
+        tx: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn broadcast_without_subscription(
+        &self,
+        tx: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<Txid> {
+        unimplemented!("stub method called erroneously")
+    }
+
     async fn balance(&self) -> Result<Amount> {
         unimplemented!("stub method called erroneously")
     }
@@ -3022,7 +3730,7 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     async fn new_address(&self) -> Result<Address> {
-        unimplemented!("stub method called erroneously")
+        Wallet::new_address(self).await
     }
 
     async fn send_to_address(
@@ -3031,8 +3739,17 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         amount: Amount,
         spending_fee: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<Psbt> {
-        unimplemented!("stub method called erroneously")
+        Wallet::send_to_address(
+            self,
+            address,
+            amount,
+            spending_fee,
+            change_override,
+            max_inputs,
+        )
+        .await
     }
 
     async fn send_to_address_dynamic_fee(
@@ -3040,8 +3757,48 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         address: Address,
         amount: Amount,
         change_override: Option<Address>,
+        max_inputs: Option<usize>,
     ) -> Result<Psbt> {
         unimplemented!("stub method called erroneously")
+    }
+
+    async fn send_to_address_with_apollo_output(
+        &self,
+        address: Address,
+        amount: Amount,
+        apollo_address: Address,
+        tx_apollo_fee: Amount,
+        spending_fee: Amount,
+        change_override: Option<Address>,
+        max_inputs: Option<usize>,
+    ) -> Result<Psbt> {
+        Wallet::send_to_address_with_apollo_output(
+            self,
+            address,
+            amount,
+            apollo_address,
+            tx_apollo_fee,
+            spending_fee,
+            change_override,
+            max_inputs,
+        )
+        .await
+    }
+
+    async fn is_transaction_conflicted(&self, txid: Txid, min_confirmations: u32) -> Result<bool> {
+        Wallet::is_transaction_conflicted(self, txid, min_confirmations).await
+    }
+
+    fn reserve_outpoints(&self, outpoints: Vec<bitcoin::OutPoint>) {
+        Wallet::reserve_outpoints(self, outpoints)
+    }
+
+    fn release_outpoint(&self, outpoint: &bitcoin::OutPoint) {
+        Wallet::release_outpoint(self, outpoint)
+    }
+
+    async fn wallet_spending_transactions(&self) -> Vec<Arc<bitcoin::Transaction>> {
+        Wallet::wallet_spending_transactions(self).await
     }
 
     async fn sweep_balance_to_address_dynamic_fee(&self, address: Address) -> Result<Psbt> {
@@ -3049,7 +3806,15 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     async fn sign_and_finalize(&self, psbt: Psbt) -> Result<bitcoin::Transaction> {
-        unimplemented!("stub method called erroneously")
+        Wallet::sign_and_finalize(self, psbt).await
+    }
+
+    fn prove_utxo_ownership(
+        &self,
+        psbt: &Psbt,
+        challenge: utxo_ownership_proof::Challenge,
+    ) -> Result<Vec<utxo_ownership_proof::OwnershipProof>> {
+        Wallet::prove_utxo_ownership(self, psbt, challenge)
     }
 
     async fn sync(&self) -> Result<()> {
@@ -3075,8 +3840,14 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         unimplemented!("stub method called erroneously")
     }
 
-    async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
-        unimplemented!("stub method called erroneously")
+    async fn max_giveable_with_optional_apollo(
+        &self,
+        locking_script_size: usize,
+        max_inputs: Option<usize>,
+        apollo: Option<ApolloOutputShape>,
+    ) -> Result<(Amount, Amount)> {
+        Wallet::max_giveable_with_optional_apollo(self, locking_script_size, max_inputs, apollo)
+            .await
     }
 
     async fn estimate_fee(
@@ -3084,11 +3855,19 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         weight: Weight,
         transfer_amount: Option<Amount>,
     ) -> Result<Amount> {
-        unimplemented!("stub method called erroneously")
+        Wallet::estimate_fee(self, weight, transfer_amount).await
+    }
+
+    async fn estimate_fee_for_target(&self, weight: Weight, target_block: u32) -> Result<Amount> {
+        Wallet::estimate_fee_for_target(self, weight, target_block).await
+    }
+
+    async fn swap_fee_rate(&self) -> Result<FeeRate> {
+        Wallet::swap_fee_rate(self).await
     }
 
     fn network(&self) -> Network {
-        unimplemented!("stub method called erroneously")
+        self.network
     }
 
     fn finality_confirmations(&self) -> u32 {
@@ -3097,5 +3876,383 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
 
     async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
         unimplemented!("stub method called erroneously")
+    }
+}
+
+#[cfg(test)]
+mod input_limit_tests {
+    use super::*;
+    const INPUT_LIMIT: usize = 25;
+
+    #[tokio::test]
+    async fn fragmented_wallet_estimate_and_lock_construction_use_the_same_cap() -> Result<()> {
+        let wallet = TestWalletBuilder::new(100_000)
+            .with_num_utxos(26)
+            .build()
+            .await;
+        let recipient = wallet.new_address().await?;
+        let (amount, fee) = wallet
+            .max_giveable(recipient.script_pubkey().len(), Some(INPUT_LIMIT))
+            .await?;
+        assert_eq!(amount + fee, Amount::from_sat(2_500_000));
+        let psbt = wallet
+            .send_to_address(recipient.clone(), amount, fee, None, Some(INPUT_LIMIT))
+            .await?;
+        assert_eq!(psbt.inputs.len(), INPUT_LIMIT);
+        assert_eq!(psbt.fee()?, fee);
+        assert_eq!(psbt.unsigned_tx.output.len(), 1);
+        assert_eq!(psbt.unsigned_tx.output[0].value, amount);
+        wallet.sign_and_finalize(psbt).await?;
+        let error = wallet
+            .send_to_address(
+                recipient.clone(),
+                Amount::from_sat(2_500_000),
+                fee,
+                None,
+                Some(INPUT_LIMIT),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Failed to select transaction inputs")
+        );
+        assert!(
+            wallet
+                .send_to_address_dynamic_fee(
+                    recipient,
+                    Amount::from_sat(2_500_000),
+                    None,
+                    Some(INPUT_LIMIT)
+                )
+                .await
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unrestricted_withdrawal_can_spend_every_fragment() -> Result<()> {
+        let wallet = TestWalletBuilder::new(100_000)
+            .with_num_utxos(30)
+            .build()
+            .await;
+        let recipient = wallet.new_address().await?;
+        let (amount, fee) = wallet
+            .max_giveable(recipient.script_pubkey().len(), None)
+            .await?;
+        assert_eq!(amount + fee, Amount::from_sat(3_000_000));
+        let psbt = wallet
+            .sweep_balance_to_address_dynamic_fee(recipient.clone())
+            .await?;
+        assert_eq!(psbt.inputs.len(), 30);
+        assert_eq!(psbt.fee()?, fee);
+        assert_eq!(psbt.unsigned_tx.output[0].value, amount);
+        wallet.sign_and_finalize(psbt).await?;
+        let psbt = wallet
+            .send_to_address_dynamic_fee(recipient, Amount::from_sat(2_800_000), None, None)
+            .await?;
+        assert!(psbt.inputs.len() > INPUT_LIMIT);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn limited_selection_uses_largest_spendable_outputs() -> Result<()> {
+        let wallet = TestWalletBuilder::new(100_000)
+            .with_num_utxos(30)
+            .build()
+            .await;
+        let largest = wallet.insert_fake_utxo(Amount::from_sat(500_000)).await;
+        let second = wallet.insert_fake_utxo(Amount::from_sat(200_000)).await;
+        let immature = {
+            let mut inner = wallet.wallet.lock().await;
+            let tx = Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::absolute::LockTime::ZERO,
+                input: vec![bitcoin::TxIn::default()], // null prevout marks a coinbase
+                output: vec![bitcoin::TxOut {
+                    value: Amount::ONE_BTC,
+                    script_pubkey: inner
+                        .next_unused_address(KeychainKind::External)
+                        .script_pubkey(),
+                }],
+            };
+            let txid = tx.compute_txid();
+            let anchor = bdk_chain::ConfirmationBlockTime {
+                block_id: inner.latest_checkpoint().block_id(),
+                confirmation_time: 0,
+            };
+            let mut update = bdk_wallet::Update::default();
+            update.tx_update.txs.push(Arc::new(tx));
+            update.tx_update.anchors.insert((anchor, txid));
+            inner.apply_update(update)?;
+            assert_eq!(inner.balance().immature, Amount::ONE_BTC);
+            bitcoin::OutPoint { txid, vout: 0 }
+        };
+        let recipient = wallet.new_address().await?;
+        let (amount, fee) = wallet
+            .max_giveable(recipient.script_pubkey().len(), Some(3))
+            .await?;
+        assert_eq!(amount + fee, Amount::from_sat(800_000));
+        let psbt = wallet
+            .send_to_address(recipient.clone(), amount, fee, None, Some(3))
+            .await?;
+        let selected: Vec<_> = psbt
+            .unsigned_tx
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .collect();
+        assert!(selected.contains(&largest) && selected.contains(&second));
+        assert!(!selected.contains(&immature));
+        assert_eq!(selected.len(), 3);
+        let dynamic = wallet
+            .send_to_address_dynamic_fee(recipient, Amount::from_sat(750_000), None, Some(3))
+            .await?;
+        assert_eq!(dynamic.inputs.len(), 3);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn input_limit_must_allow_at_least_one_input() {
+        let wallet = TestWalletBuilder::new(100_000).build().await;
+        assert!(wallet.max_giveable(22, Some(0)).await.is_err());
+        assert!(wallet.max_giveable(22, Some(1)).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn unconfirmed_v3_outputs_are_not_spent() -> Result<()> {
+        use bdk_wallet::chain::ConfirmationBlockTime;
+        use bdk_wallet::test_utils::{insert_anchor, insert_tx};
+
+        let wallet = TestWalletBuilder::new(100_000).build().await;
+        let receive = |version, sats| {
+            let wallet = &wallet;
+            async move {
+                let mut bdk = wallet.wallet.lock().await;
+                let script_pubkey = bdk
+                    .next_unused_address(KeychainKind::External)
+                    .script_pubkey();
+                let tx = Transaction {
+                    version: bitcoin::transaction::Version(version),
+                    lock_time: bitcoin::absolute::LockTime::ZERO,
+                    input: vec![],
+                    output: vec![bitcoin::TxOut {
+                        value: Amount::from_sat(sats),
+                        script_pubkey,
+                    }],
+                };
+                let txid = tx.compute_txid();
+                insert_tx(&mut bdk, tx);
+                bitcoin::OutPoint::new(txid, 0)
+            }
+        };
+        let v2_output = receive(2, 30_000).await;
+        let v3_output = receive(3, 50_000).await;
+
+        // Drains everything spendable and returns the spent outpoints.
+        let drain = || async {
+            let recipient = wallet.new_address().await?;
+            let (amount, fee) = wallet
+                .max_giveable(recipient.script_pubkey().len(), None)
+                .await?;
+            let psbt = wallet
+                .send_to_address(recipient, amount, fee, None, None)
+                .await?;
+            let spent: Vec<_> = psbt
+                .unsigned_tx
+                .input
+                .iter()
+                .map(|input| input.previous_output)
+                .collect();
+            Ok::<_, anyhow::Error>((amount + fee, spent))
+        };
+
+        let (total, spent) = drain().await?;
+        assert_eq!(total, Amount::from_sat(130_000));
+        assert!(spent.contains(&v2_output));
+        assert!(!spent.contains(&v3_output));
+
+        {
+            let mut bdk = wallet.wallet.lock().await;
+            let block_id = bdk.latest_checkpoint().block_id();
+            insert_anchor(
+                &mut bdk,
+                v3_output.txid,
+                ConfirmationBlockTime {
+                    block_id,
+                    confirmation_time: 0,
+                },
+            );
+        }
+
+        let (total, spent) = drain().await?;
+        assert_eq!(total, Amount::from_sat(180_000));
+        assert!(spent.contains(&v3_output));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fees_cover_the_signed_transaction() -> Result<()> {
+        let sats_per_vb = 10;
+        for inputs in [1, INPUT_LIMIT] {
+            let wallet = TestWalletBuilder::new(100_000)
+                .with_fees(sats_per_vb, 1)
+                .with_num_utxos(u8::try_from(inputs)?)
+                .build()
+                .await;
+            let recipient = wallet.new_address().await?;
+            let (amount, fee) = wallet
+                .max_giveable(recipient.script_pubkey().len(), Some(INPUT_LIMIT))
+                .await?;
+            let max_giveable = wallet
+                .send_to_address(recipient.clone(), amount, fee, None, Some(INPUT_LIMIT))
+                .await?;
+            let dynamic_fee = wallet
+                .send_to_address_dynamic_fee(recipient, amount / 2, None, Some(INPUT_LIMIT))
+                .await?;
+
+            for psbt in [max_giveable, dynamic_fee] {
+                let fee = psbt.fee()?;
+                let signed = wallet.sign_and_finalize(psbt).await?;
+                assert!(
+                    fee.to_sat() >= sats_per_vb * signed.vsize() as u64,
+                    "{fee} for {} vB with {inputs} inputs",
+                    signed.vsize()
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod apollo_builder_tests {
+    use super::*;
+
+    const APOLLO_FEE: Amount = Amount::from_sat(2_000);
+
+    async fn lock_with_apollo_output(
+        wallet: &Wallet<Connection, StaticFeeRate>,
+    ) -> Result<(Transaction, Address)> {
+        let apollo_address = wallet.new_address().await?;
+        let psbt = wallet
+            .send_to_address_with_apollo_output(
+                wallet.new_address().await?,
+                Amount::from_sat(10_000),
+                apollo_address.clone(),
+                APOLLO_FEE,
+                Amount::from_sat(1_000),
+                Some(wallet.new_address().await?),
+                None,
+            )
+            .await?;
+        Ok((wallet.sign_and_finalize(psbt).await?, apollo_address))
+    }
+
+    #[tokio::test]
+    async fn apollo_transaction_is_built_without_registering_the_lock() -> Result<()> {
+        let wallet = TestWalletBuilder::new(100_000).build().await;
+        let (lock, apollo_address) = lock_with_apollo_output(&wallet).await?;
+
+        assert_eq!(lock.output[1].script_pubkey, apollo_address.script_pubkey());
+        assert_eq!(lock.output[1].value, APOLLO_FEE);
+
+        let psbt = burn_output_to_op_return(&lock, 1, vec![1, 2, 3])?;
+        assert_eq!(psbt.fee()?, APOLLO_FEE);
+        let apollo = wallet.sign_and_finalize(psbt).await?;
+
+        assert_eq!(apollo.input.len(), 1);
+        assert_eq!(apollo.input[0].previous_output.txid, lock.compute_txid());
+        assert_eq!(apollo.output.len(), 1);
+        assert!(apollo.output[0].script_pubkey.is_op_return());
+        assert!(
+            wallet
+                .wallet
+                .lock()
+                .await
+                .get_tx(lock.compute_txid())
+                .is_none()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reserved_outputs_are_never_selected() -> Result<()> {
+        let wallet = TestWalletBuilder::new(100_000).build().await;
+        let outpoint = wallet
+            .wallet
+            .lock()
+            .await
+            .list_unspent()
+            .next()
+            .unwrap()
+            .outpoint;
+        let destination = wallet.new_address().await?;
+
+        wallet.reserve_outpoints([outpoint]);
+        assert!(
+            wallet
+                .send_to_address(
+                    destination.clone(),
+                    Amount::from_sat(10_000),
+                    Amount::from_sat(1_000),
+                    None,
+                    None
+                )
+                .await
+                .is_err()
+        );
+        let (max_giveable, _) = wallet.max_giveable(22, None).await?;
+        assert_eq!(max_giveable, Amount::ZERO);
+
+        wallet.release_outpoint(&outpoint);
+        wallet
+            .send_to_address(
+                destination,
+                Amount::from_sat(10_000),
+                Amount::from_sat(1_000),
+                None,
+                None,
+            )
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn max_giveable_excludes_the_apollo_output_and_prices_the_whole_lock() -> Result<()> {
+        let wallet = TestWalletBuilder::new(100_000)
+            .with_fees(20, 1)
+            .build()
+            .await;
+        let shape = ApolloOutputShape {
+            script_size: 22,
+            amount: APOLLO_FEE,
+            change_script_size: 34,
+        };
+
+        let (plain, plain_fee) = wallet.max_giveable(34, None).await?;
+        let (with_apollo, fee) = wallet
+            .max_giveable_with_optional_apollo(34, None, Some(shape))
+            .await?;
+
+        assert!(fee > plain_fee);
+        assert_eq!(plain - with_apollo, APOLLO_FEE + (fee - plain_fee));
+
+        // The maximum giveable amount can be locked together with the Apollo output.
+        let psbt = wallet
+            .send_to_address_with_apollo_output(
+                wallet.new_address().await?,
+                with_apollo,
+                wallet.new_address().await?,
+                APOLLO_FEE,
+                fee,
+                None,
+                None,
+            )
+            .await?;
+        assert_eq!(psbt.fee()?, fee);
+        Ok(())
     }
 }

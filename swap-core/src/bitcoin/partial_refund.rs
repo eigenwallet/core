@@ -21,7 +21,7 @@ use super::timelocks::RemainingRefundTimelock;
 
 #[derive(Debug, Clone)]
 pub struct TxPartialRefund {
-    inner: Transaction,
+    pub(super) inner: Transaction,
     digest: Sighash,
     cancel_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     pub(in crate::bitcoin) amnesty_output_descriptor: Descriptor<::bitcoin::PublicKey>,

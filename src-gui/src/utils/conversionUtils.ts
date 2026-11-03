@@ -43,6 +43,11 @@ export function bytesToMb(bytes: number): number {
   return bytes / (1024 * 1024);
 }
 
+/// Get the exchange rate in BTC per XMR from a Bitcoin and a Monero amount
+export function getExchangeRate(sats: number, piconeros: number): number {
+  return satsToBtc(sats) / piconerosToXmr(piconeros);
+}
+
 /// Get the markup of a maker's exchange rate compared to the market rate in percent
 export function getMarkup(makerPrice: number, marketPrice: number): number {
   return ((makerPrice - marketPrice) / marketPrice) * 100;

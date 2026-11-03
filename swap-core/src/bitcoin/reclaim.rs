@@ -13,7 +13,7 @@ use super::timelocks::RemainingRefundTimelock;
 
 #[derive(Debug, Clone)]
 pub struct TxReclaim {
-    inner: Transaction,
+    pub(super) inner: Transaction,
     digest: Sighash,
     amensty_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     watch_script: ScriptBuf,

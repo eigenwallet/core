@@ -30,10 +30,17 @@ export const swapSlice = createSlice({
           curr: action.payload.event,
           prev: null,
           swapId: action.payload.swap_id,
+          quote: null,
         };
       } else {
         swap.state.prev = swap.state.curr;
         swap.state.curr = action.payload.event;
+      }
+
+      // Keep the selected quote. Later events replace `curr` and `prev`, but
+      // the swap setup page compares the offer with this quote.
+      if (action.payload.event.type === "ReceivedQuote") {
+        swap.state.quote = action.payload.event.content;
       }
     },
     swapReset() {

@@ -36,6 +36,7 @@ use swap::common::{self, get_logs, warn_if_outdated};
 use swap::database::{AccessMode, open_db};
 use swap::monero;
 use swap::network::rendezvous::XmrBtcNamespace;
+use swap::network::swap_setup::verification::LockInputVerifier;
 use swap::network::swarm;
 use swap::protocol::alice::{AliceState, HermesFundingPolicy, TipConfig, run};
 use swap::protocol::{Database, State};
@@ -217,7 +218,8 @@ pub async fn main() -> Result<()> {
             }
 
             // Initialize Bitcoin wallet
-            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, false).await?;
+            let bitcoin_wallet =
+                Arc::new(init_bitcoin_wallet(&config, &seed, env_config, false).await?);
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
@@ -300,6 +302,7 @@ pub async fn main() -> Result<()> {
                 kraken_rate.clone(),
                 resume_only,
                 env_config,
+                LockInputVerifier::spawn(bitcoin_wallet.clone()),
                 namespace,
                 &config.network.rendezvous_point,
                 tor_client,
@@ -380,6 +383,10 @@ pub async fn main() -> Result<()> {
             let (metrics, _metrics_server) =
                 match (config.network.prometheus_port, metrics_registry) {
                     (Some(port), Some(mut registry)) => {
+                        swarm
+                            .behaviour()
+                            .swap_setup
+                            .register_verification_metrics(&mut registry);
                         let metrics = metrics::Metrics::new(&mut registry);
                         let server = metrics::MetricsServer::start(port, registry).await?;
                         (Some(metrics), Some(server))
@@ -387,7 +394,6 @@ pub async fn main() -> Result<()> {
                     _ => (None, None),
                 };
 
-            let bitcoin_wallet = Arc::new(bitcoin_wallet);
             let (event_loop, mut swap_receiver, event_loop_service) = EventLoop::new(
                 swarm,
                 metrics,
@@ -399,7 +405,13 @@ pub async fn main() -> Result<()> {
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
-                config.maker.btc_redeem_fee_multiplier,
+                config.maker.btc_swap_fee_rate_multiplier,
+                config
+                    .maker
+                    .btc_redeem_base_fee_multiplier
+                    .try_into()
+                    .context("Invalid maker.btc_redeem_base_fee_multiplier")?,
+                std::time::Duration::from_secs(config.maker.wallet_snapshot_cache_ttl_secs),
                 tip_config,
                 hermes_funding_policy,
                 config.maker.refund_policy,
@@ -513,7 +525,7 @@ pub async fn main() -> Result<()> {
             let withdraw_tx_unsigned = match amount {
                 Some(amount) => {
                     bitcoin_wallet
-                        .send_to_address_dynamic_fee(address, amount, None)
+                        .send_to_address_dynamic_fee(address, amount, None, None)
                         .await?
                 }
                 None => {

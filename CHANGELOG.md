@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add Apollo, an encrypted on-chain backup that lets you recover swaps started after you enable it from your wallet seed if you lose your local swap data.
+  It is off by default and can be enabled with "Backup data on chain" in the settings; the setting only applies to new swaps.
+  Each backup requires an additional Bitcoin transaction fee.
+  Swaps set up before Apollo continue without a backup.
+  There is no downgrade support: once Apollo has run, the database cannot be opened by older versions.
+
+## [5.0.2] - 2026-10-31
+
+- GUI + CLI + ASB: Update Arti to 2.7.0, which includes several reliability improvements.
+
+## [5.0.1] - 2026-10-30
+
+- ORCHESTRATOR: Update Tor to 0.4.9.9 and ship the logs of the `tor` container to Loki.
+- GUI: Show a warning before you accept an offer during swap setup if the rate of the maker is more than 5% above its quote, its markup is above 5%, or its markup is more than 25%, and more than 0.25 percentage points, above the quoted markup.
+- Breaking protocol change: Prevent transaction pinning of the cancel and refund transactions.
+  Both peers must upgrade to start a new swap; existing swaps are not affected.
+  ASB: `maker.btc_redeem_fee_multiplier` was removed. Generated configs contain it and the asb does not start with it, so remove that line from your config. Two new options set the Bitcoin fees: `maker.btc_swap_fee_rate_multiplier` (default `1.0`) scales the fee rate of all presigned transactions, and `maker.btc_redeem_base_fee_multiplier` (default `"2.50"`) sets the redeem fee relative to the others.
+- Breaking protocol change: Takers prove that they own the inputs of the Bitcoin lock transaction, and makers verify them during swap setup.
+- The cancel timelock of new swaps on mainnet is 30 blocks instead of 24. Takers spend at most 25 of their Bitcoin outputs in a swap.
+
 ## [4.16.1] - 2026-10-13
 
 - Report the actual Monero wallet error instead of "unknown error, error not set".
@@ -1093,7 +1113,10 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.16.1...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/5.0.2...HEAD
+[5.0.2]: https://github.com/eigenwallet/core/compare/5.0.1...5.0.2
+[5.0.1]: https://github.com/eigenwallet/core/compare/5.0.0...5.0.1
+[5.0.0]: https://github.com/eigenwallet/core/compare/4.16.1...5.0.0
 [4.16.1]: https://github.com/eigenwallet/core/compare/4.16.0...4.16.1
 [4.16.0]: https://github.com/eigenwallet/core/compare/4.15.0...4.16.0
 [4.15.0]: https://github.com/eigenwallet/core/compare/4.14.0...4.15.0
