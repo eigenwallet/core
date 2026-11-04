@@ -8,7 +8,7 @@ async fn main() -> Result<()> {
     )?;
 
     let price_ticker_ws_url_kraken = Url::parse("wss://ws.kraken.com")?;
-    let mut ticker = swap_feed::kraken::connect(price_ticker_ws_url_kraken)
+    let mut ticker = swap_feed::kraken::connect(price_ticker_ws_url_kraken , None)
         .context("Failed to connect to kraken")?;
 
     loop {
