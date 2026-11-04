@@ -830,3 +830,18 @@ pub async fn stats_handler(State(state): State<AppState>) -> Response {
     .instrument(info_span!("stats_request"))
     .await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn jsonrpc_error_is_detected_only_for_error_field() {
+        assert_eq!(
+            get_jsonrpc_error(br#"{"error":"boom"}"#),
+            Some("boom".to_string())
+        );
+        assert_eq!(get_jsonrpc_error(br#"{"result":{"height":1}}"#), None);
+        assert_eq!(get_jsonrpc_error(b"\x00\x01 not json"), None);
+    }
+}
