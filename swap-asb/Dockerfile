@@ -88,6 +88,12 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
 # Act as if we are in a GitHub Actions environment
 ENV DOCKER_BUILD=true
 
+# Number of parallel jobs for the Monero C++ build (monero-sys/build.rs).
+# Defaults to serial (-j1) when unset because Monero's compilation is RAM-hungry.
+# Override with `--build-arg MONERO_BUILD_JOBS=N` on builders with enough memory.
+ARG MONERO_BUILD_JOBS
+ENV MONERO_BUILD_JOBS=${MONERO_BUILD_JOBS}
+
 # Now we build our binaries
 COPY . .
 
