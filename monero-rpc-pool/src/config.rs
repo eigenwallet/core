@@ -9,6 +9,7 @@ pub struct Config {
     pub port: u16,
     pub data_dir: PathBuf,
     pub tor_client: Option<TorClientArc>,
+    pub system_socks5: Option<String>, // EKLENDİ
     pub network: Network,
 }
 
@@ -19,6 +20,7 @@ impl std::fmt::Debug for Config {
             .field("port", &self.port)
             .field("data_dir", &self.data_dir)
             .field("tor_client", &self.tor_client.is_some())
+            .field("system_socks5", &self.system_socks5) // EKLENDİ
             .field("network", &self.network)
             .finish()
     }
@@ -26,7 +28,7 @@ impl std::fmt::Debug for Config {
 
 impl Config {
     pub fn new_with_port(host: String, port: u16, data_dir: PathBuf, network: Network) -> Self {
-        Self::new_with_port_and_tor_client(host, port, data_dir, None, network)
+        Self::new_with_port_and_tor_client(host, port, data_dir, None, None, network)
     }
 
     pub fn new_with_port_and_tor_client(
@@ -34,6 +36,7 @@ impl Config {
         port: u16,
         data_dir: PathBuf,
         tor_client: impl Into<Option<TorClientArc>>,
+        system_socks5: Option<String>, // EKLENDİ
         network: Network,
     ) -> Self {
         Self {
@@ -41,17 +44,19 @@ impl Config {
             port,
             data_dir,
             tor_client: tor_client.into(),
+            system_socks5, // EKLENDİ
             network,
         }
     }
 
     pub fn new_random_port(data_dir: PathBuf, network: Network) -> Self {
-        Self::new_random_port_with_tor_client(data_dir, None, network)
+        Self::new_random_port_with_tor_client(data_dir, None, None, network)
     }
 
     pub fn new_random_port_with_tor_client(
         data_dir: PathBuf,
         tor_client: impl Into<Option<TorClientArc>>,
+        system_socks5: Option<String>, // EKLENDİ
         network: Network,
     ) -> Self {
         Self::new_with_port_and_tor_client(
@@ -59,6 +64,7 @@ impl Config {
             0,
             data_dir,
             tor_client,
+            system_socks5, // EKLENDİ
             network,
         )
     }
