@@ -10,7 +10,7 @@ export const DEFAULT_RENDEZVOUS_POINTS = [
   "/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
   "/onion3/av2jauifny7dgpvzhsnhra3cwivf6ofaefxvwhhuh5y7hsolabehhaad:8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
   "/dns4/p2p.myexchange.cash/tcp/443/wss/p2p/12D3KooWQQeUXdMkwJo8zESkKo7xek7NtVgqh1Q4RPnJCTmESX1Z",
-  "/ip4/170.106.113.194/tcp/9939/p2p/12D3KooWEtnbnBDG9owAfBuZz3dU6Wz3T6VdWTZFBpv3fJWYtSKV",
+  "/dns4/rendezvous.xmr.pub/tcp/9939/p2p/12D3KooWEtnbnBDG9owAfBuZz3dU6Wz3T6VdWTZFBpv3fJWYtSKV",
   "/onion3/itqgysntnzc75lvs3pmpjuwth2d7h4ymenuf6zdwrwwfoktc2djmhgid:9939/p2p/12D3KooWEtnbnBDG9owAfBuZz3dU6Wz3T6VdWTZFBpv3fJWYtSKV",
 ];
 

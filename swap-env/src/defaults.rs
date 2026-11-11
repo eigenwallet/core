@@ -54,7 +54,7 @@ pub fn default_rendezvous_points() -> Vec<Multiaddr> {
         "/onion3/m6rboz5lv4wxldgybgox4pr4s6xci3h2exi5nogxaox762xji2gokuad:8891/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov".parse().unwrap(),
         "/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE".parse().unwrap(),
         "/onion3/av2jauifny7dgpvzhsnhra3cwivf6ofaefxvwhhuh5y7hsolabehhaad:8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE".parse().unwrap(),
-        "/ip4/170.106.113.194/tcp/9939/p2p/12D3KooWEtnbnBDG9owAfBuZz3dU6Wz3T6VdWTZFBpv3fJWYtSKV".parse().unwrap(),
+        "/dns4/rendezvous.xmr.pub/tcp/9939/p2p/12D3KooWEtnbnBDG9owAfBuZz3dU6Wz3T6VdWTZFBpv3fJWYtSKV".parse().unwrap(),
         "/onion3/itqgysntnzc75lvs3pmpjuwth2d7h4ymenuf6zdwrwwfoktc2djmhgid:9939/p2p/12D3KooWEtnbnBDG9owAfBuZz3dU6Wz3T6VdWTZFBpv3fJWYtSKV".parse().unwrap(),
     ]
 }
