@@ -174,6 +174,8 @@ pub struct Wallet<Persister = Connection, C = Client> {
     persister: Arc<TokioMutex<Persister>>,
     /// The electrum client.
     electrum_client: Arc<C>,
+    /// Optional bitcoind RPC backend (bounty #747). `None` = electrum path.
+    pub rpc_backend: Option<crate::rpc_client::BitcoindRpcSyncState>,
     /// The cached fee estimator for the electrum client.
     cached_electrum_fee_estimator: Arc<CachedFeeEstimator<C>>,
     /// The cached fee estimator for the mempool client.
@@ -247,6 +249,9 @@ pub struct WalletConfig<Seed: BitcoinWalletSeed> {
     tauri_handle: TauriHandle,
     #[builder(default = "true")]
     use_mempool_space_fee_estimation: bool,
+    /// Bounty #747: optional bitcoind RPC backend. `None` = electrum (default).
+    #[builder(default)]
+    rpc_backend: Option<crate::rpc_client::BitcoindRpcConfig>,
 }
 
 impl<Seed: BitcoinWalletSeed> WalletBuilder<Seed> {
@@ -257,6 +262,15 @@ impl<Seed: BitcoinWalletSeed> WalletBuilder<Seed> {
         let config = self
             .validate_config()
             .map_err(|e| anyhow!("Builder validation failed: {e}"))?;
+
+        // Bounty #747: optional bitcoind RPC backend.
+        let rpc_backend = match &config.rpc_backend {
+            Some(rpc_cfg) => Some(crate::rpc_client::BitcoindRpcSyncState::new(
+                rpc_cfg.clone(),
+                rpc_cfg.start_height.unwrap_or(0),
+            )?),
+            None => None,
+        };
 
         let mut client = Client::new(&config.electrum_rpc_urls, config.sync_interval)
             .await
@@ -311,6 +325,7 @@ impl<Seed: BitcoinWalletSeed> WalletBuilder<Seed> {
                     .context("Failed to get pre-1.0.0 BDK wallet export for migration")?;
 
                     Wallet::create_new(
+                        rpc_backend.clone(),
                         xprivkey,
                         config.network,
                         client,
@@ -335,6 +350,7 @@ impl<Seed: BitcoinWalletSeed> WalletBuilder<Seed> {
                     .context("Failed to open in-memory SQLite database")?;
 
                 Wallet::create_new::<Connection>(
+                    rpc_backend,
                     xprivkey,
                     config.network,
                     client,
@@ -544,6 +560,7 @@ impl Wallet {
             let export = Self::get_pre_1_0_bdk_wallet_export(data_dir, network, seed).await?;
 
             Self::create_new(
+                None, // legacy open path continues on electrum (see PR notes)
                 xprivkey,
                 network,
                 client,
@@ -570,6 +587,7 @@ impl Wallet {
         tauri_handle: TauriHandle,
     ) -> Result<Wallet<bdk_wallet::rusqlite::Connection, Client>> {
         Self::create_new(
+            None,
             seed.derive_extended_private_key(network)?,
             network,
             Client::new(electrum_rpc_urls, sync_interval)
@@ -592,6 +610,7 @@ impl Wallet {
     /// This is a private API so we allow too many arguments.
     #[allow(clippy::too_many_arguments)]
     async fn create_new<Persister>(
+        rpc_backend: Option<crate::rpc_client::BitcoindRpcSyncState>,
         xprivkey: Xpriv,
         network: Network,
         client: Client,
@@ -690,6 +709,7 @@ impl Wallet {
 
         Ok(Wallet {
             wallet: wallet.into_arc_mutex_async(),
+            rpc_backend,
             electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator,
@@ -751,6 +771,7 @@ impl Wallet {
 
         let wallet = Wallet {
             wallet: wallet.into_arc_mutex_async(),
+            rpc_backend: None,
             electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(cached_mempool_fee_estimator),
@@ -1318,6 +1339,19 @@ impl Wallet {
     /// Perform a single sync of the wallet with the blockchain
     /// and emit progress events to the UI.
     async fn sync_once(&self) -> Result<()> {
+        // Bounty #747: bitcoind RPC backend — bypass electrum when configured.
+        if let Some(rpc_state) = self.rpc_backend.as_ref() {
+            let mut state = rpc_state.clone();
+            let mut wallet = self.wallet.lock().await;
+            state
+                .sync_pass(&mut wallet)
+                .await
+                .context("bitcoind RPC sync failed")?;
+            let mut persister = self.persister.lock().await;
+            wallet.persist(&mut persister)?;
+            return Ok(());
+        }
+
         let background_process_handle = self.tauri_handle.as_ref().map(|th| th.start_sync());
 
         // We want to update the UI as often as possible
@@ -3650,6 +3684,7 @@ impl TestWalletBuilder {
 
         let wallet = Wallet {
             wallet: bdk_core_wallet.into_arc_mutex_async(),
+            rpc_backend: None,
             electrum_client: Arc::new(client),
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(None), // We don't use mempool client in tests
