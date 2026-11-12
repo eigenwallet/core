@@ -11,9 +11,9 @@ jobs:
     if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4.1.7
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
 
-      - uses: actionhippie/swap-space@v1
+      - uses: actionhippie/swap-space@0cffa893f224708cfb6b011690d8ba819d69c10f
         with:
           size: 15G
 
@@ -30,12 +30,12 @@ jobs:
 
       - name: Extract changelog section for release
         id: changelog
-        uses: coditory/changelog-parser@v1
+        uses: coditory/changelog-parser@4f567c6914ee75eff434b4d946393dfd254f8f98
         with:
           version: ${{ steps.extract-version.outputs.version }}
 
       - name: Create release
-        uses: actions/create-release@v1
+        uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e
         env:
           GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
         with:

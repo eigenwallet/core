@@ -16,13 +16,13 @@ jobs:
     if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && !startsWith(github.ref_name, 'test-') }}
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Set env variables
-        uses: ./.github/actions/set-monero-env
+        uses: $/.github/actions/set-monero-env
 
       - name: Create Draft Release
-        uses: crabnebula-dev/cloud-release@v0
+        uses: crabnebula-dev/cloud-release@1a8803698ba41de6b23e42abc5dcc3721308233c
         with:
           command: release draft ${{ env.CN_APPLICATION }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
@@ -45,16 +45,16 @@ jobs:
 
     runs-on: ${{ matrix.host }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
+        uses: $/.github/actions/setup-build-environment
         with:
           host: ${{ matrix.host }}
           target: ${{ matrix.target }}
 
       - name: build tauri app and upload to github releases page
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
         env:
           GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -206,7 +206,7 @@ jobs:
 
       - name: Upload to crabnebula release (not for previews or test releases)
         if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && !startsWith(github.ref_name, 'test-') }}
-        uses: crabnebula-dev/cloud-release@v0
+        uses: crabnebula-dev/cloud-release@1a8803698ba41de6b23e42abc5dcc3721308233c
         with:
           command: release upload ${{ env.CN_APPLICATION }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
@@ -218,7 +218,7 @@ jobs:
     needs: [build_gui]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Download DMG files and generate formula
         env:
@@ -271,13 +271,13 @@ jobs:
     needs: [draft-cb-release, build_gui]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Set env variables
-        uses: ./.github/actions/set-monero-env
+        uses: $/.github/actions/set-monero-env
 
       - name: Publish Release
-        uses: crabnebula-dev/cloud-release@v0
+        uses: crabnebula-dev/cloud-release@1a8803698ba41de6b23e42abc5dcc3721308233c
         with:
           command: release publish ${{ env.CN_APPLICATION }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
