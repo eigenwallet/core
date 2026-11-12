@@ -12,11 +12,11 @@ jobs:
     name: "Draft a new release"
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4.1.7
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
         with:
           token: ${{ secrets.BOTTY_GITHUB_TOKEN }}
 
-      - uses: actionhippie/swap-space@v1
+      - uses: actionhippie/swap-space@0cffa893f224708cfb6b011690d8ba819d69c10f
         with:
           size: 10G
 
@@ -24,7 +24,7 @@ jobs:
         run: git checkout -b release/${{ github.event.inputs.version }}
 
       - name: Update changelog
-        uses: thomaseizinger/keep-a-changelog-new-release@3.0.0
+        uses: thomaseizinger/keep-a-changelog-new-release@77ac767b2f7f6edf2ee72ab3364ed26667086f96
         with:
           version: ${{ github.event.inputs.version }}
           changelogPath: CHANGELOG.md
@@ -35,25 +35,25 @@ jobs:
           git config user.email ${{ secrets.BOTTY_EMAIL }}
 
       - name: Bump version in swap/Cargo.toml
-        uses: thomaseizinger/set-crate-version@1.0.0
+        uses: thomaseizinger/set-crate-version@0941739e872e465c18af1148eccf85b249b82016
         with:
           version: ${{ github.event.inputs.version }}
           manifest: swap/Cargo.toml
 
       - name: Bump version in src-tauri/Cargo.toml
-        uses: thomaseizinger/set-crate-version@1.0.0
+        uses: thomaseizinger/set-crate-version@0941739e872e465c18af1148eccf85b249b82016
         with:
           version: ${{ github.event.inputs.version }}
           manifest: src-tauri/Cargo.toml
 
       - name: Bump version in swap-asb/Cargo.toml
-        uses: thomaseizinger/set-crate-version@1.0.0
+        uses: thomaseizinger/set-crate-version@0941739e872e465c18af1148eccf85b249b82016
         with:
           version: ${{ github.event.inputs.version }}
           manifest: swap-asb/Cargo.toml
 
       - name: Bump version in swap-controller/Cargo.toml
-        uses: thomaseizinger/set-crate-version@1.0.0
+        uses: thomaseizinger/set-crate-version@0941739e872e465c18af1148eccf85b249b82016
         with:
           version: ${{ github.event.inputs.version }}
           manifest: swap-controller/Cargo.toml
@@ -89,7 +89,7 @@ jobs:
         run: git push origin release/${{ github.event.inputs.version }} --force
 
       - name: Create pull request
-        uses: thomaseizinger/create-pull-request@1.4.0
+        uses: thomaseizinger/create-pull-request@955adb4634198898bc24dca0468514c63a8fc98d
         with:
           GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
           head: release/${{ github.event.inputs.version }}
