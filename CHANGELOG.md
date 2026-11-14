@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Quote only amounts that swap setup accepts. Before, a maker could offer amounts that it then refused with "Anti-spam deposit ... is too small".
+
 ## [5.0.3] - 2026-11-10
 
 - GUI + CLI + ASB: Fix the built-in Tor client staying at 15% during startup on Windows.
