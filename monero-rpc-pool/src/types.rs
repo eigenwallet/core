@@ -97,3 +97,52 @@ impl NodeRecord {
         self.health.success_rate()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn full_url_and_display_render_scheme_host_port() {
+        let address = NodeAddress::new("https".to_string(), "node.example".to_string(), 18089);
+
+        assert_eq!(address.full_url(), "https://node.example:18089");
+        assert_eq!(address.to_string(), "https://node.example:18089");
+    }
+
+    #[test]
+    fn success_rate_math_covers_empty_all_success_and_mixed() {
+        let empty = NodeHealthStats::default();
+        assert_eq!(empty.success_rate(), 0.0);
+
+        let all_success = NodeHealthStats {
+            success_count: 3,
+            failure_count: 0,
+            ..NodeHealthStats::default()
+        };
+        assert_eq!(all_success.success_rate(), 1.0);
+
+        let mixed = NodeHealthStats {
+            success_count: 3,
+            failure_count: 1,
+            ..NodeHealthStats::default()
+        };
+        assert_eq!(mixed.success_rate(), 0.75);
+    }
+
+    #[test]
+    fn node_record_url_and_rate_read_from_its_parts() {
+        let record = NodeRecord::new(
+            NodeAddress::new("http".to_string(), "node.example".to_string(), 18081),
+            NodeMetadata::new(7, Network::Testnet, Utc::now()),
+            NodeHealthStats {
+                success_count: 3,
+                failure_count: 1,
+                ..NodeHealthStats::default()
+            },
+        );
+
+        assert_eq!(record.full_url(), "http://node.example:18081");
+        assert_eq!(record.success_rate(), 0.75);
+    }
+}
