@@ -121,6 +121,15 @@ pub struct SelectMakerDetails {
     pub maker: QuoteWithAddress,
 }
 
+/// The response of the GUI when the user accepts a maker selection.
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SelectMakerAcceptance {
+    /// The price of the quote that the GUI displayed when the user accepted.
+    #[typeshare(serialized_as = "number")]
+    pub price: bitcoin::Amount,
+}
+
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SendMoneroDetails {
@@ -250,6 +259,20 @@ impl Drop for PendingApproval {
             let _ = responder.send(serde_json::Value::Bool(false));
         }
     }
+}
+
+#[cfg(any(feature = "tauri", test))]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+enum SelectMakerResponseError {
+    #[error("The response to the maker selection is not a valid acceptance: {0}")]
+    InvalidAcceptance(String),
+    #[error(
+        "The offer changed from {displayed_price} to {approval_price} per XMR. Review the current offer."
+    )]
+    OfferChanged {
+        displayed_price: bitcoin::Amount,
+        approval_price: bitcoin::Amount,
+    },
 }
 
 #[typeshare]
@@ -436,6 +459,23 @@ impl TauriHandle {
                 .pending_approvals
                 .lock()
                 .map_err(|e| anyhow!("Failed to acquire approval lock: {}", e))?;
+
+            // A failed check returns before the approval is removed, so the user can accept again.
+            let response = match pending_map.get(&request_id) {
+                Some(PendingApproval {
+                    request:
+                        ApprovalRequest {
+                            request: ApprovalRequestType::SelectMaker(details),
+                            ..
+                        },
+                    ..
+                }) => serde_json::Value::Bool(check_select_maker_response(
+                    details.maker.quote.price,
+                    &response,
+                )?),
+                _ => response,
+            };
+
             if let Some(mut pending) = pending_map.remove(&request_id) {
                 // Send response through oneshot channel
                 if let Some(responder) = pending.responder.take() {
@@ -1403,5 +1443,91 @@ impl Drop for ApprovalCleanupGuard {
                 }
             });
         }
+    }
+}
+
+/// How far the quote price of a maker selection may be above the price the GUI displayed, in parts per thousand.
+#[cfg(any(feature = "tauri", test))]
+const SELECT_MAKER_MAX_PRICE_INCREASE_PER_MILLE: u128 = 2;
+
+/// Checks the response of the GUI to a maker selection against the quote price of that selection.
+/// Returns whether the user accepted the maker.
+#[cfg(any(feature = "tauri", test))]
+fn check_select_maker_response(
+    approval_price: bitcoin::Amount,
+    response: &serde_json::Value,
+) -> Result<bool, SelectMakerResponseError> {
+    if response == &serde_json::Value::Bool(false) {
+        return Ok(false);
+    }
+
+    let SelectMakerAcceptance {
+        price: displayed_price,
+    } = serde_json::from_value(response.clone())
+        .map_err(|err| SelectMakerResponseError::InvalidAcceptance(err.to_string()))?;
+
+    let approval_sats = u128::from(approval_price.to_sat());
+    let displayed_sats = u128::from(displayed_price.to_sat());
+
+    if approval_sats * 1000 > displayed_sats * (1000 + SELECT_MAKER_MAX_PRICE_INCREASE_PER_MILLE) {
+        return Err(SelectMakerResponseError::OfferChanged {
+            displayed_price,
+            approval_price,
+        });
+    }
+
+    Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn check(
+        approval_price_sats: u64,
+        response: serde_json::Value,
+    ) -> Result<bool, SelectMakerResponseError> {
+        check_select_maker_response(bitcoin::Amount::from_sat(approval_price_sats), &response)
+    }
+
+    #[test]
+    fn accepts_equal_price() {
+        assert_eq!(check(1_000_000, json!({ "price": 1_000_000 })), Ok(true));
+    }
+
+    #[test]
+    fn accepts_slightly_worse_price() {
+        assert_eq!(check(1_002_000, json!({ "price": 1_000_000 })), Ok(true));
+    }
+
+    #[test]
+    fn rejects_price_that_is_too_much_worse() {
+        let result = check(1_002_001, json!({ "price": 1_000_000 }));
+
+        assert!(matches!(
+            result,
+            Err(SelectMakerResponseError::OfferChanged { .. })
+        ));
+    }
+
+    #[test]
+    fn accepts_better_price() {
+        assert_eq!(check(900_000, json!({ "price": 1_000_000 })), Ok(true));
+    }
+
+    #[test]
+    fn rejects_acceptance_without_price() {
+        for response in [json!(true), json!({})] {
+            assert!(matches!(
+                check(1_000_000, response),
+                Err(SelectMakerResponseError::InvalidAcceptance(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn forwards_denial_without_price() {
+        assert_eq!(check(1_000_000, json!(false)), Ok(false));
     }
 }
