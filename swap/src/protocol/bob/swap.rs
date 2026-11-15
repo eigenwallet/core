@@ -237,6 +237,7 @@ async fn advance_state(
             change_address,
             tx_lock_fee,
             tx_apollo_fee,
+            accepted_quote_terms,
         } => {
             // Verify the Monero daemon RPC is reachable before starting the swap.
             event_emitter.emit_swap_progress_event(
@@ -276,6 +277,7 @@ async fn advance_state(
                     fee_limits,
                     tx_apollo_fee,
                     bitcoin_refund_address: change_address,
+                    accepted_quote_terms,
                 })
                 .await?;
 
