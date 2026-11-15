@@ -261,50 +261,17 @@ impl Drop for PendingApproval {
     }
 }
 
-/// How far the current price of a maker may be above the price the GUI displayed, in parts per thousand.
-#[cfg(any(feature = "tauri", test))]
-const SELECT_MAKER_MAX_PRICE_INCREASE_PER_MILLE: u128 = 2;
-
-/// Checks the response of the GUI to a maker selection against the current quote of that maker.
-/// Returns whether the user accepted the maker.
-#[cfg(any(feature = "tauri", test))]
-fn check_select_maker_response(
-    current_price: bitcoin::Amount,
-    response: &serde_json::Value,
-) -> Result<bool, SelectMakerResponseError> {
-    if response == &serde_json::Value::Bool(false) {
-        return Ok(false);
-    }
-
-    let SelectMakerAcceptance {
-        price: displayed_price,
-    } = serde_json::from_value(response.clone())
-        .map_err(|_| SelectMakerResponseError::MissingDisplayedPrice)?;
-
-    let current_sats = u128::from(current_price.to_sat());
-    let displayed_sats = u128::from(displayed_price.to_sat());
-
-    if current_sats * 1000 > displayed_sats * (1000 + SELECT_MAKER_MAX_PRICE_INCREASE_PER_MILLE) {
-        return Err(SelectMakerResponseError::OfferChanged {
-            displayed_price,
-            current_price,
-        });
-    }
-
-    Ok(true)
-}
-
 #[cfg(any(feature = "tauri", test))]
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 enum SelectMakerResponseError {
-    #[error("The response to the maker selection does not contain the displayed price")]
-    MissingDisplayedPrice,
+    #[error("The response to the maker selection is not a valid acceptance: {0}")]
+    InvalidAcceptance(String),
     #[error(
-        "The offer changed from {displayed_price} to {current_price} per XMR. Review the current offer."
+        "The offer changed from {displayed_price} to {approval_price} per XMR. Review the current offer."
     )]
     OfferChanged {
         displayed_price: bitcoin::Amount,
-        current_price: bitcoin::Amount,
+        approval_price: bitcoin::Amount,
     },
 }
 
@@ -476,7 +443,7 @@ impl TauriHandle {
     pub async fn resolve_approval(
         &self,
         request_id: Uuid,
-        #[cfg_attr(not(feature = "tauri"), allow(unused_mut))] mut response: serde_json::Value,
+        response: serde_json::Value,
     ) -> Result<()> {
         #[cfg(not(feature = "tauri"))]
         {
@@ -494,18 +461,20 @@ impl TauriHandle {
                 .map_err(|e| anyhow!("Failed to acquire approval lock: {}", e))?;
 
             // A failed check returns before the approval is removed, so the user can accept again.
-            if let Some(PendingApproval {
-                request:
-                    ApprovalRequest {
-                        request: ApprovalRequestType::SelectMaker(details),
-                        ..
-                    },
-                ..
-            }) = pending_map.get(&request_id)
-            {
-                let accepted = check_select_maker_response(details.maker.quote.price, &response)?;
-                response = serde_json::Value::Bool(accepted);
-            }
+            let response = match pending_map.get(&request_id) {
+                Some(PendingApproval {
+                    request:
+                        ApprovalRequest {
+                            request: ApprovalRequestType::SelectMaker(details),
+                            ..
+                        },
+                    ..
+                }) => serde_json::Value::Bool(check_select_maker_response(
+                    details.maker.quote.price,
+                    &response,
+                )?),
+                _ => response,
+            };
 
             if let Some(mut pending) = pending_map.remove(&request_id) {
                 // Send response through oneshot channel
@@ -1477,16 +1446,49 @@ impl Drop for ApprovalCleanupGuard {
     }
 }
 
+/// How far the quote price of a maker selection may be above the price the GUI displayed, in parts per thousand.
+#[cfg(any(feature = "tauri", test))]
+const SELECT_MAKER_MAX_PRICE_INCREASE_PER_MILLE: u128 = 2;
+
+/// Checks the response of the GUI to a maker selection against the quote price of that selection.
+/// Returns whether the user accepted the maker.
+#[cfg(any(feature = "tauri", test))]
+fn check_select_maker_response(
+    approval_price: bitcoin::Amount,
+    response: &serde_json::Value,
+) -> Result<bool, SelectMakerResponseError> {
+    if response == &serde_json::Value::Bool(false) {
+        return Ok(false);
+    }
+
+    let SelectMakerAcceptance {
+        price: displayed_price,
+    } = serde_json::from_value(response.clone())
+        .map_err(|err| SelectMakerResponseError::InvalidAcceptance(err.to_string()))?;
+
+    let approval_sats = u128::from(approval_price.to_sat());
+    let displayed_sats = u128::from(displayed_price.to_sat());
+
+    if approval_sats * 1000 > displayed_sats * (1000 + SELECT_MAKER_MAX_PRICE_INCREASE_PER_MILLE) {
+        return Err(SelectMakerResponseError::OfferChanged {
+            displayed_price,
+            approval_price,
+        });
+    }
+
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
     fn check(
-        current_price_sats: u64,
+        approval_price_sats: u64,
         response: serde_json::Value,
     ) -> Result<bool, SelectMakerResponseError> {
-        check_select_maker_response(bitcoin::Amount::from_sat(current_price_sats), &response)
+        check_select_maker_response(bitcoin::Amount::from_sat(approval_price_sats), &response)
     }
 
     #[test]
@@ -1517,10 +1519,10 @@ mod tests {
     #[test]
     fn rejects_acceptance_without_price() {
         for response in [json!(true), json!({})] {
-            assert_eq!(
+            assert!(matches!(
                 check(1_000_000, response),
-                Err(SelectMakerResponseError::MissingDisplayedPrice)
-            );
+                Err(SelectMakerResponseError::InvalidAcceptance(_))
+            ));
         }
     }
 
