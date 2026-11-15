@@ -55,6 +55,7 @@ impl Swap {
         tx_lock_fee: bitcoin::Amount,
         // `None` means the swap has no Apollo.
         tx_apollo_fee: Option<bitcoin::Amount>,
+        quoted_rate_limit: Option<QuotedRateLimit>,
     ) -> Self {
         Self {
             state: BobState::Started {
@@ -62,6 +63,7 @@ impl Swap {
                 tx_lock_fee,
                 tx_apollo_fee,
                 change_address: bitcoin_change_address,
+                quoted_rate_limit,
             },
             event_loop_handle,
             db,

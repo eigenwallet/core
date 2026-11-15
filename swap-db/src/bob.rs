@@ -14,6 +14,8 @@ pub enum Bob {
         /// `None` means the swap has no Apollo transaction, also for rows written before Apollo.
         #[serde(default)]
         tx_apollo_fee: Option<bitcoin::Amount>,
+        #[serde(default)]
+        quoted_rate_limit: Option<bob::QuotedRateLimit>,
     },
     ExecutionSetupDone {
         state2: bob::State2,
@@ -113,11 +115,13 @@ impl From<BobState> for Bob {
                 change_address,
                 tx_lock_fee,
                 tx_apollo_fee,
+                quoted_rate_limit,
             } => Bob::Started {
                 btc_amount,
                 change_address,
                 tx_lock_fee,
                 tx_apollo_fee,
+                quoted_rate_limit,
             },
             BobState::SwapSetupCompleted(state2) => Bob::ExecutionSetupDone { state2 },
             BobState::BtcLockReadyToPublish {
@@ -240,11 +244,13 @@ impl From<Bob> for BobState {
                 change_address,
                 tx_lock_fee,
                 tx_apollo_fee,
+                quoted_rate_limit,
             } => BobState::Started {
                 btc_amount,
                 change_address,
                 tx_lock_fee,
                 tx_apollo_fee,
+                quoted_rate_limit,
             },
             Bob::ExecutionSetupDone { state2 } => BobState::SwapSetupCompleted(state2),
             Bob::BtcLockReadyToPublish {

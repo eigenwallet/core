@@ -24,7 +24,8 @@ use std::task::Poll;
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
-use swap_machine::bob::{State0, State2, SwapSecretKeys};
+use swap_core::monero::PICONERO_OFFSET;
+use swap_machine::bob::{QuotedRateLimit, State0, State2, SwapSecretKeys};
 use swap_machine::common::{Message1, Message3};
 use tracing::Instrument;
 use uuid::Uuid;
@@ -364,6 +365,8 @@ pub struct NewSwap {
     /// `None` means the swap has no Apollo.
     pub tx_apollo_fee: Option<bitcoin::Amount>,
     pub bitcoin_refund_address: bitcoin::Address,
+    /// `None` for swaps that were started before the limit was recorded.
+    pub quoted_rate_limit: Option<QuotedRateLimit>,
 }
 
 #[derive(Debug)]
@@ -713,6 +716,11 @@ async fn run_swap_setup(
         "Got spot price response from Alice as part of swap setup",
     );
 
+    if let Some(quoted_rate_limit) = new_swap_request.quoted_rate_limit {
+        check_offered_rate_against_quote(new_swap_request.btc, xmr, quoted_rate_limit)
+            .map_err(|err| SetupError::Rejected(err.to_string()))?;
+    }
+
     let state0 = State0::new(
         new_swap_request.swap_id,
         &mut rand::thread_rng(),
@@ -893,6 +901,62 @@ async fn abort_swap_setup(substream: &mut SetupStream) -> Result<()> {
     Ok(())
 }
 
+/// Fails if the maker asks for more Bitcoin per Monero than the accepted quote allows.
+fn check_offered_rate_against_quote(
+    btc: bitcoin::Amount,
+    xmr: swap_core::monero::Amount,
+    limit: QuotedRateLimit,
+) -> Result<(), OfferedRateError> {
+    let btc_sats = u128::from(btc.to_sat());
+    let xmr_piconeros = u128::from(xmr.as_pico());
+    let quoted_price_sats = u128::from(limit.quoted_price.to_sat());
+    let max_percent = u128::from(limit.max_offer_difference_to_quote_percent);
+
+    if xmr_piconeros == 0 {
+        return Err(OfferedRateError::ZeroXmr { btc });
+    }
+
+    // btc / xmr <= quoted_price * (100 + max_percent) / 100, cross-multiplied to stay in integers
+    let offered = btc_sats
+        .checked_mul(u128::from(PICONERO_OFFSET))
+        .and_then(|product| product.checked_mul(100))
+        .ok_or(OfferedRateError::Overflow)?;
+    let allowed = quoted_price_sats
+        .checked_mul(xmr_piconeros)
+        .and_then(|product| product.checked_mul(100 + max_percent))
+        .ok_or(OfferedRateError::Overflow)?;
+
+    if offered > allowed {
+        return Err(OfferedRateError::ExceedsQuote {
+            btc,
+            xmr,
+            offered_sats_per_xmr: offered / 100 / xmr_piconeros,
+            quoted_sats_per_xmr: limit.quoted_price.to_sat(),
+            max_percent: limit.max_offer_difference_to_quote_percent,
+        });
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
+enum OfferedRateError {
+    #[error("Seller offered no Monero in exchange for {btc}")]
+    ZeroXmr { btc: bitcoin::Amount },
+    #[error("Offered rate cannot be compared against the quoted rate because the amounts overflow")]
+    Overflow,
+    #[error(
+        "Seller offered {xmr} for {btc} at a rate of {offered_sats_per_xmr} sat/XMR, which is more than {max_percent}% above the quoted rate of {quoted_sats_per_xmr} sat/XMR"
+    )]
+    ExceedsQuote {
+        btc: bitcoin::Amount,
+        xmr: swap_core::monero::Amount,
+        offered_sats_per_xmr: u128,
+        quoted_sats_per_xmr: u64,
+        max_percent: u32,
+    },
+}
+
 impl From<SpotPriceResponse> for Result<swap_core::monero::Amount, Error> {
     fn from(response: SpotPriceResponse) -> Self {
         match response {
@@ -1048,5 +1112,68 @@ mod tests {
         let mut substream = substream_from_alice(false).await;
 
         assert!(commit_swap_setup(&mut substream).await.is_err());
+    }
+
+    fn limit(quoted_price_sats: u64, max_percent: u32) -> QuotedRateLimit {
+        QuotedRateLimit {
+            quoted_price: bitcoin::Amount::from_sat(quoted_price_sats),
+            max_offer_difference_to_quote_percent: max_percent,
+        }
+    }
+
+    fn check(
+        btc_sats: u64,
+        xmr_piconeros: u64,
+        limit: QuotedRateLimit,
+    ) -> Result<(), OfferedRateError> {
+        check_offered_rate_against_quote(
+            bitcoin::Amount::from_sat(btc_sats),
+            swap_core::monero::Amount::from_pico(xmr_piconeros),
+            limit,
+        )
+    }
+
+    #[test]
+    fn rejects_the_offer_from_issue_1257() {
+        // Quoted 783820 sat/XMR, offered a rate 97% above that
+        let result = check(1_544_125, PICONERO_OFFSET, limit(783_820, 10));
+
+        assert!(matches!(
+            result,
+            Err(OfferedRateError::ExceedsQuote {
+                offered_sats_per_xmr: 1_544_125,
+                quoted_sats_per_xmr: 783_820,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn accepts_offer_at_the_edge_of_the_tolerance() {
+        assert_eq!(
+            check(1_100_000, PICONERO_OFFSET, limit(1_000_000, 10)),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn rejects_offer_just_outside_the_tolerance() {
+        let result = check(1_100_001, PICONERO_OFFSET, limit(1_000_000, 10));
+
+        assert!(matches!(result, Err(OfferedRateError::ExceedsQuote { .. })));
+    }
+
+    #[test]
+    fn rejects_zero_xmr() {
+        let result = check(1_000_000, 0, limit(1_000_000, 10));
+
+        assert!(matches!(result, Err(OfferedRateError::ZeroXmr { .. })));
+    }
+
+    #[test]
+    fn rejects_overflowing_quoted_price() {
+        let result = check(1_000_000, u64::MAX, limit(u64::MAX, 10));
+
+        assert_eq!(result, Err(OfferedRateError::Overflow));
     }
 }
