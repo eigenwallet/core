@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - CI: Pin GitHub Actions to commit hashes.
+- ASB: Quote only amounts that swap setup accepts. Before, a maker could offer amounts that it then refused with "Anti-spam deposit ... is too small".
 
 ## [5.0.3] - 2026-11-10
 
