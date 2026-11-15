@@ -135,7 +135,7 @@ export default function MakerOfferItem({
         <PromiseInvokeButton
           variant="contained"
           onInvoke={() =>
-            resolveSelectMakerApproval(peer_id, requestId, quote.price)
+            resolveSelectMakerApproval(peer_id, requestId, quote)
           }
           displayErrorSnackbar
           disabled={!requestId}
