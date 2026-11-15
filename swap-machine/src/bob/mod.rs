@@ -114,12 +114,12 @@ impl ApolloProgress {
     }
 }
 
-/// Bounds the rate a maker may offer during swap setup relative to the quote the taker accepted.
+/// The price of the quote the taker accepted and how far the offer in swap setup may be below it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-pub struct QuotedRateLimit {
+pub struct AcceptedQuoteTerms {
     /// Price of one XMR in the accepted quote.
     pub quoted_price: bitcoin::Amount,
-    /// How many percent above `quoted_price` the offered rate may be.
+    /// How many percent below the Monero amount implied by `quoted_price` the offer may be.
     pub max_offer_difference_to_quote_percent: u32,
 }
 
@@ -134,9 +134,9 @@ pub enum BobState {
         tx_apollo_fee: Option<bitcoin::Amount>,
         #[serde(with = "address_serde")]
         change_address: bitcoin::Address,
-        /// `None` for swaps that were started before the limit was recorded.
+        /// `None` for swaps that were started before the accepted quote was recorded.
         #[serde(default)]
-        quoted_rate_limit: Option<QuotedRateLimit>,
+        accepted_quote_terms: Option<AcceptedQuoteTerms>,
     },
     SwapSetupCompleted(State2),
     BtcLockReadyToPublish {

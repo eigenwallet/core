@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- GUI: The swap setup now stops if the maker offers a rate that is more than 10% worse than the rate it quoted.
+- GUI: The swap setup now stops if the maker offers more than 10% less Monero than its quote implies.
 - ASB: Quote only amounts that swap setup accepts. Before, a maker could offer amounts that it then refused with "Anti-spam deposit ... is too small".
 
 ## [5.0.3] - 2026-11-10

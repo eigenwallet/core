@@ -168,8 +168,8 @@ export async function checkBitcoinBalance() {
   await fetchBitcoinBalance(false);
 }
 
-// The swap setup is aborted if the maker offers a rate that is more than
-// this many percent worse than the rate of the quote the user accepted
+// The swap setup is aborted if the maker offers more than this many percent
+// less Monero than the quote the user accepted implies
 const MAX_OFFER_DIFFERENCE_TO_QUOTE_PERCENT = 10;
 
 export async function buyXmr() {

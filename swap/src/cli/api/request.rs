@@ -10,7 +10,7 @@ use crate::monero::MoneroAddressPool;
 use crate::monero::wallet_rpc::MoneroDaemon;
 use crate::network::quote::BidQuote;
 use crate::protocol::State;
-use crate::protocol::bob::{self, BobState, QuotedRateLimit, Swap};
+use crate::protocol::bob::{self, BobState, AcceptedQuoteTerms, Swap};
 use crate::{cli, monero};
 use ::bitcoin::Txid;
 use ::bitcoin::address::NetworkUnchecked;
@@ -64,8 +64,8 @@ pub struct BuyXmrArgs {
     pub monero_receive_pool: MoneroAddressPool,
     /// Whether to back up the swap on the Bitcoin chain with Apollo. A swap keeps this value after it starts.
     pub enable_apollo: bool,
-    /// The swap setup is aborted if the maker offers a rate that is more than
-    /// this many percent worse than the rate of the quote the user accepted.
+    /// The swap setup is aborted if the maker offers more than this many percent
+    /// less Monero than the quote the user accepted implies.
     pub max_offer_difference_to_quote_percent: u32,
 }
 
@@ -1227,7 +1227,7 @@ pub async fn buy_xmr(
         return Ok(());
     };
 
-    let quoted_rate_limit = QuotedRateLimit {
+    let accepted_quote_terms = AcceptedQuoteTerms {
         quoted_price: quote.price,
         max_offer_difference_to_quote_percent,
     };
@@ -1290,7 +1290,7 @@ pub async fn buy_xmr(
                     tx_lock_amount,
                     tx_lock_fee,
                     tx_apollo_fee,
-                    Some(quoted_rate_limit),
+                    Some(accepted_quote_terms),
                 )
                 .with_event_emitter(tauri_handle.clone())
                 .with_apollo(apollo);

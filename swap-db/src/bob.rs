@@ -15,7 +15,7 @@ pub enum Bob {
         #[serde(default)]
         tx_apollo_fee: Option<bitcoin::Amount>,
         #[serde(default)]
-        quoted_rate_limit: Option<bob::QuotedRateLimit>,
+        accepted_quote_terms: Option<bob::AcceptedQuoteTerms>,
     },
     ExecutionSetupDone {
         state2: bob::State2,
@@ -115,13 +115,13 @@ impl From<BobState> for Bob {
                 change_address,
                 tx_lock_fee,
                 tx_apollo_fee,
-                quoted_rate_limit,
+                accepted_quote_terms,
             } => Bob::Started {
                 btc_amount,
                 change_address,
                 tx_lock_fee,
                 tx_apollo_fee,
-                quoted_rate_limit,
+                accepted_quote_terms,
             },
             BobState::SwapSetupCompleted(state2) => Bob::ExecutionSetupDone { state2 },
             BobState::BtcLockReadyToPublish {
@@ -244,13 +244,13 @@ impl From<Bob> for BobState {
                 change_address,
                 tx_lock_fee,
                 tx_apollo_fee,
-                quoted_rate_limit,
+                accepted_quote_terms,
             } => BobState::Started {
                 btc_amount,
                 change_address,
                 tx_lock_fee,
                 tx_apollo_fee,
-                quoted_rate_limit,
+                accepted_quote_terms,
             },
             Bob::ExecutionSetupDone { state2 } => BobState::SwapSetupCompleted(state2),
             Bob::BtcLockReadyToPublish {
