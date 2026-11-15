@@ -8,7 +8,7 @@ use crate::cli::list_sellers::QuoteWithAddress;
 use crate::common::{get_logs, redact};
 use crate::monero::MoneroAddressPool;
 use crate::monero::wallet_rpc::MoneroDaemon;
-use crate::network::quote::{BidQuote, RefundPolicyWire};
+use crate::network::quote::BidQuote;
 use crate::protocol::State;
 use crate::protocol::bob::{self, AcceptedQuoteTerms, BobState, Swap};
 use crate::{cli, monero};
@@ -1230,12 +1230,7 @@ pub async fn buy_xmr(
     let accepted_quote_terms = AcceptedQuoteTerms {
         quoted_price: quote.price,
         max_offer_difference_to_quote_percent,
-        anti_spam_deposit_ratio: match &quote.refund_policy {
-            RefundPolicyWire::FullRefund => rust_decimal::Decimal::ZERO,
-            RefundPolicyWire::PartialRefund {
-                anti_spam_deposit_ratio,
-            } => *anti_spam_deposit_ratio,
-        },
+        anti_spam_deposit_ratio: quote.refund_policy.anti_spam_deposit_ratio(),
     };
 
     let tx_apollo_fee = match enable_apollo {
