@@ -121,6 +121,9 @@ pub struct AcceptedQuoteTerms {
     pub quoted_price: bitcoin::Amount,
     /// How many percent below the Monero amount implied by `quoted_price` the offer may be.
     pub max_offer_difference_to_quote_percent: u32,
+    /// The anti-spam deposit ratio of the refund policy in the accepted quote.
+    /// Zero means a full refund.
+    pub anti_spam_deposit_ratio: rust_decimal::Decimal,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]

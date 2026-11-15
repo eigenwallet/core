@@ -757,6 +757,15 @@ async fn run_swap_setup(
         Err(setup_err) => return Err(setup_err.into()),
     };
 
+    if let Some(accepted_quote_terms) = new_swap_request.accepted_quote_terms {
+        check_offered_deposit_against_quote(
+            new_swap_request.btc,
+            message1.amnesty_amount,
+            accepted_quote_terms,
+        )
+        .map_err(|err| SetupError::Rejected(err.to_string()))?;
+    }
+
     let state1 = match state0.receive(bitcoin_wallet.as_ref(), message1).await {
         Ok(state) => state,
         Err(error) => {
@@ -955,6 +964,51 @@ enum OfferedXmrError {
     },
 }
 
+/// Fails if the anti-spam deposit of the maker differs from the deposit that the refund policy of the accepted quote implies.
+fn check_offered_deposit_against_quote(
+    btc: bitcoin::Amount,
+    offered_deposit: bitcoin::Amount,
+    terms: AcceptedQuoteTerms,
+) -> Result<(), OfferedDepositError> {
+    let ratio = terms.anti_spam_deposit_ratio;
+
+    let expected_deposit = swap_machine::common::anti_spam_deposit(ratio, btc).map_err(|err| {
+        OfferedDepositError::ExpectedDepositUnknown {
+            btc,
+            ratio,
+            reason: format!("{err:#}"),
+        }
+    })?;
+
+    if offered_deposit != expected_deposit {
+        return Err(OfferedDepositError::DifferentDeposit {
+            offered_deposit,
+            expected_deposit,
+        });
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
+enum OfferedDepositError {
+    #[error(
+        "Cannot calculate the anti-spam deposit for {btc} at the quoted ratio of {ratio}: {reason}"
+    )]
+    ExpectedDepositUnknown {
+        btc: bitcoin::Amount,
+        ratio: rust_decimal::Decimal,
+        reason: String,
+    },
+    #[error(
+        "Seller asked for an anti-spam deposit of {offered_deposit}, but its quoted refund policy implies {expected_deposit}"
+    )]
+    DifferentDeposit {
+        offered_deposit: bitcoin::Amount,
+        expected_deposit: bitcoin::Amount,
+    },
+}
+
 impl From<SpotPriceResponse> for Result<swap_core::monero::Amount, Error> {
     fn from(response: SpotPriceResponse) -> Self {
         match response {
@@ -1124,8 +1178,56 @@ mod tests {
             AcceptedQuoteTerms {
                 quoted_price: bitcoin::Amount::from_sat(quoted_price_sats),
                 max_offer_difference_to_quote_percent: max_percent,
+                anti_spam_deposit_ratio: rust_decimal::Decimal::ZERO,
             },
         )
+    }
+
+    fn check_deposit(
+        offered_deposit_sats: u64,
+        anti_spam_deposit_ratio: rust_decimal::Decimal,
+    ) -> Result<(), OfferedDepositError> {
+        check_offered_deposit_against_quote(
+            bitcoin::Amount::from_sat(1_000_000),
+            bitcoin::Amount::from_sat(offered_deposit_sats),
+            AcceptedQuoteTerms {
+                quoted_price: bitcoin::Amount::from_sat(1_000_000),
+                max_offer_difference_to_quote_percent: 5,
+                anti_spam_deposit_ratio,
+            },
+        )
+    }
+
+    #[test]
+    fn accepts_deposit_that_matches_the_quoted_refund_policy() {
+        let two_percent = rust_decimal::Decimal::new(2, 2);
+
+        assert_eq!(check_deposit(20_000, two_percent), Ok(()));
+        assert_eq!(check_deposit(0, rust_decimal::Decimal::ZERO), Ok(()));
+    }
+
+    #[test]
+    fn rejects_deposit_that_differs_from_the_quoted_refund_policy() {
+        let two_percent = rust_decimal::Decimal::new(2, 2);
+
+        for offered_deposit_sats in [0, 19_999, 20_001, 100_000] {
+            let result = check_deposit(offered_deposit_sats, two_percent);
+
+            assert!(matches!(
+                result,
+                Err(OfferedDepositError::DifferentDeposit { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_deposit_when_the_quote_promised_a_full_refund() {
+        let result = check_deposit(20_000, rust_decimal::Decimal::ZERO);
+
+        assert!(matches!(
+            result,
+            Err(OfferedDepositError::DifferentDeposit { .. })
+        ));
     }
 
     #[test]
