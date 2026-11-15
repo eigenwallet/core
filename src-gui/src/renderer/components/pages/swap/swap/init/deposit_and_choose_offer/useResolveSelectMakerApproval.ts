@@ -26,7 +26,8 @@ function findPendingApprovalForPeer(
  * one instead, so a stale snapshot doesn't surface as a confusing error.
  *
  * Every accept sends the price the card displayed. The backend rejects the
- * accept if the approval it resolves has a worse price.
+ * accept if the price of the approval it resolves is above that price by more
+ * than a small tolerance.
  */
 export function useResolveSelectMakerApproval() {
   return useCallback(
