@@ -9,7 +9,7 @@ import {
 } from "utils/sortUtils";
 import { useThrottle } from "utils/reactUtils";
 
-const REFRESH_INTERVAL_MS = 5_000;
+const REFRESH_INTERVAL_MS = 2_000;
 
 // The sorted list re-shuffles whenever the backend streams an approval or
 // quote update. We snapshot it and only refresh on a fixed cadence so cards

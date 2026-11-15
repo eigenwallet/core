@@ -1516,10 +1516,12 @@ mod tests {
 
     #[test]
     fn rejects_acceptance_without_price() {
-        assert_eq!(
-            check(1_000_000, json!(true)),
-            Err(SelectMakerResponseError::MissingDisplayedPrice)
-        );
+        for response in [json!(true), json!({})] {
+            assert_eq!(
+                check(1_000_000, response),
+                Err(SelectMakerResponseError::MissingDisplayedPrice)
+            );
+        }
     }
 
     #[test]
