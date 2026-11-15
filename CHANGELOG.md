@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Accepting an offer now fails if the maker made its price worse after the offer was displayed. You can then review the current offer and accept again.
 - ASB: Quote only amounts that swap setup accepts. Before, a maker could offer amounts that it then refused with "Anti-spam deposit ... is too small".
 
 ## [5.0.3] - 2026-11-10
