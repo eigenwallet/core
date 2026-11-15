@@ -12,7 +12,7 @@ const WAIT_FOR_APPROVAL_MS = 5_000;
 
 // How far the price of the approval we resolve may be above the price the
 // card displayed, in parts per thousand
-const MAX_PRICE_INCREASE_SINCE_DISPLAY_PER_MILLE = 2;
+const MAX_PRICE_INCREASE_SINCE_DISPLAY_PER_MILLE = 10;
 
 function findPendingApprovalForPeer(
   state: RootState,
