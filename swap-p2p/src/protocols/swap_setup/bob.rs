@@ -1116,13 +1116,14 @@ mod tests {
         btc_sats: u64,
         offered_piconeros: u64,
         quoted_price_sats: u64,
+        max_percent: u32,
     ) -> Result<(), OfferedXmrError> {
         check_offered_xmr_against_quote(
             bitcoin::Amount::from_sat(btc_sats),
             swap_core::monero::Amount::from_pico(offered_piconeros),
             AcceptedQuoteTerms {
                 quoted_price: bitcoin::Amount::from_sat(quoted_price_sats),
-                max_offer_difference_to_quote_percent: 10,
+                max_offer_difference_to_quote_percent: max_percent,
             },
         )
     }
@@ -1130,34 +1131,53 @@ mod tests {
     #[test]
     fn rejects_the_offer_from_issue_1257() {
         // The quote implies 1.97 XMR for this Bitcoin amount
-        let result = check(1_544_125, PICONERO_OFFSET, 783_820);
+        let result = check(1_544_125, PICONERO_OFFSET, 783_820, 10);
 
         assert!(matches!(result, Err(OfferedXmrError::TooLittleXmr { .. })));
     }
 
     #[test]
     fn accepts_offer_at_the_edge_of_the_tolerance() {
-        assert_eq!(check(1_000_000, 900_000_000_000, 1_000_000), Ok(()));
+        assert_eq!(check(1_000_000, 900_000_000_000, 1_000_000, 10), Ok(()));
     }
 
     #[test]
     fn rejects_offer_just_outside_the_tolerance() {
-        let result = check(1_000_000, 899_999_999_999, 1_000_000);
+        let result = check(1_000_000, 899_999_999_999, 1_000_000, 10);
 
         assert!(matches!(result, Err(OfferedXmrError::TooLittleXmr { .. })));
     }
 
     #[test]
     fn rejects_zero_xmr() {
-        let result = check(1_000_000, 0, 1_000_000);
+        let result = check(1_000_000, 0, 1_000_000, 10);
 
         assert!(matches!(result, Err(OfferedXmrError::TooLittleXmr { .. })));
     }
 
     #[test]
     fn rejects_zero_quoted_price() {
-        let result = check(1_000_000, PICONERO_OFFSET, 0);
+        let result = check(1_000_000, PICONERO_OFFSET, 0, 10);
 
         assert_eq!(result, Err(OfferedXmrError::ZeroQuotedPrice));
+    }
+
+    #[test]
+    fn rounds_expected_xmr_down_when_the_price_does_not_divide_evenly() {
+        assert_eq!(check(1, 333_333_333_333, 3, 0), Ok(()));
+
+        let result = check(1, 333_333_333_332, 3, 0);
+
+        assert!(matches!(result, Err(OfferedXmrError::TooLittleXmr { .. })));
+    }
+
+    #[test]
+    fn rejects_expected_xmr_that_is_out_of_range() {
+        let result = check(u64::MAX, PICONERO_OFFSET, 1, 10);
+
+        assert!(matches!(
+            result,
+            Err(OfferedXmrError::ExpectedXmrOutOfRange { .. })
+        ));
     }
 }

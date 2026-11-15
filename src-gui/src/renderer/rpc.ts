@@ -170,7 +170,7 @@ export async function checkBitcoinBalance() {
 
 // The swap setup is aborted if the maker offers more than this many percent
 // less Monero than the quote the user accepted implies
-const MAX_OFFER_DIFFERENCE_TO_QUOTE_PERCENT = 10;
+const MAX_OFFER_DIFFERENCE_TO_QUOTE_PERCENT = 5;
 
 export async function buyXmr() {
   const state = store.getState();
