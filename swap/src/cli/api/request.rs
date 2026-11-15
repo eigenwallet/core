@@ -10,7 +10,7 @@ use crate::monero::MoneroAddressPool;
 use crate::monero::wallet_rpc::MoneroDaemon;
 use crate::network::quote::BidQuote;
 use crate::protocol::State;
-use crate::protocol::bob::{self, BobState, AcceptedQuoteTerms, Swap};
+use crate::protocol::bob::{self, AcceptedQuoteTerms, BobState, Swap};
 use crate::{cli, monero};
 use ::bitcoin::Txid;
 use ::bitcoin::address::NetworkUnchecked;

@@ -23,8 +23,8 @@ use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
 use swap_core::bitcoin;
-use swap_env::env;
 use swap_core::monero::PICONERO_OFFSET;
+use swap_env::env;
 use swap_machine::bob::{AcceptedQuoteTerms, State0, State2, SwapSecretKeys};
 use swap_machine::common::{Message1, Message3};
 use tracing::Instrument;
@@ -936,7 +936,9 @@ fn check_offered_xmr_against_quote(
 enum OfferedXmrError {
     #[error("Quoted price is zero")]
     ZeroQuotedPrice,
-    #[error("Monero amount expected for {btc} at the quoted price of {quoted_price} per XMR is out of range")]
+    #[error(
+        "Monero amount expected for {btc} at the quoted price of {quoted_price} per XMR is out of range"
+    )]
     ExpectedXmrOutOfRange {
         btc: bitcoin::Amount,
         quoted_price: bitcoin::Amount,

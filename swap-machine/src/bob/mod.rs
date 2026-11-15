@@ -114,7 +114,7 @@ impl ApolloProgress {
     }
 }
 
-/// The price of the quote the taker accepted and how far the offer in swap setup may be below it.
+/// The price of the quote the taker accepted and how far the offered Monero amount may be below the amount that price implies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub struct AcceptedQuoteTerms {
     /// Price of one XMR in the accepted quote.
