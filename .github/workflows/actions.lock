@@ -7,7 +7,7 @@ workflows:
         - 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262'
         - 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020'
         - 'crabnebula-dev/cloud-release@1a8803698ba41de6b23e42abc5dcc3721308233c'
-        - 'dtolnay/rust-toolchain@3da603d4464771f1a8c3dd4acb41f03bc8107551'
+        - 'dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc'
         - 'taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39'
         - 'tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5'
     '.github/workflows/build-release-binaries.yml':
@@ -17,13 +17,13 @@ workflows:
         - 'docker/build-push-action@0a97817b6ade9f46837855d676c4cca3a2471fc9'
         - 'docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc'
         - 'docker/setup-buildx-action@885d1462b80bc1c1c7f0b00334ad271f09369c55'
-        - 'dtolnay/rust-toolchain@3da603d4464771f1a8c3dd4acb41f03bc8107551'
+        - 'dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc'
         - 'taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39'
     '.github/workflows/ci.yml':
         - 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262'
         - 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020'
         - 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02'
-        - 'dtolnay/rust-toolchain@3da603d4464771f1a8c3dd4acb41f03bc8107551'
+        - 'dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc'
         - 'taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39'
     '.github/workflows/create-release.yml':
         - 'actionhippie/swap-space@0cffa893f224708cfb6b011690d8ba819d69c10f'
@@ -106,9 +106,9 @@ dependencies:
         commit: 'sha1-885d1462b80bc1c1c7f0b00334ad271f09369c55'
         owner_id: 5429470
         repo_id: 288485773
-    'dtolnay/rust-toolchain@3da603d4464771f1a8c3dd4acb41f03bc8107551':
-        ref: '1.92'
-        commit: 'sha1-3da603d4464771f1a8c3dd4acb41f03bc8107551'
+    'dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc':
+        ref: 'master'
+        commit: 'sha1-df2a88e9fe4098bad09cb42c3dec7187f15861fc'
         owner_id: 1940490
         repo_id: 260749683
     'larryjoelane/delete-release-action@f0d7056780073e50383f9fec730827292c6bb266':

@@ -33,8 +33,9 @@ runs:
         corepack enable
 
     - name: Install Rust stable
-      uses: dtolnay/rust-toolchain@3da603d4464771f1a8c3dd4acb41f03bc8107551
+      uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
       with:
+        toolchain: "1.92"
         targets: ${{ inputs.target }}
 
     - name: Install Tauri and build dependencies (Ubuntu)
