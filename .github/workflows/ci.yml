@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
+        uses: $/.github/actions/setup-build-environment
         with:
           host: ubuntu-22.04
 
@@ -32,10 +32,10 @@ jobs:
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
+        uses: $/.github/actions/setup-build-environment
         with:
           host: ubuntu-22.04
 
@@ -46,10 +46,10 @@ jobs:
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
+        uses: $/.github/actions/setup-build-environment
         with:
           host: ubuntu-22.04
 
@@ -63,9 +63,9 @@ jobs:
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
+        uses: $/.github/actions/setup-build-environment
         with:
           host: ubuntu-22.04
 
@@ -90,9 +90,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
+        uses: $/.github/actions/setup-build-environment
         with:
           host: ${{ matrix.os }}
           target: ${{ matrix.target }}
@@ -101,13 +101,13 @@ jobs:
         run: cargo build -p swap --target ${{ matrix.target }} -vv
 
       - name: Upload swap binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: swap-${{ matrix.target }}
           path: target/${{ matrix.target }}/debug/swap
 
       - name: Upload asb binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: asb-${{ matrix.target }}
           path: target/${{ matrix.target }}/debug/asb
@@ -120,9 +120,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
+        uses: $/.github/actions/setup-build-environment
         with:
           host: ${{ matrix.os }}
 
@@ -280,10 +280,10 @@ jobs:
     timeout-minutes: ${{ matrix.timeout_minutes || 90 }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
+        uses: $/.github/actions/setup-build-environment
         with:
           host: ubuntu-22.04
 
@@ -294,9 +294,9 @@ jobs:
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
+        uses: $/.github/actions/setup-build-environment
         with:
           host: ubuntu-22.04
 
