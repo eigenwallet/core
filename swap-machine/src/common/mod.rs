@@ -201,6 +201,162 @@ pub fn calculate_swap_fees(
     inputs.calculate(rate, limits)
 }
 
+/// The part of a swap of `swap_amount` that goes into the anti-spam deposit if
+/// the taker refunds.
+///
+/// ZERO means that the taker gets a full refund, without a deposit output.
+pub fn anti_spam_deposit(
+    ratio: rust_decimal::Decimal,
+    swap_amount: bitcoin::Amount,
+) -> Result<bitcoin::Amount> {
+    if ratio == rust_decimal::Decimal::ZERO {
+        return Ok(bitcoin::Amount::ZERO);
+    }
+
+    let deposit: u64 = rust_decimal::Decimal::from(swap_amount.to_sat())
+        .checked_mul(ratio)
+        .context("Decimal overflow when the anti-spam deposit is calculated")?
+        .floor()
+        .try_into()
+        .context("The anti-spam deposit does not fit in u64")?;
+
+    anyhow::ensure!(
+        deposit > 0,
+        "Positive anti-spam deposit rounds down to zero"
+    );
+
+    Ok(bitcoin::Amount::from_sat(deposit))
+}
+
+/// How near [`minimum_swap_amount`] gets to the boundary.
+///
+/// An exact answer would be false precision. The deposit of a swap is a ratio
+/// of its amount, so at a ratio of one per mille the deposit only grows by one
+/// satoshi per 1,000 satoshi of amount. The dust limit of the taker's refund
+/// address, which the quote does not know, is worth a few hundred satoshi of
+/// deposit on its own.
+pub const MINIMUM_SWAP_AMOUNT_TOLERANCE: bitcoin::Amount = bitcoin::Amount::from_sat(100);
+
+/// The smallest amount in `amounts` that setup accepts for `ratio` and `rate`,
+/// or None if setup accepts none of them.
+///
+/// Setup pays for its spending paths out of the swap amount, and it withholds
+/// the anti-spam deposit from the refund. The fees of the presigned
+/// transactions do not change with the swap amount, while the deposit and the
+/// fee budget do. A small swap therefore cannot pay for its refund path, and
+/// setup rejects it. Quotes use this amount as their minimum, so that every
+/// amount they offer is one the maker can also set up.
+///
+/// Neither the taker's refund address nor the maker's own addresses are known
+/// when the quote is made. The calculation thus uses the output scripts that
+/// need the largest deposit. The result is an amount that setup accepts, up to
+/// [`MINIMUM_SWAP_AMOUNT_TOLERANCE`] above the smallest such amount.
+pub fn minimum_swap_amount(
+    amounts: std::ops::RangeInclusive<bitcoin::Amount>,
+    ratio: rust_decimal::Decimal,
+    rate: bitcoin::SwapFeeRate,
+    redeem_multiplier: bitcoin::RedeemFeeMultiplier,
+    network: bitcoin::Network,
+) -> Option<bitcoin::Amount> {
+    if amounts.is_empty() {
+        return None;
+    }
+
+    let accepts =
+        |amount| setup_accepts_worst_case(amount, ratio, rate, redeem_multiplier, network);
+
+    let (mut smallest, mut largest) = (*amounts.start(), *amounts.end());
+
+    // Usually the maker can set up its smallest amount, and one calculation
+    // answers the question.
+    if accepts(smallest).is_ok() {
+        return Some(smallest);
+    }
+
+    // The maker offers nothing if it cannot set up its largest amount either.
+    if let Err(error) = accepts(largest) {
+        tracing::debug!(
+            %largest,
+            error = %format!("{error:#}"),
+            "The maker cannot set up a swap of its maximum amount"
+        );
+        return None;
+    }
+
+    // Every check that setup makes on the amount only becomes easier as the
+    // amount grows: the deposit and the fee budget of a spending path grow
+    // with the amount, and the transaction fees do not. A binary search
+    // therefore finds the smallest amount that passes all of them.
+    while largest.to_sat() - smallest.to_sat() > MINIMUM_SWAP_AMOUNT_TOLERANCE.to_sat() {
+        let middle = bitcoin::Amount::from_sat(
+            smallest.to_sat() + (largest.to_sat() - smallest.to_sat()) / 2,
+        );
+        if accepts(middle).is_ok() {
+            largest = middle;
+        } else {
+            smallest = middle + bitcoin::Amount::ONE_SAT;
+        }
+    }
+
+    // Setup accepts the upper end of the remaining window, but not necessarily
+    // the lower one.
+    Some(largest)
+}
+
+/// Whether setup accepts a swap of `amount`, for the output scripts that need
+/// the largest anti-spam deposit.
+///
+/// This is the same calculation that setup makes, with placeholder keys and
+/// addresses. The keys do not change the size of a transaction. The addresses
+/// do, and so does their dust limit, so the swap must pass the calculation for
+/// each address type the taker may use.
+fn setup_accepts_worst_case(
+    amount: bitcoin::Amount,
+    ratio: rust_decimal::Decimal,
+    rate: bitcoin::SwapFeeRate,
+    redeem_multiplier: bitcoin::RedeemFeeMultiplier,
+    network: bitcoin::Network,
+) -> Result<()> {
+    use ::bitcoin::hashes::Hash;
+
+    // A 34-byte witness program is the largest standard output script, and
+    // thus gives the largest transaction fees. A P2PKH output has the largest
+    // dust limit. No address has both properties, so the swap must pay for
+    // both.
+    let largest_output = bitcoin::Address::from_script(
+        &::bitcoin::ScriptBuf::new_p2wsh(&::bitcoin::WScriptHash::all_zeros()),
+        network,
+    )
+    .context("Failed to build a placeholder P2WSH address")?;
+    let largest_dust = bitcoin::Address::from_script(
+        &::bitcoin::ScriptBuf::new_p2pkh(&::bitcoin::PubkeyHash::all_zeros()),
+        network,
+    )
+    .context("Failed to build a placeholder P2PKH address")?;
+
+    let deposit = anti_spam_deposit(ratio, amount)?;
+    let limits = swap_fee_limits(rate, amount)?;
+
+    for refund_address in [&largest_output, &largest_dust] {
+        calculate_swap_fees(
+            bitcoin::SwapFeeInputs {
+                a: swap_core::bitcoin::PublicKey::random(),
+                b: swap_core::bitcoin::PublicKey::random(),
+                redeem_address: &largest_output,
+                refund_address,
+                punish_address: &largest_output,
+                lock_amount: amount,
+                deposit,
+                redeem_multiplier,
+            },
+            rate,
+            limits,
+        )?;
+    }
+
+    Ok(())
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum State {
@@ -402,6 +558,117 @@ mod tests {
 
     fn fee_too_low(result: Result<()>) -> SetupValidationError {
         *result.unwrap_err().downcast_ref().unwrap()
+    }
+
+    fn accepts(amount: u64, ratio: rust_decimal::Decimal, rate: u64) -> Result<()> {
+        setup_accepts_worst_case(
+            bitcoin::Amount::from_sat(amount),
+            ratio,
+            bitcoin::SwapFeeRate(rate),
+            bitcoin::RedeemFeeMultiplier::default(),
+            bitcoin::Network::Regtest,
+        )
+    }
+
+    fn smallest_accepted(ratio: rust_decimal::Decimal, rate: u64) -> Option<bitcoin::Amount> {
+        minimum_swap_amount(
+            bitcoin::Amount::ONE_SAT..=bitcoin::Amount::MAX_MONEY,
+            ratio,
+            bitcoin::SwapFeeRate(rate),
+            bitcoin::RedeemFeeMultiplier::default(),
+            bitcoin::Network::Regtest,
+        )
+    }
+
+    /// The quote offers this amount, so setup must accept it. One tolerance
+    /// less must fail, or the quote asks for more than it has to.
+    #[test]
+    fn the_minimum_swap_amount_is_the_smallest_one_setup_accepts() {
+        let tolerance = MINIMUM_SWAP_AMOUNT_TOLERANCE.to_sat();
+
+        for ratio in ["0", "0.0001", "0.001", "0.01", "0.2"] {
+            let ratio: rust_decimal::Decimal = ratio.parse().unwrap();
+            for rate in [1_000, 2_500, 10_000, 50_000] {
+                let minimum = smallest_accepted(ratio, rate).unwrap().to_sat();
+
+                accepts(minimum, ratio, rate).unwrap_or_else(|error| {
+                    panic!(
+                        "Setup rejects {minimum} sat at ratio {ratio} and {rate} sat/kvB: {error:#}"
+                    )
+                });
+                assert!(
+                    accepts(minimum - tolerance - 1, ratio, rate).is_err(),
+                    "Setup also accepts {} sat at ratio {ratio} and {rate} sat/kvB",
+                    minimum - tolerance - 1
+                );
+                // The binary search relies on this: a larger swap pays for its
+                // refund path whenever a smaller one does.
+                for larger in [minimum + 1, minimum * 2, minimum * 100] {
+                    accepts(larger, ratio, rate).unwrap();
+                }
+            }
+        }
+    }
+
+    /// The maker pays for a refund path only up to an absolute limit. Above a
+    /// fee rate that no swap can pay for, it cannot offer an amount at all.
+    #[test]
+    fn no_swap_amount_pays_for_the_refund_path_at_a_very_high_fee_rate() {
+        assert_eq!(smallest_accepted("0.01".parse().unwrap(), 1_000_000), None);
+    }
+
+    /// The search stays inside the amounts the maker is configured to trade.
+    #[test]
+    fn the_minimum_swap_amount_stays_within_the_configured_amounts() {
+        let ratio: rust_decimal::Decimal = "0.001".parse().unwrap();
+        let rate = bitcoin::SwapFeeRate(5_000);
+        let multiplier = bitcoin::RedeemFeeMultiplier::default();
+        let smallest = smallest_accepted(ratio, rate.0).unwrap();
+
+        // A configured minimum that setup accepts is quoted as it is.
+        let min_buy = smallest * 2;
+        assert_eq!(
+            minimum_swap_amount(
+                min_buy..=min_buy * 4,
+                ratio,
+                rate,
+                multiplier,
+                bitcoin::Network::Regtest
+            ),
+            Some(min_buy)
+        );
+
+        // The maker offers nothing when setup accepts none of its amounts. The
+        // search is exact only up to its tolerance, so stay below that.
+        assert_eq!(
+            minimum_swap_amount(
+                bitcoin::Amount::ONE_SAT
+                    ..=smallest - MINIMUM_SWAP_AMOUNT_TOLERANCE - bitcoin::Amount::ONE_SAT,
+                ratio,
+                rate,
+                multiplier,
+                bitcoin::Network::Regtest
+            ),
+            None
+        );
+    }
+
+    /// An anti-spam deposit of a tenth of a percent needs a swap of at least
+    /// a few hundred times the fee of one transaction.
+    #[test]
+    fn a_small_deposit_ratio_needs_a_large_swap() {
+        let ratio: rust_decimal::Decimal = "0.001".parse().unwrap();
+        let minimum = smallest_accepted(ratio, 5_000).unwrap();
+        let without_deposit = smallest_accepted(rust_decimal::Decimal::ZERO, 5_000).unwrap();
+
+        assert!(
+            minimum > without_deposit * 100,
+            "{minimum} is not much larger than {without_deposit}"
+        );
+        assert_eq!(
+            anti_spam_deposit(ratio, minimum).unwrap(),
+            bitcoin::Amount::from_sat(minimum.to_sat() / 1000)
+        );
     }
 
     #[test]

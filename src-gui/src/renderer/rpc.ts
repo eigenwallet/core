@@ -168,6 +168,10 @@ export async function checkBitcoinBalance() {
   await fetchBitcoinBalance(false);
 }
 
+// The swap setup is aborted if the maker offers more than this many percent
+// less Monero than the quote the user accepted implies
+const MAX_OFFER_DIFFERENCE_TO_QUOTE_PERCENT = 5;
+
 export async function buyXmr() {
   const state = store.getState();
 
@@ -229,6 +233,8 @@ export async function buyXmr() {
     // expects undefined if the field is optional and does not accept null here
     bitcoin_change_address: bitcoinChangeAddress ?? undefined,
     enable_apollo: state.settings.enableApollo,
+    max_offer_difference_to_quote_percent:
+      MAX_OFFER_DIFFERENCE_TO_QUOTE_PERCENT,
   });
 }
 

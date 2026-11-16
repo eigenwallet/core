@@ -25,7 +25,6 @@ use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
 use moka::{future::Cache as AsyncCache, sync::Cache};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::fmt::Debug;
@@ -912,7 +911,12 @@ where
         let monero_wallet_for_proof = self.monero_wallet.clone();
         let monero_wallet_for_health = self.monero_wallet.clone();
         let bitcoin_wallet = self.bitcoin_wallet.clone();
+        let bitcoin_wallet_for_fee_rate = self.bitcoin_wallet.clone();
         let peer_id = self.peer_id();
+        let anti_spam_deposit_ratio = self.refund_policy.anti_spam_deposit_ratio;
+        let btc_swap_fee_rate_multiplier = self.btc_swap_fee_rate_multiplier;
+        let btc_redeem_base_fee_multiplier = self.btc_redeem_base_fee_multiplier;
+        let bitcoin_network = self.env_config.bitcoin_network;
 
         async move {
             // We use the min and max buy amounts to create a unique key for the cache
@@ -951,7 +955,10 @@ where
             };
 
             // Quote zero unless both the Bitcoin and Monero backends are reachable.
-            let health_check = async {
+            // The smallest amount that setup accepts follows the fee rate, so it
+            // is calculated again for each new quote. The wallet caches its fee
+            // estimate for as long as the quote cache keeps a quote.
+            let prepare = async {
                 bitcoin_health_check_with_retry(bitcoin_wallet)
                     .await
                     .context("Bitcoin wallet health check failed")?;
@@ -959,11 +966,24 @@ where
                     .rpc_health_check()
                     .await
                     .context("Monero daemon RPC health check failed")?;
-                Ok::<(), anyhow::Error>(())
+                let (_, fee_rate) = proposed_swap_fee_rate(
+                    bitcoin_wallet_for_fee_rate.as_ref(),
+                    btc_swap_fee_rate_multiplier,
+                )
+                .await
+                .context("Failed to get the swap fee rate")?;
+
+                Ok::<_, anyhow::Error>(swap_machine::common::minimum_swap_amount(
+                    min_buy..=max_buy,
+                    anti_spam_deposit_ratio,
+                    fee_rate,
+                    btc_redeem_base_fee_multiplier,
+                    bitcoin_network,
+                ))
             };
 
-            let result = match health_check.await {
-                Ok(()) => {
+            let result = match prepare.await {
+                Ok(minimum_swap_amount) => {
                     make_quote(
                         min_buy,
                         max_buy,
@@ -973,6 +993,7 @@ where
                         get_reserve_proof,
                         developer_tip,
                         refund_policy,
+                        minimum_swap_amount,
                     )
                     .await
                 }
@@ -1600,34 +1621,12 @@ fn apply_anti_spam_policy(
     swap_amount: bitcoin::Amount,
     refund_policy: &RefundPolicy,
 ) -> Result<(bitcoin::Amount, bool)> {
-    let should_always_withhold = refund_policy.always_withhold_deposit;
+    let btc_amnesty_amount = swap_machine::common::anti_spam_deposit(
+        refund_policy.anti_spam_deposit_ratio,
+        swap_amount,
+    )?;
 
-    // When ratio is 0.0, no amnesty - use full refund path for fewer fees
-    if refund_policy.anti_spam_deposit_ratio == Decimal::ZERO {
-        return Ok((bitcoin::Amount::ZERO, should_always_withhold));
-    }
-
-    let btc_anti_spam_deposit_ratio = refund_policy.anti_spam_deposit_ratio;
-
-    let amount_sats = swap_amount.to_sat();
-    let amount_decimal =
-        Decimal::from_u64(amount_sats).context("Decimal overflowed by Bitcoin sats")?;
-
-    let btc_amnesty_decimal = amount_decimal
-        .checked_mul(btc_anti_spam_deposit_ratio)
-        .context("Decimal overflow when computing amnesty amount in sats")?
-        .floor();
-    let btc_amnesty_sats: u64 = btc_amnesty_decimal
-        .try_into()
-        .context("Couldn't convert Decimal to u64")?;
-
-    anyhow::ensure!(
-        btc_amnesty_sats > 0,
-        "Positive anti-spam deposit rounds down to zero"
-    );
-    let btc_amnesty_amount = bitcoin::Amount::from_sat(btc_amnesty_sats);
-
-    Ok((btc_amnesty_amount, should_always_withhold))
+    Ok((btc_amnesty_amount, refund_policy.always_withhold_deposit))
 }
 
 #[derive(Clone)]
@@ -1687,13 +1686,13 @@ async fn capture_wallet_snapshot_state(
     })
 }
 
-async fn create_wallet_snapshot(
-    bitcoin_wallet: Arc<dyn BitcoinWallet>,
-    state: WalletSnapshotState,
+/// The fee rate the maker proposes at setup: its own estimate, scaled by the
+/// configured multiplier. Quotes use it to find the smallest amount that setup
+/// accepts.
+async fn proposed_swap_fee_rate(
+    bitcoin_wallet: &dyn BitcoinWallet,
     btc_swap_fee_rate_multiplier: Decimal,
-    btc_redeem_base_fee_multiplier: bitcoin::RedeemFeeMultiplier,
-    transfer_amount: bitcoin::Amount,
-) -> Result<WalletSnapshot> {
+) -> Result<(::bitcoin::FeeRate, bitcoin::SwapFeeRate)> {
     let estimated_fee_rate = bitcoin_wallet.swap_fee_rate().await?;
     let estimated_rate = bitcoin::SwapFeeRate::from_estimate(estimated_fee_rate)?;
     let rate: u64 = Decimal::from(estimated_rate.0)
@@ -1702,7 +1701,19 @@ async fn create_wallet_snapshot(
         .ceil()
         .try_into()
         .context("Swap fee rate does not fit in u64")?;
-    let fee_rate = bitcoin::SwapFeeRate(rate);
+
+    Ok((estimated_fee_rate, bitcoin::SwapFeeRate(rate)))
+}
+
+async fn create_wallet_snapshot(
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
+    state: WalletSnapshotState,
+    btc_swap_fee_rate_multiplier: Decimal,
+    btc_redeem_base_fee_multiplier: bitcoin::RedeemFeeMultiplier,
+    transfer_amount: bitcoin::Amount,
+) -> Result<WalletSnapshot> {
+    let (estimated_fee_rate, fee_rate) =
+        proposed_swap_fee_rate(bitcoin_wallet.as_ref(), btc_swap_fee_rate_multiplier).await?;
     let fee_limits = swap_machine::common::swap_fee_limits(fee_rate, transfer_amount)?;
 
     Ok(WalletSnapshot::new(
@@ -1962,6 +1973,7 @@ mod quote {
         get_reserve_proof: P,
         developer_tip: Decimal,
         refund_policy: RefundPolicyWire,
+        minimum_swap_amount: Option<bitcoin::Amount>,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>>
     where
         LR: LatestRate,
@@ -2024,42 +2036,48 @@ mod quote {
         let end_time = Instant::now();
         tracing::info!(%ask_price, %unreserved_xmr_balance, %max_bitcoin_for_monero, duration_ms=%end_time.duration_since(start_time).as_millis(), "Computed quote");
 
-        if min_buy > max_bitcoin_for_monero {
+        let max_quantity = max_buy.min(max_bitcoin_for_monero);
+
+        if max_quantity < max_buy {
             tracing::trace!(
-                "Your Monero balance is too low to initiate a swap, as your minimum swap amount is {}. You could at most swap {}",
-                min_buy,
+                "Your Monero balance is too low to initiate a swap with the maximum swap amount {} that you have specified in your config. You can at most swap {}",
+                max_buy,
                 max_bitcoin_for_monero
+            );
+        }
+
+        // Setup refuses a swap that cannot pay for the transactions on its
+        // refund path at the current fee rate, so the quote offers no such
+        // amount.
+        let Some(min_quantity) = minimum_swap_amount.filter(|minimum| *minimum <= max_quantity)
+        else {
+            tracing::trace!(
+                "We cannot trade: the smallest amount we can set up is {:?}, but the largest amount we can serve is {}",
+                minimum_swap_amount,
+                max_quantity
             );
 
             return Ok(Arc::new(BidQuote {
                 price: ask_price,
                 min_quantity: bitcoin::Amount::ZERO,
                 max_quantity: bitcoin::Amount::ZERO,
-                refund_policy: refund_policy.clone(),
+                refund_policy,
                 reserve_proof,
             }));
-        }
+        };
 
-        if max_buy > max_bitcoin_for_monero {
+        if min_quantity > min_buy {
             tracing::trace!(
-                "Your Monero balance is too low to initiate a swap with the maximum swap amount {} that you have specified in your config. You can at most swap {}",
-                max_buy,
-                max_bitcoin_for_monero
+                "Your minimum swap amount of {} is too small to pay for its refund path at the current fee rate. We quote {} instead",
+                min_buy,
+                min_quantity
             );
-
-            return Ok(Arc::new(BidQuote {
-                price: ask_price,
-                min_quantity: min_buy,
-                max_quantity: max_bitcoin_for_monero,
-                refund_policy: refund_policy.clone(),
-                reserve_proof,
-            }));
         }
 
         Ok(Arc::new(BidQuote {
             price: ask_price,
-            min_quantity: min_buy,
-            max_quantity: max_buy,
+            min_quantity,
+            max_quantity,
             refund_policy,
             reserve_proof,
         }))
@@ -2430,6 +2448,7 @@ mod tests {
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
             RefundPolicyWire::FullRefund,
+            Some(min_buy),
         )
         .await
         .unwrap();
@@ -2463,6 +2482,7 @@ mod tests {
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
             RefundPolicyWire::FullRefund,
+            Some(min_buy),
         )
         .await
         .unwrap();
@@ -2491,11 +2511,104 @@ mod tests {
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
             RefundPolicyWire::FullRefund,
+            Some(min_buy),
         )
         .await
         .unwrap();
 
         // Should return zero quantities when min_buy exceeds available balance
+        assert_eq!(result.min_quantity, bitcoin::Amount::ZERO);
+        assert_eq!(result.max_quantity, bitcoin::Amount::ZERO);
+    }
+
+    /// Setup rejects a swap below the minimum, because it cannot pay for its
+    /// refund path. The quote must therefore ask for at least that amount.
+    #[tokio::test]
+    async fn test_make_quote_raises_the_minimum_to_what_setup_accepts() {
+        let min_buy = bitcoin::Amount::from_sat(100_000);
+        let max_buy = bitcoin::Amount::from_sat(500_000);
+        let minimum_swap_amount = bitcoin::Amount::from_sat(250_000);
+        let rate = FixedRate::default();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
+        let reserved_items: Vec<MockReservedItem> = vec![];
+
+        let result = make_quote(
+            min_buy,
+            max_buy,
+            rate.clone(),
+            || async { Ok(balance) },
+            || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
+            Decimal::ZERO,
+            RefundPolicyWire::PartialRefund {
+                anti_spam_deposit_ratio: Decimal::new(1, 2),
+            },
+            Some(minimum_swap_amount),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.min_quantity, minimum_swap_amount);
+        assert_eq!(result.max_quantity, max_buy);
+    }
+
+    /// The maker cannot trade at all when no amount satisfies both the
+    /// minimum that setup accepts and the maximum it can serve.
+    #[tokio::test]
+    async fn test_make_quote_does_not_trade_below_the_minimum_setup_accepts() {
+        let min_buy = bitcoin::Amount::from_sat(100_000);
+        let max_buy = bitcoin::Amount::from_sat(800_000);
+        let rate = FixedRate::default();
+        // 0.6 XMR is 600_000 sats at the fixed rate of 0.01, so the balance
+        // limits the maximum below the minimum that setup accepts.
+        let balance = monero::Amount::parse_monero("0.6").unwrap();
+        let reserved_items: Vec<MockReservedItem> = vec![];
+
+        let result = make_quote(
+            min_buy,
+            max_buy,
+            rate.clone(),
+            || async { Ok(balance) },
+            || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
+            Decimal::ZERO,
+            RefundPolicyWire::PartialRefund {
+                anti_spam_deposit_ratio: Decimal::new(1, 2),
+            },
+            Some(bitcoin::Amount::from_sat(700_000)),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.min_quantity, bitcoin::Amount::ZERO);
+        assert_eq!(result.max_quantity, bitcoin::Amount::ZERO);
+    }
+
+    /// Setup accepts no amount between the configured minimum and maximum, for
+    /// example because the fees of the refund path are too high.
+    #[tokio::test]
+    async fn test_make_quote_does_not_trade_when_setup_accepts_no_amount() {
+        let rate = FixedRate::default();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
+        let reserved_items: Vec<MockReservedItem> = vec![];
+
+        let result = make_quote(
+            bitcoin::Amount::from_sat(100_000),
+            bitcoin::Amount::from_sat(500_000),
+            rate.clone(),
+            || async { Ok(balance) },
+            || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
+            Decimal::ZERO,
+            RefundPolicyWire::PartialRefund {
+                anti_spam_deposit_ratio: Decimal::new(1, 2),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.price, rate.value().ask().unwrap());
         assert_eq!(result.min_quantity, bitcoin::Amount::ZERO);
         assert_eq!(result.max_quantity, bitcoin::Amount::ZERO);
     }
@@ -2517,6 +2630,7 @@ mod tests {
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
             RefundPolicyWire::FullRefund,
+            Some(min_buy),
         )
         .await
         .unwrap();
@@ -2548,6 +2662,7 @@ mod tests {
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
             RefundPolicyWire::FullRefund,
+            Some(min_buy),
         )
         .await
         .unwrap();
@@ -2573,6 +2688,7 @@ mod tests {
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
             RefundPolicyWire::FullRefund,
+            Some(min_buy),
         )
         .await;
 
@@ -2602,6 +2718,7 @@ mod tests {
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
             RefundPolicyWire::FullRefund,
+            Some(min_buy),
         )
         .await
         .unwrap();
@@ -2630,6 +2747,7 @@ mod tests {
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             developer_tip,
             RefundPolicyWire::FullRefund,
+            Some(min_buy),
         )
         .await
         .unwrap();

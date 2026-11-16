@@ -114,6 +114,18 @@ impl ApolloProgress {
     }
 }
 
+/// The price of the quote the taker accepted and how far the offered Monero amount may be below the amount that price implies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+pub struct AcceptedQuoteTerms {
+    /// Price of one XMR in the accepted quote.
+    pub quoted_price: bitcoin::Amount,
+    /// How many percent below the Monero amount implied by `quoted_price` the offer may be.
+    pub max_offer_difference_to_quote_percent: u32,
+    /// The anti-spam deposit ratio of the refund policy in the accepted quote.
+    /// Zero means a full refund.
+    pub anti_spam_deposit_ratio: rust_decimal::Decimal,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum BobState {
     Started {
@@ -125,6 +137,9 @@ pub enum BobState {
         tx_apollo_fee: Option<bitcoin::Amount>,
         #[serde(with = "address_serde")]
         change_address: bitcoin::Address,
+        /// `None` for swaps that were started before the accepted quote was recorded.
+        #[serde(default)]
+        accepted_quote_terms: Option<AcceptedQuoteTerms>,
     },
     SwapSetupCompleted(State2),
     BtcLockReadyToPublish {
@@ -742,6 +757,7 @@ impl State1 {
             tx_punish_fee: self.tx_punish_fee,
             tx_cancel_fee: self.tx_cancel_fee,
             cancel_refund_version: self.cancel_refund_version,
+            quoted_price: None,
         })
     }
 }
@@ -783,9 +799,18 @@ pub struct State2 {
     tx_reclaim_fee: Option<bitcoin::Amount>,
     tx_withhold_fee: Option<bitcoin::Amount>,
     tx_mercy_fee: Option<bitcoin::Amount>,
+    /// The price of the quote the taker accepted.
+    /// `None` for swaps that were started before the price was recorded.
+    #[serde(default)]
+    pub quoted_price: Option<bitcoin::Amount>,
 }
 
 impl State2 {
+    pub fn with_quoted_price(mut self, quoted_price: Option<bitcoin::Amount>) -> Self {
+        self.quoted_price = quoted_price;
+        self
+    }
+
     pub fn next_message(&self) -> Result<Message4> {
         let tx_cancel = TxCancel::new(
             &self.tx_lock,

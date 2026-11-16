@@ -237,6 +237,7 @@ async fn advance_state(
             change_address,
             tx_lock_fee,
             tx_apollo_fee,
+            accepted_quote_terms,
         } => {
             // Verify the Monero daemon RPC is reachable before starting the swap.
             event_emitter.emit_swap_progress_event(
@@ -276,12 +277,15 @@ async fn advance_state(
                     fee_limits,
                     tx_apollo_fee,
                     bitcoin_refund_address: change_address,
+                    accepted_quote_terms,
                 })
                 .await?;
 
             tracing::info!(%swap_id, "Starting new swap");
 
-            BobState::SwapSetupCompleted(state2)
+            BobState::SwapSetupCompleted(
+                state2.with_quoted_price(accepted_quote_terms.map(|terms| terms.quoted_price)),
+            )
         }
         BobState::SwapSetupCompleted(state2) => {
             // Alice only persists the swap once we commit to it through the open swap setup.
@@ -293,6 +297,7 @@ async fn advance_state(
 
             // Alice and Bob have exchanged all necessary signatures
             let xmr_receive_amount = state2.xmr;
+            let quoted_price = state2.quoted_price;
             let btc_amnesty_amount = state2
                 .btc_amnesty_amount
                 .context("btc_amnesty_amount missing")?;
@@ -323,6 +328,7 @@ async fn advance_state(
                 btc_apollo_fee: apollo_enabled
                     .then(|| state3.tx_lock.tx_apollo_fee())
                     .transpose()?,
+                quoted_price,
             };
 
             // Prepare the Apollo transaction before the approval and before we commit to Alice.

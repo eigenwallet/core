@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.4] - 2026-11-16
+
+- GUI: The warning before you accept an offer during swap setup now appears if the rate of the maker is more than 2% above its quote, instead of 5%.
+- CI: Pin GitHub Actions to commit hashes.
+- GUI: The swap setup now stops if the maker offers more than 5% less Monero than its quote implies, or a refund policy that differs from its quote.
+  Accepting an offer now fails if the maker made its price worse after the offer was displayed.
+- ASB: Quote only amounts that swap setup accepts. Before, a maker could offer amounts that it then refused with "Anti-spam deposit ... is too small".
+
+## [5.0.3] - 2026-11-10
+
+- GUI + CLI + ASB: Fix the built-in Tor client staying at 15% during startup on Windows.
 - Add Apollo, an encrypted on-chain backup that lets you recover swaps started after you enable it from your wallet seed if you lose your local swap data.
   It is off by default and can be enabled with "Backup data on chain" in the settings; the setting only applies to new swaps.
   Each backup requires an additional Bitcoin transaction fee.
@@ -1113,7 +1124,9 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/5.0.2...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/5.0.4...HEAD
+[5.0.4]: https://github.com/eigenwallet/core/compare/5.0.3...5.0.4
+[5.0.3]: https://github.com/eigenwallet/core/compare/5.0.2...5.0.3
 [5.0.2]: https://github.com/eigenwallet/core/compare/5.0.1...5.0.2
 [5.0.1]: https://github.com/eigenwallet/core/compare/5.0.0...5.0.1
 [5.0.0]: https://github.com/eigenwallet/core/compare/4.16.1...5.0.0
