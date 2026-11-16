@@ -109,6 +109,10 @@ pub struct LockBitcoinDetails {
     /// `None` means no Apollo for the swap.
     #[typeshare(serialized_as = "Option<number>")]
     pub btc_apollo_fee: Option<bitcoin::Amount>,
+    /// The price of the quote the user accepted.
+    /// `None` for swaps that were started before the price was recorded.
+    #[typeshare(serialized_as = "Option<number>")]
+    pub quoted_price: Option<bitcoin::Amount>,
 }
 
 #[typeshare]

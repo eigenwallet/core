@@ -757,6 +757,7 @@ impl State1 {
             tx_punish_fee: self.tx_punish_fee,
             tx_cancel_fee: self.tx_cancel_fee,
             cancel_refund_version: self.cancel_refund_version,
+            quoted_price: None,
         })
     }
 }
@@ -798,9 +799,18 @@ pub struct State2 {
     tx_reclaim_fee: Option<bitcoin::Amount>,
     tx_withhold_fee: Option<bitcoin::Amount>,
     tx_mercy_fee: Option<bitcoin::Amount>,
+    /// The price of the quote the taker accepted.
+    /// `None` for swaps that were started before the price was recorded.
+    #[serde(default)]
+    pub quoted_price: Option<bitcoin::Amount>,
 }
 
 impl State2 {
+    pub fn with_quoted_price(mut self, quoted_price: Option<bitcoin::Amount>) -> Self {
+        self.quoted_price = quoted_price;
+        self
+    }
+
     pub fn next_message(&self) -> Result<Message4> {
         let tx_cancel = TxCancel::new(
             &self.tx_lock,
