@@ -19,10 +19,10 @@ runs:
       run: ${{ env.APT_SET_CONF_COMMAND }}
 
     - name: Set env variables
-      uses: ./.github/actions/set-monero-env
+      uses: $/.github/actions/set-monero-env
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
       with:
         node-version: lts/*
 
@@ -33,8 +33,9 @@ runs:
         corepack enable
 
     - name: Install Rust stable
-      uses: dtolnay/rust-toolchain@1.92
+      uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
       with:
+        toolchain: "1.92"
         targets: ${{ inputs.target }}
 
     - name: Install Tauri and build dependencies (Ubuntu)
@@ -83,12 +84,12 @@ runs:
         yarn add -D @tauri-apps/cli@2.8.0
 
     - name: Install just globally
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39
       with:
         tool: just@1.42.4
 
     - name: Install typeshare-cli globally
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39
       with:
         tool: typeshare-cli@1.13.3
 
@@ -98,13 +99,13 @@ runs:
       run: npm install --global dprint@0.50
 
     - name: Install sqlx-cli globally
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39
       with:
         tool: sqlx-cli@0.8.6
 
     - name: Install cross (armv7)
       if: inputs.host == 'armv7-unknown-linux-gnueabihf'
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39
       with:
         tool: cross
 
