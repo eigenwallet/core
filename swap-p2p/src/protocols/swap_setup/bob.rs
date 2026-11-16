@@ -23,8 +23,9 @@ use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
 use swap_core::bitcoin;
+use swap_core::monero::PICONERO_OFFSET;
 use swap_env::env;
-use swap_machine::bob::{State0, State2, SwapSecretKeys};
+use swap_machine::bob::{AcceptedQuoteTerms, State0, State2, SwapSecretKeys};
 use swap_machine::common::{Message1, Message3};
 use tracing::Instrument;
 use uuid::Uuid;
@@ -364,6 +365,8 @@ pub struct NewSwap {
     /// `None` means the swap has no Apollo.
     pub tx_apollo_fee: Option<bitcoin::Amount>,
     pub bitcoin_refund_address: bitcoin::Address,
+    /// `None` for swaps that were started before the accepted quote was recorded.
+    pub accepted_quote_terms: Option<AcceptedQuoteTerms>,
 }
 
 #[derive(Debug)]
@@ -713,6 +716,11 @@ async fn run_swap_setup(
         "Got spot price response from Alice as part of swap setup",
     );
 
+    if let Some(accepted_quote_terms) = new_swap_request.accepted_quote_terms {
+        check_offered_xmr_against_quote(new_swap_request.btc, xmr, accepted_quote_terms)
+            .map_err(|err| SetupError::Rejected(err.to_string()))?;
+    }
+
     let state0 = State0::new(
         new_swap_request.swap_id,
         &mut rand::thread_rng(),
@@ -748,6 +756,15 @@ async fn run_swap_setup(
         Ok(msg) => msg,
         Err(setup_err) => return Err(setup_err.into()),
     };
+
+    if let Some(accepted_quote_terms) = new_swap_request.accepted_quote_terms {
+        check_offered_deposit_against_quote(
+            new_swap_request.btc,
+            message1.amnesty_amount,
+            accepted_quote_terms,
+        )
+        .map_err(|err| SetupError::Rejected(err.to_string()))?;
+    }
 
     let state1 = match state0.receive(bitcoin_wallet.as_ref(), message1).await {
         Ok(state) => state,
@@ -891,6 +908,105 @@ async fn abort_swap_setup(substream: &mut SetupStream) -> Result<()> {
         .context("Failed to close substream")?;
 
     Ok(())
+}
+
+/// Fails if the maker offers less Monero than the accepted quote implies, beyond the tolerance.
+fn check_offered_xmr_against_quote(
+    btc: bitcoin::Amount,
+    offered_xmr: swap_core::monero::Amount,
+    terms: AcceptedQuoteTerms,
+) -> Result<(), OfferedXmrError> {
+    let quoted_price = terms.quoted_price;
+    let max_percent = terms.max_offer_difference_to_quote_percent;
+
+    let expected_piconeros = (u128::from(btc.to_sat()) * u128::from(PICONERO_OFFSET))
+        .checked_div(u128::from(quoted_price.to_sat()))
+        .ok_or(OfferedXmrError::ZeroQuotedPrice)?;
+    let expected_piconeros = u64::try_from(expected_piconeros)
+        .map_err(|_| OfferedXmrError::ExpectedXmrOutOfRange { btc, quoted_price })?;
+    let expected = u128::from(expected_piconeros);
+    let offered = u128::from(offered_xmr.as_pico());
+
+    // offered < expected * (100 - max_percent) / 100, written without subtraction and division
+    if offered * 100 + expected * u128::from(max_percent) < expected * 100 {
+        return Err(OfferedXmrError::TooLittleXmr {
+            btc,
+            offered_xmr,
+            expected_xmr: swap_core::monero::Amount::from_pico(expected_piconeros),
+            quoted_price,
+            max_percent,
+        });
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
+enum OfferedXmrError {
+    #[error("Quoted price is zero")]
+    ZeroQuotedPrice,
+    #[error(
+        "Monero amount expected for {btc} at the quoted price of {quoted_price} per XMR is out of range"
+    )]
+    ExpectedXmrOutOfRange {
+        btc: bitcoin::Amount,
+        quoted_price: bitcoin::Amount,
+    },
+    #[error(
+        "Seller offered {offered_xmr} for {btc}, which is more than {max_percent}% below the {expected_xmr} expected at the quoted price of {quoted_price} per XMR"
+    )]
+    TooLittleXmr {
+        btc: bitcoin::Amount,
+        offered_xmr: swap_core::monero::Amount,
+        expected_xmr: swap_core::monero::Amount,
+        quoted_price: bitcoin::Amount,
+        max_percent: u32,
+    },
+}
+
+/// Fails if the anti-spam deposit of the maker differs from the deposit that the refund policy of the accepted quote implies.
+fn check_offered_deposit_against_quote(
+    btc: bitcoin::Amount,
+    offered_deposit: bitcoin::Amount,
+    terms: AcceptedQuoteTerms,
+) -> Result<(), OfferedDepositError> {
+    let ratio = terms.anti_spam_deposit_ratio;
+
+    let expected_deposit = swap_machine::common::anti_spam_deposit(ratio, btc).map_err(|err| {
+        OfferedDepositError::ExpectedDepositUnknown {
+            btc,
+            ratio,
+            reason: format!("{err:#}"),
+        }
+    })?;
+
+    if offered_deposit != expected_deposit {
+        return Err(OfferedDepositError::DifferentDeposit {
+            offered_deposit,
+            expected_deposit,
+        });
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
+enum OfferedDepositError {
+    #[error(
+        "Cannot calculate the anti-spam deposit for {btc} at the quoted ratio of {ratio}: {reason}"
+    )]
+    ExpectedDepositUnknown {
+        btc: bitcoin::Amount,
+        ratio: rust_decimal::Decimal,
+        reason: String,
+    },
+    #[error(
+        "Seller asked for an anti-spam deposit of {offered_deposit}, but its quoted refund policy implies {expected_deposit}"
+    )]
+    DifferentDeposit {
+        offered_deposit: bitcoin::Amount,
+        expected_deposit: bitcoin::Amount,
+    },
 }
 
 impl From<SpotPriceResponse> for Result<swap_core::monero::Amount, Error> {
@@ -1048,5 +1164,122 @@ mod tests {
         let mut substream = substream_from_alice(false).await;
 
         assert!(commit_swap_setup(&mut substream).await.is_err());
+    }
+
+    fn check(
+        btc_sats: u64,
+        offered_piconeros: u64,
+        quoted_price_sats: u64,
+        max_percent: u32,
+    ) -> Result<(), OfferedXmrError> {
+        check_offered_xmr_against_quote(
+            bitcoin::Amount::from_sat(btc_sats),
+            swap_core::monero::Amount::from_pico(offered_piconeros),
+            AcceptedQuoteTerms {
+                quoted_price: bitcoin::Amount::from_sat(quoted_price_sats),
+                max_offer_difference_to_quote_percent: max_percent,
+                anti_spam_deposit_ratio: rust_decimal::Decimal::ZERO,
+            },
+        )
+    }
+
+    fn check_deposit(
+        offered_deposit_sats: u64,
+        anti_spam_deposit_ratio: rust_decimal::Decimal,
+    ) -> Result<(), OfferedDepositError> {
+        check_offered_deposit_against_quote(
+            bitcoin::Amount::from_sat(1_000_000),
+            bitcoin::Amount::from_sat(offered_deposit_sats),
+            AcceptedQuoteTerms {
+                quoted_price: bitcoin::Amount::from_sat(1_000_000),
+                max_offer_difference_to_quote_percent: 5,
+                anti_spam_deposit_ratio,
+            },
+        )
+    }
+
+    #[test]
+    fn accepts_deposit_that_matches_the_quoted_refund_policy() {
+        let two_percent = rust_decimal::Decimal::new(2, 2);
+
+        assert_eq!(check_deposit(20_000, two_percent), Ok(()));
+        assert_eq!(check_deposit(0, rust_decimal::Decimal::ZERO), Ok(()));
+    }
+
+    #[test]
+    fn rejects_deposit_that_differs_from_the_quoted_refund_policy() {
+        let two_percent = rust_decimal::Decimal::new(2, 2);
+
+        for offered_deposit_sats in [0, 19_999, 20_001, 100_000] {
+            let result = check_deposit(offered_deposit_sats, two_percent);
+
+            assert!(matches!(
+                result,
+                Err(OfferedDepositError::DifferentDeposit { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_deposit_when_the_quote_promised_a_full_refund() {
+        let result = check_deposit(20_000, rust_decimal::Decimal::ZERO);
+
+        assert!(matches!(
+            result,
+            Err(OfferedDepositError::DifferentDeposit { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_the_offer_from_issue_1257() {
+        // The quote implies 1.97 XMR for this Bitcoin amount
+        let result = check(1_544_125, PICONERO_OFFSET, 783_820, 10);
+
+        assert!(matches!(result, Err(OfferedXmrError::TooLittleXmr { .. })));
+    }
+
+    #[test]
+    fn accepts_offer_at_the_edge_of_the_tolerance() {
+        assert_eq!(check(1_000_000, 900_000_000_000, 1_000_000, 10), Ok(()));
+    }
+
+    #[test]
+    fn rejects_offer_just_outside_the_tolerance() {
+        let result = check(1_000_000, 899_999_999_999, 1_000_000, 10);
+
+        assert!(matches!(result, Err(OfferedXmrError::TooLittleXmr { .. })));
+    }
+
+    #[test]
+    fn rejects_zero_xmr() {
+        let result = check(1_000_000, 0, 1_000_000, 10);
+
+        assert!(matches!(result, Err(OfferedXmrError::TooLittleXmr { .. })));
+    }
+
+    #[test]
+    fn rejects_zero_quoted_price() {
+        let result = check(1_000_000, PICONERO_OFFSET, 0, 10);
+
+        assert_eq!(result, Err(OfferedXmrError::ZeroQuotedPrice));
+    }
+
+    #[test]
+    fn rounds_expected_xmr_down_when_the_price_does_not_divide_evenly() {
+        assert_eq!(check(1, 333_333_333_333, 3, 0), Ok(()));
+
+        let result = check(1, 333_333_333_332, 3, 0);
+
+        assert!(matches!(result, Err(OfferedXmrError::TooLittleXmr { .. })));
+    }
+
+    #[test]
+    fn rejects_expected_xmr_that_is_out_of_range() {
+        let result = check(u64::MAX, PICONERO_OFFSET, 1, 10);
+
+        assert!(matches!(
+            result,
+            Err(OfferedXmrError::ExpectedXmrOutOfRange { .. })
+        ));
     }
 }

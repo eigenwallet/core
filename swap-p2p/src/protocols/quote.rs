@@ -32,6 +32,19 @@ pub enum RefundPolicyWire {
     },
 }
 
+impl RefundPolicyWire {
+    /// The ratio of the swap amount that goes into the anti-spam deposit.
+    /// Zero for a full refund.
+    pub fn anti_spam_deposit_ratio(&self) -> Decimal {
+        match self {
+            RefundPolicyWire::FullRefund => Decimal::ZERO,
+            RefundPolicyWire::PartialRefund {
+                anti_spam_deposit_ratio,
+            } => *anti_spam_deposit_ratio,
+        }
+    }
+}
+
 impl From<RefundPolicy> for RefundPolicyWire {
     fn from(policy: RefundPolicy) -> Self {
         if policy.anti_spam_deposit_ratio == Decimal::ONE {

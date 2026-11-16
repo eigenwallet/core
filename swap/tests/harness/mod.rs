@@ -922,6 +922,7 @@ impl BobParams {
                 swap::protocol::bob::apollo::estimate_tx_apollo_fee(self.bitcoin_wallet.as_ref())
                     .await?,
             ),
+            None,
         )
         .with_apollo(Some(apollo));
 
