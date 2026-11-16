@@ -58,7 +58,7 @@ use futures::{
 };
 use libp2p::{
     Multiaddr, Transport, TransportError,
-    core::transport::{ListenerId, TransportEvent},
+    core::transport::{DialOpts, ListenerId, TransportEvent},
     multiaddr::Protocol,
 };
 use std::pin::Pin;
@@ -453,7 +453,7 @@ impl Transport for TorTransport {
     fn dial(
         &mut self,
         addr: Multiaddr,
-        _opts: libp2p::core::transport::DialOpts,
+        _opts: DialOpts,
     ) -> Result<Self::Dial, TransportError<Self::Error>> {
         let maybe_tor_addr = match self.conversion_mode {
             AddressConversion::DnsOnly => safe_extract(&addr),
@@ -643,21 +643,13 @@ where
         self.inner.remove_listener(id)
     }
 
-    fn dial(&mut self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>> {
-        let inner_dial = self.inner.dial(addr.clone())?;
-        Ok(self.gate(&addr, inner_dial))
-    }
-
-    fn dial_as_listener(
+    fn dial(
         &mut self,
         addr: Multiaddr,
+        opts: DialOpts,
     ) -> Result<Self::Dial, TransportError<Self::Error>> {
-        let inner_dial = self.inner.dial_as_listener(addr.clone())?;
+        let inner_dial = self.inner.dial(addr.clone(), opts)?;
         Ok(self.gate(&addr, inner_dial))
-    }
-
-    fn address_translation(&self, listen: &Multiaddr, observed: &Multiaddr) -> Option<Multiaddr> {
-        self.inner.address_translation(listen, observed)
     }
 
     fn poll(
