@@ -23,6 +23,7 @@ use tokio_rustls::rustls::{
 use tracing::{Instrument, error, info_span};
 
 use crate::AppState;
+use crate::connection_pool::{GuardedSender, StreamKey};
 
 /// wallet2.h has a default timeout of 3 minutes + 30 seconds.
 /// We assume this is a reasonable timeout. We use half of that that.
@@ -459,8 +460,6 @@ async fn proxy_to_single_node(
     request: CloneableRequest,
     node: &(String, String, u16),
 ) -> Result<Response, SingleRequestError> {
-    use crate::connection_pool::GuardedSender;
-
     if request.clearnet_whitelisted() {
         tracing::trace!("Request is whitelisted, sending over clearnet");
     }
@@ -477,65 +476,27 @@ async fn proxy_to_single_node(
     let key = (node.0.clone(), node.1.clone(), node.2, use_tor);
 
     // Try to reuse an idle HTTP connection first.
-    let mut guarded_sender: Option<GuardedSender> = state.connection_pool.try_get(&key).await;
-
-    if guarded_sender.is_none() {
-        // Build a new connection, and wrap it with TLS if needed.
-        let address = (node.1.as_str(), node.2);
-
-        let maybe_tls_stream = timeout(TIMEOUT, async {
-            let no_tls_stream: Box<dyn HyperStream> = if use_tor {
-                let tor_client = state.tor_client.as_ref().ok_or_else(|| {
-                    SingleRequestError::ConnectionError("Tor requested but client missing".into())
-                })?;
-
-                let stream = tor_client
-                    .connect(address)
-                    .await
-                    .map_err(|e| SingleRequestError::ConnectionError(format!("{e:?}")))?;
-
-                Box::new(stream)
-            } else {
-                let stream = TcpStream::connect(address)
-                    .await
-                    .map_err(|e| SingleRequestError::ConnectionError(format!("{e:?}")))?;
-
-                Box::new(stream)
-            };
-
-            maybe_wrap_with_tls(no_tls_stream, &node.0, &node.1).await
-        })
-        .await
-        .map_err(|_| SingleRequestError::Timeout("Connection timed out".to_string()))??;
-
-        let maybe_tls_stream = TokioIo::new(maybe_tls_stream);
-
-        // Build an HTTP/1 connection over the stream.
-        let (sender, conn) = hyper::client::conn::http1::handshake(maybe_tls_stream)
-            .await
-            .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
-
-        // Drive the connection in the background.
-        tokio::spawn(async move {
-            let _ = conn.await;
-        });
-
-        // Insert into pool and obtain exclusive access for this request.
-        guarded_sender = Some(
-            state
-                .connection_pool
-                .insert_and_lock(key.clone(), sender)
-                .await,
-        );
-
-        tracing::trace!(
-            "Established new connection via {}{}",
-            if use_tor { "Tor" } else { "clearnet" },
-            if node.0 == "https" { " with TLS" } else { "" }
-        );
+    // The node may have closed it while it was idle.
+    if let Some(mut guarded_sender) = state.connection_pool.try_get(&key).await {
+        if guarded_sender.ready().await.is_err() {
+            guarded_sender.mark_failed().await;
+        } else {
+            match guarded_sender.try_send_request(request.to_request()).await {
+                Ok(response) => return collect_response(guarded_sender, response).await,
+                // The connection closed before the request was sent,
+                // so it is safe to send it once more over a new connection.
+                Err(e) if e.message().is_some() => guarded_sender.mark_failed().await,
+                Err(e) => {
+                    guarded_sender.mark_failed().await;
+                    return Err(SingleRequestError::SendRequestError(
+                        e.into_error().to_string(),
+                    ));
+                }
+            }
+        }
     }
 
-    let mut guarded_sender = guarded_sender.expect("sender must be set");
+    let mut guarded_sender = connect(state, node, key, use_tor).await?;
 
     // Forward the request to the node. URI stays relative, so no rewrite.
     let response = match guarded_sender.send_request(request.to_request()).await {
@@ -547,6 +508,74 @@ async fn proxy_to_single_node(
         }
     };
 
+    collect_response(guarded_sender, response).await
+}
+
+/// Opens a new connection to the node and inserts it into the pool.
+/// Returns exclusive access to it for the current request.
+async fn connect(
+    state: &crate::AppState,
+    node: &(String, String, u16),
+    key: StreamKey,
+    use_tor: bool,
+) -> Result<GuardedSender, SingleRequestError> {
+    // Build a new connection, and wrap it with TLS if needed.
+    let address = (node.1.as_str(), node.2);
+
+    let maybe_tls_stream = timeout(TIMEOUT, async {
+        let no_tls_stream: Box<dyn HyperStream> = if use_tor {
+            let tor_client = state.tor_client.as_ref().ok_or_else(|| {
+                SingleRequestError::ConnectionError("Tor requested but client missing".into())
+            })?;
+
+            let stream = tor_client
+                .connect(address)
+                .await
+                .map_err(|e| SingleRequestError::ConnectionError(format!("{e:?}")))?;
+
+            Box::new(stream)
+        } else {
+            let stream = TcpStream::connect(address)
+                .await
+                .map_err(|e| SingleRequestError::ConnectionError(format!("{e:?}")))?;
+
+            Box::new(stream)
+        };
+
+        maybe_wrap_with_tls(no_tls_stream, &node.0, &node.1).await
+    })
+    .await
+    .map_err(|_| SingleRequestError::Timeout("Connection timed out".to_string()))??;
+
+    let maybe_tls_stream = TokioIo::new(maybe_tls_stream);
+
+    // Build an HTTP/1 connection over the stream.
+    let (sender, conn) = hyper::client::conn::http1::handshake(maybe_tls_stream)
+        .await
+        .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+
+    // Drive the connection in the background.
+    tokio::spawn(async move {
+        let _ = conn.await;
+    });
+
+    // Insert into pool and obtain exclusive access for this request.
+    let guarded_sender = state.connection_pool.insert_and_lock(key, sender).await;
+
+    tracing::trace!(
+        "Established new connection via {}{}",
+        if use_tor { "Tor" } else { "clearnet" },
+        if node.0 == "https" { " with TLS" } else { "" }
+    );
+
+    Ok(guarded_sender)
+}
+
+/// Reads the whole response body while still holding the connection.
+async fn collect_response(
+    guarded_sender: GuardedSender,
+    response: hyper::Response<hyper::body::Incoming>,
+) -> Result<Response, SingleRequestError> {
     // Convert hyper Response<Incoming> to axum Response<Body>
     // Buffer the entire response to avoid "end of file before message length reached" errors
     let (parts, body) = response.into_parts();
@@ -829,4 +858,103 @@ pub async fn stats_handler(State(state): State<AppState>) -> Response {
     }
     .instrument(info_span!("stats_request"))
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection_pool::ConnectionPool;
+    use crate::database::Database;
+    use crate::pool::NodePool;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn reconnects_after_node_closed_idle_connection() {
+        let (node, accepted) = fake_node(false).await;
+
+        assert_eq!(send_twice(&node).await, 2);
+        assert_eq!(accepted.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn reuses_open_connection() {
+        let (node, accepted) = fake_node(true).await;
+
+        assert_eq!(send_twice(&node).await, 2);
+        assert_eq!(accepted.load(Ordering::SeqCst), 1);
+    }
+
+    /// Sends two requests with an idle period in between.
+    /// Returns the number of successful responses.
+    async fn send_twice(node: &(String, String, u16)) -> usize {
+        let data_dir = std::env::temp_dir().join(format!("rpc-pool-{}", rand::random::<u64>()));
+        let db = Database::new(data_dir.clone()).await.unwrap();
+        let state = AppState {
+            node_pool: Arc::new(NodePool::new(db, monero_address::Network::Mainnet).0),
+            tor_client: None,
+            connection_pool: ConnectionPool::new(),
+        };
+
+        let mut successes = 0;
+        for _ in 0..2 {
+            let request = Request::post("/json_rpc")
+                .header("host", "127.0.0.1")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":"0","method":"get_info"}"#,
+                ))
+                .unwrap();
+            let request = CloneableRequest::from_request(request).await.unwrap();
+
+            if let Ok(response) = proxy_to_single_node(&state, request, node).await {
+                assert_eq!(response.status(), StatusCode::OK);
+                successes += 1;
+            }
+
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+
+        std::fs::remove_dir_all(data_dir).unwrap();
+        successes
+    }
+
+    /// A node that answers every request. Unless `keep_alive` is set, it closes
+    /// the connection after the first response.
+    async fn fake_node(keep_alive: bool) -> ((String, String, u16), Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicUsize::new(0));
+
+        let counter = accepted.clone();
+        tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                counter.fetch_add(1, Ordering::SeqCst);
+
+                tokio::spawn(async move {
+                    let body = r#"{"jsonrpc":"2.0","id":"0","result":{}}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let mut buf = [0u8; 4096];
+
+                    while let Ok(n) = stream.read(&mut buf).await {
+                        if n == 0 || stream.write_all(response.as_bytes()).await.is_err() {
+                            return;
+                        }
+                        if !keep_alive {
+                            return;
+                        }
+                    }
+                });
+            }
+        });
+
+        (
+            ("http".to_string(), "127.0.0.1".to_string(), port),
+            accepted,
+        )
+    }
 }
