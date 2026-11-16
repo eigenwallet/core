@@ -4,7 +4,7 @@ import { getMarkup } from "./conversionUtils";
 export const MAX_OFFERED_MARKUP_PERCENT = 5;
 
 /// The offered price above the quoted price, in percent, that causes a warning.
-export const MAX_PRICE_INCREASE_OVER_QUOTE_PERCENT = 5;
+export const MAX_PRICE_INCREASE_OVER_QUOTE_PERCENT = 2;
 
 /// The increase of the markup from the quote to the offer, as a fraction of the
 /// quoted markup, that causes a warning.
@@ -23,7 +23,7 @@ export type SwapSetupRateWarning =
 ///
 /// The markup is high if the offered markup is more than 5%. It is raised if
 /// the offered markup is more than 25%, and more than 0.25 percentage points,
-/// above the quoted markup, or the offered rate is more than 5% above the quoted
+/// above the quoted markup, or the offered rate is more than 2% above the quoted
 /// rate.
 ///
 /// | Offered markup | Not raised | Raised                |
@@ -32,7 +32,7 @@ export type SwapSetupRateWarning =
 /// | Above 5%       | `MarkupHigh` | `MarkupHighAndRaised` |
 ///
 /// Without a market rate there is no markup, so the only warning is `RateRaised`
-/// if the offered rate is more than 5% above the quoted rate. Without a quote
+/// if the offered rate is more than 2% above the quoted rate. Without a quote
 /// there is nothing to compare the offer with, so the warning is `NoQuote`.
 ///
 /// All rates are in BTC per XMR. `quotedRate` is null if the GUI did not

@@ -114,21 +114,21 @@ describe("getSwapSetupRateWarning", () => {
     ).toBeNull();
   });
 
-  it("warns if the offered rate is more than 5% above the quote without a market rate", () => {
+  it("warns if the offered rate is more than 2% above the quote without a market rate", () => {
     expect(
       getSwapSetupRateWarning({
         quotedRate: 0.006,
-        offeredRate: 0.00631,
+        offeredRate: 0.00613,
         marketRate: null,
       })?.type,
     ).toBe("RateRaised");
   });
 
-  it("accepts an offered rate up to 5% above the quote without a market rate", () => {
+  it("accepts an offered rate up to 2% above the quote without a market rate", () => {
     expect(
       getSwapSetupRateWarning({
         quotedRate: 0.006,
-        offeredRate: 0.0063,
+        offeredRate: 0.00612,
         marketRate: null,
       }),
     ).toBeNull();

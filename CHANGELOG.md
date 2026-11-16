@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: The warning before you accept an offer during swap setup now appears if the rate of the maker is more than 2% above its quote, instead of 5%.
 - GUI: The swap setup now stops if the maker offers more than 5% less Monero than its quote implies, or a refund policy that differs from its quote.
   Accepting an offer now fails if the maker made its price worse after the offer was displayed.
 - ASB: Quote only amounts that swap setup accepts. Before, a maker could offer amounts that it then refused with "Anti-spam deposit ... is too small".
