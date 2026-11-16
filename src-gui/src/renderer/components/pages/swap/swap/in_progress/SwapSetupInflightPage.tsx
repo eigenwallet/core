@@ -38,7 +38,6 @@ export default function SwapSetupInflightPage({
   const request = useActiveLockBitcoinApprovalRequest();
   // Get market rate for markup calculation (must be called unconditionally)
   const xmrBtcRate = useAppSelector((state) => state.rates.xmrBtcRate);
-  const quote = useAppSelector((state) => state.swap.state?.quote ?? null);
   // The id of the approval request whose markup warning the user acknowledged.
   const [acknowledgedWarningRequestId, setAcknowledgedWarningRequestId] =
     useState<string | null>(null);
@@ -95,6 +94,7 @@ export default function SwapSetupInflightPage({
     monero_receive_pool,
     xmr_receive_amount,
     btc_amnesty_amount,
+    quoted_price,
   } = request.request.content;
 
   // Calculate markup compared to market rate
@@ -105,7 +105,7 @@ export default function SwapSetupInflightPage({
   const markupPercent =
     xmrBtcRate != null ? getMarkup(makerRate, xmrBtcRate) : null;
 
-  const quotedRate = quote != null ? satsToBtc(quote.price) : null;
+  const quotedRate = quoted_price != null ? satsToBtc(quoted_price) : null;
   // Add one piconero to remove the maker's truncation error.
   const rateForWarning = getExchangeRate(
     btc_lock_amount,
