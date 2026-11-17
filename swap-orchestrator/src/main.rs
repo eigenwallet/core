@@ -398,7 +398,12 @@ fn main() {
                 price_ticker_source_bitfinex_enabled: default_price_ticker_source_enabled(),
                 price_ticker_source_kucoin_enabled: default_price_ticker_source_enabled(),
                 external_bitcoin_redeem_address: None,
-                btc_redeem_fee_multiplier: swap_env::config::default_btc_redeem_fee_multiplier(),
+                btc_redeem_base_fee_multiplier:
+                    swap_env::config::default_btc_redeem_base_fee_multiplier(),
+                btc_swap_fee_rate_multiplier:
+                    swap_env::config::default_btc_swap_fee_rate_multiplier(),
+                wallet_snapshot_cache_ttl_secs:
+                    swap_env::config::default_wallet_snapshot_cache_ttl_secs(),
                 refund_policy: defaults.refund_policy,
                 developer_tip,
             },
@@ -604,7 +609,7 @@ fn print_promtail_instructions(promtail: &PromtailConfig) {
     println!("  - Instance label (host): {}", promtail.instance);
     println!("  - Loki push URL:         {}", promtail.loki_push_url);
     println!("  - Config written to:     {}", PROMTAIL_CONFIG_FILE);
-    println!("  - Ships: asb tracing logs + bitcoind/monerod/electrs container logs");
+    println!("  - Ships: asb tracing logs + bitcoind/monerod/electrs/tor container logs");
     println!("  - Verify after `docker compose up -d`:");
     println!("      docker compose logs --tail 50 promtail");
     println!(

@@ -28,7 +28,7 @@ use super::extract_ecdsa_sig;
 /// and 2) avoid having to pay fees for 2 Bitcoin transactions when we want to get a full refund anyway.
 #[derive(Debug, Clone)]
 pub struct TxFullRefund {
-    inner: Transaction,
+    pub(super) inner: Transaction,
     digest: Sighash,
     cancel_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     watch_script: ScriptBuf,

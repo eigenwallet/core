@@ -3,6 +3,7 @@ import DonateInfoBox from "./DonateInfoBox";
 import DaemonControlBox from "./DaemonControlBox";
 import SettingsBox from "./SettingsBox";
 import MoneroPoolHealthBox from "./MoneroPoolHealthBox";
+import ApolloBackupsBox from "./ApolloBackupsBox";
 import { useLocation } from "react-router-dom";
 import { useEffect } from "react";
 
@@ -29,6 +30,7 @@ export default function SettingsPage() {
       <SettingsBox />
       <DaemonControlBox />
       <MoneroPoolHealthBox />
+      <ApolloBackupsBox />
     </Box>
   );
 }

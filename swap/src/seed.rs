@@ -49,6 +49,26 @@ impl Seed {
         identity::Keypair::ed25519_from_bytes(bytes).expect("we always pass 32 bytes")
     }
 
+    pub fn derive_apollo_encryption_key(
+        &self,
+    ) -> crate::protocol::bob::apollo::ApolloEncryptionKey {
+        // This domain must not change, or existing on-chain data becomes unreadable.
+        crate::protocol::bob::apollo::ApolloEncryptionKey::new(
+            self.derive(b"SWAP_BACKUP_ENCRYPTION_KEY").bytes(),
+        )
+    }
+
+    /// Derives Bob's per-swap secrets from the seed and `swap_id`, so the Apollo transaction does not store them.
+    pub fn derive_swap_secret_keys(
+        &self,
+        swap_id: uuid::Uuid,
+    ) -> swap_machine::bob::SwapSecretKeys {
+        swap_machine::bob::SwapSecretKeys::derive(
+            self.derive(b"BOB_SWAP_SECRET_KEYS_V1").bytes(),
+            swap_id,
+        )
+    }
+
     /// Create seed from a Monero wallet mnemonic string
     pub fn from_mnemonic(mnemonic: String) -> Result<Self, Error> {
         let monero_seed = MoneroSeed::from_string(Language::English, Zeroizing::new(mnemonic))

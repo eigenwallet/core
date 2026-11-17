@@ -10,6 +10,7 @@ import {
 import { setBitcoinBalance } from "store/features/bitcoinWalletSlice";
 import { receivedCliLog } from "store/features/logsSlice";
 import { poolStatusReceived } from "store/features/poolSlice";
+import { apolloStatusReceived } from "store/features/apolloSlice";
 import { swapProgressEventReceived } from "store/features/swapSlice";
 import {
   quotesProgressReceived,
@@ -156,7 +157,7 @@ listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
       break;
 
     case "BalanceChange":
-      store.dispatch(setBitcoinBalance(eventData.balance));
+      store.dispatch(setBitcoinBalance(eventData));
       break;
 
     case "SwapDatabaseStateUpdate":
@@ -202,6 +203,10 @@ listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
 
     case "PoolStatusUpdate":
       store.dispatch(poolStatusReceived(eventData));
+      break;
+
+    case "ApolloStatusUpdate":
+      store.dispatch(apolloStatusReceived(eventData));
       break;
 
     case "MoneroWalletUpdate":

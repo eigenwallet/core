@@ -1,5 +1,6 @@
 use crate::asb::LatestRate;
 use crate::network::rendezvous::XmrBtcNamespace;
+use crate::network::swap_setup::verification::LockInputVerifier;
 use crate::seed::Seed;
 use crate::{asb, cli};
 use anyhow::Result;
@@ -33,6 +34,7 @@ pub fn asb<LR>(
     latest_rate: LR,
     resume_only: bool,
     env_config: env::Config,
+    lock_input_verifier: LockInputVerifier,
     namespace: XmrBtcNamespace,
     rendezvous_addrs: &[Multiaddr],
     maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
@@ -101,6 +103,7 @@ where
         latest_rate,
         resume_only,
         env_config,
+        lock_input_verifier,
         (identity.clone(), namespace),
         rendezvous_nodes,
         connection_limits,
