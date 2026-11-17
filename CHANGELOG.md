@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI: unreachable multiaddress for a maker (e.g. a stale onion/wormhole) no longer blocks that maker's other addresses from being dialed. Each address is dialed with its own timeout that excludes time spent queued for a Tor slot, and reachable clearnet addresses are tried first.
-- GUI + CLI: When Tor is disabled, onion addresses are no longer dialed. Previously a maker's advertised onion address could be attempted without Tor, producing failed dials and pointless redial churn; such addresses are now filtered out before the Swarm attempts to dial them.
+- GUI + CLI: Onion addresses are not dialed when Tor is disabled.
 
 ## [5.0.4] - 2026-11-16
 

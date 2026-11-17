@@ -145,9 +145,7 @@ where
     T: NetworkBehaviour,
     B: FnOnce(relay::client::Behaviour) -> T,
 {
-    // Onion addresses can only be dialed through Tor. Derive the flag from the
-    // very same `maybe_tor_client` that decides whether the transport can dial
-    // onion addresses, so the dial filter and the transport can never disagree.
+    // The transport can dial onion addresses only with a Tor client.
     let tor_enabled = maybe_tor_client.is_some();
 
     let (transport, tor_priority_tracker) = cli::transport::new(&identity, maybe_tor_client)?;
@@ -156,9 +154,6 @@ where
         .with_tokio()
         .with_other_transport(|_| transport)?
         .with_relay_client(noise::Config::new, yamux::Config::default)?
-        // Single choke point: with Tor disabled, strip onion addresses from every
-        // dial-candidate list before the Swarm ever attempts to dial them,
-        // regardless of which inner behaviour contributed the address.
         .with_behaviour(|_, relay| TorDialFilter::new(build_behaviour(relay), tor_enabled))?
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build();

@@ -1,24 +1,10 @@
-//! A single choke point that prevents dialing onion addresses without Tor.
+//! Removes onion addresses from the dial candidates when Tor is disabled.
 //!
-//! [`TorDialFilter`] wraps any [`NetworkBehaviour`] and, when Tor is disabled,
-//! strips `/onion3` (and `/onion`) addresses from every dial-candidate list the
-//! inner behaviour produces via [`NetworkBehaviour::handle_pending_outbound_connection`].
-//!
-//! Why a wrapper instead of per-behaviour filters?
-//!
-//! libp2p assembles the address list for an address-less `DialOpts` by calling
-//! `handle_pending_outbound_connection` on *every* behaviour and concatenating
-//! the results. Many behaviours contribute cached peer addresses here: the
-//! `redial` behaviours, `identify`, and — crucially — every libp2p
-//! `request_response` behaviour keeps a per-peer address book that it populates
-//! from `FromSwarm::NewExternalAddrOfPeer` and hands back as dial candidates.
-//! Filtering each of them individually is fragile whack-a-mole. Wrapping the
-//! top-level behaviour filters the *combined* result once, so no matter which
-//! inner behaviour contributed an onion address it is dropped before the Swarm
-//! ever hands it to the transport.
-//!
-//! It delegates everything else to the inner behaviour (including, via
-//! [`Deref`], its inherent API and derived field access).
+//! libp2p builds the address list of a dial from the
+//! [`NetworkBehaviour::handle_pending_outbound_connection`] results of all
+//! behaviours. [`TorDialFilter`] wraps the top-level behaviour and filters that
+//! combined list. Addresses that the caller puts into `DialOpts` are not
+//! filtered.
 
 use std::ops::{Deref, DerefMut};
 use std::task::{Context, Poll};
@@ -38,9 +24,8 @@ fn is_onion(addr: &Multiaddr) -> bool {
         .any(|proto| matches!(proto, Protocol::Onion(_, _) | Protocol::Onion3(_)))
 }
 
-/// Wraps a [`NetworkBehaviour`] and drops onion dial candidates when Tor is off.
-///
-/// When `tor_enabled` is `true` this is a transparent passthrough.
+/// Wraps a [`NetworkBehaviour`] and removes onion addresses from its dial
+/// candidates when Tor is disabled.
 #[allow(missing_debug_implementations)]
 pub struct TorDialFilter<B> {
     inner: B,
@@ -113,14 +98,10 @@ where
             effective_role,
         )?;
 
-        // With Tor enabled every address is dialable, so don't touch anything.
         if self.tor_enabled {
             return Ok(candidates);
         }
 
-        // Tor is off: drop onion addresses so the Swarm never even attempts to
-        // dial them (an onion dial without Tor can only fail with
-        // `MultiaddrNotSupported` and trigger pointless redial churn).
         Ok(candidates
             .into_iter()
             .filter(|addr| !is_onion(addr))
