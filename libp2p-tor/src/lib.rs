@@ -58,7 +58,7 @@ use futures::{
 };
 use libp2p::{
     Multiaddr, Transport, TransportError,
-    core::transport::{DialOpts, ListenerId, TransportEvent},
+    core::transport::{Boxed, DialOpts, ListenerId, TransportEvent},
     multiaddr::Protocol,
 };
 use std::pin::Pin;
@@ -91,7 +91,6 @@ mod dial_limiter;
 mod provider;
 
 use address::{dangerous_extract, safe_extract};
-use dial_limiter::extract_peer_id;
 pub use dial_limiter::{
     TorDialLimiter, TorDialLimiterError, TorDialPermit, TorDialPriority, TorDialPriorityConfig,
     TorDialPriorityTracker,
@@ -559,77 +558,40 @@ impl Transport for TorTransport {
     }
 }
 
-/// Wraps a transport so every outbound dial first waits for a slot from a shared
-/// [`TorDialLimiter`], and only then runs the inner dial under a timeout.
+/// The outermost transport of a Tor client.
 ///
-/// This is meant to be the **outermost** transport. The limiter permit is
-/// acquired *before* the inner `dial()` future is polled, so time spent queued
-/// for a Tor slot is excluded from the dial `timeout`. The permit is held until
-/// the inner dial (connect and upgrade) completes or the timeout fires, and is
-/// released as soon as this dial is dropped (e.g. cancelled once a sibling
-/// address connects).
-pub struct DialLimiterTransport<T> {
-    inner: T,
-    limiter: TorDialLimiter,
-    timeout: Duration,
+/// A dial waits for a permit from the limiter of its address kind. The timeout
+/// starts when the permit is granted, and the permit is held until the dial
+/// ends.
+pub struct DialLimiterTransport<O> {
+    inner: Boxed<O>,
+    onion_dial_limiter: TorDialLimiter,
+    clearnet_dial_limiter: TorDialLimiter,
+    dial_timeout: Duration,
 }
 
-impl<T> DialLimiterTransport<T> {
-    /// Wraps `inner`, gating its dials through `limiter` and bounding each dial
-    /// (measured *after* the permit is granted) by `timeout`.
+impl<O> DialLimiterTransport<O> {
     #[must_use]
-    pub fn new(inner: T, limiter: TorDialLimiter, timeout: Duration) -> Self {
+    pub fn new(
+        inner: Boxed<O>,
+        onion_dial_limiter: TorDialLimiter,
+        clearnet_dial_limiter: TorDialLimiter,
+        dial_timeout: Duration,
+    ) -> Self {
         Self {
             inner,
-            limiter,
-            timeout,
+            onion_dial_limiter,
+            clearnet_dial_limiter,
+            dial_timeout,
         }
-    }
-
-    /// Wraps an already-created inner dial future so that it only runs once a Tor
-    /// dial permit has been granted, then bounds it by `timeout`.
-    fn gate(
-        &self,
-        addr: &Multiaddr,
-        inner_dial: T::Dial,
-    ) -> BoxFuture<'static, Result<T::Output, std::io::Error>>
-    where
-        T: Transport<Error = std::io::Error>,
-        T::Dial: Send + 'static,
-        T::Output: Send + 'static,
-    {
-        let is_onion = addr
-            .iter()
-            .any(|protocol| matches!(protocol, Protocol::Onion3(_)));
-        let peer_id = extract_peer_id(addr);
-        let limiter = self.limiter.clone();
-        let timeout = self.timeout;
-
-        Box::pin(async move {
-            // Acquiring the permit here, before polling `inner_dial`, is what
-            // keeps the queue-wait out of the `timeout` below.
-            let _permit = limiter
-                .wait(peer_id, is_onion)
-                .await
-                .map_err(std::io::Error::other)?;
-
-            tokio::time::timeout(timeout, inner_dial)
-                .await
-                .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))?
-        })
     }
 }
 
-impl<T> Transport for DialLimiterTransport<T>
-where
-    T: Transport<Error = std::io::Error> + Unpin,
-    T::Dial: Send + 'static,
-    T::Output: Send + 'static,
-{
-    type Output = T::Output;
+impl<O: Send + 'static> Transport for DialLimiterTransport<O> {
+    type Output = O;
     type Error = std::io::Error;
-    type Dial = BoxFuture<'static, Result<T::Output, std::io::Error>>;
-    type ListenerUpgrade = T::ListenerUpgrade;
+    type Dial = BoxFuture<'static, Result<O, std::io::Error>>;
+    type ListenerUpgrade = <Boxed<O> as Transport>::ListenerUpgrade;
 
     fn listen_on(
         &mut self,
@@ -649,7 +611,26 @@ where
         opts: DialOpts,
     ) -> Result<Self::Dial, TransportError<Self::Error>> {
         let inner_dial = self.inner.dial(addr.clone(), opts)?;
-        Ok(self.gate(&addr, inner_dial))
+        let is_onion = addr
+            .iter()
+            .any(|protocol| matches!(protocol, Protocol::Onion3(_)));
+        let dial_limiter = if is_onion {
+            self.onion_dial_limiter.clone()
+        } else {
+            self.clearnet_dial_limiter.clone()
+        };
+        let dial_timeout = self.dial_timeout;
+
+        Ok(Box::pin(async move {
+            let _dial_permit = dial_limiter
+                .wait(&addr)
+                .await
+                .map_err(std::io::Error::other)?;
+
+            tokio::time::timeout(dial_timeout, inner_dial)
+                .await
+                .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))?
+        }))
     }
 
     fn poll(

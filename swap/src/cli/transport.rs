@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::network::transport::authenticate_and_multiplex_no_timeout;
+use crate::network::transport::{AUTH_AND_MULTIPLEX_TIMEOUT, authenticate_and_multiplex};
 use anyhow::{Context, Result};
 use arti_client::TorClient;
 use libp2p::core::muxing::StreamMuxerBox;
@@ -25,14 +25,7 @@ const TOR_DIAL_NORMAL_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(1);
 const TOR_DIAL_LOW_PRIORITY_MAX_CONCURRENT: usize = 1;
 const TOR_DIAL_LOW_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(4);
 
-/// Per-address dial timeout. Applied *after* a Tor dial slot is granted (see
-/// [`DialLimiterTransport`]) so time spent queued for a slot is excluded; when
-/// Tor is disabled there is no queue, so a plain timeout is equivalent.
-const DIAL_TIMEOUT: Duration = Duration::from_secs(15);
-
-fn new_tor_dial_limiter() -> (TorDialLimiter, TorDialPriorityTracker) {
-    let priority_tracker = TorDialPriorityTracker::default();
-
+fn new_tor_dial_limiter(priority_tracker: &TorDialPriorityTracker) -> TorDialLimiter {
     let high = TorDialPriorityConfig {
         max_concurrent: NonZeroUsize::new(TOR_DIAL_HIGH_PRIORITY_MAX_CONCURRENT)
             .expect("TOR_DIAL_HIGH_PRIORITY_MAX_CONCURRENT to be non-zero"),
@@ -49,9 +42,7 @@ fn new_tor_dial_limiter() -> (TorDialLimiter, TorDialPriorityTracker) {
         min_delay: TOR_DIAL_LOW_PRIORITY_MIN_DELAY,
     };
 
-    let dial_limiter = TorDialLimiter::new(priority_tracker.clone(), high, normal, low);
-
-    (dial_limiter, priority_tracker)
+    TorDialLimiter::new(priority_tracker.clone(), high, normal, low)
 }
 
 fn new_dns_transport(
@@ -84,12 +75,9 @@ pub fn new(
     Boxed<(PeerId, StreamMuxerBox)>,
     Option<TorDialPriorityTracker>,
 )> {
-    let (maybe_tor_dial_limiter, maybe_tor_priority_tracker) = if maybe_tor_client.is_some() {
-        let (dial_limiter, priority_tracker) = new_tor_dial_limiter();
-        (Some(dial_limiter), Some(priority_tracker))
-    } else {
-        (None, None)
-    };
+    let maybe_tor_priority_tracker = maybe_tor_client
+        .is_some()
+        .then(TorDialPriorityTracker::default);
 
     // Build the websocket transport first. WsConfig strips the /ws suffix and
     // delegates to its inner transport, so we give it a Tor-or-TCP+DNS chain so
@@ -125,17 +113,19 @@ pub fn new(
     // /ws suffix) and establish a raw connection without a WebSocket handshake.
     let transport = ws_transport.or_transport(plain_transport).boxed();
 
-    // Apply the noise + yamux upgrade without a timeout here; the timeout is
-    // applied by `DialLimiterTransport` *after* the Tor dial permit is granted,
-    // so that time spent queued for a scarce Tor slot is not counted against it.
-    // When Tor is disabled there is no queue, so a plain timeout is equivalent.
-    let upgraded = authenticate_and_multiplex_no_timeout(transport, identity)?;
+    let transport = authenticate_and_multiplex(transport, identity)?;
 
-    let transport = match maybe_tor_dial_limiter {
-        Some(dial_limiter) => {
-            DialLimiterTransport::new(upgraded, dial_limiter, DIAL_TIMEOUT).boxed()
-        }
-        None => TransportTimeout::new(upgraded, DIAL_TIMEOUT).boxed(),
+    // Onion and clearnet dials have separate limiters, so an unreachable onion
+    // address does not hold back a clearnet dial.
+    let transport = match &maybe_tor_priority_tracker {
+        Some(priority_tracker) => DialLimiterTransport::new(
+            transport,
+            new_tor_dial_limiter(priority_tracker),
+            new_tor_dial_limiter(priority_tracker),
+            AUTH_AND_MULTIPLEX_TIMEOUT,
+        )
+        .boxed(),
+        None => TransportTimeout::new(transport, AUTH_AND_MULTIPLEX_TIMEOUT).boxed(),
     };
 
     Ok((transport, maybe_tor_priority_tracker))

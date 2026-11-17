@@ -143,7 +143,7 @@ pub async fn cli<T, B>(
 ) -> Result<(Swarm<TorDialFilter<T>>, Option<TorDialPriorityTracker>)>
 where
     T: NetworkBehaviour,
-    B: FnOnce(relay::client::Behaviour) -> T,
+    B: FnOnce(relay::client::Behaviour, Option<TorDialPriorityTracker>) -> T,
 {
     // The transport can dial onion addresses only with a Tor client.
     let tor_enabled = maybe_tor_client.is_some();
@@ -154,7 +154,12 @@ where
         .with_tokio()
         .with_other_transport(|_| transport)?
         .with_relay_client(noise::Config::new, yamux::Config::default)?
-        .with_behaviour(|_, relay| TorDialFilter::new(build_behaviour(relay), tor_enabled))?
+        .with_behaviour(|_, relay| {
+            TorDialFilter::new(
+                build_behaviour(relay, tor_priority_tracker.clone()),
+                tor_enabled,
+            )
+        })?
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build();
 

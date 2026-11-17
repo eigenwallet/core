@@ -7,6 +7,7 @@ use libp2p::swarm::{
     THandlerOutEvent, ToSwarm,
 };
 use libp2p::{Multiaddr, PeerId};
+use libp2p_tor::TorDialPriorityTracker;
 use swap_p2p::protocols::wormhole as proto;
 
 mod lazy_store;
@@ -17,13 +18,18 @@ use lazy_store::LazyWormholeStore;
 pub struct Behaviour {
     inner: proto::InnerBehaviour,
     store: LazyWormholeStore,
+    tor_priority_tracker: Option<TorDialPriorityTracker>,
 }
 
 impl Behaviour {
-    pub fn new(db: Arc<dyn WormholeStore + Send + Sync>) -> Self {
+    pub fn new(
+        db: Arc<dyn WormholeStore + Send + Sync>,
+        tor_priority_tracker: Option<TorDialPriorityTracker>,
+    ) -> Self {
         Self {
             inner: proto::bob(),
             store: LazyWormholeStore::new(db),
+            tor_priority_tracker,
         }
     }
 }
@@ -77,6 +83,10 @@ impl NetworkBehaviour for Behaviour {
         let Some(addr) = self.store.get(&peer_id) else {
             return Ok(vec![]);
         };
+        // A wormhole can be expired. The other onion addresses of the maker go first.
+        if let Some(tor_priority_tracker) = &self.tor_priority_tracker {
+            tor_priority_tracker.mark_address_deferred(addr);
+        }
         tracing::debug!(%peer_id, address = %addr, "Contributing wormhole address for dial");
         Ok(vec![addr.clone()])
     }

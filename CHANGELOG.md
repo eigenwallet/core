@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- GUI: unreachable multiaddress for a maker (e.g. a stale onion/wormhole) no longer blocks that maker's other addresses from being dialed. Each address is dialed with its own timeout that excludes time spent queued for a Tor slot, and reachable clearnet addresses are tried first.
+- GUI: An unreachable address of a maker (for example an expired onion address) no longer prevents a connection through the other addresses of that maker.
 - GUI + CLI: Onion addresses are not dialed when Tor is disabled.
 - Taker: Recognize confirmed cancellation despite stale Bitcoin lock status, and retry inconsistent wallet status instead of panicking before publishing a refund.
 
