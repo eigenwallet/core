@@ -1,13 +1,13 @@
 use libp2p::{Multiaddr, PeerId, multiaddr::Protocol};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     num::NonZeroUsize,
     sync::{Arc, RwLock},
     time::Duration,
 };
 use thiserror::Error;
 use tokio::{
-    sync::{Notify, mpsc, oneshot},
+    sync::{mpsc, oneshot, watch},
     time::Instant,
 };
 
@@ -26,12 +26,26 @@ pub enum TorDialPriority {
     High,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TorDialPriorityTracker {
     peer_priorities: Arc<RwLock<HashMap<PeerId, TorDialPriority>>>,
-    /// Notified whenever a stored priority is raised, so the limiter wakes and
-    /// re-buckets any already-queued dial for the promoted peer.
-    promotions: Arc<Notify>,
+    /// Stored without the peer ID suffix.
+    deferred_addresses: Arc<RwLock<HashSet<Multiaddr>>>,
+    /// Notified whenever a stored priority is raised, so every limiter wakes
+    /// and re-buckets any already-queued dial for the promoted peer.
+    promotions: Arc<watch::Sender<()>>,
+}
+
+impl Default for TorDialPriorityTracker {
+    fn default() -> Self {
+        let (promotions, _) = watch::channel(());
+
+        Self {
+            peer_priorities: Arc::default(),
+            deferred_addresses: Arc::default(),
+            promotions: Arc::new(promotions),
+        }
+    }
 }
 
 impl TorDialPriorityTracker {
@@ -59,7 +73,7 @@ impl TorDialPriorityTracker {
         };
 
         if promoted {
-            self.promotions.notify_one();
+            self.promotions.send_replace(());
         }
     }
 
@@ -69,6 +83,23 @@ impl TorDialPriorityTracker {
 
     pub fn mark_high_priority(&self, peer_id: PeerId) {
         self.set_peer_priority(peer_id, TorDialPriority::High);
+    }
+
+    /// A deferred address gets a dial slot after the other waiting addresses
+    /// of the same peer.
+    pub fn mark_address_deferred(&self, address: &Multiaddr) {
+        self.deferred_addresses
+            .write()
+            .expect("Tor dial priority tracker lock to not be poisoned")
+            .insert(without_peer_id(address));
+    }
+
+    #[must_use]
+    pub fn is_address_deferred(&self, address: &Multiaddr) -> bool {
+        self.deferred_addresses
+            .read()
+            .expect("Tor dial priority tracker lock to not be poisoned")
+            .contains(&without_peer_id(address))
     }
 
     #[must_use]
@@ -117,12 +148,14 @@ impl TorDialLimiter {
     ) -> Self {
         let (request_sender, request_receiver) = mpsc::unbounded_channel();
         let (release_sender, release_receiver) = mpsc::unbounded_channel();
+        let promotions = priority_tracker.promotions.subscribe();
 
         tokio::spawn(run_limiter(
             request_receiver,
             release_receiver,
             release_sender,
             priority_tracker.clone(),
+            promotions,
             high,
             normal,
             low,
@@ -139,7 +172,7 @@ impl TorDialLimiter {
         self.priority_tracker.clone()
     }
 
-    /// Wait until a dial slot for this peer's priority is free.
+    /// Wait until a dial slot for the priority of the address's peer is free.
     ///
     /// The priority is resolved once, here, and the request is routed into that
     /// priority's queue. The returned [`TorDialPermit`] occupies a slot until it
@@ -148,10 +181,11 @@ impl TorDialLimiter {
     /// # Errors
     ///
     /// Returns an error if the background limiter task has stopped.
-    pub async fn wait(&self, peer_id: Option<PeerId>) -> Result<TorDialPermit, TorDialLimiterError> {
+    pub async fn wait(&self, address: &Multiaddr) -> Result<TorDialPermit, TorDialLimiterError> {
         let (permit_sender, permit_receiver) = oneshot::channel();
         let request = DialRequest {
-            peer_id,
+            peer_id: extract_peer_id(address),
+            address: address.clone(),
             permit_sender,
         };
 
@@ -191,6 +225,7 @@ impl Drop for TorDialPermit {
 
 struct DialRequest {
     peer_id: Option<PeerId>,
+    address: Multiaddr,
     permit_sender: oneshot::Sender<TorDialPermit>,
 }
 
@@ -220,6 +255,7 @@ impl PriorityQueue {
         &mut self,
         priority: TorDialPriority,
         release_sender: &mpsc::UnboundedSender<TorDialPriority>,
+        priority_tracker: &TorDialPriorityTracker,
     ) {
         while self.in_flight < self.max_concurrent && !self.queue.is_empty() {
             let now = Instant::now();
@@ -227,7 +263,16 @@ impl PriorityQueue {
                 break;
             }
 
-            let request = self.queue.pop_front().expect("queue to be non-empty");
+            let front_peer_id = self.queue.front().expect("queue to be non-empty").peer_id;
+            let index = self
+                .queue
+                .iter()
+                .position(|request| {
+                    request.peer_id == front_peer_id
+                        && !priority_tracker.is_address_deferred(&request.address)
+                })
+                .unwrap_or(0);
+            let request = self.queue.remove(index).expect("index to be in bounds");
             let permit = TorDialPermit {
                 priority,
                 release_sender: Some(release_sender.clone()),
@@ -298,6 +343,7 @@ async fn run_limiter(
     mut release_receiver: mpsc::UnboundedReceiver<TorDialPriority>,
     release_sender: mpsc::UnboundedSender<TorDialPriority>,
     priority_tracker: TorDialPriorityTracker,
+    mut promotions: watch::Receiver<()>,
     high: TorDialPriorityConfig,
     normal: TorDialPriorityConfig,
     low: TorDialPriorityConfig,
@@ -321,14 +367,14 @@ async fn run_limiter(
             &mut low_queue,
         );
 
-        high_queue.release_ready(TorDialPriority::High, &release_sender);
-        normal_queue.release_ready(TorDialPriority::Normal, &release_sender);
+        high_queue.release_ready(TorDialPriority::High, &release_sender, &priority_tracker);
+        normal_queue.release_ready(TorDialPriority::Normal, &release_sender, &priority_tracker);
 
         // Low dials only start once no high or normal dial is waiting.
         let higher_priority_waiting =
             !high_queue.queue.is_empty() || !normal_queue.queue.is_empty();
         if !higher_priority_waiting {
-            low_queue.release_ready(TorDialPriority::Low, &release_sender);
+            low_queue.release_ready(TorDialPriority::Low, &release_sender, &priority_tracker);
         }
 
         // Every limiter handle is gone, so no slot will ever free up again.
@@ -375,7 +421,7 @@ async fn run_limiter(
                 debug_assert!(queue.in_flight > 0, "release without a matching in-flight dial");
                 queue.in_flight = queue.in_flight.saturating_sub(1);
             }
-            () = priority_tracker.promotions.notified() => {}
+            Ok(()) = promotions.changed() => {}
             () = wait_until(next_wake) => {}
         }
     }
@@ -389,7 +435,16 @@ async fn wait_until(deadline: Option<Instant>) {
     }
 }
 
-pub(crate) fn extract_peer_id(address: &Multiaddr) -> Option<PeerId> {
+fn without_peer_id(address: &Multiaddr) -> Multiaddr {
+    let mut address = address.clone();
+    if let Some(Protocol::P2p(_)) = address.iter().last() {
+        address.pop();
+    }
+
+    address
+}
+
+fn extract_peer_id(address: &Multiaddr) -> Option<PeerId> {
     let Protocol::P2p(peer_id) = address.iter().last()? else {
         return None;
     };
@@ -419,6 +474,22 @@ mod tests {
         )
     }
 
+    fn address(peer_id: Option<PeerId>) -> Multiaddr {
+        let address: Multiaddr = "/ip4/127.0.0.1/tcp/1".parse().expect("valid multiaddr");
+
+        match peer_id {
+            Some(peer_id) => address.with(Protocol::P2p(peer_id)),
+            None => address,
+        }
+    }
+
+    fn address_with_port(port: u16, peer_id: PeerId) -> Multiaddr {
+        Multiaddr::empty()
+            .with(Protocol::Ip4([127, 0, 0, 1].into()))
+            .with(Protocol::Tcp(port))
+            .with(Protocol::P2p(peer_id))
+    }
+
     async fn settle() {
         for _ in 0..32 {
             tokio::task::yield_now().await;
@@ -429,11 +500,11 @@ mod tests {
     async fn normal_dials_are_serialized_by_concurrency_and_delay() {
         let limiter = limiter(TorDialPriorityTracker::default());
 
-        let first = limiter.wait(None).await.unwrap();
+        let first = limiter.wait(&address(None)).await.unwrap();
 
         let second = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(None).await.unwrap() }
+            async move { limiter.wait(&address(None)).await.unwrap() }
         });
 
         // Blocked by the concurrency limit of 1.
@@ -459,7 +530,7 @@ mod tests {
         let spawn_wait = |peer: PeerId| {
             priority_tracker.mark_high_priority(peer);
             let limiter = limiter.clone();
-            tokio::spawn(async move { limiter.wait(Some(peer)).await.unwrap() })
+            tokio::spawn(async move { limiter.wait(&address(Some(peer))).await.unwrap() })
         };
         let first = spawn_wait(PeerId::random());
         let second = spawn_wait(PeerId::random());
@@ -494,18 +565,18 @@ mod tests {
         let limiter = limiter(priority_tracker.clone());
 
         // Saturate the normal queue (concurrency 1).
-        let normal = limiter.wait(None).await.unwrap();
+        let normal = limiter.wait(&address(None)).await.unwrap();
 
         let normal_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(None).await.unwrap() }
+            async move { limiter.wait(&address(None)).await.unwrap() }
         });
 
         let high_peer = PeerId::random();
         priority_tracker.mark_high_priority(high_peer);
         let high_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(Some(high_peer)).await.unwrap() }
+            async move { limiter.wait(&address(Some(high_peer))).await.unwrap() }
         });
 
         // The high dial proceeds despite the normal queue being saturated.
@@ -546,17 +617,17 @@ mod tests {
         // Saturate the low queue (concurrency 1).
         let low_peer = PeerId::random();
         priority_tracker.mark_low_priority(low_peer);
-        let low = limiter.wait(Some(low_peer)).await.unwrap();
+        let low = limiter.wait(&address(Some(low_peer))).await.unwrap();
 
         let low_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(Some(low_peer)).await.unwrap() }
+            async move { limiter.wait(&address(Some(low_peer))).await.unwrap() }
         });
 
         // A normal dial proceeds despite the low queue being saturated.
         let normal_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(None).await.unwrap() }
+            async move { limiter.wait(&address(None)).await.unwrap() }
         });
 
         settle().await;
@@ -574,10 +645,10 @@ mod tests {
 
         // Occupy the normal slot and queue another normal dial so the low queue
         // stays gated off.
-        let normal = limiter.wait(None).await.unwrap();
+        let normal = limiter.wait(&address(None)).await.unwrap();
         let normal_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(None).await.unwrap() }
+            async move { limiter.wait(&address(None)).await.unwrap() }
         });
 
         // A low dial that cannot start while a normal dial is waiting.
@@ -585,7 +656,7 @@ mod tests {
         priority_tracker.mark_low_priority(peer);
         let waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(Some(peer)).await.unwrap() }
+            async move { limiter.wait(&address(Some(peer))).await.unwrap() }
         });
 
         settle().await;
@@ -609,10 +680,10 @@ mod tests {
         let limiter = limiter(priority_tracker.clone());
 
         // Occupy the normal slot, then queue another so the normal queue is non-empty.
-        let normal = limiter.wait(None).await.unwrap();
+        let normal = limiter.wait(&address(None)).await.unwrap();
         let normal_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(None).await.unwrap() }
+            async move { limiter.wait(&address(None)).await.unwrap() }
         });
 
         // Held back while a normal dial is waiting, despite a free low slot.
@@ -620,7 +691,7 @@ mod tests {
         priority_tracker.mark_low_priority(low_peer);
         let low_waiter = tokio::spawn({
             let limiter = limiter.clone();
-            async move { limiter.wait(Some(low_peer)).await.unwrap() }
+            async move { limiter.wait(&address(Some(low_peer))).await.unwrap() }
         });
 
         settle().await;
@@ -636,5 +707,81 @@ mod tests {
 
         let _ = normal_waiter.await.unwrap();
         let _ = low_waiter.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn deferred_address_is_served_after_the_other_address_of_its_peer() {
+        let priority_tracker = TorDialPriorityTracker::default();
+        let limiter = limiter(priority_tracker.clone());
+
+        let peer = PeerId::random();
+        let other_peer = PeerId::random();
+        let deferred_address = address_with_port(1, peer);
+        let regular_address = address_with_port(2, peer);
+        priority_tracker.mark_address_deferred(&deferred_address);
+
+        let held = limiter.wait(&address(None)).await.unwrap();
+
+        let spawn_wait = |address: Multiaddr| {
+            let limiter = limiter.clone();
+            tokio::spawn(async move { limiter.wait(&address).await.unwrap() })
+        };
+        let deferred_waiter = spawn_wait(deferred_address);
+        settle().await;
+        let other_peer_waiter = spawn_wait(address(Some(other_peer)));
+        settle().await;
+        let regular_waiter = spawn_wait(regular_address);
+        settle().await;
+
+        drop(held);
+        tokio::time::advance(Duration::from_secs(4)).await;
+        settle().await;
+        assert!(regular_waiter.is_finished());
+        assert!(!deferred_waiter.is_finished());
+        assert!(!other_peer_waiter.is_finished());
+
+        // The regular address of another peer does not pass the deferred address.
+        drop(regular_waiter.await.unwrap());
+        tokio::time::advance(Duration::from_secs(4)).await;
+        settle().await;
+        assert!(deferred_waiter.is_finished());
+        assert!(!other_peer_waiter.is_finished());
+
+        drop(deferred_waiter.await.unwrap());
+        tokio::time::advance(Duration::from_secs(4)).await;
+        settle().await;
+        assert!(other_peer_waiter.is_finished());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn promotion_wakes_every_limiter_that_shares_the_tracker() {
+        let priority_tracker = TorDialPriorityTracker::default();
+        let limiters = [
+            limiter(priority_tracker.clone()),
+            limiter(priority_tracker.clone()),
+        ];
+
+        let peer = PeerId::random();
+        priority_tracker.mark_low_priority(peer);
+
+        let mut held = Vec::new();
+        let mut waiters = Vec::new();
+        for limiter in limiters {
+            held.push(limiter.wait(&address(None)).await.unwrap());
+            let queued_normal = limiter.clone();
+            waiters.push(tokio::spawn(async move {
+                queued_normal.wait(&address(None)).await.unwrap()
+            }));
+            waiters.push(tokio::spawn(async move {
+                limiter.wait(&address(Some(peer))).await.unwrap()
+            }));
+        }
+        settle().await;
+        assert!(waiters.iter().all(|waiter| !waiter.is_finished()));
+
+        priority_tracker.mark_high_priority(peer);
+        settle().await;
+        assert!(waiters[1].is_finished());
+        assert!(waiters[3].is_finished());
     }
 }

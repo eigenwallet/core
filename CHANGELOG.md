@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: An unreachable address of a maker (for example an expired onion address) no longer prevents a connection through the other addresses of that maker.
+- GUI + CLI: Onion addresses are not dialed when Tor is disabled.
 - Taker: Recognize confirmed cancellation despite stale Bitcoin lock status, and retry inconsistent wallet status instead of panicking before publishing a refund.
 
 ## [5.0.4] - 2026-11-16

@@ -9,6 +9,7 @@ use anyhow::Result;
 use bitcoin_wallet::BitcoinWallet;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{PeerId, identify, identity, ping, relay};
+use libp2p_tor::TorDialPriorityTracker;
 use std::sync::Arc;
 use std::time::Duration;
 use swap_env::env;
@@ -64,6 +65,7 @@ impl Behaviour {
         namespace: XmrBtcNamespace,
         rendezvous_nodes: Vec<PeerId>,
         wormhole_store: Arc<dyn wormhole::WormholeStore + Send + Sync>,
+        tor_priority_tracker: Option<TorDialPriorityTracker>,
     ) -> Self {
         let identifyConfig = identify::Config::new(PROTOCOL_VERSION.to_string(), identity.public())
             .with_agent_version(agent_version(namespace));
@@ -87,7 +89,7 @@ impl Behaviour {
             encrypted_signature: encrypted_signature::bob(),
             cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::bob(),
 
-            wormhole: wormhole::bob::Behaviour::new(wormhole_store),
+            wormhole: wormhole::bob::Behaviour::new(wormhole_store, tor_priority_tracker),
             redial: redial::Behaviour::new("makers", INITIAL_REDIAL_INTERVAL, MAX_REDIAL_INTERVAL),
             ping: ping::Behaviour::new(pingConfig),
         }

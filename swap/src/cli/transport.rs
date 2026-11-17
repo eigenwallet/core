@@ -2,15 +2,17 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::network::transport::authenticate_and_multiplex;
+use crate::network::transport::{AUTH_AND_MULTIPLEX_TIMEOUT, authenticate_and_multiplex};
 use anyhow::{Context, Result};
 use arti_client::TorClient;
 use libp2p::core::muxing::StreamMuxerBox;
+use libp2p::core::transport::timeout::TransportTimeout;
 use libp2p::core::transport::{Boxed, OptionalTransport};
 use libp2p::{PeerId, Transport, identity};
 use libp2p::{dns, tcp, websocket};
 use libp2p_tor::{
-    AddressConversion, TorDialLimiter, TorDialPriorityConfig, TorDialPriorityTracker, TorTransport,
+    AddressConversion, DialLimiterTransport, TorDialLimiter, TorDialPriorityConfig,
+    TorDialPriorityTracker, TorTransport,
 };
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -23,9 +25,7 @@ const TOR_DIAL_NORMAL_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(1);
 const TOR_DIAL_LOW_PRIORITY_MAX_CONCURRENT: usize = 1;
 const TOR_DIAL_LOW_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(4);
 
-fn new_tor_dial_limiter() -> (TorDialLimiter, TorDialPriorityTracker) {
-    let priority_tracker = TorDialPriorityTracker::default();
-
+fn new_tor_dial_limiter(priority_tracker: &TorDialPriorityTracker) -> TorDialLimiter {
     let high = TorDialPriorityConfig {
         max_concurrent: NonZeroUsize::new(TOR_DIAL_HIGH_PRIORITY_MAX_CONCURRENT)
             .expect("TOR_DIAL_HIGH_PRIORITY_MAX_CONCURRENT to be non-zero"),
@@ -42,9 +42,7 @@ fn new_tor_dial_limiter() -> (TorDialLimiter, TorDialPriorityTracker) {
         min_delay: TOR_DIAL_LOW_PRIORITY_MIN_DELAY,
     };
 
-    let dial_limiter = TorDialLimiter::new(priority_tracker.clone(), high, normal, low);
-
-    (dial_limiter, priority_tracker)
+    TorDialLimiter::new(priority_tracker.clone(), high, normal, low)
 }
 
 fn new_dns_transport(
@@ -77,12 +75,9 @@ pub fn new(
     Boxed<(PeerId, StreamMuxerBox)>,
     Option<TorDialPriorityTracker>,
 )> {
-    let (maybe_tor_dial_limiter, maybe_tor_priority_tracker) = if maybe_tor_client.is_some() {
-        let (dial_limiter, priority_tracker) = new_tor_dial_limiter();
-        (Some(dial_limiter), Some(priority_tracker))
-    } else {
-        (None, None)
-    };
+    let maybe_tor_priority_tracker = maybe_tor_client
+        .is_some()
+        .then(TorDialPriorityTracker::default);
 
     // Build the websocket transport first. WsConfig strips the /ws suffix and
     // delegates to its inner transport, so we give it a Tor-or-TCP+DNS chain so
@@ -91,16 +86,10 @@ pub fn new(
     let ws_inner_tcp_dns = new_dns_transport(ws_inner_tcp)
         .context("Failed to create DNS transport for websocket transport")?;
     let ws_inner_tor: OptionalTransport<TorTransport> = match &maybe_tor_client {
-        Some(client) => {
-            let mut transport =
-                TorTransport::from_client(Arc::clone(client), AddressConversion::IpAndDns);
-
-            if let Some(dial_limiter) = maybe_tor_dial_limiter.clone() {
-                transport = transport.with_dial_limiter(dial_limiter);
-            }
-
-            OptionalTransport::some(transport)
-        }
+        Some(client) => OptionalTransport::some(TorTransport::from_client(
+            Arc::clone(client),
+            AddressConversion::IpAndDns,
+        )),
         None => OptionalTransport::none(),
     };
     let ws_inner = ws_inner_tor.or_transport(ws_inner_tcp_dns);
@@ -111,15 +100,10 @@ pub fn new(
     let tcp_with_dns =
         new_dns_transport(tcp).context("Failed to create DNS transport for TCP transport")?;
     let maybe_tor_transport: OptionalTransport<TorTransport> = match maybe_tor_client {
-        Some(client) => {
-            let mut transport = TorTransport::from_client(client, AddressConversion::IpAndDns);
-
-            if let Some(dial_limiter) = maybe_tor_dial_limiter {
-                transport = transport.with_dial_limiter(dial_limiter);
-            }
-
-            OptionalTransport::some(transport)
-        }
+        Some(client) => OptionalTransport::some(TorTransport::from_client(
+            client,
+            AddressConversion::IpAndDns,
+        )),
         None => OptionalTransport::none(),
     };
     let plain_transport = maybe_tor_transport.or_transport(tcp_with_dns);
@@ -129,8 +113,20 @@ pub fn new(
     // /ws suffix) and establish a raw connection without a WebSocket handshake.
     let transport = ws_transport.or_transport(plain_transport).boxed();
 
-    Ok((
-        authenticate_and_multiplex(transport, identity)?,
-        maybe_tor_priority_tracker,
-    ))
+    let transport = authenticate_and_multiplex(transport, identity)?;
+
+    // Onion and clearnet dials have separate limiters, so an unreachable onion
+    // address does not hold back a clearnet dial.
+    let transport = match &maybe_tor_priority_tracker {
+        Some(priority_tracker) => DialLimiterTransport::new(
+            transport,
+            new_tor_dial_limiter(priority_tracker),
+            new_tor_dial_limiter(priority_tracker),
+            AUTH_AND_MULTIPLEX_TIMEOUT,
+        )
+        .boxed(),
+        None => TransportTimeout::new(transport, AUTH_AND_MULTIPLEX_TIMEOUT).boxed(),
+    };
+
+    Ok((transport, maybe_tor_priority_tracker))
 }

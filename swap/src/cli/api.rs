@@ -920,8 +920,10 @@ mod builder {
                     rendezvous_points.iter().map(|(p, _)| *p).collect();
 
                 let identity = seed.derive_libp2p_identity();
-                let (mut swarm, tor_priority_tracker) =
-                    crate::network::swarm::cli(identity.clone(), tor_client_for_swarm, |relay| {
+                let (mut swarm, tor_priority_tracker) = crate::network::swarm::cli(
+                    identity.clone(),
+                    tor_client_for_swarm,
+                    |relay, tor_priority_tracker| {
                         crate::cli::Behaviour::new(
                             env_config,
                             wallet.clone(),
@@ -930,9 +932,11 @@ mod builder {
                             namespace,
                             rendezvous_peer_ids.clone(),
                             db.clone(),
+                            tor_priority_tracker,
                         )
-                    })
-                    .await?;
+                    },
+                )
+                .await?;
 
                 if let Some(tor_priority_tracker) = &tor_priority_tracker {
                     for peer_id in &rendezvous_peer_ids {
