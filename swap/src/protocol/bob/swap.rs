@@ -1358,8 +1358,8 @@ async fn advance_state(
                     async move {
                         match state.expired_timelock(&*bitcoin_wallet).await.map_err(backoff::Error::transient)? {
                             ExpiredTimelocks::None { .. } => {
-                                return Err(backoff::Error::Permanent(anyhow::anyhow!(
-                                    "Internal error: canceled state reached before cancel timelock was expired"
+                                return Err(backoff::Error::transient(anyhow::anyhow!(
+                                    "Wallet status does not yet show the cancel timelock expired"
                                 )))
                             }
                             ExpiredTimelocks::Punish => {
@@ -1399,7 +1399,7 @@ async fn advance_state(
                 None,
             )
             .await
-            .expect("we never stop retrying to refund")
+            .context("Failed to check timelocks and refund Bitcoin")?
         }
         BobState::BtcRefundPublished(state) => {
             let signed_tx_refund = state.signed_full_refund_transaction()?;

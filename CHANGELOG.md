@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Taker: Recognize confirmed cancellation despite stale Bitcoin lock status, and retry inconsistent wallet status instead of panicking before publishing a refund.
+
 ## [5.0.4] - 2026-11-16
 
 - GUI: The warning before you accept an offer during swap setup now appears if the rate of the maker is more than 2% above its quote, instead of 5%.
