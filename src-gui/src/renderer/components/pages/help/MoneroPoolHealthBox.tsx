@@ -8,7 +8,6 @@ import {
   TableHead,
   TableRow,
   Chip,
-  LinearProgress,
   useTheme,
 } from "@mui/material";
 import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
@@ -17,10 +16,11 @@ import NetworkWifiIcon from "@mui/icons-material/NetworkWifi";
 import { useAppSelector } from "store/hooks";
 
 export default function MoneroPoolHealthBox() {
-  const { poolStatus, isLoading } = useAppSelector((state) => ({
-    poolStatus: state.pool.status,
-    isLoading: state.pool.isLoading,
-  }));
+  // separate selectors: one selector returning a fresh object trips the
+  // default === equality check on every store update, re-rendering the
+  // whole box even when nothing in the pool slice changed
+  const poolStatus = useAppSelector((state) => state.pool.status);
+  const isLoading = useAppSelector((state) => state.pool.isLoading);
   const theme = useTheme();
 
   const formatLatency = (latencyMs?: number) => {
