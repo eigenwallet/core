@@ -92,8 +92,8 @@ mod provider;
 
 use address::{dangerous_extract, safe_extract};
 pub use dial_limiter::{
-    TorDialLimiter, TorDialLimiterError, TorDialPermit, TorDialPriority, TorDialPriorityConfig,
-    TorDialPriorityTracker,
+    DialLimiter, DialLimiterError, DialPermit, DialPriority, DialPriorityConfig,
+    DialPriorityTracker,
 };
 pub use provider::TokioTorStream;
 
@@ -565,8 +565,8 @@ impl Transport for TorTransport {
 /// ends.
 pub struct DialLimiterTransport<O> {
     inner: Boxed<O>,
-    onion_dial_limiter: TorDialLimiter,
-    clearnet_dial_limiter: TorDialLimiter,
+    onion_dial_limiter: DialLimiter,
+    clearnet_dial_limiter: DialLimiter,
     dial_timeout: Duration,
 }
 
@@ -574,8 +574,8 @@ impl<O> DialLimiterTransport<O> {
     #[must_use]
     pub fn new(
         inner: Boxed<O>,
-        onion_dial_limiter: TorDialLimiter,
-        clearnet_dial_limiter: TorDialLimiter,
+        onion_dial_limiter: DialLimiter,
+        clearnet_dial_limiter: DialLimiter,
         dial_timeout: Duration,
     ) -> Self {
         Self {

@@ -7,7 +7,7 @@ use libp2p::swarm::{
     THandlerOutEvent, ToSwarm,
 };
 use libp2p::{Multiaddr, PeerId};
-use libp2p_tor::TorDialPriorityTracker;
+use libp2p_tor::DialPriorityTracker;
 use swap_p2p::protocols::wormhole as proto;
 
 mod lazy_store;
@@ -18,13 +18,13 @@ use lazy_store::LazyWormholeStore;
 pub struct Behaviour {
     inner: proto::InnerBehaviour,
     store: LazyWormholeStore,
-    tor_priority_tracker: Option<TorDialPriorityTracker>,
+    tor_priority_tracker: Option<DialPriorityTracker>,
 }
 
 impl Behaviour {
     pub fn new(
         db: Arc<dyn WormholeStore + Send + Sync>,
-        tor_priority_tracker: Option<TorDialPriorityTracker>,
+        tor_priority_tracker: Option<DialPriorityTracker>,
     ) -> Self {
         Self {
             inner: proto::bob(),

@@ -16,7 +16,7 @@ use futures::{FutureExt, StreamExt};
 use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChannel};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
-use libp2p_tor::{TorDialPriority, TorDialPriorityTracker};
+use libp2p_tor::{DialPriority, DialPriorityTracker};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -151,7 +151,7 @@ pub struct EventLoop {
     /// re-fetching quotes, rediscovering peers at rendezvous nodes, etc.
     refresh_requests: bmrng::unbounded::UnboundedRequestReceiverStream<(), ()>,
 
-    tor_priority_tracker: Option<TorDialPriorityTracker>,
+    tor_priority_tracker: Option<DialPriorityTracker>,
 }
 
 impl EventLoop {
@@ -159,7 +159,7 @@ impl EventLoop {
         swarm: Swarm<TorDialFilter<Behaviour>>,
         db: Arc<dyn Database + Send + Sync>,
         tauri_handle: Option<TauriHandle>,
-        tor_priority_tracker: Option<TorDialPriorityTracker>,
+        tor_priority_tracker: Option<DialPriorityTracker>,
     ) -> Result<(Self, EventLoopHandle)> {
         // We still use a timeout here because we trust our own implementation of the swap setup protocol less than the libp2p library
         let (execution_setup_sender, execution_setup_receiver) =
@@ -468,7 +468,7 @@ impl EventLoop {
                         }
                         SwarmEvent::Behaviour(OutEvent::Discovery(crate::network::rendezvous::discovery::Event::DiscoveredPeer { peer_id })) => {
                             if let Some(tor_priority_tracker) = &self.tor_priority_tracker {
-                                tor_priority_tracker.set_peer_priority(peer_id, TorDialPriority::Normal);
+                                tor_priority_tracker.set_peer_priority(peer_id, DialPriority::Normal);
                             }
                         }
                         _ => {}

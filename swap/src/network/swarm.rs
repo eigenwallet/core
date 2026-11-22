@@ -12,7 +12,7 @@ use libp2p::metrics::{BandwidthTransport, Registry};
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{Multiaddr, Swarm, identity, noise, relay, yamux};
 use libp2p::{PeerId, SwarmBuilder};
-use libp2p_tor::TorDialPriorityTracker;
+use libp2p_tor::DialPriorityTracker;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
@@ -140,10 +140,10 @@ pub async fn cli<T, B>(
     identity: identity::Keypair,
     maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
     build_behaviour: B,
-) -> Result<(Swarm<TorDialFilter<T>>, Option<TorDialPriorityTracker>)>
+) -> Result<(Swarm<TorDialFilter<T>>, Option<DialPriorityTracker>)>
 where
     T: NetworkBehaviour,
-    B: FnOnce(relay::client::Behaviour, Option<TorDialPriorityTracker>) -> T,
+    B: FnOnce(relay::client::Behaviour, Option<DialPriorityTracker>) -> T,
 {
     // The transport can dial onion addresses only with a Tor client.
     let tor_enabled = maybe_tor_client.is_some();

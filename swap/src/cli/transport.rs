@@ -11,8 +11,8 @@ use libp2p::core::transport::{Boxed, OptionalTransport};
 use libp2p::{PeerId, Transport, identity};
 use libp2p::{dns, tcp, websocket};
 use libp2p_tor::{
-    AddressConversion, DialLimiterTransport, TorDialLimiter, TorDialPriorityConfig,
-    TorDialPriorityTracker, TorTransport,
+    AddressConversion, DialLimiter, DialLimiterTransport, DialPriorityConfig, DialPriorityTracker,
+    TorTransport,
 };
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -25,24 +25,24 @@ const TOR_DIAL_NORMAL_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(1);
 const TOR_DIAL_LOW_PRIORITY_MAX_CONCURRENT: usize = 1;
 const TOR_DIAL_LOW_PRIORITY_MIN_DELAY: Duration = Duration::from_secs(4);
 
-fn new_tor_dial_limiter(priority_tracker: &TorDialPriorityTracker) -> TorDialLimiter {
-    let high = TorDialPriorityConfig {
+fn new_dial_limiter(priority_tracker: &DialPriorityTracker) -> DialLimiter {
+    let high = DialPriorityConfig {
         max_concurrent: NonZeroUsize::new(TOR_DIAL_HIGH_PRIORITY_MAX_CONCURRENT)
             .expect("TOR_DIAL_HIGH_PRIORITY_MAX_CONCURRENT to be non-zero"),
         min_delay: TOR_DIAL_HIGH_PRIORITY_MIN_DELAY,
     };
-    let normal = TorDialPriorityConfig {
+    let normal = DialPriorityConfig {
         max_concurrent: NonZeroUsize::new(TOR_DIAL_NORMAL_PRIORITY_MAX_CONCURRENT)
             .expect("TOR_DIAL_NORMAL_PRIORITY_MAX_CONCURRENT to be non-zero"),
         min_delay: TOR_DIAL_NORMAL_PRIORITY_MIN_DELAY,
     };
-    let low = TorDialPriorityConfig {
+    let low = DialPriorityConfig {
         max_concurrent: NonZeroUsize::new(TOR_DIAL_LOW_PRIORITY_MAX_CONCURRENT)
             .expect("TOR_DIAL_LOW_PRIORITY_MAX_CONCURRENT to be non-zero"),
         min_delay: TOR_DIAL_LOW_PRIORITY_MIN_DELAY,
     };
 
-    TorDialLimiter::new(priority_tracker.clone(), high, normal, low)
+    DialLimiter::new(priority_tracker.clone(), high, normal, low)
 }
 
 fn new_dns_transport(
@@ -71,13 +71,10 @@ fn new_dns_transport(
 pub fn new(
     identity: &identity::Keypair,
     maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
-) -> Result<(
-    Boxed<(PeerId, StreamMuxerBox)>,
-    Option<TorDialPriorityTracker>,
-)> {
+) -> Result<(Boxed<(PeerId, StreamMuxerBox)>, Option<DialPriorityTracker>)> {
     let maybe_tor_priority_tracker = maybe_tor_client
         .is_some()
-        .then(TorDialPriorityTracker::default);
+        .then(DialPriorityTracker::default);
 
     // Build the websocket transport first. WsConfig strips the /ws suffix and
     // delegates to its inner transport, so we give it a Tor-or-TCP+DNS chain so
@@ -120,8 +117,8 @@ pub fn new(
     let transport = match &maybe_tor_priority_tracker {
         Some(priority_tracker) => DialLimiterTransport::new(
             transport,
-            new_tor_dial_limiter(priority_tracker),
-            new_tor_dial_limiter(priority_tracker),
+            new_dial_limiter(priority_tracker),
+            new_dial_limiter(priority_tracker),
             AUTH_AND_MULTIPLEX_TIMEOUT,
         )
         .boxed(),
