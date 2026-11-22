@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Taker: Recognize confirmed cancellation despite stale Bitcoin lock status, and retry inconsistent wallet status instead of panicking before publishing a refund.
+- GUI + CLI + ASB: Fix an issue where the Monero RPC pool returned an error after a Monero node closed an idle connection.
 
 ## [5.0.4] - 2026-11-16
 

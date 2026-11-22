@@ -478,6 +478,14 @@ async fn proxy_to_single_node(
 
     // Try to reuse an idle HTTP connection first.
     let mut guarded_sender: Option<GuardedSender> = state.connection_pool.try_get(&key).await;
+    let mut response_over_idle_connection = None;
+
+    if let Some(idle_sender) = guarded_sender.take() {
+        (guarded_sender, response_over_idle_connection) =
+            send_over_idle_connection(idle_sender, &request)
+                .await?
+                .unzip();
+    }
 
     if guarded_sender.is_none() {
         // Build a new connection, and wrap it with TLS if needed.
@@ -538,7 +546,11 @@ async fn proxy_to_single_node(
     let mut guarded_sender = guarded_sender.expect("sender must be set");
 
     // Forward the request to the node. URI stays relative, so no rewrite.
-    let response = match guarded_sender.send_request(request.to_request()).await {
+    let send_result = match response_over_idle_connection {
+        Some(response) => Ok(response),
+        None => guarded_sender.send_request(request.to_request()).await,
+    };
+    let response = match send_result {
         Ok(response) => response,
         Err(e) => {
             // Connection failed, remove it from the pool
@@ -565,6 +577,42 @@ async fn proxy_to_single_node(
 
     let axum_body = Body::from(body_bytes);
     Ok(Response::from_parts(parts, axum_body))
+}
+
+/// Sends the request over a connection taken from the pool.
+///
+/// Returns `None` if the connection closed before hyper wrote any part of the
+/// request to it. Only then is it certain that the node did not receive the
+/// request, so only then may the caller send it again.
+async fn send_over_idle_connection(
+    mut idle_sender: crate::connection_pool::GuardedSender,
+    request: &CloneableRequest,
+) -> Result<
+    Option<(
+        crate::connection_pool::GuardedSender,
+        hyper::Response<hyper::body::Incoming>,
+    )>,
+    SingleRequestError,
+> {
+    if idle_sender.ready().await.is_err() {
+        idle_sender.mark_failed().await;
+        return Ok(None);
+    }
+
+    let error = match idle_sender.try_send_request(request.to_request()).await {
+        Ok(response) => return Ok(Some((idle_sender, response))),
+        Err(error) => error,
+    };
+    idle_sender.mark_failed().await;
+
+    // hyper hands the request back only if it never started writing it.
+    if error.message().is_some() {
+        return Ok(None);
+    }
+
+    Err(SingleRequestError::SendRequestError(
+        error.into_error().to_string(),
+    ))
 }
 
 fn get_jsonrpc_error(body: &[u8]) -> Option<String> {
@@ -839,6 +887,11 @@ mod tests {
     use crate::pool::NodePool;
     use axum::response::IntoResponse;
     use monero_address::Network;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
+
+    const PROXIED_REQUEST_BODY: &[u8] = br#"{"method":"get_info"}"#;
+    const NODE_RESPONSE_BODY: &str = r#"{"jsonrpc":"2.0","result":{"height":1},"id":0}"#;
 
     /// Builds a cloneable request the same way the proxy handler does.
     async fn cloneable_request(uri: &str, body: &[u8]) -> CloneableRequest {
@@ -924,6 +977,85 @@ mod tests {
         });
 
         port
+    }
+
+    /// Reads one proxied request off the stream, the way a node does before
+    /// it answers.
+    async fn read_proxied_request(stream: &mut (impl AsyncRead + Unpin)) {
+        let mut received = Vec::new();
+        while !received.ends_with(PROXIED_REQUEST_BODY) {
+            let mut chunk = [0u8; 1024];
+            let read = stream.read(&mut chunk).await.expect("read request");
+            assert_ne!(read, 0, "stream ended before the request was complete");
+            received.extend_from_slice(&chunk[..read]);
+        }
+    }
+
+    /// Spawns a node that closes every connection after one request. It
+    /// answers that request only if `answers_requests` is set. Also returns
+    /// how many connections the node has accepted.
+    async fn spawn_node_closing_connections(answers_requests: bool) -> (u16, Arc<AtomicUsize>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind fake node listener");
+        let port = listener.local_addr().expect("fake node address").port();
+        let accepted_connections = Arc::new(AtomicUsize::new(0));
+
+        let accepted_connections_of_node = accepted_connections.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                accepted_connections_of_node.fetch_add(1, Ordering::SeqCst);
+
+                tokio::spawn(async move {
+                    read_proxied_request(&mut stream).await;
+                    if !answers_requests {
+                        return;
+                    }
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\n\r\n{NODE_RESPONSE_BODY}",
+                        NODE_RESPONSE_BODY.len()
+                    );
+                    stream
+                        .write_all(response.as_bytes())
+                        .await
+                        .expect("write response");
+                });
+            }
+        });
+
+        (port, accepted_connections)
+    }
+
+    fn local_node(port: u16) -> (String, String, u16) {
+        ("http".to_string(), "127.0.0.1".to_string(), port)
+    }
+
+    fn local_node_key(port: u16) -> crate::connection_pool::StreamKey {
+        ("http".to_string(), "127.0.0.1".to_string(), port, false)
+    }
+
+    /// Pools an idle connection for the local node on `port` that runs over an
+    /// in-memory stream, and returns the node's end of that stream. The
+    /// connection is ready for a request when this returns.
+    async fn pool_idle_in_memory_connection(state: &AppState, port: u16) -> DuplexStream {
+        let (node_stream, pool_stream) = tokio::io::duplex(1024);
+        let (sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(pool_stream))
+            .await
+            .expect("http1 handshake");
+        tokio::spawn(async move {
+            let _ = connection.await;
+        });
+
+        let mut guarded_sender = state
+            .connection_pool
+            .insert_and_lock(local_node_key(port), sender)
+            .await;
+        guarded_sender.ready().await.expect("connection is ready");
+
+        node_stream
     }
 
     async fn error_response_body(error: HandlerError) -> (StatusCode, serde_json::Value) {
@@ -1206,6 +1338,110 @@ mod tests {
         assert!(details.contains("Connection error"));
 
         assert_eq!(db.get_health_check_stats("testnet").await.unwrap(), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn proxy_reconnects_after_node_closed_idle_connection() {
+        let (port, accepted_connections) = spawn_node_closing_connections(true).await;
+        let (_dir, _db, state) = app_state_with_node("127.0.0.1", port).await;
+        let key = local_node_key(port);
+
+        for _ in 0..2 {
+            let response = proxy_to_multiple_nodes(
+                &state,
+                cloneable_request("/json_rpc", PROXIED_REQUEST_BODY).await,
+                vec![local_node(port)],
+            )
+            .await
+            .expect("proxy to fake node");
+            assert_eq!(response.status(), StatusCode::OK);
+
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while state.connection_pool.has_available_connection(&key).await {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("pool notices that the node closed the idle connection");
+        }
+
+        assert_eq!(accepted_connections.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn proxy_reuses_idle_connection_that_is_still_open() {
+        let port = spawn_fake_node(StatusCode::OK, NODE_RESPONSE_BODY).await;
+        let (_dir, state) = app_state().await;
+        let key = local_node_key(port);
+
+        for _ in 0..2 {
+            let request = cloneable_request("/json_rpc", PROXIED_REQUEST_BODY).await;
+            let response = proxy_to_single_node(&state, request, &local_node(port))
+                .await
+                .expect("proxy to fake node");
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let only_connection = state.connection_pool.try_get(&key).await;
+        assert!(only_connection.is_some());
+        assert!(state.connection_pool.try_get(&key).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn request_handed_back_by_closed_connection_is_sent_over_new_connection() {
+        let (port, accepted_connections) = spawn_node_closing_connections(true).await;
+        let (_dir, state) = app_state().await;
+
+        // The pooled connection still looks open when the proxy queues the
+        // request. hyper finds it closed before it writes the request.
+        let node_stream = pool_idle_in_memory_connection(&state, port).await;
+        drop(node_stream);
+
+        let request = cloneable_request("/json_rpc", PROXIED_REQUEST_BODY).await;
+        let response = proxy_to_single_node(&state, request, &local_node(port))
+            .await
+            .expect("request is sent over a new connection");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(accepted_connections.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn request_is_sent_only_once_more_after_being_handed_back() {
+        let (port, accepted_connections) = spawn_node_closing_connections(false).await;
+        let (_dir, state) = app_state().await;
+
+        let node_stream = pool_idle_in_memory_connection(&state, port).await;
+        drop(node_stream);
+
+        let request = cloneable_request("/json_rpc", PROXIED_REQUEST_BODY).await;
+        let result = proxy_to_single_node(&state, request, &local_node(port)).await;
+
+        assert!(matches!(
+            result,
+            Err(SingleRequestError::SendRequestError(_))
+        ));
+        assert_eq!(accepted_connections.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn request_is_not_sent_again_once_the_node_may_have_received_it() {
+        let (port, accepted_connections) = spawn_node_closing_connections(true).await;
+        let (_dir, state) = app_state().await;
+
+        let mut node_stream = pool_idle_in_memory_connection(&state, port).await;
+        tokio::spawn(async move {
+            read_proxied_request(&mut node_stream).await;
+        });
+
+        let request = cloneable_request("/json_rpc", PROXIED_REQUEST_BODY).await;
+        let result = proxy_to_single_node(&state, request, &local_node(port)).await;
+
+        assert!(matches!(
+            result,
+            Err(SingleRequestError::SendRequestError(_))
+        ));
+        assert_eq!(accepted_connections.load(Ordering::SeqCst), 0);
     }
 
     #[test]
