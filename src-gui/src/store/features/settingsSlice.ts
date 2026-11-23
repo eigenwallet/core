@@ -53,7 +53,7 @@ export interface SettingsState {
   lastAppliedDefaultRendezvousPointsV1?: number | null;
   /// Whether we have already cleared logs after upgrading
   hasClearedLogsOnUpgrade: boolean;
-  /// "Backup data on chain" (Apollo). Off by default. Applies to new swaps only.
+  /// "Backup data on chain" (Apollo). On by default. Applies to new swaps only.
   enableApollo: boolean;
 }
 
@@ -136,7 +136,7 @@ const initialState: SettingsState = {
   lastAppliedDefaultNodesV2: null,
   lastAppliedDefaultRendezvousPointsV1: null,
   hasClearedLogsOnUpgrade: false,
-  enableApollo: false,
+  enableApollo: true,
 };
 
 const alertsSlice = createSlice({

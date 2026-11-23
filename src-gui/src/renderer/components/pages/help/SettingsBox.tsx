@@ -165,7 +165,7 @@ function ResetButton() {
 }
 
 /**
- * The "Backup data on chain" setting. It is off by default and applies to new swaps only.
+ * The "Backup data on chain" setting. It is on by default and applies to new swaps only.
  */
 function ApolloSetting() {
   const enableApollo = useSettings((s) => s.enableApollo);
