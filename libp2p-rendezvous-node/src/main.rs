@@ -29,7 +29,7 @@ struct Cli {
     #[structopt(long, default_value = "8888")]
     port: u16,
 
-    /// Port used for listening on websocket (put a TLS-terminating reverse proxy in front for wss)
+    /// Port used for listening on websocket
     #[structopt(long, default_value = "8889")]
     ws_port: u16,
 
@@ -79,9 +79,7 @@ async fn main() -> Result<()> {
         )
         .context("Failed to initialize listener")?;
 
-    // The transport stack tries the websocket transport before plain TCP, but only for
-    // addresses carrying a /ws suffix — without a dedicated listener here, inbound wss
-    // (e.g. through a TLS-terminating reverse proxy) never gets accepted.
+    // Listen for inbound websocket connections (e.g. behind a TLS-terminating reverse proxy)
     swarm
         .listen_on(
             format!("/ip4/0.0.0.0/tcp/{}/ws", cli.ws_port)
