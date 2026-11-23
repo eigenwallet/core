@@ -54,7 +54,7 @@ export interface SettingsState {
   /// Whether we have already cleared logs after upgrading
   hasClearedLogsOnUpgrade: boolean;
   /// "Backup data on chain" (Apollo). On by default. Applies to new swaps only.
-  enableApollo: boolean;
+  enableApolloV2: boolean;
 }
 
 export enum RedeemPolicy {
@@ -136,7 +136,7 @@ const initialState: SettingsState = {
   lastAppliedDefaultNodesV2: null,
   lastAppliedDefaultRendezvousPointsV1: null,
   hasClearedLogsOnUpgrade: false,
-  enableApollo: true,
+  enableApolloV2: true,
 };
 
 const alertsSlice = createSlice({
@@ -170,7 +170,7 @@ const alertsSlice = createSlice({
       slice.fetchFiatPrices = action.payload;
     },
     setEnableApollo(slice, action: PayloadAction<boolean>) {
-      slice.enableApollo = action.payload;
+      slice.enableApolloV2 = action.payload;
     },
     setFiatCurrency(slice, action: PayloadAction<FiatCurrency>) {
       slice.fiatCurrency = action.payload;
