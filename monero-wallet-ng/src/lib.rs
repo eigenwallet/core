@@ -5,6 +5,7 @@ pub mod hermes;
 pub mod retry;
 pub mod rpc;
 pub mod scanner;
+pub mod state;
 pub mod sweep;
 pub mod util;
 pub mod verify;
