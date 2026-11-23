@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Enforce a 2-hour minimum TTL for rendezvous registration renewals.
 - GUI: An unreachable address of a maker can no longer prevent a connection through the other addresses of that maker.
 - GUI + CLI: Onion addresses are not dialed when Tor is disabled.
 - GUI: The Bitcoin withdrawal dialog now accepts Taproot (`bc1p…`/`tb1p…`) destination addresses.
