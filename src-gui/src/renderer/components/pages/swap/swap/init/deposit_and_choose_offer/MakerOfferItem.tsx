@@ -17,7 +17,7 @@ import {
   Typography,
 } from "@mui/material";
 import CircleIcon from "@mui/icons-material/Circle";
-import { useState } from "react";
+import { memo, useState } from "react";
 import Jdenticon from "renderer/components/other/Jdenticon";
 import {
   BidQuote,
@@ -54,7 +54,7 @@ function getRefundPercentage(policy: RefundPolicyWire): number {
   return policy.content.anti_spam_deposit_ratio * 100;
 }
 
-export default function MakerOfferItem({
+function MakerOfferItem({
   quoteWithAddress,
   requestId,
   showAsPriority = true,
@@ -475,3 +475,8 @@ function VersionChip({ version }: { version: string }) {
     </Tooltip>
   );
 }
+
+// the props are stable across parent re-renders (the quote refs pass through
+// useCachedMakerOffers untouched), so memo keeps the cards from re-rendering
+// on sort changes, pagination and the 2s throttled offer refresh
+export default memo(MakerOfferItem);
