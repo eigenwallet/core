@@ -7,7 +7,11 @@ publish = false
 
 [dependencies]
 anyhow = { workspace = true }
+hex = { workspace = true }
 monero-address = { workspace = true }
+monero-oxide-wallet = { workspace = true }
+monero-wallet-ng = { path = "../monero-wallet-ng" }
+zeroize = { workspace = true }
 monero-daemon-rpc = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 monero-simple-request-rpc = { workspace = true }

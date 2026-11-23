@@ -37,6 +37,7 @@ use std::collections::HashMap;
 
 use crate::image::{MONEROD_DAEMON_CONTAINER_NAME, MONEROD_DEFAULT_NETWORK, RPC_PORT};
 
+pub mod funder_wallet;
 pub mod image;
 
 /// How often we mine a block.
