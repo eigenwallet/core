@@ -13,6 +13,8 @@ use std::collections::{HashSet, VecDeque};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+const MIN_TTL: Duration = Duration::from_secs(7_200);
+
 // TODO: This could use notice to recursively discover other rendezvous nodes
 // TODO: Get the tests working again
 pub struct Behaviour {
@@ -242,11 +244,10 @@ impl NetworkBehaviour for Behaviour {
 
                     self.registered.insert(rendezvous_node.clone());
 
-                    // Schedule a re-registration after half of the TTL
-                    let half_of_ttl = Duration::from_secs(ttl) / 2;
+                    let re_register_delay = re_register_delay(ttl);
                     self.pending_to_dispatch.insert(
                         rendezvous_node.clone(),
-                        tokio::time::sleep(half_of_ttl).boxed(),
+                        tokio::time::sleep(re_register_delay).boxed(),
                     );
 
                     // Inform swarm
@@ -256,7 +257,7 @@ impl NetworkBehaviour for Behaviour {
 
                     tracing::info!(
                         ?rendezvous_node,
-                        re_register_after_seconds = %half_of_ttl.as_secs(),
+                        re_register_after_seconds = %re_register_delay.as_secs(),
                         "Registered with rendezvous node"
                     );
                 }
@@ -377,6 +378,10 @@ impl NetworkBehaviour for Behaviour {
     }
 }
 
+fn re_register_delay(ttl: u64) -> Duration {
+    Duration::from_secs(ttl).max(MIN_TTL) / 2
+}
+
 // TODO: Add a test that ensures we re-register after some time
 #[cfg(test)]
 mod tests {
@@ -386,6 +391,24 @@ mod tests {
     use futures::StreamExt;
     use libp2p::rendezvous;
     use libp2p::swarm::SwarmEvent;
+
+    #[test]
+    fn re_register_delay_clamps_zero_and_small_ttl_to_half_min_ttl() {
+        let expected = MIN_TTL / 2;
+        assert_eq!(expected, Duration::from_secs(3_600));
+
+        assert_eq!(re_register_delay(0), expected);
+        assert_eq!(re_register_delay(1), expected);
+        assert_eq!(re_register_delay(60), expected);
+        assert_eq!(re_register_delay(MIN_TTL.as_secs() - 1), expected);
+        assert_eq!(re_register_delay(MIN_TTL.as_secs()), expected);
+    }
+
+    #[test]
+    fn re_register_delay_uses_half_ttl_above_min_ttl() {
+        assert_eq!(re_register_delay(14_400), Duration::from_secs(7_200));
+        assert_eq!(re_register_delay(72_000), Duration::from_secs(36_000));
+    }
 
     #[tokio::test]
     async fn registers_once_at_two_rendezvous_nodes() {
