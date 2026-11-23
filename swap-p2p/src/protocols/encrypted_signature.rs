@@ -34,7 +34,8 @@ pub fn alice(metrics: Option<RequestResponseMetrics>) -> Behaviour {
                 request_response::ProtocolSupport::Inbound,
             )],
             request_response::Config::default()
-                .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
+                .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT)
+                .with_max_concurrent_streams(2),
         ),
         PROTOCOL,
         metrics,

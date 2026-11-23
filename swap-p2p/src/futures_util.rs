@@ -1,8 +1,10 @@
 use libp2p::futures::future::{self, AbortHandle, Abortable, BoxFuture};
 use libp2p::futures::stream::{FuturesUnordered, StreamExt};
 use std::collections::HashMap;
+use std::future::Future;
 use std::hash::Hash;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 /// A collection of futures with associated keys that can be checked for presence
 /// before completion.
@@ -114,5 +116,99 @@ impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> FuturesHashSet<K, V> {
 impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> Default for FuturesHashSet<K, V> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Runs futures keyed by `K` with a per-key concurrency limit and a timeout.
+pub struct BoundedKeyedFutures<K, V> {
+    futures: FuturesUnordered<BoxFuture<'static, (K, Result<V, tokio::time::error::Elapsed>)>>,
+    in_flight_per_key: HashMap<K, usize>,
+    max_per_key: usize,
+    timeout: Duration,
+}
+
+impl<K: Hash + Eq + Clone + Send + 'static, V: Send + 'static> BoundedKeyedFutures<K, V> {
+    pub fn new(max_per_key: usize, timeout: Duration) -> Self {
+        Self {
+            futures: FuturesUnordered::new(),
+            in_flight_per_key: HashMap::new(),
+            max_per_key,
+            timeout,
+        }
+    }
+
+    pub fn try_push(&mut self, key: K, future: impl Future<Output = V> + Send + 'static) -> bool {
+        let count = self.in_flight_per_key.get(&key).copied().unwrap_or(0);
+        if count >= self.max_per_key {
+            return false;
+        }
+
+        *self.in_flight_per_key.entry(key.clone()).or_default() += 1;
+
+        let timeout = self.timeout;
+        self.futures.push(Box::pin(async move {
+            (key, tokio::time::timeout(timeout, future).await)
+        }));
+        true
+    }
+
+    /// Stays pending when empty so `tokio::select!` needs no sentinel future.
+    pub async fn next(&mut self) -> (K, Result<V, tokio::time::error::Elapsed>) {
+        let Some((key, result)) = self.futures.next().await else {
+            return future::pending().await;
+        };
+
+        if let Some(count) = self.in_flight_per_key.get_mut(&key) {
+            *count -= 1;
+            if *count == 0 {
+                self.in_flight_per_key.remove(&key);
+            }
+        }
+
+        (key, result)
+    }
+
+    #[cfg(test)]
+    fn in_flight(&self, key: &K) -> usize {
+        self.in_flight_per_key.get(key).copied().unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn bounded_keyed_futures_enforces_per_key_limit_and_frees_slots() {
+        let mut set = BoundedKeyedFutures::new(2, Duration::from_secs(5));
+
+        assert!(set.try_push("peer_a", async { 1 }));
+        assert!(set.try_push("peer_a", async { 2 }));
+        assert!(!set.try_push("peer_a", async { 3 }));
+        assert!(set.try_push("peer_b", async { 4 }));
+        assert_eq!(set.in_flight(&"peer_a"), 2);
+        assert_eq!(set.in_flight(&"peer_b"), 1);
+
+        let (k1, v1) = set.next().await;
+        assert!(v1.is_ok());
+        if k1 == "peer_a" {
+            assert_eq!(set.in_flight(&"peer_a"), 1);
+            assert!(set.try_push("peer_a", async { 5 }));
+            assert_eq!(set.in_flight(&"peer_a"), 2);
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_keyed_futures_applies_timeout_and_frees_slot() {
+        let mut set = BoundedKeyedFutures::new(1, Duration::from_millis(20));
+
+        assert!(set.try_push("peer_a", future::pending::<()>()));
+        assert!(!set.try_push("peer_a", async {}));
+
+        let (key, result) = set.next().await;
+        assert_eq!(key, "peer_a");
+        assert!(result.is_err());
+        assert_eq!(set.in_flight(&"peer_a"), 0);
+        assert!(set.try_push("peer_a", async {}));
     }
 }
