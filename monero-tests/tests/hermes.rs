@@ -48,9 +48,14 @@ async fn hermes_happy_path() -> anyhow::Result<()> {
     daemon.generate_blocks(&bob_address, 110).await?;
 
     let funding_block = daemon.block_by_number(funding_height).await?;
+    // the funding output is coinbase: it carries unlock_time =
+    // height + 60 as its additional timelock, so
+    // not_additionally_locked() drops it and the scan comes back
+    // empty. the output is only needed for construction here, not
+    // spending, so take it regardless of the lock
     let funding_output = Scanner::new(bob_view_pair.clone())
         .scan(daemon.expand_to_scannable_block(funding_block).await?)?
-        .not_additionally_locked()
+        .ignore_additional_timelock()
         .swap_remove(0);
 
     // The shared wallet of which both parties know the private view key

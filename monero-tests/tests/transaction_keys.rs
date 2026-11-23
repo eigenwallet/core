@@ -32,7 +32,9 @@ async fn monero_transfers() -> anyhow::Result<()> {
 
     tracing::info!("Sending money");
 
-    let amount = 1_000_000_000;
+    // large enough that alice's share survives the sweep's fee and
+    // dust floor (a single 0.001 XMR output cannot be swept)
+    let amount = 100_000_000_000;
     let proof = miner
         .transfer_multi(&[
             (alice.address().await?, amount),
@@ -47,6 +49,9 @@ async fn monero_transfers() -> anyhow::Result<()> {
         "Expect one transaction key per non-change output"
     );
 
+    // the receivers need confirmations before the money is spendable
+    monero.generate_blocks().await?;
+
     alice
         .check_tx_key(
             proof.txid.clone(),
@@ -56,6 +61,11 @@ async fn monero_transfers() -> anyhow::Result<()> {
                 .unwrap(),
         )
         .await?;
+
+    // background sync is off for these wallets (the whole point is
+    // discovering payments through the proofs), so alice has to sync
+    // once before she can sweep
+    alice.refresh().await?;
 
     assert_eq!(alice.sweep(&bob.address().await?).await?.tx_keys.len(), 1);
 
