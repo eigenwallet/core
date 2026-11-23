@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GUI: The Bitcoin withdrawal dialog now accepts Taproot (`bc1p…`/`tb1p…`) destination addresses.
 - Taker: Recognize confirmed cancellation despite stale Bitcoin lock status, and retry inconsistent wallet status instead of panicking before publishing a refund.
 - GUI + CLI + ASB: Fix an issue where the Monero RPC pool returned an error after a Monero node closed an idle connection.
+- GUI + CLI + ASB: Fix an issue where the Bitcoin block height stopped advancing when the first Electrum server kept answering with an old chain tip. Confirmations and timelocks are now based on the highest tip reported by the Electrum servers.
 
 ## [5.0.4] - 2026-11-16
 
