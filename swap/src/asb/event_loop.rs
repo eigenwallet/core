@@ -115,6 +115,16 @@ where
     /// Uses watch channel to allow multiple updates before consumption
     recv_burn_on_refund_instruction: HashMap<Uuid, tokio::sync::watch::Sender<Option<bool>>>,
 
+    /// Once we receive an [`EncryptedSignature`] from Bob, we forward it to the EventLoopHandle.
+    /// Once the EventLoopHandle acknowledges the receipt of the [`EncryptedSignature`], we need to confirm this to Bob.
+    /// When the EventLoopHandle acknowledges the receipt, a future in this collection resolves and returns the libp2p channel
+    /// which we use to confirm to Bob that we have received the [`EncryptedSignature`].
+    ///
+    /// Flow:
+    /// 1. When signature forwarded via recv_encrypted_signature sender
+    /// 2. New future pushed here to await EventLoopHandle's acknowledgement
+    /// 3. When future completes, the EventLoop uses the ResponseChannel to send an acknowledgment to Bob
+    /// 4. Future is removed from this collection
     inflight_encrypted_signatures: BoundedKeyedFutures<PeerId, EncryptedSignatureOutcome>,
     inflight_cooperative_redeems: BoundedKeyedFutures<PeerId, Result<CooperativeRedeemOutcome>>,
 
@@ -1430,6 +1440,9 @@ impl EventLoopHandle {
 
         let (tx_redeem_encsig, responder) = receiver.recv().await?;
 
+        // Acknowledge receipt of the encrypted signature
+        // This notifies the EventLoop that the signature has been processed
+        // The EventLoop can then send an acknowledgement back to Bob over the network
         if responder.respond(()).is_err() {
             tracing::debug!(
                 swap_id = %self.swap_id,
@@ -1437,6 +1450,7 @@ impl EventLoopHandle {
             );
         }
 
+        // Only take after successful receipt and acknowledgement
         recv_encrypted_signature_guard.take();
 
         Ok(tx_redeem_encsig)
