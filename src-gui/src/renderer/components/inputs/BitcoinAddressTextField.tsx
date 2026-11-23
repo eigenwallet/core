@@ -9,6 +9,7 @@ type BitcoinAddressTextFieldProps = {
   helperText: string;
   onAddressValidityChange?: (valid: boolean) => void;
   allowEmpty?: boolean;
+  allowTaproot?: boolean;
 };
 
 export default function BitcoinAddressTextField({
@@ -16,6 +17,7 @@ export default function BitcoinAddressTextField({
   onAddressChange,
   helperText,
   allowEmpty = true,
+  allowTaproot = false,
   onAddressValidityChange,
   ...props
 }: BitcoinAddressTextFieldProps & TextFieldProps) {
@@ -30,12 +32,12 @@ export default function BitcoinAddressTextField({
       return "Cannot be empty";
     }
 
-    if (isBtcAddressValid(address, isTestnet())) {
+    if (isBtcAddressValid(address, isTestnet(), allowTaproot)) {
       return null;
     }
 
     return "Not a valid Bitcoin address";
-  }, [address, allowEmpty]);
+  }, [address, allowEmpty, allowTaproot]);
 
   useEffect(() => {
     if (onAddressValidityChange != null) {
