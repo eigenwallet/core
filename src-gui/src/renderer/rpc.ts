@@ -232,7 +232,7 @@ export async function buyXmr() {
     // We convert null to undefined because typescript
     // expects undefined if the field is optional and does not accept null here
     bitcoin_change_address: bitcoinChangeAddress ?? undefined,
-    enable_apollo: state.settings.enableApollo,
+    enable_apollo: state.settings.enableApolloV2,
     max_offer_difference_to_quote_percent:
       MAX_OFFER_DIFFERENCE_TO_QUOTE_PERCENT,
   });
