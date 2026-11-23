@@ -12,7 +12,7 @@ use libp2p::metrics::{BandwidthTransport, Registry};
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{Multiaddr, Swarm, identity, noise, relay, yamux};
 use libp2p::{PeerId, SwarmBuilder};
-use libp2p_tor::TorDialPriorityTracker;
+use libp2p_tor::DialPriorityTracker;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,6 +20,7 @@ use swap_core::bitcoin;
 use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
 use swap_p2p::protocols::metered::RequestResponseMetrics;
+use swap_p2p::protocols::tor_dial_filter::TorDialFilter;
 use tor_hsservice::RunningOnionService;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -139,18 +140,26 @@ pub async fn cli<T, B>(
     identity: identity::Keypair,
     maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
     build_behaviour: B,
-) -> Result<(Swarm<T>, Option<TorDialPriorityTracker>)>
+) -> Result<(Swarm<TorDialFilter<T>>, Option<DialPriorityTracker>)>
 where
     T: NetworkBehaviour,
-    B: FnOnce(relay::client::Behaviour) -> T,
+    B: FnOnce(relay::client::Behaviour, Option<DialPriorityTracker>) -> T,
 {
+    // The transport can dial onion addresses only with a Tor client.
+    let tor_enabled = maybe_tor_client.is_some();
+
     let (transport, tor_priority_tracker) = cli::transport::new(&identity, maybe_tor_client)?;
 
     let swarm = SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
         .with_other_transport(|_| transport)?
         .with_relay_client(noise::Config::new, yamux::Config::default)?
-        .with_behaviour(|_, relay| build_behaviour(relay))?
+        .with_behaviour(|_, relay| {
+            TorDialFilter::new(
+                build_behaviour(relay, tor_priority_tracker.clone()),
+                tor_enabled,
+            )
+        })?
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build();
 

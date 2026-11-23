@@ -7,12 +7,12 @@ use libp2p::noise;
 use libp2p::{PeerId, Transport, identity, yamux};
 use std::time::Duration;
 
-const AUTH_AND_MULTIPLEX_TIMEOUT: Duration = Duration::from_secs(15);
+pub const AUTH_AND_MULTIPLEX_TIMEOUT: Duration = Duration::from_secs(15);
 // We have 5 protocols, not more than 2 of which should be active at the same time.
 const MAX_NUM_STREAMS: usize = 5;
 
 /// "Completes" a transport by applying the authentication and multiplexing
-/// upgrades.
+/// upgrades. The caller applies the timeout.
 ///
 /// Even though the actual transport technology in use might be different, for
 /// two libp2p applications to be compatible, the authentication and
@@ -33,7 +33,6 @@ where
         .upgrade(Version::V1)
         .authenticate(auth_upgrade)
         .multiplex(multiplex_upgrade)
-        .timeout(AUTH_AND_MULTIPLEX_TIMEOUT)
         .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))
         .boxed();
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: An unreachable address of a maker can no longer prevent a connection through the other addresses of that maker.
+- GUI + CLI: Onion addresses are not dialed when Tor is disabled.
 - GUI: The Bitcoin withdrawal dialog now accepts Taproot (`bc1p…`/`tb1p…`) destination addresses.
 - Taker: Recognize confirmed cancellation despite stale Bitcoin lock status, and retry inconsistent wallet status instead of panicking before publishing a refund.
 - GUI + CLI + ASB: Fix an issue where the Monero RPC pool returned an error after a Monero node closed an idle connection.
