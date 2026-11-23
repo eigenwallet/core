@@ -1430,14 +1430,13 @@ impl EventLoopHandle {
 
         let (tx_redeem_encsig, responder) = receiver.recv().await?;
 
-        // Acknowledge receipt of the encrypted signature
-        // This notifies the EventLoop that the signature has been processed
-        // The EventLoop can then send an acknowledgement back to Bob over the network
-        responder
-            .respond(())
-            .context("Failed to acknowledge receipt of encrypted signature")?;
+        if responder.respond(()).is_err() {
+            tracing::debug!(
+                swap_id = %self.swap_id,
+                "Encrypted signature request timed out before acknowledgement",
+            );
+        }
 
-        // Only take after successful receipt and acknowledgement
         recv_encrypted_signature_guard.take();
 
         Ok(tx_redeem_encsig)
