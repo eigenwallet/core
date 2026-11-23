@@ -7,6 +7,7 @@ pub mod rpc;
 pub mod scanner;
 pub mod state;
 pub mod sweep;
+pub mod transfer;
 pub mod util;
 pub mod verify;
 
