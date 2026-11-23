@@ -68,7 +68,33 @@ const BLOCK_QUEUE_SIZE: usize = BLOCKS_PER_BATCH * 5;
 ///
 /// NOTE: This scanner is naive because it does not detect re-orgs.
 /// It might miss outputs in some edge cases. It should not be relied upon when one cannot miss an output.
+///
+/// outputs with an additional timelock get swallowed on purpose, so
+/// nobody downstream grabs an output they cant actually spend yet
+/// (coinbase outputs carry unlock_time = height + 60, so every one
+/// of them is "additionally locked"). balance/state trackers that
+/// want those too run their own loop over the raw scanner, like
+/// [`crate::funder`] does.
 pub fn naive_scanner<P>(
+    provider: P,
+    public_spend_key: Point,
+    private_view_key: Zeroizing<Scalar>,
+    restore_height: usize,
+    poll_interval: Duration,
+) -> Result<Subscription, ViewPairError>
+where
+    P: ProvidesScannableBlocks + ProvidesBlockchainMeta + Send + 'static,
+{
+    spawn_scanner(
+        provider,
+        public_spend_key,
+        private_view_key,
+        restore_height,
+        poll_interval,
+    )
+}
+
+fn spawn_scanner<P>(
     provider: P,
     public_spend_key: Point,
     private_view_key: Zeroizing<Scalar>,
@@ -253,9 +279,9 @@ mod scanner {
             for BlockAtHeight { height, block } in batch {
                 match scanner.scan(block) {
                     Ok(scanned) => {
-                        // Swallow any timelocked outputs to protect against unspendable outputs
-                        let outputs = scanned.not_additionally_locked();
-                        all_outputs.extend(outputs);
+                        // locked outputs get dropped so nobody builds
+                        // a tx around an unspendable input
+                        all_outputs.extend(scanned.not_additionally_locked());
                     }
                     Err(err) => {
                         // TODO: Retry here?

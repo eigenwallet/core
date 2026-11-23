@@ -451,9 +451,78 @@ fn decode_hash(hash: &str) -> Result<[u8; 32], InterfaceError> {
         })
 }
 
+/// the daemon's adjusted time, the thing time locks are evaluated
+/// against.
+///
+/// mirrors wallet2: it reads `/get_info` and uses `adjusted_time`
+/// from there.
+pub trait ProvidesAdjustedTime: Sync {
+    fn adjusted_time(&self) -> impl Send + Future<Output = Result<u64, InterfaceError>>;
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GetInfo {
+    status: String,
+    untrusted: bool,
+    adjusted_time: u64,
+}
+
+fn parse_get_info_response(response: &str) -> Result<u64, InterfaceError> {
+    let response: GetInfo = serde_json::from_str(response).map_err(|e| {
+        InterfaceError::InvalidInterface(format!("Failed to parse get_info response: {e}"))
+    })?;
+    validate_daemon_response("get_info", &response.status, response.untrusted)?;
+
+    Ok(response.adjusted_time)
+}
+
+impl<T: HttpTransport> ProvidesAdjustedTime for MoneroDaemon<T> {
+    fn adjusted_time(&self) -> impl Send + Future<Output = Result<u64, InterfaceError>> {
+        async move {
+            let response = self.rpc_call("get_info", None, 65536).await?;
+            parse_get_info_response(&response)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_get_info_response() {
+        let response = r#"{
+            "status": "OK",
+            "untrusted": false,
+            "adjusted_time": 1732032000
+        }"#;
+        assert_eq!(parse_get_info_response(response).unwrap(), 1732032000);
+    }
+
+    #[test]
+    fn rejects_untrusted_get_info_response() {
+        let response = r#"{
+            "status": "OK",
+            "untrusted": true,
+            "adjusted_time": 1732032000
+        }"#;
+        assert!(parse_get_info_response(response).is_err());
+    }
+
+    #[test]
+    fn rejects_get_info_response_with_bad_status() {
+        let response = r#"{
+            "status": "BUSY",
+            "untrusted": false,
+            "adjusted_time": 1732032000
+        }"#;
+        assert!(parse_get_info_response(response).is_err());
+    }
+
+    #[test]
+    fn rejects_unparseable_get_info_response() {
+        assert!(parse_get_info_response("not json").is_err());
+    }
 
     #[test]
     fn parses_key_image_spent_response() {

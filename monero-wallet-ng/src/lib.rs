@@ -1,6 +1,7 @@
 pub mod confirmations;
 pub mod double_spend;
 pub mod empty;
+pub mod funder;
 pub mod hermes;
 pub mod retry;
 pub mod rpc;
