@@ -54,7 +54,6 @@ export function useFeedback() {
   // Fetch swap logs when selection changes
   useEffect(() => {
     if (inputState.selectedSwap === null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear when deselected
       setLogsState((prev) => ({ ...prev, swapLogs: [] }));
       return;
     }
@@ -78,7 +77,6 @@ export function useFeedback() {
   // Fetch/process daemon logs when settings change
   useEffect(() => {
     if (!inputState.attachDaemonLogs) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear when detached
       setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
       return;
     }
@@ -112,40 +110,48 @@ export function useFeedback() {
   };
 
   const submitFeedback = async () => {
-    if (inputState.bodyText.length === 0) {
-      setError("Please enter a message");
-      throw new Error("User did not enter a message");
-    }
+    try {
 
-    const attachments: AttachmentInput[] = [];
-    // Add swap logs as an attachment
-    if (logsState.swapLogs.length > 0) {
-      attachments.push({
-        key: `swap_logs_${inputState.selectedSwap}.txt`,
-        content: logsToRawString(logsState.swapLogs.map((h) => h.log)),
+      if (inputState.bodyText.length === 0) {
+        throw new Error("User did not enter a message");
+      }
+
+      const attachments: AttachmentInput[] = [];
+      // Add swap logs as an attachment
+      if (logsState.swapLogs.length > 0) {
+        attachments.push({
+          key: `swap_logs_${inputState.selectedSwap}.txt`,
+          content: logsToRawString(logsState.swapLogs.map((h) => h.log)),
+        });
+      }
+
+      // Handle daemon logs
+      if (logsState.daemonLogs.length > 0) {
+        attachments.push({
+          key: "daemon_logs.txt",
+          content: logsToRawString(logsState.daemonLogs.map((h) => h.log)),
+        });
+      }
+
+      // Call the updated API function
+      const feedbackId = await submitFeedbackViaHttp(
+        inputState.bodyText,
+        attachments,
+      );
+
+      enqueueSnackbar("Feedback submitted successfully", {
+        variant: "success",
       });
+
+      // Dispatch only the ID
+      store.dispatch(addFeedbackId(feedbackId));
+    } catch (error) {
+      // If there is an error, show it the message.
+      if (error instanceof Error) {
+        setError(error.message);
+        throw error
+      }
     }
-
-    // Handle daemon logs
-    if (logsState.daemonLogs.length > 0) {
-      attachments.push({
-        key: "daemon_logs.txt",
-        content: logsToRawString(logsState.daemonLogs.map((h) => h.log)),
-      });
-    }
-
-    // Call the updated API function
-    const feedbackId = await submitFeedbackViaHttp(
-      inputState.bodyText,
-      attachments,
-    );
-
-    enqueueSnackbar("Feedback submitted successfully", {
-      variant: "success",
-    });
-
-    // Dispatch only the ID
-    store.dispatch(addFeedbackId(feedbackId));
   };
 
   return {

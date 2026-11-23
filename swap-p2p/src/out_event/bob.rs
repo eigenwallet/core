@@ -4,7 +4,7 @@ use libp2p::{
         InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
     },
 };
-use libp2p::{identify, ping};
+use libp2p::{identify, ping, relay};
 
 use crate::observe;
 use crate::protocols::{
@@ -29,7 +29,12 @@ pub enum OutEvent {
     SwapSetupCompleted {
         peer: PeerId,
         swap_id: uuid::Uuid,
-        result: Box<anyhow::Result<swap_machine::bob::State2>>,
+        result: Box<
+            anyhow::Result<(
+                swap_machine::bob::State2,
+                crate::protocols::swap_setup::bob::PendingCommit,
+            )>,
+        >,
     },
     TransferProofReceived {
         msg: Box<transfer_proof::Request>,
@@ -99,6 +104,12 @@ impl From<ping::Event> for OutEvent {
 
 impl From<identify::Event> for OutEvent {
     fn from(_: identify::Event) -> Self {
+        OutEvent::Other
+    }
+}
+
+impl From<relay::client::Event> for OutEvent {
+    fn from(_: relay::client::Event) -> Self {
         OutEvent::Other
     }
 }

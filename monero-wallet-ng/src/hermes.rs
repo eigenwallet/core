@@ -224,25 +224,6 @@ impl HermesBlob {
         Ok(HermesMessage(self.0[3..3 + length].to_vec()))
     }
 
-    pub fn validate(&self) -> bool {
-        // The marker must be present
-        if !self.has_marker() {
-            return false;
-        }
-
-        // The specified message length must not be greater than the maximum allowed message size
-        if self.message_length() > MAX_HERMES_MESSAGE_SIZE as u16 {
-            return false;
-        }
-
-        // The entire blob must be exactly HERMES_BLOB_LENGTH long
-        if self.0.len() != HERMES_BLOB_LENGTH {
-            return false;
-        }
-
-        return true;
-    }
-
     pub fn encrypt(
         self,
         private_view_key: Zeroizing<Scalar>,
@@ -317,8 +298,7 @@ mod tests {
         assert_eq!(decrypted.message_length(), original_data.len() as u16);
         // Check the marker is present
         assert!(decrypted.has_marker());
-        // Check the blob validates
-        assert!(decrypted.validate());
+        assert_eq!(decrypted.message().unwrap().as_bytes(), original_data);
     }
 
     #[test]
@@ -332,8 +312,7 @@ mod tests {
         let encrypted = blob.encrypt(encrypt_key, nonce);
         let decrypted = encrypted.decrypt(decrypt_key).unwrap();
 
-        // Wrong key should produce invalid blob (marker won't match)
-        assert!(!decrypted.validate());
+        assert_eq!(decrypted.message(), Err(HermesError::MissingMarker));
     }
 
     #[test]
@@ -353,14 +332,14 @@ mod tests {
     }
 
     #[test]
-    fn blob_validation_checks_marker() {
+    fn message_rejects_blob_without_marker() {
         let mut blob_data = vec![0u8; HERMES_BLOB_LENGTH];
         blob_data[0] = 255; // Wrong marker
         blob_data[1] = 1; // Valid length
         blob_data[2] = 0;
 
         let blob = HermesBlob::new(blob_data).unwrap();
-        assert!(!blob.validate());
+        assert_eq!(blob.message(), Err(HermesError::MissingMarker));
     }
 
     #[test]
@@ -399,13 +378,13 @@ mod tests {
     }
 
     #[test]
-    fn blob_validation_checks_message_length() {
+    fn message_rejects_blob_with_invalid_message_length() {
         let mut blob_data = vec![0u8; HERMES_BLOB_LENGTH];
         blob_data[0] = HERMES_DATA_MARKER;
         blob_data[1] = 1; // Length = 257 (> MAX_HERMES_MESSAGE_SIZE)
         blob_data[2] = 1;
 
         let blob = HermesBlob::new(blob_data).unwrap();
-        assert!(!blob.validate());
+        assert_eq!(blob.message(), Err(HermesError::InvalidMessageLength));
     }
 }

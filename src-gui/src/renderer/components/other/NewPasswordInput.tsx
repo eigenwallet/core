@@ -10,7 +10,7 @@ export default function NewPasswordInput({
   autoFocus = true,
 }: {
   password: string;
-  setPassword: Dispatch<SetStateAction<string>>;
+  setPassword: (password: string) => void;
   isPasswordValid: boolean;
   setIsPasswordValid: Dispatch<SetStateAction<boolean>>;
   autoFocus?: boolean;

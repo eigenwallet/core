@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::network::transport::authenticate_and_multiplex;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use arti_client::TorClient;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::core::transport::{Boxed, OptionalTransport};
@@ -47,6 +47,20 @@ fn new_tor_dial_limiter() -> (TorDialLimiter, TorDialPriorityTracker) {
     (dial_limiter, priority_tracker)
 }
 
+fn new_dns_transport(
+    inner: tcp::tokio::Transport,
+) -> std::io::Result<dns::tokio::Transport<tcp::tokio::Transport>> {
+    if cfg!(target_os = "android") {
+        return Ok(dns::tokio::Transport::custom(
+            inner,
+            dns::ResolverConfig::cloudflare(),
+            dns::ResolverOpts::default(),
+        ));
+    }
+
+    dns::tokio::Transport::system(inner)
+}
+
 /// Creates the libp2p transport for the swap CLI.
 ///
 /// The CLI's transport needs the following capabilities:
@@ -74,7 +88,8 @@ pub fn new(
     // delegates to its inner transport, so we give it a Tor-or-TCP+DNS chain so
     // that ws connections are routed over Tor when available.
     let ws_inner_tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
-    let ws_inner_tcp_dns = dns::tokio::Transport::system(ws_inner_tcp)?;
+    let ws_inner_tcp_dns = new_dns_transport(ws_inner_tcp)
+        .context("Failed to create DNS transport for websocket transport")?;
     let ws_inner_tor: OptionalTransport<TorTransport> = match &maybe_tor_client {
         Some(client) => {
             let mut transport =
@@ -93,7 +108,8 @@ pub fn new(
 
     // Build the plain Tor-or-TCP+DNS transport for non-websocket addresses.
     let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
-    let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
+    let tcp_with_dns =
+        new_dns_transport(tcp).context("Failed to create DNS transport for TCP transport")?;
     let maybe_tor_transport: OptionalTransport<TorTransport> = match maybe_tor_client {
         Some(client) => {
             let mut transport = TorTransport::from_client(client, AddressConversion::IpAndDns);

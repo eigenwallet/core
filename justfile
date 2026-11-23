@@ -40,7 +40,7 @@ gui_install:
 	cd src-gui && yarn install
 
 # Start the GUI Dev Server
-web:
+web: gui_install bindings
 	cd src-gui && yarn dev
 
 gui:

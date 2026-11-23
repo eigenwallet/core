@@ -69,7 +69,7 @@ pub struct CloudflaredConfig {
 /// services to the compose file and writes a `promtail.yml` next to
 /// `docker-compose.yml`. The shipper tails the JSON tracing logs from the
 /// `asb-data` volume (mounted read-only) and the stdout of the
-/// `bitcoind`/`monerod`/`electrs` containers (read via the socket proxy),
+/// `bitcoind`/`monerod`/`electrs`/`tor` containers (read via the socket proxy),
 /// then pushes everything to a Loki endpoint over HTTPS with a bearer token.
 #[derive(Clone)]
 pub struct PromtailConfig {
@@ -195,6 +195,7 @@ pub struct DockerBuildInput {
     pub context: String,
     // Usually this is the path to the Dockerfile
     pub dockerfile: &'static str,
+    pub keep_git_dir: bool,
 }
 
 /// Specified a docker image to use
@@ -700,10 +701,10 @@ volumes:
 ///   `asb` writes `tracing.*`, `tracing-libp2p.*`, `tracing-monero-wallet.*`,
 ///   `tracing-tor.*`, etc.) and labels each stream with the component
 ///   extracted from the file name.
-/// - `node` discovers the `bitcoind`/`monerod`/`electrs` containers through
-///   the docker-socket-proxy and tails their stdout, labelling each stream
-///   with `job: node` and the `container` name. These daemons log plain text
-///   (electrs has no log file at all), so they are shipped as raw lines
+/// - `node` discovers the `bitcoind`/`monerod`/`electrs`/`tor` containers
+///   through the docker-socket-proxy and tails their stdout, labelling each
+///   stream with `job: node` and the `container` name. These daemons log plain
+///   text (electrs has no log file at all), so they are shipped as raw lines
 ///   rather than parsed as JSON.
 pub fn build_promtail_yml(cfg: &PromtailConfig) -> String {
     // The single quote in YAML single-quoted strings is escaped by doubling
@@ -763,7 +764,7 @@ scrape_configs:
         refresh_interval: 5s
     relabel_configs:
       - source_labels: [__meta_docker_container_name]
-        regex: '/?(bitcoind|monerod|electrs)'
+        regex: '/?(bitcoind|monerod|electrs|tor)'
         action: keep
       - source_labels: [__meta_docker_container_name]
         regex: '/?(.*)'
@@ -895,6 +896,10 @@ impl IntoImageAttribute for OrchestratorImage {
     fn to_image_attribute(self) -> String {
         match self {
             OrchestratorImage::Registry(image) => format!("image: {image}"),
+            OrchestratorImage::Build(input) if input.keep_git_dir => format!(
+                r#"build: {{ context: "{}", dockerfile: "{}", network: "host", args: {{ BUILDKIT_CONTEXT_KEEP_GIT_DIR: "1" }} }}"#,
+                input.context, input.dockerfile
+            ),
             OrchestratorImage::Build(input) => format!(
                 r#"build: {{ context: "{}", dockerfile: "{}", network: "host" }}"#,
                 input.context, input.dockerfile

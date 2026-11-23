@@ -82,6 +82,7 @@ pub async fn redeem(
         AliceState::Started { .. }
         | AliceState::BtcLockTransactionSeen { .. }
         | AliceState::BtcLocked { .. }
+        | AliceState::XmrReadyToLock { .. }
         | AliceState::XmrLockTransactionConstructed { .. }
         | AliceState::XmrLockTransactionSent { .. }
         | AliceState::XmrLocked { .. }

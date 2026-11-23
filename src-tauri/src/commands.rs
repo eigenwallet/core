@@ -8,14 +8,14 @@ use swap::cli::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
             CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
             CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, CreateMoneroSubaddressArgs,
-            DeleteAllLogsArgs, ExportBitcoinWalletArgs,
-            GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
-            GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
-            GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSubaddressesArgs,
-            GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
-            GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs,
-            RedactArgs, RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
+            DeleteAllLogsArgs, ExportBitcoinWalletArgs, GetBitcoinAddressArgs, GetCurrentSwapArgs,
+            GetDataDirArgs, GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs,
+            GetMoneroBalanceArgs, GetMoneroHistoryArgs, GetMoneroMainAddressArgs,
+            GetMoneroSeedArgs, GetMoneroSubaddressesArgs, GetMoneroSyncProgressArgs,
+            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
+            GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs, RedactArgs,
+            RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs,
+            ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
             SetMoneroWalletPasswordArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs,
             WithdrawBtcArgs,
         },
@@ -387,7 +387,6 @@ pub async fn save_txt_files(
 
     Ok(())
 }
-
 
 // Here we define the Tauri commands that will be available to the frontend
 // The commands are defined using the `tauri_command!` macro.

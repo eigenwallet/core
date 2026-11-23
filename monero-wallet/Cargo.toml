@@ -25,6 +25,7 @@ tracing-subscriber = { workspace = true }
 
 # monero-oxide
 monero-daemon-rpc = { workspace = true }
+monero-interface = { workspace = true }
 monero-oxide-wallet = { workspace = true }
 monero-simple-request-rpc = { workspace = true }
 monero-wallet-ng = { path = "../monero-wallet-ng" }
@@ -33,3 +34,6 @@ monero-wallet-ng = { path = "../monero-wallet-ng" }
 curve25519-dalek = { workspace = true }
 hex = { workspace = true }
 zeroize = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

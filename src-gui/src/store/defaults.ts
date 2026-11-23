@@ -9,8 +9,7 @@ export const DEFAULT_RENDEZVOUS_POINTS = [
   "/onion3/m6rboz5lv4wxldgybgox4pr4s6xci3h2exi5nogxaox762xji2gokuad:8891/p2p/12D3KooWGjcxdpsEWspGGwkQJ9BRJQjtBQFsLk36zJxrXSBPQWov",
   "/dns4/discovery2.eigenwallet.org/tcp/443/wss/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
   "/onion3/av2jauifny7dgpvzhsnhra3cwivf6ofaefxvwhhuh5y7hsolabehhaad:8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
-  "/dns4/atomic.exolix.com/tcp/443/wss/p2p/12D3KooWBk6GbgkZaeTAUByD1tJX6SdFHtzrVj3jTmurPMRvtGoY",
-  "/onion3/kjbdwt7dvtbkj2vmrxyfifjjqowp6mln4dkmpxzpftluucnfz7tlfbad:9939/p2p/12D3KooWBk6GbgkZaeTAUByD1tJX6SdFHtzrVj3jTmurPMRvtGoY"
+  "/dns4/p2p.myexchange.cash/tcp/443/wss/p2p/12D3KooWQQeUXdMkwJo8zESkKo7xek7NtVgqh1Q4RPnJCTmESX1Z",
 ];
 
 // Known broken rendezvous points to remove when applying defaults
@@ -31,6 +30,12 @@ export const NEGATIVE_NODES_MAINNET = [
   "tcp://electrum.coinucopia.io:50001",
   "tcp://se-mma-crypto-payments-001.mullvad.net:50001",
   "tcp://electrum2.bluewallet.io:50777",
+  "ssl://b.1209k.com:50002",
+  "ssl://mainnet.foundationdevices.com:50002",
+  "ssl://electrum.coinfinity.co:50002",
+  "tcp://electrum1.bluewallet.io:50001",
+  "tcp://electrum2.bluewallet.io:50001",
+  "tcp://electrum3.bluewallet.io:50001",
 ];
 
 export const NEGATIVE_NODES_TESTNET = [
@@ -42,18 +47,18 @@ export const NEGATIVE_NODES_TESTNET = [
   "tcp://testnet.qtornado.com:51001",
   "ssl://bitcoin.devmole.eu:5010",
   "tcp://bitcoin.devmole.eu:5000",
+  "ssl://v22019051929289916.bestsrv.de:50002",
+  "tcp://v22019051929289916.bestsrv.de:50001",
+  "ssl://testnet.aranguren.org:51002",
 ];
 
 export const DEFAULT_NODES: Record<Network, Record<Blockchain, string[]>> = {
   [Network.Testnet]: {
     [Blockchain.Bitcoin]: [
       "ssl://blackie.c3-soft.com:57006",
-      "ssl://v22019051929289916.bestsrv.de:50002",
-      "tcp://v22019051929289916.bestsrv.de:50001",
       "ssl://electrum.blockstream.info:60002",
       "ssl://blockstream.info:993",
       "tcp://testnet.aranguren.org:51001",
-      "ssl://testnet.aranguren.org:51002",
     ],
     [Blockchain.Monero]: [],
   },
@@ -62,15 +67,14 @@ export const DEFAULT_NODES: Record<Network, Record<Blockchain, string[]>> = {
       "tcp://electrum.eigenwallet.org:22293",
       "ssl://electrum.blockstream.info:50002",
       "ssl://bitcoin.stackwallet.com:50002",
-      "ssl://b.1209k.com:50002",
-      "ssl://mainnet.foundationdevices.com:50002",
       "tcp://bitcoin.lu.ke:50001",
-      "ssl://electrum.coinfinity.co:50002",
-      "tcp://electrum1.bluewallet.io:50001",
-      "tcp://electrum2.bluewallet.io:50001",
-      "tcp://electrum3.bluewallet.io:50001",
       "ssl://btc-electrum.cakewallet.com:50002",
       "tcp://bitcoin.aranguren.org:50001",
+      "ssl://bitcoin.mullvad.net:5010",
+      "tcp://electrs.cakewallet.com:50001",
+      "ssl://blockstream.info:700",
+      "ssl://electrum.diynodes.com:50022",
+      "ssl://electrum.acinq.co:50002",
     ],
     [Blockchain.Monero]: [],
   },

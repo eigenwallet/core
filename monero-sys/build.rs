@@ -311,20 +311,22 @@ fn main() {
 
     // Add search paths for clang runtime libraries on macOS (not iOS)
     if target.contains("apple-darwin") {
-        // Dynamically detect Homebrew installation prefix (works on both Apple Silicon and Intel Macs)
-        let brew_prefix = std::process::Command::new("brew")
+        if let Some(brew_prefix) = std::process::Command::new("brew")
             .arg("--prefix")
             .output()
             .ok()
+            .filter(|o| o.status.success())
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "/opt/homebrew".into());
-
-        // add homebrew search paths using dynamic prefix
-        println!("cargo:rustc-link-search=native={brew_prefix}/lib",);
-        println!("cargo:rustc-link-search=native={brew_prefix}/opt/unbound/lib",);
-        println!("cargo:rustc-link-search=native={brew_prefix}/opt/expat/lib",);
-        println!("cargo:rustc-link-search=native={brew_prefix}/Cellar/protobuf@21/21.12_1/lib/",);
+            .filter(|s| !s.is_empty())
+        {
+            println!("cargo:rustc-link-search=native={brew_prefix}/lib",);
+            println!("cargo:rustc-link-search=native={brew_prefix}/opt/unbound/lib",);
+            println!("cargo:rustc-link-search=native={brew_prefix}/opt/expat/lib",);
+            println!(
+                "cargo:rustc-link-search=native={brew_prefix}/Cellar/protobuf@21/21.12_1/lib/",
+            );
+        }
 
         // Add search paths for clang runtime libraries
         let resource_dir = std::process::Command::new("clang")
@@ -384,26 +386,15 @@ fn main() {
     // Link libsodium statically
     println!("cargo:rustc-link-lib=static=sodium");
 
-    // Link OpenSSL statically (on android we use openssl-sys's vendored version instead)
-    #[cfg(not(target_os = "android"))]
-    {
-        println!("cargo:rustc-link-lib=static=ssl"); // This is OpenSSL (libsll)
-        println!("cargo:rustc-link-lib=static=crypto"); // This is OpenSSLs crypto library (libcrypto)
-    }
+    // Link OpenSSL statically
+    println!("cargo:rustc-link-lib=static=ssl"); // This is OpenSSL (libsll)
+    println!("cargo:rustc-link-lib=static=crypto"); // This is OpenSSLs crypto library (libcrypto)
 
     // Link unbound statically
     println!("cargo:rustc-link-lib=static=unbound");
     println!("cargo:rustc-link-lib=static=expat"); // Expat is required by unbound
     // println!("cargo:rustc-link-lib=static=nghttp2");
     // println!("cargo:rustc-link-lib=static=event");
-    // Android
-    #[cfg(target_os = "android")]
-    {
-        println!(
-            "cargo:rustc-link-search=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/"
-        );
-        // println!("cargo:rustc-link-lib=static=c++_static");
-    }
 
     // Link protobuf statically
     // println!("cargo:rustc-link-lib=static=protobuf");
@@ -493,6 +484,9 @@ fn compile_dependencies(
         cmd.arg("-i");
         let path = std::env::var("PATH").unwrap_or_default();
         cmd.arg(format!("PATH={path}"));
+        if let Ok(aclocal_path) = std::env::var("ACLOCAL_PATH") {
+            cmd.arg(format!("ACLOCAL_PATH={aclocal_path}"));
+        }
     }
     cmd.arg("make")
         .arg(format!("HOST={target}"))
@@ -590,7 +584,10 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         for (file_path, patch_content) in file_patches {
-            match patches_by_file.iter_mut().find(|(path, _)| *path == file_path) {
+            match patches_by_file
+                .iter_mut()
+                .find(|(path, _)| *path == file_path)
+            {
                 Some((_, contents)) => contents.push(patch_content),
                 None => patches_by_file.push((file_path, vec![patch_content])),
             }
@@ -688,10 +685,10 @@ fn split_patch_by_files(
     for line in lines {
         if line.starts_with("diff --git ") {
             // Save previous file patch if we have one
-            if let Some(file_path) = current_file_path.take() {
-                if !current_file_patch.trim().is_empty() {
-                    file_patches.push((file_path, current_file_patch.clone()));
-                }
+            if let Some(file_path) = current_file_path.take()
+                && !current_file_patch.trim().is_empty()
+            {
+                file_patches.push((file_path, current_file_patch.clone()));
             }
 
             // Start new file patch
@@ -713,10 +710,10 @@ fn split_patch_by_files(
     }
 
     // Don't forget the last file
-    if let Some(file_path) = current_file_path {
-        if !current_file_patch.trim().is_empty() {
-            file_patches.push((file_path, current_file_patch));
-        }
+    if let Some(file_path) = current_file_path
+        && !current_file_patch.trim().is_empty()
+    {
+        file_patches.push((file_path, current_file_patch));
     }
 
     Ok(file_patches)

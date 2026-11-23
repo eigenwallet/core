@@ -265,6 +265,7 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                         InnerBehaviourEvent::Identify(identify::Event::Received {
                             peer_id,
                             info,
+                            ..
                         }) => match extract_semver_from_agent_str(info.agent_version.as_str()) {
                             Some(version) => {
                                 tracing::trace!(%peer_id, %version, "Received version from peer via identify");
@@ -359,9 +360,15 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
         peer: PeerId,
         addr: &Multiaddr,
         role_override: Endpoint,
+        port_use: libp2p::core::transport::PortUse,
     ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
-        self.inner
-            .handle_established_outbound_connection(connection_id, peer, addr, role_override)
+        self.inner.handle_established_outbound_connection(
+            connection_id,
+            peer,
+            addr,
+            role_override,
+            port_use,
+        )
     }
 
     fn on_connection_handler_event(

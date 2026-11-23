@@ -16,7 +16,7 @@ const TX_EARLY_REFUND_WEIGHT: usize = 548;
 
 #[derive(Clone)]
 pub struct TxEarlyRefund {
-    inner: Transaction,
+    pub(super) inner: Transaction,
     digest: Sighash,
     lock_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     watch_script: ScriptBuf,

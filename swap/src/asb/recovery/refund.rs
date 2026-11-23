@@ -39,15 +39,18 @@ pub async fn refund(
         // In case no XMR has been locked, move to Safely Aborted
         AliceState::Started { .. }
         | AliceState::BtcLockTransactionSeen { .. }
-        | AliceState::BtcLocked { .. } => bail!(Error::NoXmrLocked(state)),
+        | AliceState::BtcLocked { .. }
+        | AliceState::XmrReadyToLock { .. } => bail!(Error::NoXmrLocked(state)),
 
         // Refund potentially possible (no knowledge of cancel transaction)
         AliceState::XmrLockTransactionConstructed { transfer_proof, state3, .. }
         | AliceState::XmrLockTransactionSent { transfer_proof, state3, .. }
         | AliceState::XmrLocked { transfer_proof, state3, .. }
         | AliceState::XmrLockTransferProofSent { transfer_proof, state3, .. }
-        | AliceState::EncSigLearned { transfer_proof, state3, .. }
-        | AliceState::WaitingForCancelTimelockExpiration { transfer_proof, state3, .. }
+        | AliceState::EncSigLearned { transfer_proof, state3, .. } => {
+            (Some(transfer_proof), state3)
+        }
+        AliceState::WaitingForCancelTimelockExpiration { transfer_proof, state3, .. }
         | AliceState::CancelTimelockExpired { transfer_proof, state3, .. }
 
         // Refund possible due to cancel transaction already being published
@@ -85,6 +88,10 @@ pub async fn refund(
         let bob_peer_id = db.get_peer_id(swap_id).await?;
         bail!(Error::RefundTransactionNotPublishedYet(bob_peer_id),);
     };
+
+    let transfer_proof = transfer_proof.context(
+        "We have the refund key, but recovery of unknown funds is not yet implemented. Funds are safe.",
+    )?;
 
     retry(
         "Refund Monero",

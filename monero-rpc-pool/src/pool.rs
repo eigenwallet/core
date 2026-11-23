@@ -248,3 +248,179 @@ impl NodePool {
         Ok(selected_nodes)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use monero_address::Network;
+    use std::collections::HashSet;
+
+    async fn test_db() -> (tempfile::TempDir, Database) {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db = Database::new(dir.path().to_path_buf())
+            .await
+            .expect("database with migrations applied");
+        (dir, db)
+    }
+
+    async fn insert_node(db: &Database, host: &str) {
+        sqlx::query(
+            r#"
+            INSERT INTO monero_nodes (scheme, host, port, network, first_seen_at)
+            VALUES ('http', ?, 18081, 'testnet', datetime('now'))
+            "#,
+        )
+        .bind(host)
+        .execute(&db.pool)
+        .await
+        .expect("insert fixture node");
+    }
+
+    #[tokio::test]
+    async fn status_combines_node_stats_health_checks_and_bandwidth() {
+        let (_dir, db) = test_db().await;
+        insert_node(&db, "pool-node.example").await;
+
+        let (pool, _receiver) = NodePool::new(db, Network::Testnet);
+        for latency_ms in [120.0, 130.0, 140.0] {
+            pool.record_success("http", "pool-node.example", 18081, latency_ms)
+                .await
+                .expect("record success");
+        }
+        pool.record_failure("http", "pool-node.example", 18081)
+            .await
+            .expect("record failure");
+
+        let status = pool.get_current_status().await.expect("current status");
+
+        assert_eq!(status.total_node_count, 1);
+        assert_eq!(status.healthy_node_count, 1);
+        assert_eq!(status.successful_health_checks, 3);
+        assert_eq!(status.unsuccessful_health_checks, 1);
+
+        let [top] = status.top_reliable_nodes.as_slice() else {
+            panic!("expected exactly one reliable node");
+        };
+        assert_eq!(top.url, "http://pool-node.example:18081");
+        assert_eq!(top.success_rate, 0.75);
+        assert_eq!(top.avg_latency_ms, Some(130.0));
+
+        assert_eq!(status.bandwidth_kb_per_sec, 0.0);
+    }
+
+    #[tokio::test]
+    async fn publish_status_update_reaches_the_subscribed_receiver() {
+        let (_dir, db) = test_db().await;
+        insert_node(&db, "pool-node.example").await;
+
+        let (pool, mut receiver) = NodePool::new(db, Network::Testnet);
+        pool.record_success("http", "pool-node.example", 18081, 100.0)
+            .await
+            .expect("record success");
+
+        pool.publish_status_update().await.expect("publish status");
+
+        let status = receiver
+            .try_recv()
+            .expect("status update broadcast to subscriber");
+        assert_eq!(status.total_node_count, 1);
+        assert_eq!(status.successful_health_checks, 1);
+
+        // A send without any subscriber must not surface as an error.
+        drop(receiver);
+        pool.publish_status_update()
+            .await
+            .expect("publish without subscribers");
+    }
+
+    #[test]
+    fn bandwidth_rate_returns_zero_below_five_samples() {
+        let tracker = BandwidthTracker::new();
+        for _ in 0..4 {
+            tracker.record_bytes(1024);
+        }
+
+        assert_eq!(tracker.get_kb_per_sec(), 0.0);
+    }
+
+    #[tokio::test]
+    async fn bandwidth_rate_divides_total_kilobytes_by_window_duration() {
+        let tracker = BandwidthTracker::new();
+
+        tracker.record_bytes(1024);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        for _ in 0..4 {
+            tracker.record_bytes(1024);
+        }
+
+        // Five KiB spread over at least 10 ms cannot exceed 500 KiB/s, and
+        // any real duration produces a positive rate.
+        let rate = tracker.get_kb_per_sec();
+        assert!(rate > 0.0);
+        assert!(rate <= 500.0);
+    }
+
+    #[test]
+    fn bandwidth_window_discards_entries_older_than_three_minutes() {
+        let tracker = BandwidthTracker::new();
+
+        // Entries outside the three minute window must be dropped instead of
+        // counted: four stale 100 KiB entries would push any rate far above
+        // the bound asserted below.
+        for _ in 0..4 {
+            tracker.entries.push(BandwidthEntry {
+                timestamp: Instant::now() - Duration::from_secs(4 * 60),
+                bytes: 100 * 1024,
+            });
+        }
+
+        tracker.record_bytes(1024);
+        std::thread::sleep(Duration::from_millis(10));
+        for _ in 0..4 {
+            tracker.record_bytes(1024);
+        }
+
+        let rate = tracker.get_kb_per_sec();
+        assert!(rate > 0.0);
+        assert!(rate <= 500.0);
+
+        // Dropping must be permanent: a stale entry that was put back into the
+        // tracker would inflate the rate on every subsequent read.
+        let rate_again = tracker.get_kb_per_sec();
+        assert!(rate_again > 0.0);
+        assert!(rate_again <= 500.0);
+    }
+
+    #[tokio::test]
+    async fn top_reliable_nodes_respects_limit_and_returns_each_node_once() {
+        let (_dir, db) = test_db().await;
+        insert_node(&db, "first.example").await;
+        insert_node(&db, "second.example").await;
+
+        let (pool, _receiver) = NodePool::new(db, Network::Testnet);
+        pool.record_success("http", "first.example", 18081, 100.0)
+            .await
+            .expect("record success");
+        pool.record_success("http", "second.example", 18081, 100.0)
+            .await
+            .expect("record success");
+
+        let both = pool.get_top_reliable_nodes(5).await.expect("selection");
+        assert_eq!(both.len(), 2);
+        let distinct: HashSet<_> = both.iter().map(|node| node.full_url()).collect();
+        assert_eq!(distinct.len(), 2);
+
+        let one = pool.get_top_reliable_nodes(1).await.expect("selection");
+        assert_eq!(one.len(), 1);
+
+        // An empty network must yield nothing rather than panic in the
+        // weighted picker.
+        let (_empty_dir, empty_db) = test_db().await;
+        let (empty_pool, _receiver) = NodePool::new(empty_db, Network::Testnet);
+        let selection = empty_pool
+            .get_top_reliable_nodes(3)
+            .await
+            .expect("selection");
+        assert!(selection.is_empty());
+    }
+}

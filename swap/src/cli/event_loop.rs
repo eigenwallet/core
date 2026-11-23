@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::EncryptedSignature;
 use swap_p2p::protocols::redial;
+use swap_p2p::protocols::swap_setup::bob::PendingCommit;
 use uuid::Uuid;
 
 // Timeout for the execution setup protocol within the event loop.
@@ -79,7 +80,7 @@ pub struct EventLoop {
     // TODO: technically NewSwap.swap_id already contains the id of the swap
     execution_setup_requests: bmrng::unbounded::UnboundedRequestReceiverStream<
         (PeerId, NewSwap, tracing::Span),
-        Result<State2>,
+        Result<(State2, PendingCommit)>,
     >,
 
     // These streams represents outgoing requests that we have to make (queues)
@@ -115,7 +116,7 @@ pub struct EventLoop {
     inflight_swap_setup: HashMap<
         (PeerId, Uuid),
         (
-            bmrng::unbounded::UnboundedResponder<Result<State2>>,
+            bmrng::unbounded::UnboundedResponder<Result<(State2, PendingCommit)>>,
             tracing::Span,
         ),
     >,
@@ -135,7 +136,8 @@ pub struct EventLoop {
     /// which will resolve once the state machine has "processed" the transfer proof.
     ///
     /// The future will yield the swap_id and the response channel which are used to send an acknowledgement to Alice.
-    pending_transfer_proof_acks: FuturesUnordered<BoxFuture<'static, (Uuid, ResponseChannel<()>)>>,
+    pending_transfer_proof_acks:
+        FuturesUnordered<BoxFuture<'static, Option<(Uuid, ResponseChannel<()>)>>>,
 
     /// Queue for adding peer addresses to the swarm
     add_peer_address_requests:
@@ -251,9 +253,8 @@ impl EventLoop {
 
                             let swap_id = msg.swap_id;
 
-                            // Check if we have a registered handler for this swap
-                            if let Some((expected_peer_id, sender, _)) = self.registered_swap_handlers.get(&swap_id) {
-                                // Ensure the transfer proof is coming from the expected peer
+                            // Ensure the transfer proof is coming from the expected peer
+                            if let Some((expected_peer_id, _, _)) = self.registered_swap_handlers.get(&swap_id) {
                                 if peer != *expected_peer_id {
                                     tracing::warn!(
                                         %swap_id,
@@ -262,27 +263,6 @@ impl EventLoop {
                                         expected_peer_id);
                                     continue;
                                 }
-
-                                // Send the transfer proof to the registered handler
-                                match sender.send(msg.tx_lock_proof) {
-                                    Ok(mut responder) => {
-                                        // Insert a future that will resolve when the handle "takes the transfer proof out"
-                                        self.pending_transfer_proof_acks.push(async move {
-                                            let _ = responder.recv().await;
-                                            (swap_id, channel)
-                                        }.boxed());
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(
-                                            %swap_id,
-                                            %peer,
-                                            error = ?e,
-                                            "Failed to pass transfer proof to registered handler"
-                                        );
-                                    }
-                                }
-
-                                continue;
                             }
 
                             // Immediately acknowledge if we've already processed this transfer proof
@@ -293,7 +273,7 @@ impl EventLoop {
                                     // We set this to a future that will resolve immediately, and returns the channel
                                     // This will be resolved in the next iteration of the event loop, and a response will be sent to Alice
                                     self.pending_transfer_proof_acks.push(async move {
-                                        (swap_id, channel)
+                                        Some((swap_id, channel))
                                     }.boxed());
 
                                     // Skip evaluation of whether we should buffer the transfer proof
@@ -307,8 +287,50 @@ impl EventLoop {
                                         %swap_id,
                                         %peer,
                                         error = ?error,
-                                        "Failed to evaluate if we should acknowledge the transfer proof, we will not respond at all"
+                                        "Failed to evaluate if we should acknowledge the transfer proof"
                                     );
+                                }
+                            }
+
+                            // Send the transfer proof to the registered handler for this swap, if there is one
+                            if let Some((_, sender, _)) = self.registered_swap_handlers.get(&swap_id) {
+                                match sender.send(msg.tx_lock_proof.clone()) {
+                                    Ok(mut responder) => {
+                                        let db = self.db.clone();
+                                        let transfer_proof = msg.tx_lock_proof;
+
+                                        // Insert a future that will resolve when the handle "takes the transfer proof out"
+                                        // If the handle is dropped before it takes the transfer proof out, we buffer the
+                                        // transfer proof and do not acknowledge it, such that Alice keeps retrying
+                                        self.pending_transfer_proof_acks.push(async move {
+                                            if responder.recv().await.is_err() {
+                                                if let Err(error) = buffer_transfer_proof_if_needed(db, swap_id, peer, transfer_proof).await {
+                                                    tracing::warn!(
+                                                        %swap_id,
+                                                        %peer,
+                                                        error = ?error,
+                                                        "Failed to buffer transfer proof"
+                                                    );
+                                                }
+
+                                                return None;
+                                            }
+
+                                            Some((swap_id, channel))
+                                        }.boxed());
+
+                                        continue;
+                                    }
+                                    // The handle was dropped (swap suspended, finished or failed).
+                                    // Remove the stale handler and handle the transfer proof as if no swap was running.
+                                    Err(_) => {
+                                        tracing::debug!(
+                                            %swap_id,
+                                            %peer,
+                                            "Registered handler for transfer proof is gone, removing it"
+                                        );
+                                        self.registered_swap_handlers.remove(&swap_id);
+                                    }
                                 }
                             }
 
@@ -528,7 +550,8 @@ impl EventLoop {
                     );
                 },
                 // Send an acknowledgement to Alice once the EventLoopHandle has processed a received transfer proof
-                Some((swap_id, response_channel)) = self.pending_transfer_proof_acks.next() => {
+                // A `None` means the transfer proof was not processed, we drop the channel without acknowledging it
+                Some(Some((swap_id, response_channel))) = self.pending_transfer_proof_acks.next() => {
                     tracing::trace!(
                         %swap_id,
                         "Dispatching outgoing transfer proof acknowledgment");
@@ -594,10 +617,12 @@ impl EventLoop {
 pub struct EventLoopHandle {
     /// When a (PeerId, NewSwap) tuple is sent into this channel, the EventLoop will:
     /// 1. Trigger the swap setup protocol with the specified peer to negotiate the swap parameters
-    /// 2. Return the resulting State2 if successful
+    /// 2. Return the resulting State2 and the still open setup if successful
     /// 3. Return an anyhow error if the request fails
-    execution_setup_sender:
-        bmrng::unbounded::UnboundedRequestSender<(PeerId, NewSwap, tracing::Span), Result<State2>>,
+    execution_setup_sender: bmrng::unbounded::UnboundedRequestSender<
+        (PeerId, NewSwap, tracing::Span),
+        Result<(State2, PendingCommit)>,
+    >,
 
     /// When a (PeerId, Uuid, EncryptedSignature) tuple is sent into this channel, the EventLoop will:
     /// 1. Send the encrypted signature to the specified peer over the network
@@ -703,13 +728,18 @@ impl EventLoopHandle {
             peer_id,
             swap_id,
             transfer_proof_receiver: Some(transfer_proof_receiver),
+            pending_commit: None,
         })
     }
 
     /// Sets up a swap with the specified peer
     ///
     /// This will retry until the maximum elapsed time is reached. It is therefore fallible.
-    pub async fn setup_swap(&mut self, peer_id: PeerId, swap: NewSwap) -> Result<State2> {
+    pub async fn setup_swap(
+        &mut self,
+        peer_id: PeerId,
+        swap: NewSwap,
+    ) -> Result<(State2, PendingCommit)> {
         let span = tracing::Span::current();
         tracing::debug!(swap = ?swap, %peer_id, "Sending swap setup request");
 
@@ -718,8 +748,8 @@ impl EventLoopHandle {
 
         backoff::future::retry_notify(backoff, || async {
             match self.execution_setup_sender.send_receive((peer_id, swap.clone(), span.clone())).await {
-                Ok(Ok(state2)) => {
-                    Ok(state2)
+                Ok(Ok(negotiated)) => {
+                    Ok(negotiated)
                 }
                 // These are errors thrown by the swap_setup/bob behaviour
                 Ok(Err(err)) => {
@@ -869,6 +899,8 @@ pub struct SwapEventLoopHandle {
     swap_id: Uuid,
     transfer_proof_receiver:
         Option<bmrng::unbounded::UnboundedRequestReceiver<monero::TransferProof, ()>>,
+    // The open swap setup until Bob commits to the swap or aborts it
+    pending_commit: Option<PendingCommit>,
 }
 
 impl SwapEventLoopHandle {
@@ -903,7 +935,32 @@ impl SwapEventLoopHandle {
     }
 
     pub async fn setup_swap(&mut self, swap: NewSwap) -> Result<State2> {
-        self.handle.setup_swap(self.peer_id, swap).await
+        let (state2, pending_commit) = self.handle.setup_swap(self.peer_id, swap).await?;
+        self.pending_commit = Some(pending_commit);
+        Ok(state2)
+    }
+
+    /// Whether the swap setup is still open. It is gone after a restart.
+    pub fn has_pending_swap_setup(&self) -> bool {
+        self.pending_commit.is_some()
+    }
+
+    /// Returns once Alice persisted the swap. Only then may we lock the Bitcoin.
+    pub async fn commit_swap_setup(&mut self) -> Result<()> {
+        self.pending_commit
+            .take()
+            .context("The swap setup with Alice is no longer open")?
+            .commit()
+            .await
+    }
+
+    /// Returns once Alice was told that we decline the swap.
+    pub async fn abort_swap_setup(&mut self) -> Result<()> {
+        self.pending_commit
+            .take()
+            .context("The swap setup with Alice is no longer open")?
+            .abort()
+            .await
     }
 
     pub async fn request_quote(&mut self) -> Result<BidQuote> {

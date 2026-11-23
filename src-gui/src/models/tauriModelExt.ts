@@ -341,6 +341,11 @@ export type PendingSeedSelectionApprovalRequest = ApprovalRequest & {
   content: Extract<ApprovalRequest["request_status"], { state: "Pending" }>;
 };
 
+export type PendingSeedBackupApprovalRequest = ApprovalRequest & {
+  request: Extract<ApprovalRequest["request"], { type: "SeedBackup" }>;
+  content: Extract<ApprovalRequest["request_status"], { state: "Pending" }>;
+};
+
 export function isPendingLockBitcoinApprovalEvent(
   event: ApprovalRequest,
 ): event is PendingLockBitcoinApprovalRequest {
@@ -357,6 +362,16 @@ export function isPendingSeedSelectionApprovalEvent(
   // Check if the request is a SeedSelection request and is pending
   return (
     event.request.type === "SeedSelection" &&
+    event.request_status.state === "Pending"
+  );
+}
+
+export function isPendingSeedBackupApprovalEvent(
+  event: ApprovalRequest,
+): event is PendingSeedBackupApprovalRequest {
+  // Check if the request is a SeedBackup request and is pending
+  return (
+    event.request.type === "SeedBackup" &&
     event.request_status.state === "Pending"
   );
 }

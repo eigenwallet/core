@@ -316,7 +316,7 @@ pub mod scalar {
                         .next_element()?
                         .ok_or_else(|| serde::de::Error::invalid_length(i, &"expected 32 bytes"))?;
                 }
-                Scalar::read(&mut &bytes[..]).map_err(|e| serde::de::Error::custom(e))
+                Scalar::read(&mut &bytes[..]).map_err(serde::de::Error::custom)
             }
         }
 

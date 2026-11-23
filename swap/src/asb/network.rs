@@ -1,6 +1,7 @@
 pub use crate::network::rendezvous;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::alice;
+use crate::network::swap_setup::verification::LockInputVerifier;
 use crate::network::transport::authenticate_and_multiplex;
 use crate::network::{
     cooperative_xmr_redeem_after_punish, encrypted_signature, quote, transfer_proof,
@@ -189,6 +190,7 @@ pub mod behaviour {
             latest_rate: LR,
             resume_only: bool,
             env_config: env::Config,
+            lock_input_verifier: LockInputVerifier,
             identify_params: (identity::Keypair, XmrBtcNamespace),
             rendezvous_nodes: Vec<PeerId>,
             connection_limits: connection_limits::ConnectionLimits,
@@ -239,6 +241,7 @@ pub mod behaviour {
                     env_config,
                     latest_rate,
                     resume_only,
+                    lock_input_verifier,
                 ),
                 transfer_proof: transfer_proof::alice(request_response_metrics.clone()),
                 encrypted_signature: encrypted_signature::alice(request_response_metrics.clone()),

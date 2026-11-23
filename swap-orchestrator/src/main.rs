@@ -369,6 +369,10 @@ fn main() {
                 network: monero_network,
                 // This means that we will use the default set in swap-env/src/env.rs
                 finality_confirmations: None,
+                trusted_daemon: false,
+                lock_rebuild_confirmations: 15,
+                lock_construction_cooldown_secs:
+                    swap_env::config::default_lock_construction_cooldown_secs(),
             },
             tor: TorConf {
                 register_hidden_service: tor_hidden_service,
@@ -394,7 +398,12 @@ fn main() {
                 price_ticker_source_bitfinex_enabled: default_price_ticker_source_enabled(),
                 price_ticker_source_kucoin_enabled: default_price_ticker_source_enabled(),
                 external_bitcoin_redeem_address: None,
-                btc_redeem_fee_multiplier: swap_env::config::default_btc_redeem_fee_multiplier(),
+                btc_redeem_base_fee_multiplier:
+                    swap_env::config::default_btc_redeem_base_fee_multiplier(),
+                btc_swap_fee_rate_multiplier:
+                    swap_env::config::default_btc_swap_fee_rate_multiplier(),
+                wallet_snapshot_cache_ttl_secs:
+                    swap_env::config::default_wallet_snapshot_cache_ttl_secs(),
                 refund_policy: defaults.refund_policy,
                 developer_tip,
             },
@@ -600,7 +609,7 @@ fn print_promtail_instructions(promtail: &PromtailConfig) {
     println!("  - Instance label (host): {}", promtail.instance);
     println!("  - Loki push URL:         {}", promtail.loki_push_url);
     println!("  - Config written to:     {}", PROMTAIL_CONFIG_FILE);
-    println!("  - Ships: asb tracing logs + bitcoind/monerod/electrs container logs");
+    println!("  - Ships: asb tracing logs + bitcoind/monerod/electrs/tor container logs");
     println!("  - Verify after `docker compose up -d`:");
     println!("      docker compose logs --tail 50 promtail");
     println!(

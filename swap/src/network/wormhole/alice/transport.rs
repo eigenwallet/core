@@ -73,19 +73,12 @@ impl Transport for WormholeTransport {
         self.inner.remove_listener(id)
     }
 
-    fn dial(&mut self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>> {
-        self.inner.dial(addr)
-    }
-
-    fn dial_as_listener(
+    fn dial(
         &mut self,
         addr: Multiaddr,
+        opts: libp2p::core::transport::DialOpts,
     ) -> Result<Self::Dial, TransportError<Self::Error>> {
-        self.inner.dial_as_listener(addr)
-    }
-
-    fn address_translation(&self, listen: &Multiaddr, observed: &Multiaddr) -> Option<Multiaddr> {
-        self.inner.address_translation(listen, observed)
+        self.inner.dial(addr, opts)
     }
 
     fn poll(

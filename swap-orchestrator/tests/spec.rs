@@ -163,6 +163,7 @@ fn test_gh_token_inlined_into_build_context() {
 
     let compose = input.to_spec();
     assert_eq!(compose.matches("ghp_exampletoken@github.com").count(), 3);
+    assert_eq!(compose.matches("BUILDKIT_CONTEXT_KEEP_GIT_DIR").count(), 1);
 }
 
 #[test]
@@ -228,11 +229,11 @@ fn test_promtail_yml_ships_node_container_logs() {
         Some("tcp://docker-socket-proxy:2375")
     );
 
-    // Only the three daemon containers are shipped.
+    // Only the daemon containers are shipped.
     let keep = node_job["relabel_configs"][0]["regex"]
         .as_str()
         .expect("keep regex must be present");
-    assert!(keep.contains("bitcoind") && keep.contains("monerod") && keep.contains("electrs"));
+    assert_eq!(keep, "/?(bitcoind|monerod|electrs|tor)");
 
     // Node logs carry the same `host` label as the asb logs so a whole
     // deployment selects with one query.

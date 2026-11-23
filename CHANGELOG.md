@@ -8,6 +8,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI: The Bitcoin withdrawal dialog now accepts Taproot (`bc1p…`/`tb1p…`) destination addresses.
+- Taker: Recognize confirmed cancellation despite stale Bitcoin lock status, and retry inconsistent wallet status instead of panicking before publishing a refund.
+- GUI + CLI + ASB: Fix an issue where the Monero RPC pool returned an error after a Monero node closed an idle connection.
+
+## [5.0.4] - 2026-11-16
+
+- GUI: The warning before you accept an offer during swap setup now appears if the rate of the maker is more than 2% above its quote, instead of 5%.
+- CI: Pin GitHub Actions to commit hashes.
+- GUI: The swap setup now stops if the maker offers more than 5% less Monero than its quote implies, or a refund policy that differs from its quote.
+  Accepting an offer now fails if the maker made its price worse after the offer was displayed.
+- ASB: Quote only amounts that swap setup accepts. Before, a maker could offer amounts that it then refused with "Anti-spam deposit ... is too small".
+
+## [5.0.3] - 2026-11-10
+
+- GUI + CLI + ASB: Fix the built-in Tor client staying at 15% during startup on Windows.
+- Add Apollo, an encrypted on-chain backup that lets you recover swaps started after you enable it from your wallet seed if you lose your local swap data.
+  It is off by default and can be enabled with "Backup data on chain" in the settings; the setting only applies to new swaps.
+  Each backup requires an additional Bitcoin transaction fee.
+  Swaps set up before Apollo continue without a backup.
+  There is no downgrade support: once Apollo has run, the database cannot be opened by older versions.
+
+## [5.0.2] - 2026-10-31
+
+- GUI + CLI + ASB: Update Arti to 2.7.0, which includes several reliability improvements.
+
+## [5.0.1] - 2026-10-30
+
+- ORCHESTRATOR: Update Tor to 0.4.9.9 and ship the logs of the `tor` container to Loki.
+- GUI: Show a warning before you accept an offer during swap setup if the rate of the maker is more than 5% above its quote, its markup is above 5%, or its markup is more than 25%, and more than 0.25 percentage points, above the quoted markup.
+- Breaking protocol change: Prevent transaction pinning of the cancel and refund transactions.
+  Both peers must upgrade to start a new swap; existing swaps are not affected.
+  ASB: `maker.btc_redeem_fee_multiplier` was removed. Generated configs contain it and the asb does not start with it, so remove that line from your config. Two new options set the Bitcoin fees: `maker.btc_swap_fee_rate_multiplier` (default `1.0`) scales the fee rate of all presigned transactions, and `maker.btc_redeem_base_fee_multiplier` (default `"2.50"`) sets the redeem fee relative to the others.
+- Breaking protocol change: Takers prove that they own the inputs of the Bitcoin lock transaction, and makers verify them during swap setup.
+- The cancel timelock of new swaps on mainnet is 30 blocks instead of 24. Takers spend at most 25 of their Bitcoin outputs in a swap.
+
+## [4.16.1] - 2026-10-13
+
+- Report the actual Monero wallet error instead of "unknown error, error not set".
+- Fix an issue where a failed lookup of the Monero restore height by date silently set the restore height to 0, which caused a full rescan from the genesis block.
+- GUI + ASB: Fix an issue where the app would exit with `SIGSEV` in a rare edge case
+- GUI: Fix an issue where the GUI stopped asking a rendezvous point for makers after it once answered that no makers were registered. Makers that registered later were only found after a manual refresh or a restart.
+- GUI + CLI: Fix an issue where a transfer proof for a swap that was suspended, finished or failed was neither buffered nor acknowledged until the app was restarted.
+- GUI + CLI: Fix two issues with the acknowledgement of the Monero transfer proof. We did not acknowledge a repeated transfer proof while the swap was running, and we acknowledged a transfer proof that a suspended swap never read.
+
+## [4.16.0] - 2026-10-06
+
+- GUI: Update the Flatpak GNOME runtime from 48 (end-of-life) to 50.
+
+## [4.15.0] - 2026-09-22
+
+- GUI: Support outbound connections to makers through libp2p circuit relays.
+
+- ASB: Fix an issue where multiple swaps which started at the same time tried to spend the same Monero outputs (double spend), causing only one to succeeded:
+
+- Construction of Monero lock transctions is spaced out by `5min` by default now. Customize this cooldown via `monero.lock_construction_cooldown_secs`.
+
+- In cases where we have confirmed that the Monero we wanted to send is already spent in another swap the ASB can now rebuild a new Monero transaction.
+  This requires your own trusted Monero node on your own hardware. To enable this feature, set `monero.trusted_daemon = true` (`false by default`).
+  This can make swaps succeed even if they initially conflict with another swap.
+
+## [4.14.0] - 2026-08-22
+
+- ASB: The `get-swaps` RPC response now includes the Bitcoin redeem address for each swap.
+
+## [4.13.3] - 2026-08-05
+
+- GUI: Fix a number of small ui issues / inconsistencies
+
+## [4.13.2] - 2026-07-23
+
+- GUI + ASB: Remove nine unusable Electrum defaults and add healthy Mullvad,
+  Cake Wallet, Blockstream, DIYnodes, and ACINQ mainnet servers.
+
+## [4.13.1] - 2026-07-23
+
+## [4.13.0] - 2026-07-23
+
+- ASB: Fix a bug in the algorithm used to the select the Bitcoin output used for the swap.
+- ASB+GUI: Fix a bug in the cross curve equality proof cryptography.
+
+## [4.12.0] - 2026-07-18
+
+- GUI: The wallet setup dialog is now a multi-step wizard. Creating a wallet lets you pick a name and location and requires backing up the seed phrase before continuing, and opening a wallet file supports drag & drop. Newly created wallets are named by the user instead of a Unix timestamp.
+
+## [4.11.5] - 2026-07-07
+
 - ASB: The Hermes protocol is now enabled by default (`hermes_enabled` defaults to `true`), and the default `hermes_min_swap_amount` was lowered from `0.01` to `0.001` BTC (~50 USD at a reference price of 50,000 USD/BTC).
 
 ## [4.11.4] - 2026-06-30
@@ -1043,7 +1128,22 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.11.4...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/5.0.4...HEAD
+[5.0.4]: https://github.com/eigenwallet/core/compare/5.0.3...5.0.4
+[5.0.3]: https://github.com/eigenwallet/core/compare/5.0.2...5.0.3
+[5.0.2]: https://github.com/eigenwallet/core/compare/5.0.1...5.0.2
+[5.0.1]: https://github.com/eigenwallet/core/compare/5.0.0...5.0.1
+[5.0.0]: https://github.com/eigenwallet/core/compare/4.16.1...5.0.0
+[4.16.1]: https://github.com/eigenwallet/core/compare/4.16.0...4.16.1
+[4.16.0]: https://github.com/eigenwallet/core/compare/4.15.0...4.16.0
+[4.15.0]: https://github.com/eigenwallet/core/compare/4.14.0...4.15.0
+[4.14.0]: https://github.com/eigenwallet/core/compare/4.13.3...4.14.0
+[4.13.3]: https://github.com/eigenwallet/core/compare/4.13.2...4.13.3
+[4.13.2]: https://github.com/eigenwallet/core/compare/4.13.1...4.13.2
+[4.13.1]: https://github.com/eigenwallet/core/compare/4.13.0...4.13.1
+[4.13.0]: https://github.com/eigenwallet/core/compare/4.12.0...4.13.0
+[4.12.0]: https://github.com/eigenwallet/core/compare/4.11.5...4.12.0
+[4.11.5]: https://github.com/eigenwallet/core/compare/4.11.4...4.11.5
 [4.11.4]: https://github.com/eigenwallet/core/compare/4.11.3...4.11.4
 [4.11.3]: https://github.com/eigenwallet/core/compare/4.11.2...4.11.3
 [4.11.2]: https://github.com/eigenwallet/core/compare/4.11.0...4.11.2

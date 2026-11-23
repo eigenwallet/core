@@ -32,6 +32,7 @@ import {
   removeRendezvousPoint,
   resetSettings,
   setFetchFiatPrices,
+  setEnableApollo,
   setFiatCurrency,
   setTheme,
   setTorEnabled,
@@ -107,6 +108,7 @@ export default function SettingsBox() {
                 <ElectrumRpcUrlSetting />
                 <MoneroRpcPoolSetting />
                 <MoneroNodeUrlSetting />
+                <ApolloSetting />
                 <FetchFiatPricesSetting />
                 <ThemeSetting />
                 <RendezvousPointsSetting />
@@ -159,6 +161,34 @@ function ResetButton() {
         </DialogActions>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * The "Backup data on chain" setting. It is off by default and applies to new swaps only.
+ */
+function ApolloSetting() {
+  const enableApollo = useSettings((s) => s.enableApollo);
+  const dispatch = useAppDispatch();
+
+  return (
+    <TableRow>
+      <TableCell>
+        <SettingLabel
+          label="Backup data on chain"
+          tooltip="Back up the data of a swap on the Bitcoin chain, so you can recover it from your seed if you lose your local swap data. Costs an additional Bitcoin transaction fee. Only applies to new swaps."
+        />
+      </TableCell>
+      <TableCell>
+        <Switch
+          color="primary"
+          checked={enableApollo}
+          onChange={(event) =>
+            dispatch(setEnableApollo(event.currentTarget.checked))
+          }
+        />
+      </TableCell>
+    </TableRow>
   );
 }
 

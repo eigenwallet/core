@@ -41,7 +41,7 @@ impl PrivateKey {
 
 impl fmt::Display for PrivateKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", hex::encode(&self.as_bytes()))
+        write!(f, "{}", hex::encode(self.as_bytes()))
     }
 }
 
@@ -122,7 +122,7 @@ pub mod serde_compressed_edwards {
                         .ok_or_else(|| serde::de::Error::invalid_length(i, &"expected 32 bytes"))?;
                 }
                 Ok(PublicKey::from_slice(&bytes)
-                    .map_err(|e| serde::de::Error::custom(e))?
+                    .map_err(serde::de::Error::custom)?
                     .point)
             }
         }
@@ -200,7 +200,7 @@ impl From<curve25519_dalek_ng::edwards::CompressedEdwardsY> for PublicKey {
 
 impl fmt::Display for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", hex::encode(&self.as_bytes()))
+        write!(f, "{}", hex::encode(self.as_bytes()))
     }
 }
 
