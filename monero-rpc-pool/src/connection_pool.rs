@@ -10,8 +10,8 @@
 //! `Connection` future that Hyper gives us keeps running in the background.
 //! Therefore `ConnectionPool` stores those senders and a separate background
 //! task drives the corresponding `Connection` until the peer closes it.  When
-//! that happens any future `send_request` will error and we will drop that entry
-//! from the pool automatically.
+//! that happens the sender reports `is_closed()` and `try_get` drops it from
+//! the pool the next time it scans that host.
 //!
 //! The internal data-structure:
 //!
@@ -88,13 +88,18 @@ impl ConnectionPool {
     }
 
     /// Try to fetch an idle connection.  Returns `None` if all are busy or the
-    /// host has no pool yet.
+    /// host has no pool yet.  Idle connections that have closed are removed.
     pub async fn try_get(&self, key: &StreamKey) -> Option<GuardedSender> {
         let map = self.inner.read().await;
         let vec_lock = map.get(key)?.clone();
         drop(map);
 
-        let vec = vec_lock.write().await;
+        let mut vec = vec_lock.write().await;
+        vec.retain(|sender_mutex| {
+            sender_mutex
+                .try_lock()
+                .map_or(true, |sender| !sender.is_closed())
+        });
         let total_connections = vec.len();
         let mut busy_connections = 0;
 
@@ -195,13 +200,16 @@ impl ConnectionPool {
         }
     }
 
-    /// Check if there's an available (unlocked) connection for the given key.
+    /// Check if there's an available (unlocked and open) connection for the given key.
     pub async fn has_available_connection(&self, key: &StreamKey) -> bool {
         let map = self.inner.read().await;
         if let Some(vec_lock) = map.get(key) {
             let vec = vec_lock.read().await;
             for sender_mutex in vec.iter() {
-                if sender_mutex.try_lock().is_ok() {
+                if sender_mutex
+                    .try_lock()
+                    .is_ok_and(|sender| !sender.is_closed())
+                {
                     return true;
                 }
             }
@@ -270,5 +278,31 @@ mod tests {
         reused.mark_failed().await;
         assert!(pool.try_get(&key).await.is_none());
         assert!(!pool.has_available_connection(&key).await);
+    }
+
+    #[tokio::test]
+    async fn closed_connections_are_not_available_and_are_dropped_by_try_get() {
+        let (node_stream, pool_stream) = tokio::io::duplex(1024);
+        let (sender, connection) = http1::handshake(TokioIo::new(pool_stream))
+            .await
+            .expect("http1 handshake");
+        let connection_task = tokio::spawn(connection);
+
+        let pool = ConnectionPool::new();
+        let key: StreamKey = ("http".to_string(), "node.example".to_string(), 18081, false);
+
+        drop(pool.insert_and_lock(key.clone(), sender).await);
+        assert!(pool.has_available_connection(&key).await);
+
+        // The connection task only finishes once hyper has seen the node close
+        // the stream, and the sender reports closed from then on.
+        drop(node_stream);
+        let _ = connection_task.await.expect("connection task");
+
+        assert!(!pool.has_available_connection(&key).await);
+        assert!(pool.try_get(&key).await.is_none());
+
+        let connections_of_host = pool.inner.read().await.get(&key).cloned().expect("host");
+        assert!(connections_of_host.read().await.is_empty());
     }
 }

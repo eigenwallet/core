@@ -29,6 +29,10 @@ struct Cli {
     #[structopt(long, default_value = "8888")]
     port: u16,
 
+    /// Port used for listening on websocket
+    #[structopt(long, default_value = "8889")]
+    ws_port: u16,
+
     /// Enable listening on Tor onion service
     #[structopt(long)]
     no_onion: bool,
@@ -74,6 +78,15 @@ async fn main() -> Result<()> {
                 .expect("static string is valid MultiAddress"),
         )
         .context("Failed to initialize listener")?;
+
+    // Listen for inbound websocket connections (e.g. behind a TLS-terminating reverse proxy)
+    swarm
+        .listen_on(
+            format!("/ip4/0.0.0.0/tcp/{}/ws", cli.ws_port)
+                .parse()
+                .expect("static string is valid MultiAddress"),
+        )
+        .context("Failed to initialize websocket listener")?;
 
     loop {
         match swarm.select_next_some().await {
