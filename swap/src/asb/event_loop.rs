@@ -36,6 +36,8 @@ use swap_core::bitcoin;
 use swap_env::config::RefundPolicy;
 use swap_env::env;
 use swap_feed::LatestRate;
+use swap_p2p::defaults::DEFAULT_REQUEST_TIMEOUT;
+use swap_p2p::futures_util::BoundedKeyedFutures;
 use swap_p2p::protocols::cooperative_xmr_redeem_after_punish;
 use tokio::sync::{Semaphore, mpsc, oneshot};
 use tor_hsservice::RunningOnionService;
@@ -51,6 +53,23 @@ const MAX_CONCURRENT_LOCK_INPUT_DB_CHECKS: usize = 10;
 /// How often a check waiting for a permit looks whether its requester is
 /// still waiting, so it releases its reservation once the requester is gone.
 const LOCK_INPUT_REQUESTER_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const MAX_CONCURRENT_ENCRYPTED_SIGNATURES_PER_PEER: usize = 2;
+const MAX_CONCURRENT_COOPERATIVE_REDEEMS_PER_PEER: usize = 2;
+
+enum EncryptedSignatureOutcome {
+    Ack {
+        swap_id: Uuid,
+        channel: ResponseChannel<()>,
+    },
+    DisconnectPeer,
+    Ignore,
+}
+
+struct CooperativeRedeemOutcome {
+    channel: ResponseChannel<cooperative_xmr_redeem_after_punish::Response>,
+    response: cooperative_xmr_redeem_after_punish::Response,
+    disconnect_peer: bool,
+}
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop<LR>
@@ -106,7 +125,8 @@ where
     /// 2. New future pushed here to await EventLoopHandle's acknowledgement
     /// 3. When future completes, the EventLoop uses the ResponseChannel to send an acknowledgment to Bob
     /// 4. Future is removed from this collection
-    inflight_encrypted_signatures: FuturesUnordered<BoxFuture<'static, ResponseChannel<()>>>,
+    inflight_encrypted_signatures: BoundedKeyedFutures<PeerId, EncryptedSignatureOutcome>,
+    inflight_cooperative_redeems: BoundedKeyedFutures<PeerId, Result<CooperativeRedeemOutcome>>,
 
     /// In-flight quote computation. At most one real future at a time;
     /// a permanent `pending()` sentinel keeps the stream alive.
@@ -293,7 +313,14 @@ where
             wallet_snapshot_cache,
             recv_encrypted_signature: Default::default(),
             recv_burn_on_refund_instruction: Default::default(),
-            inflight_encrypted_signatures: Default::default(),
+            inflight_encrypted_signatures: BoundedKeyedFutures::new(
+                MAX_CONCURRENT_ENCRYPTED_SIGNATURES_PER_PEER,
+                DEFAULT_REQUEST_TIMEOUT,
+            ),
+            inflight_cooperative_redeems: BoundedKeyedFutures::new(
+                MAX_CONCURRENT_COOPERATIVE_REDEEMS_PER_PEER,
+                DEFAULT_REQUEST_TIMEOUT,
+            ),
             inflight_quote_computation: Default::default(),
             pending_quote_channels: Default::default(),
             pending_quote_controller_responders: Default::default(),
@@ -329,8 +356,6 @@ where
     pub async fn run(mut self) {
         // ensure that these streams are NEVER empty, otherwise it will
         // terminate forever.
-        self.inflight_encrypted_signatures
-            .push(future::pending().boxed());
         self.inflight_quote_computation
             .push(future::pending().boxed());
         self.inflight_wallet_snapshots
@@ -461,91 +486,41 @@ where
                                 let _ = responder.send(Ok(()));
                             }
                         }
-                        SwarmEvent::Behaviour(OutEvent::EncryptedSignatureReceived{ msg, channel, peer }) => {
-                            let swap_id = msg.swap_id;
-                            let swap_peer = self.db.get_peer_id(swap_id).await;
+                        SwarmEvent::Behaviour(OutEvent::EncryptedSignatureReceived { msg, channel, peer }) => {
+                            let db = self.db.clone();
+                            let sender = self.recv_encrypted_signature.get(&msg.swap_id).cloned();
 
-                            // Ensure that an incoming encrypted signature is sent by the peer-id associated with the swap
-                            let swap_peer = match swap_peer {
-                                Ok(swap_peer) => swap_peer,
-                                Err(_) => {
-                                    tracing::warn!(
-                                        unknown_swap_id = %swap_id,
-                                        from = %peer,
-                                        "Ignoring encrypted signature for unknown swap");
-
-                                    if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
-                                        tracing::debug!(%peer, "Disconnected peer for malicious encrypted signature request")
-                                    }
-
-                                    continue;
-                                }
-                            };
-
-                            if swap_peer != peer {
+                            if !self.inflight_encrypted_signatures.try_push(
+                                peer,
+                                process_encrypted_signature_request(
+                                    db,
+                                    msg.swap_id,
+                                    msg.tx_redeem_encsig,
+                                    channel,
+                                    peer,
+                                    sender,
+                                ),
+                            ) {
                                 tracing::warn!(
-                                    %swap_id,
-                                    received_from = %peer,
-                                    expected_from = %swap_peer,
-                                    "Ignoring malicious encrypted signature which was not expected from this peer",
-                                    );
-
-                                if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
-                                    tracing::debug!(%peer, "Disconnected peer for malicious encrypted signature request")
-                                }
-
-                                continue;
+                                    %peer,
+                                    swap_id = %msg.swap_id,
+                                    "Dropping encrypted signature request because peer reached concurrency limit",
+                                );
                             }
-
-                            // Immediately acknowledge if we've already processed this encrypted signature
-                            // This handles the case where Bob didn't receive our previous acknowledgment
-                            // and is retrying sending the encrypted signature
-                            if let Ok(state) = self.db.get_state(swap_id).await {
-                                let state: AliceState = state.try_into()
-                                    .expect("Alices database only contains Alice states");
-
-                                // Check if we have already processed the encrypted signature
-                                if has_already_processed_enc_sig(&state) {
-                                    tracing::warn!(%swap_id, "Received encrypted signature for swap in state {}. We have already processed this encrypted signature. Acknowledging immediately.", state);
-
-                                    // We push create a future that will resolve immediately, and returns the channel
-                                    // This will be resolved in the next iteration of the event loop, and the acknowledgment will be sent to Bob
-                                    self.inflight_encrypted_signatures.push(async move {
-                                        channel
-                                    }.boxed());
-
-                                    continue;
-                                }
-                            }
-
-                            let sender = match self.recv_encrypted_signature.remove(&swap_id) {
-                                Some(sender) => sender,
-                                None => {
-                                    // TODO: Don't just drop encsig if we currently don't have a running swap for it, save in db
-                                    // 1. Save the encrypted signature in the database
-                                    // 2. Acknowledge the receipt of the encrypted signature
-                                    tracing::warn!(%swap_id, "No sender for encrypted signature, maybe already handled?");
-                                    continue;
-                                }
-                            };
-
-                            let mut responder = match sender.send(msg.tx_redeem_encsig).await {
-                                Ok(responder) => responder,
-                                Err(_) => {
-                                    tracing::warn!(%swap_id, "Failed to relay encrypted signature to swap");
-                                    continue;
-                                }
-                            };
-
-                            self.inflight_encrypted_signatures.push(async move {
-                                let _ = responder.recv().await;
-
-                                channel
-                            }.boxed());
                         }
                         SwarmEvent::Behaviour(OutEvent::CooperativeXmrRedeemRequested { swap_id, channel, peer }) => {
-                            let _ = self.handle_cooperative_redeem_request(swap_id, channel, peer).await
-                                .inspect_err(|err| tracing::error!(error=?err, "Could not process cooperative redeem request, ignoring"));
+                            let db = self.db.clone();
+
+                            if !self.inflight_cooperative_redeems.try_push(
+                                peer,
+                                process_cooperative_redeem_request(db, swap_id, channel, peer),
+                            ) {
+                                tracing::warn!(
+                                    %peer,
+                                    %swap_id,
+                                    "Dropping cooperative XMR redeem request because peer reached concurrency limit",
+                                );
+                            }
                         }
                         SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::Registered { peer_id })) => {
                             tracing::trace!("Successfully registered with rendezvous node: {}", peer_id);
@@ -653,8 +628,40 @@ where
                     let id = self.swarm.behaviour_mut().transfer_proof.send_request(&peer, transfer_proof);
                     self.inflight_transfer_proofs.insert(id, responder);
                 },
-                Some(response_channel) = self.inflight_encrypted_signatures.next() => {
-                    let _ = self.swarm.behaviour_mut().encrypted_signature.send_response(response_channel, ());
+                (peer, result) = self.inflight_encrypted_signatures.next() => {
+                    match result {
+                        Ok(EncryptedSignatureOutcome::Ack { swap_id, channel }) => {
+                            self.recv_encrypted_signature.remove(&swap_id);
+                            let _ = self.swarm.behaviour_mut().encrypted_signature.send_response(channel, ());
+                        }
+                        Ok(EncryptedSignatureOutcome::DisconnectPeer) => {
+                            if self.swarm.disconnect_peer_id(peer).is_ok() {
+                                tracing::debug!(%peer, "Disconnected peer for malicious encrypted signature request");
+                            }
+                        }
+                        Ok(EncryptedSignatureOutcome::Ignore) => {}
+                        Err(_) => {
+                            tracing::warn!(%peer, "Encrypted signature request timed out");
+                        }
+                    }
+                },
+                (peer, result) = self.inflight_cooperative_redeems.next() => {
+                    match result {
+                        Ok(Ok(CooperativeRedeemOutcome { channel, response, disconnect_peer })) => {
+                            if self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, response).is_err() {
+                                tracing::warn!(%peer, "Failed to send cooperative XMR redeem response");
+                            }
+                            if disconnect_peer && self.swarm.disconnect_peer_id(peer).is_ok() {
+                                tracing::debug!(%peer, "Disconnected peer for malicious cooperative Monero redeem request");
+                            }
+                        }
+                        Ok(Err(err)) => {
+                            tracing::error!(%peer, error = %format!("{err:#}"), "Could not process cooperative redeem request, ignoring");
+                        }
+                        Err(_) => {
+                            tracing::warn!(%peer, "Cooperative XMR redeem request timed out");
+                        }
+                    }
                 },
                 Some(quote_result) = self.inflight_quote_computation.next() => {
                     let quote = match &quote_result {
@@ -1049,158 +1056,6 @@ where
         Ok(())
     }
 
-    async fn handle_cooperative_redeem_request(
-        &mut self,
-        swap_id: Uuid,
-        channel: ResponseChannel<cooperative_xmr_redeem_after_punish::Response>,
-        peer: PeerId,
-    ) -> Result<()> {
-        let swap_peer = self.db.get_peer_id(swap_id).await;
-        let swap_state = self.db.get_state(swap_id).await;
-
-        // If we do not find the swap in the database, or we do not have a peer-id for it, reject
-        let (swap_peer, swap_state) = match (swap_peer, swap_state) {
-            (Ok(peer), Ok(state)) => (peer, state),
-            _ => {
-                tracing::warn!(
-                    swap_id = %swap_id,
-                    received_from = %peer,
-                    reason = "swap not found",
-                    "Rejecting cooperative XMR redeem request"
-                );
-                self.swarm
-                    .behaviour_mut()
-                    .cooperative_xmr_redeem
-                    .send_response(
-                        channel,
-                        Rejected {
-                            swap_id,
-                            reason: CooperativeXmrRedeemRejectReason::UnknownSwap,
-                        },
-                    )
-                    .map_err(|_| anyhow!("Couldn't reject cooperative redeem request"))?;
-
-                if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
-                    tracing::debug!(%peer, "Disconnected peer for malicious cooperative Monero redeem request")
-                }
-
-                bail!("swap not found")
-            }
-        };
-
-        // If the peer is not the one associated with the swap, reject
-        if swap_peer != peer {
-            tracing::warn!(
-                swap_id = %swap_id,
-                received_from = %peer,
-                expected_from = %swap_peer,
-                reason = "unexpected peer",
-                "Rejecting cooperative XMR redeem request"
-            );
-            self.swarm
-                .behaviour_mut()
-                .cooperative_xmr_redeem
-                .send_response(
-                    channel,
-                    Rejected {
-                        swap_id,
-                        reason: CooperativeXmrRedeemRejectReason::MaliciousRequest,
-                    },
-                )
-                .map_err(|_| anyhow!("Failed to reject cooperative XMR redeem request"))?;
-
-            if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
-                tracing::debug!(%peer, "Disconnected peer for malicious cooperative Monero redeem request")
-            }
-
-            bail!("malicious request (wrong peer)")
-        }
-
-        // Bob cannot refund the Bitcoin anymore. We can publish tx_punish to redeem the Bitcoin.
-        // Therefore it is safe to reveal s_a to let him redeem the Monero
-        let State::Alice(AliceState::BtcPunished {
-            state3,
-            transfer_proof: Some(transfer_proof),
-            ..
-        }) = swap_state
-        else {
-            tracing::warn!(
-                swap_id = %swap_id,
-                reason = "swap is in invalid state",
-                "Rejecting cooperative Monero redeem request"
-            );
-            self.swarm
-                .behaviour_mut()
-                .cooperative_xmr_redeem
-                .send_response(
-                    channel,
-                    Rejected {
-                        swap_id,
-                        reason: CooperativeXmrRedeemRejectReason::SwapInvalidState,
-                    },
-                )
-                .map_err(|_| {
-                    anyhow!("Failed to send rejection for cooperative Monero redeem request")
-                })?;
-
-            if let Ok(()) = self.swarm.disconnect_peer_id(peer) {
-                tracing::debug!(%peer, "Disconnected peer for malicious cooperative Monero redeem request")
-            }
-
-            bail!("swap in invalid state")
-        };
-
-        // === Background ===
-        // On 2026-05-25 an attacker managed to maliciously increase the fees
-        // in a way that causes Alice to get significantly less BTC.
-        // ==================
-
-        // Interpret a loss of more than 1 / MAX_CANCEL_FEE_PART
-        // of the swap amount to be maliciously high.
-        const MAX_LOSS_PART: u64 = 4;
-
-        if state3.check_max_loss_under_tolerance(MAX_LOSS_PART)? == false {
-            tracing::info!(
-                swap_id = %swap_id,
-                reason = "malicious swap",
-                "Rejecting cooperative Monero redeem request"
-            );
-            self.swarm
-                .behaviour_mut()
-                .cooperative_xmr_redeem
-                .send_response(
-                    channel,
-                    Rejected {
-                        swap_id,
-                        reason: CooperativeXmrRedeemRejectReason::MaliciousRequest,
-                    },
-                )
-                .map_err(|_| {
-                    anyhow!("Failed to send rejection for cooperative Monero redeem request")
-                })?;
-            bail!(
-                "Malicious swap detected (swap lost us more than 1/{MAX_LOSS_PART} of swap amount)"
-            )
-        }
-
-        self.swarm
-            .behaviour_mut()
-            .cooperative_xmr_redeem
-            .send_response(
-                channel,
-                Fullfilled {
-                    swap_id,
-                    s_a: state3.s_a,
-                    lock_transfer_proof: transfer_proof,
-                },
-            )
-            .map_err(|_| anyhow!("Failed to respond to cooperative XMR redeem request"))?;
-
-        tracing::info!(swap_id = %swap_id, peer = %peer, "Fullfilled cooperative XMR redeem request");
-
-        Ok(())
-    }
-
     /// Create a new [`EventLoopHandle`] that is scoped for communication with
     /// the given peer.
     fn new_handle(&mut self, peer: PeerId, swap_id: Uuid) -> EventLoopHandle {
@@ -1367,6 +1222,177 @@ where
     }
 }
 
+async fn process_encrypted_signature_request(
+    db: Arc<dyn Database + Send + Sync>,
+    swap_id: Uuid,
+    tx_redeem_encsig: bitcoin::EncryptedSignature,
+    channel: ResponseChannel<()>,
+    peer: PeerId,
+    sender: Option<bmrng::RequestSender<bitcoin::EncryptedSignature, ()>>,
+) -> EncryptedSignatureOutcome {
+    // Ensure that an incoming encrypted signature is sent by the peer-id associated with the swap
+    let Ok(swap_peer) = db.get_peer_id(swap_id).await else {
+        tracing::warn!(
+            unknown_swap_id = %swap_id,
+            from = %peer,
+            "Ignoring encrypted signature for unknown swap",
+        );
+        return EncryptedSignatureOutcome::DisconnectPeer;
+    };
+
+    if swap_peer != peer {
+        tracing::warn!(
+            %swap_id,
+            received_from = %peer,
+            expected_from = %swap_peer,
+            "Ignoring malicious encrypted signature which was not expected from this peer",
+        );
+        return EncryptedSignatureOutcome::DisconnectPeer;
+    }
+
+    // Immediately acknowledge if we've already processed this encrypted signature
+    // This handles the case where Bob didn't receive our previous acknowledgment
+    // and is retrying sending the encrypted signature
+    if let Ok(state) = db.get_state(swap_id).await {
+        let state: AliceState = state
+            .try_into()
+            .expect("Alices database only contains Alice states");
+
+        if has_already_processed_enc_sig(&state) {
+            tracing::warn!(
+                %swap_id,
+                "Received encrypted signature for swap in state {}. We have already processed this encrypted signature. Acknowledging immediately.",
+                state,
+            );
+            return EncryptedSignatureOutcome::Ack { swap_id, channel };
+        }
+    }
+
+    let Some(sender) = sender else {
+        // TODO: Don't just drop encsig if we currently don't have a running swap for it, save in db
+        // 1. Save the encrypted signature in the database
+        // 2. Acknowledge the receipt of the encrypted signature
+        tracing::warn!(%swap_id, "No sender for encrypted signature, maybe already handled?");
+        return EncryptedSignatureOutcome::Ignore;
+    };
+
+    let Ok(mut responder) = sender.send(tx_redeem_encsig).await else {
+        tracing::warn!(%swap_id, "Failed to relay encrypted signature to swap");
+        return EncryptedSignatureOutcome::Ignore;
+    };
+
+    let _ = responder.recv().await;
+
+    EncryptedSignatureOutcome::Ack { swap_id, channel }
+}
+
+async fn process_cooperative_redeem_request(
+    db: Arc<dyn Database + Send + Sync>,
+    swap_id: Uuid,
+    channel: ResponseChannel<cooperative_xmr_redeem_after_punish::Response>,
+    peer: PeerId,
+) -> Result<CooperativeRedeemOutcome> {
+    let swap_peer = db.get_peer_id(swap_id).await;
+    let swap_state = db.get_state(swap_id).await;
+
+    // If we do not find the swap in the database, or we do not have a peer-id for it, reject
+    let (Ok(swap_peer), Ok(swap_state)) = (swap_peer, swap_state) else {
+        tracing::warn!(
+            swap_id = %swap_id,
+            received_from = %peer,
+            reason = "swap not found",
+            "Rejecting cooperative XMR redeem request"
+        );
+        return Ok(CooperativeRedeemOutcome {
+            channel,
+            response: Rejected {
+                swap_id,
+                reason: CooperativeXmrRedeemRejectReason::UnknownSwap,
+            },
+            disconnect_peer: true,
+        });
+    };
+
+    // If the peer is not the one associated with the swap, reject
+    if swap_peer != peer {
+        tracing::warn!(
+            swap_id = %swap_id,
+            received_from = %peer,
+            expected_from = %swap_peer,
+            reason = "unexpected peer",
+            "Rejecting cooperative XMR redeem request"
+        );
+        return Ok(CooperativeRedeemOutcome {
+            channel,
+            response: Rejected {
+                swap_id,
+                reason: CooperativeXmrRedeemRejectReason::MaliciousRequest,
+            },
+            disconnect_peer: true,
+        });
+    }
+
+    // Bob cannot refund the Bitcoin anymore. We can publish tx_punish to redeem the Bitcoin.
+    // Therefore it is safe to reveal s_a to let him redeem the Monero
+    let State::Alice(AliceState::BtcPunished {
+        state3,
+        transfer_proof: Some(transfer_proof),
+        ..
+    }) = swap_state
+    else {
+        tracing::warn!(
+            swap_id = %swap_id,
+            reason = "swap is in invalid state",
+            "Rejecting cooperative Monero redeem request"
+        );
+        return Ok(CooperativeRedeemOutcome {
+            channel,
+            response: Rejected {
+                swap_id,
+                reason: CooperativeXmrRedeemRejectReason::SwapInvalidState,
+            },
+            disconnect_peer: true,
+        });
+    };
+
+    // === Background ===
+    // On 2026-05-25 an attacker managed to maliciously increase the fees
+    // in a way that causes Alice to get significantly less BTC.
+    // ==================
+
+    // Interpret a loss of more than 1 / MAX_CANCEL_FEE_PART
+    // of the swap amount to be maliciously high.
+    const MAX_LOSS_PART: u64 = 4;
+
+    if !state3.check_max_loss_under_tolerance(MAX_LOSS_PART)? {
+        tracing::info!(
+            swap_id = %swap_id,
+            reason = "malicious swap",
+            "Rejecting cooperative Monero redeem request"
+        );
+        return Ok(CooperativeRedeemOutcome {
+            channel,
+            response: Rejected {
+                swap_id,
+                reason: CooperativeXmrRedeemRejectReason::MaliciousRequest,
+            },
+            disconnect_peer: false,
+        });
+    }
+
+    tracing::info!(swap_id = %swap_id, peer = %peer, "Fullfilled cooperative XMR redeem request");
+
+    Ok(CooperativeRedeemOutcome {
+        channel,
+        response: Fullfilled {
+            swap_id,
+            s_a: state3.s_a,
+            lock_transfer_proof: transfer_proof,
+        },
+        disconnect_peer: false,
+    })
+}
+
 // We use a Mutex here to allow recv_encrypted_signature and transfer_proof_sender to be accessed concurrently
 #[derive(Debug)]
 pub struct EventLoopHandle {
@@ -1417,9 +1443,12 @@ impl EventLoopHandle {
         // Acknowledge receipt of the encrypted signature
         // This notifies the EventLoop that the signature has been processed
         // The EventLoop can then send an acknowledgement back to Bob over the network
-        responder
-            .respond(())
-            .context("Failed to acknowledge receipt of encrypted signature")?;
+        if responder.respond(()).is_err() {
+            tracing::debug!(
+                swap_id = %self.swap_id,
+                "Encrypted signature request timed out before acknowledgement",
+            );
+        }
 
         // Only take after successful receipt and acknowledgement
         recv_encrypted_signature_guard.take();
