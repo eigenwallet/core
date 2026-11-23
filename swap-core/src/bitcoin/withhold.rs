@@ -22,7 +22,7 @@ use std::collections::HashMap;
 /// it immediately after TxPartialRefund is confirmed.
 #[derive(Debug, Clone)]
 pub struct TxWithhold {
-    inner: Transaction,
+    pub(super) inner: Transaction,
     digest: Sighash,
     amnesty_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     pub(in crate::bitcoin) burn_output_descriptor: Descriptor<::bitcoin::PublicKey>,

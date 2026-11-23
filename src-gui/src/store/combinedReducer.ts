@@ -6,6 +6,7 @@ import settingsSlice from "./features/settingsSlice";
 import nodesSlice from "./features/nodesSlice";
 import conversationsSlice from "./features/conversationsSlice";
 import poolSlice from "./features/poolSlice";
+import apolloSlice from "./features/apolloSlice";
 import walletSlice from "./features/walletSlice";
 import bitcoinWalletSlice from "./features/bitcoinWalletSlice";
 import logsSlice from "./features/logsSlice";
@@ -21,6 +22,7 @@ export const reducers = {
   nodes: nodesSlice,
   conversations: conversationsSlice,
   pool: poolSlice,
+  apollo: apolloSlice,
   wallet: walletSlice,
   bitcoinWallet: bitcoinWalletSlice,
   logs: logsSlice,

@@ -29,7 +29,12 @@ pub enum OutEvent {
     SwapSetupCompleted {
         peer: PeerId,
         swap_id: uuid::Uuid,
-        result: Box<anyhow::Result<swap_machine::bob::State2>>,
+        result: Box<
+            anyhow::Result<(
+                swap_machine::bob::State2,
+                crate::protocols::swap_setup::bob::PendingCommit,
+            )>,
+        >,
     },
     TransferProofReceived {
         msg: Box<transfer_proof::Request>,

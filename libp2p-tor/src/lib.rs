@@ -58,11 +58,13 @@ use futures::{
 };
 use libp2p::{
     Multiaddr, Transport, TransportError,
-    core::transport::{ListenerId, TransportEvent},
+    core::transport::{Boxed, DialOpts, ListenerId, TransportEvent},
+    multiaddr::Protocol,
 };
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::Duration;
 use thiserror::Error;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -82,17 +84,16 @@ use tor_hsservice::{
     HsId, OnionServiceConfig, RunningOnionService, StreamRequest, status::OnionServiceStatus,
 };
 #[cfg(feature = "listen-onion-service")]
-use tor_proto::client::stream::IncomingStreamRequest;
+use tor_proto::stream::IncomingStreamRequest;
 
 mod address;
 mod dial_limiter;
 mod provider;
 
 use address::{dangerous_extract, safe_extract};
-use dial_limiter::extract_peer_id;
 pub use dial_limiter::{
-    TorDialLimiter, TorDialLimiterError, TorDialPermit, TorDialPriority, TorDialPriorityConfig,
-    TorDialPriorityTracker,
+    DialLimiter, DialLimiterError, DialPermit, DialPriority, DialPriorityConfig,
+    DialPriorityTracker,
 };
 pub use provider::TokioTorStream;
 
@@ -139,9 +140,6 @@ pub struct TorTransport {
 
     /// The Tor client.
     client: Arc<TorClient<TokioRustlsRuntime>>,
-
-    /// Limiter for outbound Tor dials.
-    dial_limiter: Option<TorDialLimiter>,
 
     /// Onion services we are listening on.
     #[cfg(feature = "listen-onion-service")]
@@ -210,7 +208,6 @@ impl TorTransport {
         Self {
             conversion_mode,
             client,
-            dial_limiter: None,
             #[cfg(feature = "listen-onion-service")]
             listeners: HashMap::new(),
             #[cfg(feature = "listen-onion-service")]
@@ -230,13 +227,6 @@ impl TorTransport {
     #[must_use]
     pub fn with_address_conversion(mut self, conversion_mode: AddressConversion) -> Self {
         self.conversion_mode = conversion_mode;
-        self
-    }
-
-    /// Set a shared outbound Tor dial limiter.
-    #[must_use]
-    pub fn with_dial_limiter(mut self, dial_limiter: TorDialLimiter) -> Self {
-        self.dial_limiter = Some(dial_limiter);
         self
     }
 
@@ -345,8 +335,6 @@ impl TorTransport {
 pub enum TorTransportError {
     #[error(transparent)]
     Client(#[from] TorError),
-    #[error(transparent)]
-    DialLimiter(#[from] TorDialLimiterError),
     #[cfg(feature = "listen-onion-service")]
     #[error(transparent)]
     Service(#[from] tor_hsservice::ClientError),
@@ -464,7 +452,7 @@ impl Transport for TorTransport {
     fn dial(
         &mut self,
         addr: Multiaddr,
-        _opts: libp2p::core::transport::DialOpts,
+        _opts: DialOpts,
     ) -> Result<Self::Dial, TransportError<Self::Error>> {
         let maybe_tor_addr = match self.conversion_mode {
             AddressConversion::DnsOnly => safe_extract(&addr),
@@ -474,18 +462,8 @@ impl Transport for TorTransport {
         let tor_address =
             maybe_tor_addr.ok_or(TransportError::MultiaddrNotSupported(addr.clone()))?;
         let onion_client = self.client.clone();
-        let dial_limiter = self.dial_limiter.clone();
-        let peer_id = extract_peer_id(&addr);
 
         Ok(Box::pin(async move {
-            // Hold the dial permit for the entire duration of the dial: the slot
-            // is only freed once `_dial_permit` is dropped at the end of this
-            // scope (whether the connect succeeded or failed).
-            let _dial_permit = match dial_limiter {
-                Some(dial_limiter) => Some(dial_limiter.wait(peer_id).await?),
-                None => None,
-            };
-
             let stream = onion_client.connect(tor_address).await?;
 
             tracing::debug!(%addr, "Established connection to peer through Tor");
@@ -577,5 +555,88 @@ impl Transport for TorTransport {
         }
 
         Poll::Pending
+    }
+}
+
+/// The outermost transport of a Tor client.
+///
+/// A dial waits for a permit from the limiter of its address kind. The timeout
+/// starts when the permit is granted, and the permit is held until the dial
+/// ends.
+pub struct DialLimiterTransport<O> {
+    inner: Boxed<O>,
+    onion_dial_limiter: DialLimiter,
+    clearnet_dial_limiter: DialLimiter,
+    dial_timeout: Duration,
+}
+
+impl<O> DialLimiterTransport<O> {
+    #[must_use]
+    pub fn new(
+        inner: Boxed<O>,
+        onion_dial_limiter: DialLimiter,
+        clearnet_dial_limiter: DialLimiter,
+        dial_timeout: Duration,
+    ) -> Self {
+        Self {
+            inner,
+            onion_dial_limiter,
+            clearnet_dial_limiter,
+            dial_timeout,
+        }
+    }
+}
+
+impl<O: Send + 'static> Transport for DialLimiterTransport<O> {
+    type Output = O;
+    type Error = std::io::Error;
+    type Dial = BoxFuture<'static, Result<O, std::io::Error>>;
+    type ListenerUpgrade = <Boxed<O> as Transport>::ListenerUpgrade;
+
+    fn listen_on(
+        &mut self,
+        id: ListenerId,
+        addr: Multiaddr,
+    ) -> Result<(), TransportError<Self::Error>> {
+        self.inner.listen_on(id, addr)
+    }
+
+    fn remove_listener(&mut self, id: ListenerId) -> bool {
+        self.inner.remove_listener(id)
+    }
+
+    fn dial(
+        &mut self,
+        addr: Multiaddr,
+        opts: DialOpts,
+    ) -> Result<Self::Dial, TransportError<Self::Error>> {
+        let inner_dial = self.inner.dial(addr.clone(), opts)?;
+        let is_onion = addr
+            .iter()
+            .any(|protocol| matches!(protocol, Protocol::Onion3(_)));
+        let dial_limiter = if is_onion {
+            self.onion_dial_limiter.clone()
+        } else {
+            self.clearnet_dial_limiter.clone()
+        };
+        let dial_timeout = self.dial_timeout;
+
+        Ok(Box::pin(async move {
+            let _dial_permit = dial_limiter
+                .wait(&addr)
+                .await
+                .map_err(std::io::Error::other)?;
+
+            tokio::time::timeout(dial_timeout, inner_dial)
+                .await
+                .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))?
+        }))
+    }
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<TransportEvent<Self::ListenerUpgrade, Self::Error>> {
+        Pin::new(&mut self.inner).poll(cx)
     }
 }

@@ -1,13 +1,15 @@
 pub use crate::network::rendezvous;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::alice;
-use crate::network::transport::authenticate_and_multiplex;
+use crate::network::swap_setup::verification::LockInputVerifier;
+use crate::network::transport::{AUTH_AND_MULTIPLEX_TIMEOUT, authenticate_and_multiplex};
 use crate::network::{
     cooperative_xmr_redeem_after_punish, encrypted_signature, quote, transfer_proof,
 };
 use anyhow::Result;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::core::transport::Boxed;
+use libp2p::core::transport::timeout::TransportTimeout;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{Multiaddr, PeerId};
 use std::time::Duration;
@@ -133,8 +135,14 @@ pub mod transport {
         // come first — otherwise Tor or TCP would eagerly claim the address.
         let transport = ws_transport.or_transport(tcp_with_dns).boxed();
 
-        Ok((
+        let transport = TransportTimeout::new(
             authenticate_and_multiplex(transport, identity)?,
+            AUTH_AND_MULTIPLEX_TIMEOUT,
+        )
+        .boxed();
+
+        Ok((
+            transport,
             onion_addresses,
             wormhole_channels,
             onion_service_handle,
@@ -189,6 +197,7 @@ pub mod behaviour {
             latest_rate: LR,
             resume_only: bool,
             env_config: env::Config,
+            lock_input_verifier: LockInputVerifier,
             identify_params: (identity::Keypair, XmrBtcNamespace),
             rendezvous_nodes: Vec<PeerId>,
             connection_limits: connection_limits::ConnectionLimits,
@@ -239,6 +248,7 @@ pub mod behaviour {
                     env_config,
                     latest_rate,
                     resume_only,
+                    lock_input_verifier,
                 ),
                 transfer_proof: transfer_proof::alice(request_response_metrics.clone()),
                 encrypted_signature: encrypted_signature::alice(request_response_metrics.clone()),

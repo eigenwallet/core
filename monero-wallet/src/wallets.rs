@@ -85,7 +85,7 @@ impl Wallets {
 
         // We always register this listener
         // It does essential things like storing the wallet on certain events
-        let handle_listener = WalletHandleListener::new(main_wallet.clone());
+        let handle_listener = WalletHandleListener::new(&main_wallet);
         main_wallet
             .call(move |wallet| {
                 wallet.add_listener(Box::new(handle_listener));
@@ -94,8 +94,7 @@ impl Wallets {
 
         // We only register the UI listener if we are running with Tauri
         if let Some(tauri_handle) = tauri_handle.clone() {
-            let tauri_wallet_listener =
-                TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
+            let tauri_wallet_listener = TauriWalletListener::new(tauri_handle, &main_wallet).await;
 
             main_wallet
                 .call(move |wallet| {
@@ -145,7 +144,7 @@ impl Wallets {
 
         let main_wallet = Arc::new(existing_wallet);
 
-        let handle_listener = WalletHandleListener::new(main_wallet.clone());
+        let handle_listener = WalletHandleListener::new(&main_wallet);
 
         // We always register this listener.
         // It does essential things like storing the wallet on certain events
@@ -157,8 +156,7 @@ impl Wallets {
 
         // We only register the UI listener if we are running with Tauri
         if let Some(tauri_handle) = tauri_handle.clone() {
-            let tauri_wallet_listener =
-                TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
+            let tauri_wallet_listener = TauriWalletListener::new(tauri_handle, &main_wallet).await;
 
             main_wallet
                 .call(move |wallet| {

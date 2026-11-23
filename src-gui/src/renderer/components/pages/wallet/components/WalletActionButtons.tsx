@@ -7,7 +7,9 @@ import WalletDescriptorButton from "./WalletDescriptorButton";
 
 export default function WalletActionButtons() {
   const [showDialog, setShowDialog] = useState(false);
-  const balance = useAppSelector((state) => state.bitcoinWallet.balance);
+  const spendable = useAppSelector(
+    (state) => state.bitcoinWallet.spendableBalance,
+  );
 
   return (
     <>
@@ -27,7 +29,7 @@ export default function WalletActionButtons() {
             variant="button"
             clickable
             onClick={() => setShowDialog(true)}
-            disabled={balance === null || balance <= 0}
+            disabled={spendable === null || spendable <= 0}
           />
           <WalletDescriptorButton />
         </Box>
