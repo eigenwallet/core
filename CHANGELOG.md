@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + CLI: Fix an issue where the general log file (`swap-all.log`) grew without bound and could take up many gigabytes of disk space.
+  It is now split into one file per day, of which the 14 most recent are kept.
+
 ## [5.0.5] - 2026-11-23
 
 - GUI: Enable Apollo ("Backup data on chain") by default for new swaps.
