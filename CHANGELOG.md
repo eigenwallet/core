@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Remove KuCoin as a price source.
+  Delete `price_ticker_rest_url_kucoin` and `price_ticker_source_kucoin_enabled` from the `[maker]` section of your config, because the ASB does not start while they are present.
+
 ## [5.0.5] - 2026-11-23
 
 - GUI: Enable Apollo ("Backup data on chain") by default for new swaps.
