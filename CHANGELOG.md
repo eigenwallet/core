@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - GUI + CLI: Fix an issue where the general log file (`swap-all.log`) grew without bound and could take up many gigabytes of disk space.
   It is now split into one file per day, of which the 14 most recent are kept.
+- ASB: Remove KuCoin as a price source.
+  Delete `price_ticker_rest_url_kucoin` and `price_ticker_source_kucoin_enabled` from the `[maker]` section of your config, because the ASB does not start while they are present.
 
 ## [5.0.5] - 2026-11-23
 

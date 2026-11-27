@@ -110,7 +110,7 @@ impl crate::traits::LatestRate for FixedRate {
 }
 
 /// Produces [`Rate`]s based on [`PriceUpdate`]s from any combination of
-/// kraken, bitfinex, kucoin, and exolix feeds plus a configured spread.
+/// kraken, bitfinex, and exolix feeds plus a configured spread.
 ///
 /// Each feed is optional; at least one must be enabled (enforced at
 /// construction).
@@ -119,7 +119,6 @@ pub struct ExchangeRate {
     ask_spread: Decimal,
     kraken_price_updates: Option<crate::kraken::PriceUpdates>,
     bitfinex_price_updates: Option<crate::bitfinex::PriceUpdates>,
-    kucoin_price_updates: Option<crate::kucoin::PriceUpdates>,
     exolix_price_updates: Option<crate::exolix::PriceUpdates>,
     validity_duration: Duration,
 }
@@ -133,13 +132,11 @@ impl ExchangeRate {
         ask_spread: Decimal,
         kraken_price_updates: Option<crate::kraken::PriceUpdates>,
         bitfinex_price_updates: Option<crate::bitfinex::PriceUpdates>,
-        kucoin_price_updates: Option<crate::kucoin::PriceUpdates>,
         exolix_price_updates: Option<crate::exolix::PriceUpdates>,
         validity_duration: Duration,
     ) -> Result<Self, NoPriceFeedEnabled> {
         if kraken_price_updates.is_none()
             && bitfinex_price_updates.is_none()
-            && kucoin_price_updates.is_none()
             && exolix_price_updates.is_none()
         {
             return Err(NoPriceFeedEnabled);
@@ -148,7 +145,6 @@ impl ExchangeRate {
             ask_spread,
             kraken_price_updates,
             bitfinex_price_updates,
-            kucoin_price_updates,
             exolix_price_updates,
             validity_duration,
         })
@@ -158,16 +154,14 @@ impl ExchangeRate {
 #[derive(PartialEq, Clone, Debug, thiserror::Error)]
 pub enum Error {
     #[error(
-        "All enabled exchanges failed (Kraken: {}, Bitfinex: {}, KuCoin: {}, Exolix: {})",
+        "All enabled exchanges failed (Kraken: {}, Bitfinex: {}, Exolix: {})",
         format_feed_error(kraken),
         format_feed_error(bitfinex),
-        format_feed_error(kucoin),
         format_feed_error(exolix)
     )]
     AllExchanges {
         kraken: Option<crate::kraken::Error>,
         bitfinex: Option<crate::bitfinex::Error>,
-        kucoin: Option<crate::kucoin::Error>,
         exolix: Option<crate::exolix::Error>,
     },
     #[error("All exchange data is stale beyond the configured validity window")]
@@ -197,10 +191,6 @@ impl crate::traits::LatestRate for ExchangeRate {
             .bitfinex_price_updates
             .as_mut()
             .map(|feed| feed.latest_update());
-        let kucoin_update = self
-            .kucoin_price_updates
-            .as_mut()
-            .map(|feed| feed.latest_update());
         let exolix_update = self
             .exolix_price_updates
             .as_mut()
@@ -208,7 +198,6 @@ impl crate::traits::LatestRate for ExchangeRate {
         average_ask(
             kraken_update,
             bitfinex_update,
-            kucoin_update,
             exolix_update,
             self.validity_duration,
         )
@@ -219,27 +208,22 @@ impl crate::traits::LatestRate for ExchangeRate {
 fn average_ask(
     kraken_update: Option<crate::kraken::PriceUpdate>,
     bitfinex_update: Option<crate::bitfinex::PriceUpdate>,
-    kucoin_update: Option<crate::kucoin::PriceUpdate>,
     exolix_update: Option<crate::exolix::PriceUpdate>,
     validity_duration: Duration,
 ) -> Result<bitcoin::Amount, Error> {
     let enabled_sources = usize::from(kraken_update.is_some())
         + usize::from(bitfinex_update.is_some())
-        + usize::from(kucoin_update.is_some())
         + usize::from(exolix_update.is_some());
 
     fn feed_failed<T, E>(u: &Option<Result<T, E>>) -> bool {
         u.as_ref().map(|r| r.is_err()).unwrap_or(true)
     }
-    let all_failed = feed_failed(&kraken_update)
-        && feed_failed(&bitfinex_update)
-        && feed_failed(&kucoin_update)
-        && feed_failed(&exolix_update);
+    let all_failed =
+        feed_failed(&kraken_update) && feed_failed(&bitfinex_update) && feed_failed(&exolix_update);
     if all_failed {
         return Err(Error::AllExchanges {
             kraken: kraken_update.map(|u| u.unwrap_err()),
             bitfinex: bitfinex_update.map(|u| u.unwrap_err()),
-            kucoin: kucoin_update.map(|u| u.unwrap_err()),
             exolix: exolix_update.map(|u| u.unwrap_err()),
         });
     }
@@ -247,12 +231,10 @@ fn average_ask(
     let now = Instant::now();
     let kraken_update = kraken_update.map(|u| u.map(|(ts, u)| (now - ts, u.ask)));
     let bitfinex_update = bitfinex_update.map(|u| u.map(|(ts, u)| (now - ts, u.ask)));
-    let kucoin_update = kucoin_update.map(|u| u.map(|(ts, u)| (now - ts, u.ask)));
     let exolix_update = exolix_update.map(|u| u.map(|(ts, u)| (now - ts, u.ask)));
     let asks: Vec<_> = [
         kraken_update.as_ref().and_then(|u| u.as_ref().ok()),
         bitfinex_update.as_ref().and_then(|u| u.as_ref().ok()),
-        kucoin_update.as_ref().and_then(|u| u.as_ref().ok()),
         exolix_update.as_ref().and_then(|u| u.as_ref().ok()),
     ]
     .into_iter()
@@ -273,9 +255,9 @@ fn average_ask(
 
     let spread = *max_ask - *min_ask;
     if degraded {
-        tracing::warn!(?kraken_update, ?bitfinex_update, ?kucoin_update, ?exolix_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
+        tracing::warn!(?kraken_update, ?bitfinex_update, ?exolix_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
     } else {
-        tracing::debug!(?kraken_update, ?bitfinex_update, ?kucoin_update, ?exolix_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
+        tracing::debug!(?kraken_update, ?bitfinex_update, ?exolix_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
     }
 
     if Decimal::from(spread.to_sat())
@@ -356,12 +338,6 @@ mod tests {
             let bitfinex_update = Ok((
                 now,
                 crate::bitfinex::wire::PriceUpdate {
-                    ask: bitcoin::Amount::from_btc(1.00).unwrap(),
-                },
-            ));
-            let kucoin_update = Ok((
-                now,
-                crate::kucoin::wire::PriceUpdate {
                     ask: bitcoin::Amount::from_btc(1.05).unwrap(),
                 },
             ));
@@ -369,7 +345,6 @@ mod tests {
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
                     None,
                     TEST_VALIDITY
                 ),
@@ -383,21 +358,14 @@ mod tests {
             let kraken_update = Ok((
                 now,
                 crate::kraken::wire::PriceUpdate {
-                    ask: bitcoin::Amount::from_btc(0.95).unwrap(),
+                    ask: bitcoin::Amount::from_btc(1.00).unwrap(),
                 },
             ));
             let bitfinex_update = Err(crate::bitfinex::Error::NotYetAvailable);
-            let kucoin_update = Ok((
-                now,
-                crate::kucoin::wire::PriceUpdate {
-                    ask: bitcoin::Amount::from_btc(1.05).unwrap(),
-                },
-            ));
             assert_eq!(
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
                     None,
                     TEST_VALIDITY
                 ),
@@ -415,12 +383,10 @@ mod tests {
                     ask: bitcoin::Amount::from_btc(1.00).unwrap(),
                 },
             ));
-            let kucoin_update = Err(crate::kucoin::Error::NotYetAvailable);
             assert_eq!(
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
                     None,
                     TEST_VALIDITY
                 ),
@@ -432,19 +398,16 @@ mod tests {
         fn err3() {
             let kraken_update = Err(crate::kraken::Error::NotYetAvailable);
             let bitfinex_update = Err(crate::bitfinex::Error::NotYetAvailable);
-            let kucoin_update = Err(crate::kucoin::Error::NotYetAvailable);
             assert_eq!(
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
                     None,
                     TEST_VALIDITY
                 ),
                 Err(Error::AllExchanges {
                     kraken: Some(crate::kraken::Error::NotYetAvailable),
                     bitfinex: Some(crate::bitfinex::Error::NotYetAvailable),
-                    kucoin: Some(crate::kucoin::Error::NotYetAvailable),
                     exolix: None,
                 })
             );
@@ -465,17 +428,10 @@ mod tests {
                     ask: bitcoin::Amount::from_btc(1.00).unwrap(),
                 },
             ));
-            let kucoin_update = Ok((
-                now,
-                crate::kucoin::wire::PriceUpdate {
-                    ask: bitcoin::Amount::from_btc(1.15).unwrap(),
-                },
-            ));
             assert_eq!(
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
                     None,
                     TEST_VALIDITY
                 ),
@@ -490,7 +446,7 @@ mod tests {
             let kraken_update = Ok((
                 now,
                 crate::kraken::wire::PriceUpdate {
-                    ask: bitcoin::Amount::from_btc(0.95).unwrap(),
+                    ask: bitcoin::Amount::from_btc(1.00).unwrap(),
                 },
             ));
             let bitfinex_update = Ok((
@@ -499,17 +455,10 @@ mod tests {
                     ask: bitcoin::Amount::from_btc(200.00).unwrap(),
                 },
             ));
-            let kucoin_update = Ok((
-                now,
-                crate::kucoin::wire::PriceUpdate {
-                    ask: bitcoin::Amount::from_btc(1.05).unwrap(),
-                },
-            ));
             assert_eq!(
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
                     None,
                     TEST_VALIDITY
                 ),
@@ -528,9 +477,9 @@ mod tests {
                     ask: bitcoin::Amount::from_btc(200.00).unwrap(),
                 },
             ));
-            let kucoin_update = Ok((
+            let exolix_update = Ok((
                 now,
-                crate::kucoin::wire::PriceUpdate {
+                crate::exolix::wire::PriceUpdate {
                     ask: bitcoin::Amount::from_btc(1.00).unwrap(),
                 },
             ));
@@ -538,8 +487,7 @@ mod tests {
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
-                    None,
+                    Some(exolix_update),
                     TEST_VALIDITY
                 ),
                 Ok(bitcoin::Amount::ONE_BTC)
@@ -561,12 +509,6 @@ mod tests {
                     ask: bitcoin::Amount::from_btc(1.00).unwrap(),
                 },
             ));
-            let kucoin_update = Ok((
-                now,
-                crate::kucoin::wire::PriceUpdate {
-                    ask: bitcoin::Amount::from_btc(1.00).unwrap(),
-                },
-            ));
             let exolix_update = Some(Ok((
                 now,
                 crate::exolix::wire::PriceUpdate {
@@ -577,7 +519,6 @@ mod tests {
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
                     exolix_update,
                     TEST_VALIDITY
                 ),
@@ -597,12 +538,6 @@ mod tests {
             let bitfinex_update = Ok((
                 now,
                 crate::bitfinex::wire::PriceUpdate {
-                    ask: bitcoin::Amount::from_btc(1.00).unwrap(),
-                },
-            ));
-            let kucoin_update = Ok((
-                now,
-                crate::kucoin::wire::PriceUpdate {
                     ask: bitcoin::Amount::from_btc(1.05).unwrap(),
                 },
             ));
@@ -614,7 +549,6 @@ mod tests {
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
                     exolix_update,
                     TEST_VALIDITY
                 ),
@@ -623,23 +557,20 @@ mod tests {
         }
 
         #[test]
-        fn all_four_sources_failing_includes_exolix_in_error() {
+        fn all_three_sources_failing_includes_exolix_in_error() {
             let kraken_update = Err(crate::kraken::Error::NotYetAvailable);
             let bitfinex_update = Err(crate::bitfinex::Error::NotYetAvailable);
-            let kucoin_update = Err(crate::kucoin::Error::NotYetAvailable);
             let exolix_update = Some(Err(crate::exolix::Error::NotYetAvailable));
             assert_eq!(
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
                     exolix_update,
                     TEST_VALIDITY
                 ),
                 Err(Error::AllExchanges {
                     kraken: Some(crate::kraken::Error::NotYetAvailable),
                     bitfinex: Some(crate::bitfinex::Error::NotYetAvailable),
-                    kucoin: Some(crate::kucoin::Error::NotYetAvailable),
                     exolix: Some(crate::exolix::Error::NotYetAvailable),
                 })
             );
@@ -650,7 +581,6 @@ mod tests {
             let now = Instant::now();
             let kraken_update = Err(crate::kraken::Error::NotYetAvailable);
             let bitfinex_update = Err(crate::bitfinex::Error::NotYetAvailable);
-            let kucoin_update = Err(crate::kucoin::Error::NotYetAvailable);
             let exolix_update = Some(Ok((
                 now,
                 crate::exolix::wire::PriceUpdate {
@@ -661,7 +591,6 @@ mod tests {
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
                     exolix_update,
                     TEST_VALIDITY
                 ),
@@ -684,17 +613,10 @@ mod tests {
                     ask: bitcoin::Amount::from_btc(1.00).unwrap(),
                 },
             ));
-            let kucoin_update = Ok((
-                old,
-                crate::kucoin::wire::PriceUpdate {
-                    ask: bitcoin::Amount::from_btc(1.05).unwrap(),
-                },
-            ));
             assert_eq!(
                 average_ask(
                     Some(kraken_update),
                     Some(bitfinex_update),
-                    Some(kucoin_update),
                     None,
                     TEST_VALIDITY
                 ),

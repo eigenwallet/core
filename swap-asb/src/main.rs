@@ -241,14 +241,6 @@ pub async fn main() -> Result<()> {
             } else {
                 None
             };
-            let kucoin_price_updates = if config.maker.price_ticker_source_kucoin_enabled {
-                Some(swap_feed::connect_kucoin(
-                    config.maker.price_ticker_rest_url_kucoin.clone(),
-                    reqwest::Client::new(),
-                )?)
-            } else {
-                None
-            };
             let exolix_poll_interval = std::time::Duration::from_secs(
                 config.maker.price_ticker_rest_poll_interval_exolix_secs,
             );
@@ -268,7 +260,6 @@ pub async fn main() -> Result<()> {
             tracing::info!(
                 kraken = kraken_price_updates.is_some(),
                 bitfinex = bitfinex_price_updates.is_some(),
-                kucoin = kucoin_price_updates.is_some(),
                 exolix = exolix_price_updates.is_some(),
                 "Price feed sources",
             );
@@ -279,7 +270,6 @@ pub async fn main() -> Result<()> {
                 config.maker.ask_spread,
                 kraken_price_updates,
                 bitfinex_price_updates,
-                kucoin_price_updates,
                 exolix_price_updates,
                 price_validity_duration,
             )

@@ -225,8 +225,8 @@ pub mod wire {
                 return Err(Error::NonPositive(value.from_amount));
             }
             // Route through the decimal string representation to avoid
-            // binary-float drift. This matches how kraken/kucoin parse
-            // their wire values.
+            // binary-float drift. This matches how kraken parses
+            // its wire values.
             let rendered = value.from_amount.to_string();
             let ask = bitcoin::Amount::from_str_in(&rendered, bitcoin::Denomination::Bitcoin)
                 .map_err(|source| Error::AmountParse {
