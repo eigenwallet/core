@@ -5,7 +5,7 @@ mod wallet_setup;
 use crate::cli::api::tauri_bindings::ContextStatus;
 use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::{bootstrap_tor_client, create_tor_client};
-use crate::common::tracing_util::Format;
+use crate::common::tracing_util::{Format, GeneralLogRetention};
 use crate::database::{AccessMode, open_db};
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
@@ -34,6 +34,8 @@ use uuid::Uuid;
 use super::watcher::Watcher;
 
 static START: Once = Once::new();
+
+const GENERAL_LOG_RETENTION_DAYS: usize = 14;
 
 mod config {
     use super::*;
@@ -581,6 +583,7 @@ mod builder {
                 let _ = common::tracing_util::init(
                     format,
                     log_dir.clone(),
+                    GeneralLogRetention::Days(GENERAL_LOG_RETENTION_DAYS),
                     self.tauri_handle.clone(),
                     true,
                 );

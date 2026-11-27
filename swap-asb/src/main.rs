@@ -31,7 +31,7 @@ use swap::asb::{
     EventLoop, ExchangeRate, Finality, cancel, grant_mercy, punish, redeem, refund, safely_abort,
 };
 use swap::common::tor::{bootstrap_tor_client, create_tor_client};
-use swap::common::tracing_util::Format;
+use swap::common::tracing_util::{Format, GeneralLogRetention};
 use swap::common::{self, get_logs, warn_if_outdated};
 use swap::database::{AccessMode, open_db};
 use swap::monero;
@@ -56,7 +56,8 @@ fn initialize_tracing(json: bool, config: &Config, trace: bool) -> Result<()> {
     let format = if json { Format::Json } else { Format::Raw };
     let log_dir = config.data.dir.join("logs");
 
-    common::tracing_util::init(format, log_dir, None, trace).expect("initialize tracing");
+    common::tracing_util::init(format, log_dir, GeneralLogRetention::Forever, None, trace)
+        .expect("initialize tracing");
 
     tracing::info!(
         binary = "asb",

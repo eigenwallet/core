@@ -2,7 +2,7 @@ use std::io;
 use std::path::Path;
 use std::str::FromStr;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::filter::{Directive, LevelFilter};
 use tracing_subscriber::fmt::MakeWriter;
@@ -47,6 +47,14 @@ pub enum Format {
     Json,
 }
 
+/// How long the general log (swap-all*.log) is kept on disk.
+pub enum GeneralLogRetention {
+    /// A single file which is never rotated or deleted.
+    Forever,
+    /// One file per day, of which only the most recent ones are kept.
+    Days(usize),
+}
+
 /// Initialize tracing and enable logging messages according to these options.
 /// Besides printing to `stdout`, this will append to a log file.
 /// Said file will contain JSON-formatted logs of all levels,
@@ -55,13 +63,13 @@ pub enum Format {
 pub fn init(
     format: Format,
     dir: impl AsRef<Path>,
+    general_log_retention: GeneralLogRetention,
     tauri_handle: Option<TauriHandle>,
     trace_stdout: bool,
 ) -> Result<()> {
     // Write our crates to the general log file at DEBUG level
     let file_layer = {
-        let file_appender: RollingFileAppender =
-            tracing_appender::rolling::never(&dir, "swap-all.log");
+        let file_appender = general_log_appender(&dir, general_log_retention)?;
 
         fmt::layer()
             .with_writer(file_appender)
@@ -181,10 +189,29 @@ pub fn init(
     // Now we can use the tracing macros to log messages
     tracing::info!(
         logs_dir = %dir.as_ref().display(),
-        "Initialized tracing. General logs go to swap-all.log; verbose logs: tracing*.log (ours), tracing-tor*.log (tor), tracing-libp2p*.log (libp2p)"
+        "Initialized tracing. General logs go to swap-all*.log. Verbose logs: tracing*.log (ours), tracing-tor*.log (tor), tracing-libp2p*.log (libp2p)"
     );
 
     Ok(())
+}
+
+fn general_log_appender(
+    dir: impl AsRef<Path>,
+    retention: GeneralLogRetention,
+) -> Result<RollingFileAppender> {
+    let GeneralLogRetention::Days(days) = retention else {
+        return Ok(tracing_appender::rolling::never(dir, "swap-all.log"));
+    };
+
+    // The prefix also matches a `swap-all.log` written by `GeneralLogRetention::Forever`,
+    // so that file is pruned like any other.
+    RollingFileAppender::builder()
+        .rotation(Rotation::DAILY)
+        .filename_prefix("swap-all")
+        .filename_suffix("log")
+        .max_log_files(days)
+        .build(dir)
+        .context("Failed to initialize the general log file appender")
 }
 
 /// This function controls which crate's logs actually get logged and from which level, including all crate categories.
