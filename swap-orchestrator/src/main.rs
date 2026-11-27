@@ -388,7 +388,6 @@ fn main() {
                 hermes_min_swap_amount: swap_env::config::default_hermes_min_swap_amount(),
                 price_ticker_ws_url_kraken: defaults.price_ticker_ws_url_kraken,
                 price_ticker_ws_url_bitfinex: defaults.price_ticker_ws_url_bitfinex,
-                price_ticker_rest_url_kucoin: defaults.price_ticker_rest_url_kucoin,
                 price_ticker_rest_url_exolix: defaults.price_ticker_rest_url_exolix,
                 price_ticker_source_exolix_api_key: None,
                 price_ticker_rest_poll_interval_exolix_secs:
@@ -396,7 +395,6 @@ fn main() {
                 price_ticker_validity_duration_secs: default_price_ticker_validity_duration_secs(),
                 price_ticker_source_kraken_enabled: default_price_ticker_source_enabled(),
                 price_ticker_source_bitfinex_enabled: default_price_ticker_source_enabled(),
-                price_ticker_source_kucoin_enabled: default_price_ticker_source_enabled(),
                 external_bitcoin_redeem_address: None,
                 btc_redeem_base_fee_multiplier:
                     swap_env::config::default_btc_redeem_base_fee_multiplier(),
