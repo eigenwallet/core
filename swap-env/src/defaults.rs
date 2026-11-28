@@ -42,7 +42,7 @@ pub const DEFAULT_SPREAD: f64 = 0.02f64;
 pub const KRAKEN_PRICE_TICKER_WS_URL: &str = "wss://ws.kraken.com";
 pub const BITFINEX_PRICE_TICKER_WS_URL: &str = "wss://api-pub.bitfinex.com/ws/2";
 pub const EXOLIX_PRICE_TICKER_REST_URL: &str = "https://exolix.com/api/v2/rate";
-pub const HTX_PRICE_TICKER_REST_URL: &str = "https://api.huobi.pro/market/detail/merged";
+pub const HTX_PRICE_TICKER_REST_URL: &str = "https://api.htx.com/market/detail/merged";
 
 pub fn default_rendezvous_points() -> Vec<Multiaddr> {
     vec![

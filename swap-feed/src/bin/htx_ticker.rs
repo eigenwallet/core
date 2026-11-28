@@ -7,7 +7,7 @@ async fn main() -> Result<()> {
         tracing_subscriber::fmt().with_env_filter("debug").finish(),
     )?;
 
-    let rest_url = Url::parse("https://api.huobi.pro/market/detail/merged")?;
+    let rest_url = Url::parse("https://api.htx.com/market/detail/merged")?;
     let mut ticker = swap_feed::htx::connect(
         rest_url,
         std::time::Duration::from_secs(10),
