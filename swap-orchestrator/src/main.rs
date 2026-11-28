@@ -389,6 +389,10 @@ fn main() {
                 price_ticker_ws_url_kraken: defaults.price_ticker_ws_url_kraken,
                 price_ticker_ws_url_bitfinex: defaults.price_ticker_ws_url_bitfinex,
                 price_ticker_rest_url_exolix: defaults.price_ticker_rest_url_exolix,
+                price_ticker_rest_url_htx: defaults.price_ticker_rest_url_htx,
+                price_ticker_source_htx_enabled: default_price_ticker_source_enabled(),
+                price_ticker_rest_url_hyperliquid: defaults.price_ticker_rest_url_hyperliquid,
+                price_ticker_source_hyperliquid_enabled: default_price_ticker_source_enabled(),
                 price_ticker_source_exolix_api_key: None,
                 price_ticker_rest_poll_interval_exolix_secs:
                     default_price_ticker_rest_poll_interval_exolix_secs(),

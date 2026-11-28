@@ -1,5 +1,7 @@
 pub mod bitfinex;
 pub mod exolix;
+pub mod htx;
+pub mod hyperliquid;
 pub mod kraken;
 pub mod rate;
 pub mod traits;
@@ -9,6 +11,8 @@ pub use kraken::{Error as KrakenError, PriceUpdates, connect};
 pub use rate::{ExchangeRate, FixedRate, Rate};
 pub use traits::LatestRate;
 
+mod cross_rate;
+mod rest;
 mod ticker;
 
 // Core functions
@@ -27,4 +31,15 @@ pub fn connect_exolix(
     client: reqwest::Client,
 ) -> anyhow::Result<exolix::PriceUpdates> {
     exolix::connect(url, api_key, poll_interval, client)
+}
+
+pub fn connect_htx(url: url::Url, client: reqwest::Client) -> anyhow::Result<htx::PriceUpdates> {
+    htx::connect(url, client)
+}
+
+pub fn connect_hyperliquid(
+    url: url::Url,
+    client: reqwest::Client,
+) -> anyhow::Result<hyperliquid::PriceUpdates> {
+    hyperliquid::connect(url, client)
 }

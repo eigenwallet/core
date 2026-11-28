@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Add HTX and Hyperliquid as sources for the XMR/BTC price.
+  They are on by default.
+  Set `maker.price_ticker_source_htx_enabled = false` or `maker.price_ticker_source_hyperliquid_enabled = false` to turn one off.
 - GUI + CLI: Fix an issue where the general log file (`swap-all.log`) grew without bound and could take up many gigabytes of disk space.
   It is now split into one file per day, of which the 14 most recent are kept.
 - ASB: Remove KuCoin as a price source.

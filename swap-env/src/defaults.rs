@@ -42,6 +42,8 @@ pub const DEFAULT_SPREAD: f64 = 0.02f64;
 pub const KRAKEN_PRICE_TICKER_WS_URL: &str = "wss://ws.kraken.com";
 pub const BITFINEX_PRICE_TICKER_WS_URL: &str = "wss://api-pub.bitfinex.com/ws/2";
 pub const EXOLIX_PRICE_TICKER_REST_URL: &str = "https://exolix.com/api/v2/rate";
+pub const HTX_PRICE_TICKER_REST_URL: &str = "https://api.htx.com/market/detail/merged";
+pub const HYPERLIQUID_PRICE_TICKER_REST_URL: &str = "https://api.hyperliquid.xyz/info";
 
 pub fn default_rendezvous_points() -> Vec<Multiaddr> {
     vec![
@@ -105,6 +107,8 @@ pub struct Defaults {
     pub price_ticker_ws_url_kraken: Url,
     pub price_ticker_ws_url_bitfinex: Url,
     pub price_ticker_rest_url_exolix: Url,
+    pub price_ticker_rest_url_htx: Url,
+    pub price_ticker_rest_url_hyperliquid: Url,
     pub bitcoin_confirmation_target: u16,
     pub use_mempool_space_fee_estimation: bool,
     pub developer_tip: Decimal,
@@ -123,6 +127,8 @@ impl GetDefaults for Mainnet {
             price_ticker_ws_url_kraken: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             price_ticker_ws_url_bitfinex: Url::parse(BITFINEX_PRICE_TICKER_WS_URL)?,
             price_ticker_rest_url_exolix: Url::parse(EXOLIX_PRICE_TICKER_REST_URL)?,
+            price_ticker_rest_url_htx: Url::parse(HTX_PRICE_TICKER_REST_URL)?,
+            price_ticker_rest_url_hyperliquid: Url::parse(HYPERLIQUID_PRICE_TICKER_REST_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,
@@ -145,6 +151,8 @@ impl GetDefaults for Testnet {
             price_ticker_ws_url_kraken: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             price_ticker_ws_url_bitfinex: Url::parse(BITFINEX_PRICE_TICKER_WS_URL)?,
             price_ticker_rest_url_exolix: Url::parse(EXOLIX_PRICE_TICKER_REST_URL)?,
+            price_ticker_rest_url_htx: Url::parse(HTX_PRICE_TICKER_REST_URL)?,
+            price_ticker_rest_url_hyperliquid: Url::parse(HYPERLIQUID_PRICE_TICKER_REST_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,

@@ -1,6 +1,6 @@
 use crate::defaults::{
     BITFINEX_PRICE_TICKER_WS_URL, EXOLIX_PRICE_TICKER_REST_URL, GetDefaults,
-    KRAKEN_PRICE_TICKER_WS_URL,
+    HTX_PRICE_TICKER_REST_URL, HYPERLIQUID_PRICE_TICKER_REST_URL, KRAKEN_PRICE_TICKER_WS_URL,
 };
 use crate::env::{Mainnet, Testnet};
 use crate::prompt;
@@ -178,15 +178,25 @@ pub struct Maker {
     pub price_ticker_ws_url_bitfinex: Url,
     #[serde(default = "default_price_ticker_rest_url_exolix")]
     pub price_ticker_rest_url_exolix: Url,
+    #[serde(default = "default_price_ticker_rest_url_htx")]
+    pub price_ticker_rest_url_htx: Url,
+    #[serde(default = "default_price_ticker_rest_url_hyperliquid")]
+    pub price_ticker_rest_url_hyperliquid: Url,
     /// Whether the Kraken price feed contributes to the XMR/BTC rate.
     #[serde(default = "default_price_ticker_source_enabled")]
     pub price_ticker_source_kraken_enabled: bool,
     /// Whether the Bitfinex price feed contributes to the XMR/BTC rate.
     #[serde(default = "default_price_ticker_source_enabled")]
     pub price_ticker_source_bitfinex_enabled: bool,
+    /// Whether the HTX price feed contributes to the XMR/BTC rate.
+    #[serde(default = "default_price_ticker_source_enabled")]
+    pub price_ticker_source_htx_enabled: bool,
+    /// Whether the Hyperliquid price feed contributes to the XMR/BTC rate.
+    #[serde(default = "default_price_ticker_source_enabled")]
+    pub price_ticker_source_hyperliquid_enabled: bool,
     /// Optional Exolix API key. When set, the Exolix rate endpoint is
-    /// polled and included in the price average alongside Kraken
-    /// and Bitfinex.
+    /// polled and included in the price average alongside the
+    /// other enabled sources.
     #[serde(default)]
     pub price_ticker_source_exolix_api_key: Option<String>,
     /// How often the Exolix REST rate endpoint is polled, in seconds.
@@ -194,7 +204,7 @@ pub struct Maker {
     pub price_ticker_rest_poll_interval_exolix_secs: u64,
     /// How long a polled/streamed exchange-rate sample remains usable
     /// before it is discarded as stale (in seconds). Applies uniformly
-    /// to all feeds (Kraken, Bitfinex, Exolix).
+    /// to all feeds (Kraken, Bitfinex, Exolix, HTX, Hyperliquid).
     #[serde(default = "default_price_ticker_validity_duration_secs")]
     pub price_ticker_validity_duration_secs: u64,
     /// If specified, Bitcoin received from successful swaps will be sent to this address.
@@ -270,6 +280,14 @@ fn default_price_ticker_ws_url_bitfinex() -> Url {
 
 fn default_price_ticker_rest_url_exolix() -> Url {
     Url::parse(EXOLIX_PRICE_TICKER_REST_URL).expect("default exolix rest url to be valid")
+}
+
+fn default_price_ticker_rest_url_htx() -> Url {
+    Url::parse(HTX_PRICE_TICKER_REST_URL).expect("default htx rest url to be valid")
+}
+
+fn default_price_ticker_rest_url_hyperliquid() -> Url {
+    Url::parse(HYPERLIQUID_PRICE_TICKER_REST_URL).expect("default hyperliquid rest url to be valid")
 }
 
 pub fn default_price_ticker_rest_poll_interval_exolix_secs() -> u64 {
@@ -529,6 +547,10 @@ pub fn query_user_for_initial_config_with_network(
             price_ticker_ws_url_kraken: defaults.price_ticker_ws_url_kraken,
             price_ticker_ws_url_bitfinex: defaults.price_ticker_ws_url_bitfinex,
             price_ticker_rest_url_exolix: defaults.price_ticker_rest_url_exolix,
+            price_ticker_rest_url_htx: defaults.price_ticker_rest_url_htx,
+            price_ticker_source_htx_enabled: default_price_ticker_source_enabled(),
+            price_ticker_rest_url_hyperliquid: defaults.price_ticker_rest_url_hyperliquid,
+            price_ticker_source_hyperliquid_enabled: default_price_ticker_source_enabled(),
             price_ticker_source_exolix_api_key: None,
             price_ticker_rest_poll_interval_exolix_secs:
                 default_price_ticker_rest_poll_interval_exolix_secs(),
