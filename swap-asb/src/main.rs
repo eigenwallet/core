@@ -241,6 +241,17 @@ pub async fn main() -> Result<()> {
             } else {
                 None
             };
+            let htx_price_updates = if config.maker.price_ticker_source_htx_enabled {
+                Some(swap_feed::connect_htx(
+                    config.maker.price_ticker_rest_url_htx.clone(),
+                    std::time::Duration::from_secs(
+                        config.maker.price_ticker_rest_poll_interval_htx_secs,
+                    ),
+                    reqwest::Client::new(),
+                )?)
+            } else {
+                None
+            };
             let exolix_poll_interval = std::time::Duration::from_secs(
                 config.maker.price_ticker_rest_poll_interval_exolix_secs,
             );
@@ -261,6 +272,7 @@ pub async fn main() -> Result<()> {
                 kraken = kraken_price_updates.is_some(),
                 bitfinex = bitfinex_price_updates.is_some(),
                 exolix = exolix_price_updates.is_some(),
+                htx = htx_price_updates.is_some(),
                 "Price feed sources",
             );
 
@@ -271,6 +283,7 @@ pub async fn main() -> Result<()> {
                 kraken_price_updates,
                 bitfinex_price_updates,
                 exolix_price_updates,
+                htx_price_updates,
                 price_validity_duration,
             )
             .context("Invalid price feed configuration")?;

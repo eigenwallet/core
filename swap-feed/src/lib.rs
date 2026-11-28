@@ -1,5 +1,6 @@
 pub mod bitfinex;
 pub mod exolix;
+pub mod htx;
 pub mod kraken;
 pub mod rate;
 pub mod traits;
@@ -27,4 +28,12 @@ pub fn connect_exolix(
     client: reqwest::Client,
 ) -> anyhow::Result<exolix::PriceUpdates> {
     exolix::connect(url, api_key, poll_interval, client)
+}
+
+pub fn connect_htx(
+    url: url::Url,
+    poll_interval: std::time::Duration,
+    client: reqwest::Client,
+) -> anyhow::Result<htx::PriceUpdates> {
+    htx::connect(url, poll_interval, client)
 }
