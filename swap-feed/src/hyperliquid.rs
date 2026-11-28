@@ -28,79 +28,41 @@ pub struct HyperliquidParams {
 pub(crate) mod connection {
     use super::{HyperliquidParams, wire};
     use anyhow::Result;
-    use futures::StreamExt;
-    use futures::stream::{self, BoxStream};
+    use futures::stream::BoxStream;
+    use std::convert::Infallible;
     use std::sync::Arc;
-    use std::time::Duration;
-
-    const POLL_INTERVAL: Duration = Duration::from_secs(10);
-
-    /// A failed poll ends the stream with an error. The ticker then retries with backoff.
-    pub async fn new(
-        params: Arc<HyperliquidParams>,
-    ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, FetchError>>> {
-        let stream = stream::unfold((params, true), |(params, first)| async move {
-            if !first {
-                tokio::time::sleep(POLL_INTERVAL).await;
-            }
-
-            Some((fetch_rate(&params).await, (params, false)))
-        })
-        .boxed();
-
-        Ok(stream)
-    }
-
-    async fn fetch_rate(params: &HyperliquidParams) -> Result<wire::PriceUpdate, FetchError> {
-        let response = params
-            .client
-            .post(params.rest_url.clone())
-            .json(&wire::InfoRequest::meta_and_asset_ctxs())
-            .header("Accept", "application/json")
-            .send()
-            .await
-            .map_err(FetchError::Request)?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.map_err(FetchError::BodyRead)?;
-            return Err(FetchError::Status { status, body });
-        }
-
-        let bytes = response.bytes().await.map_err(FetchError::BodyRead)?;
-        let body: wire::MetaAndAssetCtxs =
-            serde_json::from_slice(&bytes).map_err(FetchError::Decode)?;
-
-        Ok(wire::PriceUpdate::try_from(body)?)
-    }
 
     #[derive(Debug, thiserror::Error)]
-    pub enum FetchError {
-        #[error("Hyperliquid HTTP request failed")]
-        Request(#[source] reqwest::Error),
-        #[error("Failed to read Hyperliquid response body")]
-        BodyRead(#[source] reqwest::Error),
-        #[error("Hyperliquid returned non-success status {status}: {body}")]
-        Status {
-            status: reqwest::StatusCode,
-            body: String,
-        },
-        #[error("Failed to decode Hyperliquid JSON response")]
-        Decode(#[source] serde_json::Error),
+    pub enum PollError {
+        #[error("Failed to fetch Hyperliquid prices")]
+        Fetch(#[from] crate::rest::FetchError),
         #[error("Invalid Hyperliquid price payload")]
         Parse(#[from] wire::Error),
+    }
+
+    pub async fn new(
+        params: Arc<HyperliquidParams>,
+    ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Infallible>>> {
+        Ok(crate::rest::poll("Hyperliquid", params, fetch_rate))
+    }
+
+    async fn fetch_rate(params: Arc<HyperliquidParams>) -> Result<wire::PriceUpdate, PollError> {
+        let request = params
+            .client
+            .post(params.rest_url.clone())
+            .json(&wire::InfoRequest::meta_and_asset_ctxs());
+        let response: wire::MetaAndAssetCtxs = crate::rest::fetch_json(request).await?;
+
+        Ok(wire::PriceUpdate::try_from(response)?)
     }
 }
 
 pub mod wire {
-    use bitcoin::amount::ParseAmountError;
-    use rust_decimal::{Decimal, RoundingStrategy};
+    use rust_decimal::Decimal;
     use serde::{Deserialize, Serialize};
 
     const XMR_PERPETUAL: &str = "XMR";
     const BTC_PERPETUAL: &str = "BTC";
-
-    const BTC_DECIMAL_PLACES: u32 = 8;
 
     /// Body of `POST /info`.
     #[derive(Debug, Serialize)]
@@ -148,31 +110,27 @@ pub mod wire {
     pub enum Error {
         #[error("Hyperliquid did not list the {0} perpetual")]
         PerpetualMissing(&'static str),
+        #[error("Hyperliquid sent no asset context for the {0} perpetual")]
+        AssetCtxMissing(&'static str),
         #[error("Hyperliquid sent no mark price for the {0} perpetual")]
         MarkPriceMissing(&'static str),
         #[error("Hyperliquid sent no oracle price for the {0} perpetual")]
         OraclePriceMissing(&'static str),
-        #[error("Hyperliquid returned a non-positive price: {0}")]
-        NonPositive(Decimal),
-        #[error("XMR/BTC rate derived from Hyperliquid prices overflowed")]
-        Overflow,
-        #[error("Failed to parse Hyperliquid rate {rate} as a Bitcoin amount")]
-        AmountParse {
-            rate: Decimal,
-            #[source]
-            source: ParseAmountError,
-        },
+        #[error("Failed to derive the XMR/BTC rate from Hyperliquid prices")]
+        CrossRate(#[from] crate::cross_rate::Error),
     }
 
     impl MetaAndAssetCtxs {
         fn asset_ctx(&self, name: &'static str) -> Result<&AssetCtx, Error> {
             let MetaAndAssetCtxs(meta, asset_ctxs) = self;
 
-            meta.universe
+            let index = meta
+                .universe
                 .iter()
                 .position(|perpetual| perpetual.name == name)
-                .and_then(|index| asset_ctxs.get(index))
-                .ok_or(Error::PerpetualMissing(name))
+                .ok_or(Error::PerpetualMissing(name))?;
+
+            asset_ctxs.get(index).ok_or(Error::AssetCtxMissing(name))
         }
     }
 
@@ -189,19 +147,7 @@ pub mod wire {
                 .oracle_px
                 .ok_or(Error::OraclePriceMissing(BTC_PERPETUAL))?;
 
-            for price in [xmr_mark, btc_oracle] {
-                if price <= Decimal::ZERO {
-                    return Err(Error::NonPositive(price));
-                }
-            }
-
-            let rate = xmr_mark
-                .checked_div(btc_oracle)
-                .ok_or(Error::Overflow)?
-                .round_dp_with_strategy(BTC_DECIMAL_PLACES, RoundingStrategy::ToPositiveInfinity);
-            let ask =
-                bitcoin::Amount::from_str_in(&rate.to_string(), bitcoin::Denomination::Bitcoin)
-                    .map_err(|source| Error::AmountParse { rate, source })?;
+            let ask = crate::cross_rate::cross_rate(xmr_mark, btc_oracle)?;
 
             Ok(PriceUpdate { ask })
         }
@@ -245,13 +191,46 @@ pub mod wire {
         }
 
         #[test]
-        fn rejects_zero_price() {
+        fn rejects_response_with_fewer_asset_ctxs_than_perpetuals() {
+            let MetaAndAssetCtxs(meta, mut asset_ctxs) = serde_json::from_str(RESPONSE).unwrap();
+            asset_ctxs.pop();
+
+            assert!(matches!(
+                PriceUpdate::try_from(MetaAndAssetCtxs(meta, asset_ctxs)),
+                Err(Error::AssetCtxMissing(XMR_PERPETUAL))
+            ));
+        }
+
+        #[test]
+        fn rejects_missing_xmr_mark_price() {
             let response: MetaAndAssetCtxs =
-                serde_json::from_str(&RESPONSE.replace("\"59221.9\"", "\"0.0\"")).unwrap();
+                serde_json::from_str(&RESPONSE.replace("\"440.35\"", "null")).unwrap();
 
             assert!(matches!(
                 PriceUpdate::try_from(response),
-                Err(Error::NonPositive(_))
+                Err(Error::MarkPriceMissing(XMR_PERPETUAL))
+            ));
+        }
+
+        #[test]
+        fn rejects_missing_btc_oracle_price() {
+            let response: MetaAndAssetCtxs =
+                serde_json::from_str(&RESPONSE.replace("\"59221.9\"", "null")).unwrap();
+
+            assert!(matches!(
+                PriceUpdate::try_from(response),
+                Err(Error::OraclePriceMissing(BTC_PERPETUAL))
+            ));
+        }
+
+        #[test]
+        fn rejects_zero_xmr_mark_price() {
+            let response: MetaAndAssetCtxs =
+                serde_json::from_str(&RESPONSE.replace("\"440.35\"", "\"0.0\"")).unwrap();
+
+            assert!(matches!(
+                PriceUpdate::try_from(response),
+                Err(Error::CrossRate(crate::cross_rate::Error::NonPositive(_)))
             ));
         }
     }

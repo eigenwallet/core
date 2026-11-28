@@ -143,8 +143,10 @@ Metric labels contain fixed outcome names, never peer or job IDs.
 `wallet_snapshot_cache_ttl_secs` controls how long wallet state is reused during swap setup. It defaults to `20` seconds. This reduces repeated Bitcoin and Monero health checks, Monero balance calls, and Bitcoin address generation across setup requests.
 
 In order to be able to trade, the ASB must define a price to be able to agree on the amounts to be swapped with a CLI.
-The `XMR<>BTC` price is currently determined by the price from the central exchange Kraken.
-Upon startup the ASB connects to the Kraken price websocket and listens on the stream for price updates.
+The `XMR<>BTC` price is the mean of the prices from the enabled price sources.
+Kraken, Bitfinex, HTX and Hyperliquid are enabled by default.
+Set `price_ticker_source_kraken_enabled`, `price_ticker_source_bitfinex_enabled`, `price_ticker_source_htx_enabled` or `price_ticker_source_hyperliquid_enabled` to `false` to turn a source off.
+Upon startup the ASB connects to each enabled source and listens for price updates.
 You can plug in a different price ticker websocket using the `price_ticker_ws_url_kraken` and `price_ticker_ws_url_bitfinex` configuration options.
 You will have to make sure that the format returned is the same as the format used by Kraken and Bitfinex.
 

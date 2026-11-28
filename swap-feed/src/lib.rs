@@ -11,6 +11,8 @@ pub use kraken::{Error as KrakenError, PriceUpdates, connect};
 pub use rate::{ExchangeRate, FixedRate, Rate};
 pub use traits::LatestRate;
 
+mod cross_rate;
+mod rest;
 mod ticker;
 
 // Core functions

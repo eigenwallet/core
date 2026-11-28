@@ -195,8 +195,8 @@ pub struct Maker {
     #[serde(default = "default_price_ticker_source_enabled")]
     pub price_ticker_source_hyperliquid_enabled: bool,
     /// Optional Exolix API key. When set, the Exolix rate endpoint is
-    /// polled and included in the price average alongside Kraken
-    /// and Bitfinex.
+    /// polled and included in the price average alongside the
+    /// other enabled sources.
     #[serde(default)]
     pub price_ticker_source_exolix_api_key: Option<String>,
     /// How often the Exolix REST rate endpoint is polled, in seconds.

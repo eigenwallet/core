@@ -692,6 +692,75 @@ mod tests {
         }
 
         #[test]
+        fn htx_only_all_others_failed() {
+            let now = Instant::now();
+            let kraken_update = Err(crate::kraken::Error::NotYetAvailable);
+            let bitfinex_update = Err(crate::bitfinex::Error::NotYetAvailable);
+            let htx_update = Ok((
+                now,
+                crate::htx::wire::PriceUpdate {
+                    ask: bitcoin::Amount::ONE_BTC,
+                },
+            ));
+            assert_eq!(
+                average_ask(
+                    Some(kraken_update),
+                    Some(bitfinex_update),
+                    None,
+                    Some(htx_update),
+                    None,
+                    TEST_VALIDITY
+                ),
+                Ok(bitcoin::Amount::ONE_BTC)
+            );
+        }
+
+        #[test]
+        fn hyperliquid_only_all_others_failed() {
+            let now = Instant::now();
+            let kraken_update = Err(crate::kraken::Error::NotYetAvailable);
+            let bitfinex_update = Err(crate::bitfinex::Error::NotYetAvailable);
+            let hyperliquid_update = Ok((
+                now,
+                crate::hyperliquid::wire::PriceUpdate {
+                    ask: bitcoin::Amount::ONE_BTC,
+                },
+            ));
+            assert_eq!(
+                average_ask(
+                    Some(kraken_update),
+                    Some(bitfinex_update),
+                    None,
+                    None,
+                    Some(hyperliquid_update),
+                    TEST_VALIDITY
+                ),
+                Ok(bitcoin::Amount::ONE_BTC)
+            );
+        }
+
+        #[test]
+        fn all_five_sources_failing_are_all_in_error() {
+            assert_eq!(
+                average_ask(
+                    Some(Err(crate::kraken::Error::NotYetAvailable)),
+                    Some(Err(crate::bitfinex::Error::NotYetAvailable)),
+                    Some(Err(crate::exolix::Error::NotYetAvailable)),
+                    Some(Err(crate::htx::Error::NotYetAvailable)),
+                    Some(Err(crate::hyperliquid::Error::NotYetAvailable)),
+                    TEST_VALIDITY
+                ),
+                Err(Error::AllExchanges {
+                    kraken: Some(crate::kraken::Error::NotYetAvailable),
+                    bitfinex: Some(crate::bitfinex::Error::NotYetAvailable),
+                    exolix: Some(crate::exolix::Error::NotYetAvailable),
+                    htx: Some(crate::htx::Error::NotYetAvailable),
+                    hyperliquid: Some(crate::hyperliquid::Error::NotYetAvailable),
+                })
+            );
+        }
+
+        #[test]
         fn exolix_only_all_others_failed() {
             let now = Instant::now();
             let kraken_update = Err(crate::kraken::Error::NotYetAvailable);
