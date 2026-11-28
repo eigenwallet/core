@@ -110,8 +110,11 @@ pub mod wire {
     pub enum Error {
         #[error("Hyperliquid did not list the {0} perpetual")]
         PerpetualMissing(&'static str),
-        #[error("Hyperliquid sent no asset context for the {0} perpetual")]
-        AssetCtxMissing(&'static str),
+        #[error("Hyperliquid sent {asset_ctxs} asset contexts for {perpetuals} perpetuals")]
+        AssetCtxCountMismatch {
+            perpetuals: usize,
+            asset_ctxs: usize,
+        },
         #[error("Hyperliquid sent no mark price for the {0} perpetual")]
         MarkPriceMissing(&'static str),
         #[error("Hyperliquid sent no oracle price for the {0} perpetual")]
@@ -124,13 +127,19 @@ pub mod wire {
         fn asset_ctx(&self, name: &'static str) -> Result<&AssetCtx, Error> {
             let MetaAndAssetCtxs(meta, asset_ctxs) = self;
 
-            let index = meta
-                .universe
-                .iter()
-                .position(|perpetual| perpetual.name == name)
-                .ok_or(Error::PerpetualMissing(name))?;
+            if meta.universe.len() != asset_ctxs.len() {
+                return Err(Error::AssetCtxCountMismatch {
+                    perpetuals: meta.universe.len(),
+                    asset_ctxs: asset_ctxs.len(),
+                });
+            }
 
-            asset_ctxs.get(index).ok_or(Error::AssetCtxMissing(name))
+            meta.universe
+                .iter()
+                .zip(asset_ctxs)
+                .find(|(perpetual, _)| perpetual.name == name)
+                .map(|(_, asset_ctx)| asset_ctx)
+                .ok_or(Error::PerpetualMissing(name))
         }
     }
 
@@ -197,7 +206,10 @@ pub mod wire {
 
             assert!(matches!(
                 PriceUpdate::try_from(MetaAndAssetCtxs(meta, asset_ctxs)),
-                Err(Error::AssetCtxMissing(XMR_PERPETUAL))
+                Err(Error::AssetCtxCountMismatch {
+                    perpetuals: 3,
+                    asset_ctxs: 2
+                })
             ));
         }
 

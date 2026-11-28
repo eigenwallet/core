@@ -69,6 +69,7 @@ pub(crate) mod connection {
 pub mod wire {
     use rust_decimal::Decimal;
     use serde::Deserialize;
+    use serde::de::IgnoredAny;
 
     /// Raw response from `GET /market/detail/merged`.
     /// HTX reports a rejected request in the body, with a success HTTP status.
@@ -85,8 +86,8 @@ pub mod wire {
     /// Best bid and best ask of one market, each as `[price, size]`.
     #[derive(Debug, Deserialize)]
     pub struct Ticker {
-        pub bid: (Decimal, Decimal),
-        pub ask: (Decimal, Decimal),
+        pub bid: (Decimal, IgnoredAny),
+        pub ask: (Decimal, IgnoredAny),
     }
 
     #[derive(Clone, Debug, PartialEq)]

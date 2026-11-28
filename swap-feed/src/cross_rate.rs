@@ -9,6 +9,11 @@ pub enum Error {
     NonPositive(Decimal),
     #[error("Cross rate overflowed")]
     Overflow,
+    #[error("Cross rate of {asset_price} and {btc_price} is too small to represent")]
+    Underflow {
+        asset_price: Decimal,
+        btc_price: Decimal,
+    },
     #[error("Failed to parse cross rate {rate} as a Bitcoin amount")]
     AmountParse {
         rate: Decimal,
@@ -29,10 +34,15 @@ pub(crate) fn cross_rate(
         }
     }
 
-    let rate = asset_price
-        .checked_div(btc_price)
-        .ok_or(Error::Overflow)?
-        .round_dp_with_strategy(BTC_DECIMAL_PLACES, RoundingStrategy::ToPositiveInfinity);
+    let rate = asset_price.checked_div(btc_price).ok_or(Error::Overflow)?;
+    if rate.is_zero() {
+        return Err(Error::Underflow {
+            asset_price,
+            btc_price,
+        });
+    }
+    let rate =
+        rate.round_dp_with_strategy(BTC_DECIMAL_PLACES, RoundingStrategy::ToPositiveInfinity);
 
     bitcoin::Amount::from_str_in(&rate.to_string(), bitcoin::Denomination::Bitcoin)
         .map_err(|source| Error::AmountParse { rate, source })
@@ -59,6 +69,20 @@ mod tests {
     fn keeps_exact_rate() {
         let rate = cross_rate(decimal("500"), decimal("50000")).unwrap();
         assert_eq!(rate.to_sat(), 1_000_000);
+    }
+
+    #[test]
+    fn rounds_tiny_rate_up_to_one_satoshi() {
+        let rate = cross_rate(decimal("0.0000001"), decimal("59242.21")).unwrap();
+        assert_eq!(rate.to_sat(), 1);
+    }
+
+    #[test]
+    fn rejects_rate_that_underflows_to_zero() {
+        assert!(matches!(
+            cross_rate(decimal("0.0000000000000000000000000001"), decimal("100")),
+            Err(Error::Underflow { .. })
+        ));
     }
 
     #[test]
