@@ -249,6 +249,15 @@ pub async fn main() -> Result<()> {
             } else {
                 None
             };
+            let hyperliquid_price_updates = if config.maker.price_ticker_source_hyperliquid_enabled
+            {
+                Some(swap_feed::connect_hyperliquid(
+                    config.maker.price_ticker_rest_url_hyperliquid.clone(),
+                    reqwest::Client::new(),
+                )?)
+            } else {
+                None
+            };
             let exolix_poll_interval = std::time::Duration::from_secs(
                 config.maker.price_ticker_rest_poll_interval_exolix_secs,
             );
@@ -270,6 +279,7 @@ pub async fn main() -> Result<()> {
                 bitfinex = bitfinex_price_updates.is_some(),
                 exolix = exolix_price_updates.is_some(),
                 htx = htx_price_updates.is_some(),
+                hyperliquid = hyperliquid_price_updates.is_some(),
                 "Price feed sources",
             );
 
@@ -281,6 +291,7 @@ pub async fn main() -> Result<()> {
                 bitfinex_price_updates,
                 exolix_price_updates,
                 htx_price_updates,
+                hyperliquid_price_updates,
                 price_validity_duration,
             )
             .context("Invalid price feed configuration")?;

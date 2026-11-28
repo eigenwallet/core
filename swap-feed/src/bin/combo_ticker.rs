@@ -22,6 +22,7 @@ async fn main() -> Result<()> {
         Some(bitfinex_ticker),
         None,
         None,
+        None,
         std::time::Duration::from_secs(10 * 60),
     )?;
 

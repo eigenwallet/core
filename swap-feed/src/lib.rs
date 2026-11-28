@@ -1,6 +1,7 @@
 pub mod bitfinex;
 pub mod exolix;
 pub mod htx;
+pub mod hyperliquid;
 pub mod kraken;
 pub mod rate;
 pub mod traits;
@@ -32,4 +33,11 @@ pub fn connect_exolix(
 
 pub fn connect_htx(url: url::Url, client: reqwest::Client) -> anyhow::Result<htx::PriceUpdates> {
     htx::connect(url, client)
+}
+
+pub fn connect_hyperliquid(
+    url: url::Url,
+    client: reqwest::Client,
+) -> anyhow::Result<hyperliquid::PriceUpdates> {
+    hyperliquid::connect(url, client)
 }
