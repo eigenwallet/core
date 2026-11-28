@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - ASB: Add HTX as a source for the XMR/BTC price.
-  It is on by default. Set `maker.price_ticker_source_htx_enabled = false` to turn it off.
-
+  It is on by default.
+  Set `maker.price_ticker_source_htx_enabled = false` to turn it off.
 - GUI + CLI: Fix an issue where the general log file (`swap-all.log`) grew without bound and could take up many gigabytes of disk space.
   It is now split into one file per day, of which the 14 most recent are kept.
 - ASB: Remove KuCoin as a price source.

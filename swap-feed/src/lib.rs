@@ -30,10 +30,6 @@ pub fn connect_exolix(
     exolix::connect(url, api_key, poll_interval, client)
 }
 
-pub fn connect_htx(
-    url: url::Url,
-    poll_interval: std::time::Duration,
-    client: reqwest::Client,
-) -> anyhow::Result<htx::PriceUpdates> {
-    htx::connect(url, poll_interval, client)
+pub fn connect_htx(url: url::Url, client: reqwest::Client) -> anyhow::Result<htx::PriceUpdates> {
+    htx::connect(url, client)
 }

@@ -189,9 +189,6 @@ pub struct Maker {
     /// Whether the HTX price feed contributes to the XMR/BTC rate.
     #[serde(default = "default_price_ticker_source_enabled")]
     pub price_ticker_source_htx_enabled: bool,
-    /// How often the HTX REST ticker endpoint is polled, in seconds.
-    #[serde(default = "default_price_ticker_rest_poll_interval_htx_secs")]
-    pub price_ticker_rest_poll_interval_htx_secs: u64,
     /// Optional Exolix API key. When set, the Exolix rate endpoint is
     /// polled and included in the price average alongside Kraken
     /// and Bitfinex.
@@ -282,10 +279,6 @@ fn default_price_ticker_rest_url_exolix() -> Url {
 
 fn default_price_ticker_rest_url_htx() -> Url {
     Url::parse(HTX_PRICE_TICKER_REST_URL).expect("default htx rest url to be valid")
-}
-
-pub fn default_price_ticker_rest_poll_interval_htx_secs() -> u64 {
-    10
 }
 
 pub fn default_price_ticker_rest_poll_interval_exolix_secs() -> u64 {
@@ -547,8 +540,6 @@ pub fn query_user_for_initial_config_with_network(
             price_ticker_rest_url_exolix: defaults.price_ticker_rest_url_exolix,
             price_ticker_rest_url_htx: defaults.price_ticker_rest_url_htx,
             price_ticker_source_htx_enabled: default_price_ticker_source_enabled(),
-            price_ticker_rest_poll_interval_htx_secs:
-                default_price_ticker_rest_poll_interval_htx_secs(),
             price_ticker_source_exolix_api_key: None,
             price_ticker_rest_poll_interval_exolix_secs:
                 default_price_ticker_rest_poll_interval_exolix_secs(),

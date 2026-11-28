@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::time::Duration;
 use url::Url;
 
 /// Connect to the HTX REST API and poll it for XMR/BTC rate updates.
@@ -9,20 +8,8 @@ use url::Url;
 ///
 /// `rest_url` must point to the "latest aggregated ticker" endpoint
 /// (`/market/detail/merged`).
-pub fn connect(
-    rest_url: Url,
-    poll_interval: Duration,
-    client: reqwest::Client,
-) -> Result<PriceUpdates> {
-    crate::ticker::connect(
-        "HTX",
-        HtxParams {
-            rest_url,
-            poll_interval,
-            client,
-        },
-        connection::new,
-    )
+pub fn connect(rest_url: Url, client: reqwest::Client) -> Result<PriceUpdates> {
+    crate::ticker::connect("HTX", HtxParams { rest_url, client }, connection::new)
 }
 
 pub type PriceUpdates = crate::ticker::PriceUpdates<wire::PriceUpdate>;
@@ -32,65 +19,33 @@ pub type Error = crate::ticker::Error;
 #[derive(Clone)]
 pub struct HtxParams {
     pub rest_url: Url,
-    pub poll_interval: Duration,
     pub client: reqwest::Client,
 }
 
 pub(crate) mod connection {
     use super::{HtxParams, wire};
     use anyhow::Result;
-    use backoff::{ExponentialBackoff, backoff::Backoff};
     use futures::StreamExt;
     use futures::stream::{self, BoxStream};
-    use std::convert::Infallible;
     use std::sync::Arc;
     use std::time::Duration;
 
-    const BACKOFF_INITIAL: Duration = Duration::from_secs(3);
-    const BACKOFF_MAX: Duration = Duration::from_secs(60);
+    const POLL_INTERVAL: Duration = Duration::from_secs(10);
 
     const XMR_USDT_SYMBOL: &str = "xmrusdt";
     const BTC_USDT_SYMBOL: &str = "btcusdt";
 
-    fn new_backoff() -> ExponentialBackoff {
-        ExponentialBackoff {
-            initial_interval: BACKOFF_INITIAL,
-            max_interval: BACKOFF_MAX,
-            max_elapsed_time: None,
-            ..ExponentialBackoff::default()
-        }
-    }
-
+    /// A failed poll ends the stream with an error. The ticker then retries with backoff.
     pub async fn new(
         params: Arc<HtxParams>,
-    ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Infallible>>> {
-        // A failed poll is retried here with its own backoff.
-        // The reconnect logic of the ticker is for a lost transport, which a REST API does not have.
-        let stream = stream::unfold(
-            (params, true, new_backoff()),
-            |(params, first, mut backoff)| async move {
-                if !first {
-                    tokio::time::sleep(params.poll_interval).await;
-                }
-                loop {
-                    match fetch_rate(&params).await {
-                        Ok(update) => {
-                            backoff.reset();
-                            return Some((Ok(update), (params, false, backoff)));
-                        }
-                        Err(err) => {
-                            let delay = backoff.next_backoff().unwrap_or(BACKOFF_MAX);
-                            tracing::warn!(
-                                error = %format!("{:#}", anyhow::Error::from(err)),
-                                retry_in_ms = delay.as_millis() as u64,
-                                "HTX poll failed, will retry",
-                            );
-                            tokio::time::sleep(delay).await;
-                        }
-                    }
-                }
-            },
-        )
+    ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, FetchError>>> {
+        let stream = stream::unfold((params, true), |(params, first)| async move {
+            if !first {
+                tokio::time::sleep(POLL_INTERVAL).await;
+            }
+
+            Some((fetch_rate(&params).await, (params, false)))
+        })
         .boxed();
 
         Ok(stream)

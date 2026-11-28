@@ -18,8 +18,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use swap_env::config::{
     Bitcoin, Config, ConfigNotInitialized, Data, Maker, Monero, Network, TorConf,
-    default_price_ticker_rest_poll_interval_exolix_secs,
-    default_price_ticker_rest_poll_interval_htx_secs, default_price_ticker_source_enabled,
+    default_price_ticker_rest_poll_interval_exolix_secs, default_price_ticker_source_enabled,
     default_price_ticker_validity_duration_secs,
 };
 use swap_env::prompt as config_prompt;
@@ -392,8 +391,6 @@ fn main() {
                 price_ticker_rest_url_exolix: defaults.price_ticker_rest_url_exolix,
                 price_ticker_rest_url_htx: defaults.price_ticker_rest_url_htx,
                 price_ticker_source_htx_enabled: default_price_ticker_source_enabled(),
-                price_ticker_rest_poll_interval_htx_secs:
-                    default_price_ticker_rest_poll_interval_htx_secs(),
                 price_ticker_source_exolix_api_key: None,
                 price_ticker_rest_poll_interval_exolix_secs:
                     default_price_ticker_rest_poll_interval_exolix_secs(),

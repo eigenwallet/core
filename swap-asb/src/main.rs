@@ -244,9 +244,6 @@ pub async fn main() -> Result<()> {
             let htx_price_updates = if config.maker.price_ticker_source_htx_enabled {
                 Some(swap_feed::connect_htx(
                     config.maker.price_ticker_rest_url_htx.clone(),
-                    std::time::Duration::from_secs(
-                        config.maker.price_ticker_rest_poll_interval_htx_secs,
-                    ),
                     reqwest::Client::new(),
                 )?)
             } else {

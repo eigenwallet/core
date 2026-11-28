@@ -8,12 +8,8 @@ async fn main() -> Result<()> {
     )?;
 
     let rest_url = Url::parse("https://api.htx.com/market/detail/merged")?;
-    let mut ticker = swap_feed::htx::connect(
-        rest_url,
-        std::time::Duration::from_secs(10),
-        reqwest::Client::new(),
-    )
-    .context("Failed to connect to HTX")?;
+    let mut ticker = swap_feed::htx::connect(rest_url, reqwest::Client::new())
+        .context("Failed to connect to HTX")?;
 
     loop {
         match ticker.wait_for_next_update().await? {
