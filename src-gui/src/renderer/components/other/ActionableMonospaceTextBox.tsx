@@ -1,6 +1,5 @@
 import { Box, Button, IconButton, Tooltip } from "@mui/material";
 import { FileCopyOutlined, QrCode as QrCodeIcon } from "@mui/icons-material";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useState } from "react";
 import MonospaceTextBox from "./MonospaceTextBox";
 import { Modal } from "@mui/material";
@@ -75,7 +74,7 @@ export default function ActionableMonospaceTextBox({
 
   const handleCopy = async () => {
     if (!content) return;
-    await writeText(content);
+    await navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

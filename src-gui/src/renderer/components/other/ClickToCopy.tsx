@@ -1,6 +1,5 @@
 import { Box, Tooltip } from "@mui/material";
 import { ReactNode, useState } from "react";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 type Props = {
   content: string;
@@ -16,7 +15,7 @@ export default function ClickToCopy({
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
-    await writeText(content);
+    await navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
